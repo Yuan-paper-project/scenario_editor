@@ -1,0 +1,343 @@
+{
+  "map": "Town01",
+  "weather": {
+    "fog": 0,
+    "rainy": 0,
+    "cloudy": 0,
+    "sunny": 0,
+    "wet_road": 0,
+    "snowy": 0,
+    "dust_storm": 0
+  },
+  "time": "daytime",
+  "ego": {
+    "id": "obj-1",
+    "type": "ego",
+    "x": 29.379,
+    "y": -2.026,
+    "z": 0.2,
+    "yaw": 1,
+    "trajectory": [
+      {
+        "x": 29.379,
+        "y": -2.026,
+        "velocity": 10
+      },
+      {
+        "x": 36.1,
+        "y": -2.1,
+        "velocity": 10
+      },
+      {
+        "x": 40.4,
+        "y": -2.3,
+        "velocity": 10
+      },
+      {
+        "x": 47.1,
+        "y": -2.3,
+        "velocity": 10
+      },
+      {
+        "x": 52.4,
+        "y": -2.1,
+        "velocity": 10
+      },
+      {
+        "x": 59.6,
+        "y": -2.3,
+        "velocity": 10
+      },
+      {
+        "x": 66.1,
+        "y": -2.1,
+        "velocity": 10
+      },
+      {
+        "x": 73.9,
+        "y": -2.1,
+        "velocity": 10
+      },
+      {
+        "x": 80.4,
+        "y": -1.5,
+        "velocity": 10
+      },
+      {
+        "x": 84.9,
+        "y": -0.9,
+        "velocity": 10
+      },
+      {
+        "x": 89.4,
+        "y": 2.2,
+        "velocity": 10
+      },
+      {
+        "x": 91.8,
+        "y": 5.3,
+        "velocity": 10
+      },
+      {
+        "x": 91.8,
+        "y": 11.6,
+        "velocity": 10
+      },
+      {
+        "x": 92.5,
+        "y": 16.3,
+        "velocity": 10
+      },
+      {
+        "x": 91.6,
+        "y": 23.2,
+        "velocity": 10
+      },
+      {
+        "x": 92.7,
+        "y": 30,
+        "velocity": 10
+      },
+      {
+        "x": 92.5,
+        "y": 34.7,
+        "velocity": 10
+      },
+      {
+        "x": 92.3,
+        "y": 39.4,
+        "velocity": 10
+      }
+    ]
+  },
+  "npcs": [
+    {
+      "id": "obj-2",
+      "type": "pedestrian",
+      "x": 76.5,
+      "y": 6.5,
+      "z": 0.2,
+      "yaw": -91,
+      "behaviors": [
+        "constant_speed"
+      ],
+      "trigger_distance": 15,
+      "trajectory": [
+        {
+          "x": 76.5,
+          "y": 6.6,
+          "velocity": 10
+        },
+        {
+          "x": 76.2,
+          "y": 2.4,
+          "velocity": 10
+        },
+        {
+          "x": 75.9,
+          "y": -0.4,
+          "velocity": 10
+        },
+        {
+          "x": 76.2,
+          "y": -3.4,
+          "velocity": 10
+        },
+        {
+          "x": 76.3,
+          "y": -5.9,
+          "velocity": 10
+        },
+        {
+          "x": 80,
+          "y": -6.5,
+          "velocity": 10
+        },
+        {
+          "x": 86.2,
+          "y": -6.5,
+          "velocity": 10
+        },
+        {
+          "x": 91.2,
+          "y": -6.4,
+          "velocity": 10
+        },
+        {
+          "x": 95.6,
+          "y": -6.5,
+          "velocity": 10
+        },
+        {
+          "x": 100.1,
+          "y": -6.6,
+          "velocity": 10
+        }
+      ]
+    },
+    {
+      "id": "obj-3",
+      "type": "pedestrian",
+      "x": 83.9,
+      "y": 14.8,
+      "z": 0.2,
+      "yaw": 0,
+      "behaviors": [
+        "constant_speed"
+      ],
+      "trigger_distance": 15,
+      "trajectory": [
+        {
+          "x": 83.9,
+          "y": 14.8,
+          "velocity": 10
+        },
+        {
+          "x": 88.3,
+          "y": 14.6,
+          "velocity": 10
+        },
+        {
+          "x": 90.2,
+          "y": 14.8,
+          "velocity": 10
+        },
+        {
+          "x": 93.5,
+          "y": 15,
+          "velocity": 10
+        },
+        {
+          "x": 96,
+          "y": 15,
+          "velocity": 10
+        },
+        {
+          "x": 96.3,
+          "y": 13.6,
+          "velocity": 10
+        },
+        {
+          "x": 95.9,
+          "y": 10.8,
+          "velocity": 10
+        },
+        {
+          "x": 97,
+          "y": 8.4,
+          "velocity": 10
+        },
+        {
+          "x": 98.7,
+          "y": 6.5,
+          "velocity": 10
+        },
+        {
+          "x": 102.7,
+          "y": 6.4,
+          "velocity": 10
+        },
+        {
+          "x": 106.8,
+          "y": 6.4,
+          "velocity": 10
+        }
+      ]
+    },
+    {
+      "id": "obj-4",
+      "type": "truck",
+      "x": 144.96,
+      "y": 1.954,
+      "z": 0.2,
+      "yaw": -179,
+      "behaviors": [
+        "constant_speed"
+      ],
+      "trigger_distance": 100,
+      "trajectory": [
+        {
+          "x": 144.96,
+          "y": 1.954,
+          "velocity": 10
+        },
+        {
+          "x": 136.3,
+          "y": 1.7,
+          "velocity": 10
+        },
+        {
+          "x": 127.6,
+          "y": 1.5,
+          "velocity": 10
+        },
+        {
+          "x": 118.1,
+          "y": 1.7,
+          "velocity": 10
+        },
+        {
+          "x": 109.7,
+          "y": 1.9,
+          "velocity": 10
+        },
+        {
+          "x": 100.8,
+          "y": 1.5,
+          "velocity": 10
+        },
+        {
+          "x": 94.7,
+          "y": 2.2,
+          "velocity": 10
+        },
+        {
+          "x": 90.7,
+          "y": 2.4,
+          "velocity": 10
+        },
+        {
+          "x": 81.1,
+          "y": 2.4,
+          "velocity": 10
+        },
+        {
+          "x": 74.6,
+          "y": 2.2,
+          "velocity": 10
+        },
+        {
+          "x": 62.6,
+          "y": 2.2,
+          "velocity": 10
+        },
+        {
+          "x": 50.2,
+          "y": 2.6,
+          "velocity": 10
+        },
+        {
+          "x": 40.4,
+          "y": 2.5,
+          "velocity": 10
+        },
+        {
+          "x": 33.3,
+          "y": 1.7,
+          "velocity": 10
+        },
+        {
+          "x": 26.5,
+          "y": 1.6,
+          "velocity": 10
+        },
+        {
+          "x": 22,
+          "y": 1.8,
+          "velocity": 10
+        }
+      ]
+    }
+  ],
+  "staticObjects": []
+}

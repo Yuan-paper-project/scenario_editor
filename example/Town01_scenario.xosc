@@ -1,0 +1,556 @@
+<?xml version='1.0' encoding='utf-8'?>
+<OpenSCENARIO>
+  <FileHeader revMajor="1" revMinor="0" date="2020-03-24T12:00:00" description="CARLA:GeneratedScenario" author="llm-scenario-gen" />
+  <ParameterDeclarations />
+  <CatalogLocations />
+  <RoadNetwork>
+    <LogicFile filepath="Town01" />
+    <SceneGraphFile filepath="" />
+  </RoadNetwork>
+  <Entities>
+    <ScenarioObject name="hero">
+      <Vehicle name="vehicle.tesla.model3" vehicleCategory="car">
+        <ParameterDeclarations />
+        <Performance maxSpeed="69.444" maxAcceleration="200" maxDeceleration="10.0" />
+        <BoundingBox>
+          <Center x="1.5" y="0.0" z="0.9" />
+          <Dimensions width="2.1" length="4.5" height="1.8" />
+        </BoundingBox>
+        <Axles>
+          <FrontAxle maxSteering="0.5" wheelDiameter="0.6" trackWidth="1.8" positionX="3.1" positionZ="0.3" />
+          <RearAxle maxSteering="0.0" wheelDiameter="0.6" trackWidth="1.8" positionX="0.0" positionZ="0.3" />
+        </Axles>
+        <Properties>
+          <Property name="type" value="ego_vehicle" />
+        </Properties>
+      </Vehicle>
+    </ScenarioObject>
+    <ScenarioObject name="adversary">
+      <Pedestrian model="walker.pedestrian.0001" mass="90" name="adversary" pedestrianCategory="pedestrian">
+        <BoundingBox>
+          <Center x="0.0" y="0.0" z="0.9" />
+          <Dimensions width="1.0" length="1.0" height="1.8" />
+        </BoundingBox>
+        <Properties>
+          <Property name="type" value="simulation" />
+        </Properties>
+      </Pedestrian>
+    </ScenarioObject>
+    <ScenarioObject name="adversary1">
+      <Pedestrian model="walker.pedestrian.0001" mass="90" name="adversary1" pedestrianCategory="pedestrian">
+        <BoundingBox>
+          <Center x="0.0" y="0.0" z="0.9" />
+          <Dimensions width="1.0" length="1.0" height="1.8" />
+        </BoundingBox>
+        <Properties>
+          <Property name="type" value="simulation" />
+        </Properties>
+      </Pedestrian>
+    </ScenarioObject>
+    <ScenarioObject name="adversary2">
+      <Vehicle name="vehicle.carlamotors.carlacola" vehicleCategory="truck">
+        <ParameterDeclarations />
+        <Performance maxSpeed="69.444" maxAcceleration="200" maxDeceleration="10.0" />
+        <BoundingBox>
+          <Center x="1.5" y="0.0" z="0.9" />
+          <Dimensions width="2.1" length="4.5" height="1.8" />
+        </BoundingBox>
+        <Axles>
+          <FrontAxle maxSteering="0.5" wheelDiameter="0.6" trackWidth="1.8" positionX="3.1" positionZ="0.3" />
+          <RearAxle maxSteering="0.0" wheelDiameter="0.6" trackWidth="1.8" positionX="0.0" positionZ="0.3" />
+        </Axles>
+        <Properties>
+          <Property name="type" value="simulation" />
+        </Properties>
+      </Vehicle>
+    </ScenarioObject>
+  </Entities>
+  <Storyboard>
+    <Init>
+      <Actions>
+        <GlobalAction>
+          <EnvironmentAction>
+            <Environment name="Environment1">
+              <TimeOfDay animation="false" dateTime="2020-06-25T12:00:00" />
+              <Weather cloudState="free">
+                <Sun intensity="0.85" azimuth="0.0" elevation="1.31" />
+                <Fog visualRange="100000.0" />
+                <Precipitation precipitationType="dry" intensity="0.0" />
+              </Weather>
+              <RoadCondition frictionScaleFactor="1.0" />
+            </Environment>
+          </EnvironmentAction>
+        </GlobalAction>
+        <Private entityRef="hero">
+          <PrivateAction>
+            <TeleportAction>
+              <Position>
+                <WorldPosition x="29.379" y="-2.026" z="0.2" h="1" />
+              </Position>
+            </TeleportAction>
+          </PrivateAction>
+          <PrivateAction>
+            <ControllerAction>
+              <AssignControllerAction>
+                <Controller name="HeroAgent">
+                  <Properties>
+                    <Property name="module" value="external_control" />
+                  </Properties>
+                </Controller>
+              </AssignControllerAction>
+              <OverrideControllerValueAction>
+                <Throttle value="0" active="false" />
+                <Brake value="0" active="false" />
+                <Clutch value="0" active="false" />
+                <ParkingBrake value="0" active="false" />
+                <SteeringWheel value="0" active="false" />
+                <Gear number="0" active="false" />
+              </OverrideControllerValueAction>
+            </ControllerAction>
+          </PrivateAction>
+        </Private>
+        <Private entityRef="adversary">
+          <PrivateAction>
+            <TeleportAction>
+              <Position>
+                <WorldPosition x="76.5" y="6.5" z="0.2" h="-91" />
+              </Position>
+            </TeleportAction>
+          </PrivateAction>
+        </Private>
+        <Private entityRef="adversary1">
+          <PrivateAction>
+            <TeleportAction>
+              <Position>
+                <WorldPosition x="83.9" y="14.8" z="0.2" h="0" />
+              </Position>
+            </TeleportAction>
+          </PrivateAction>
+        </Private>
+        <Private entityRef="adversary2">
+          <PrivateAction>
+            <TeleportAction>
+              <Position>
+                <WorldPosition x="144.96" y="1.954" z="0.2" h="-179" />
+              </Position>
+            </TeleportAction>
+          </PrivateAction>
+        </Private>
+      </Actions>
+    </Init>
+    <Story name="MyStory">
+      <Act name="adversaryBehavior">
+        <ManeuverGroup maximumExecutionCount="1" name="adversaryManeuverGroup">
+          <Actors selectTriggeringEntities="false">
+            <EntityRef entityRef="adversary" />
+          </Actors>
+          <Maneuver name="adversaryManeuver">
+            <Event name="adversaryTrajEvent" priority="overwrite">
+              <Action name="adversaryTrajAction">
+                <PrivateAction>
+                  <RoutingAction>
+                    <FollowTrajectoryAction>
+                      <Trajectory closed="false" name="adversaryTrajectory">
+                        <ParameterDeclarations />
+                        <Shapes>
+                          <Polyline>
+                            <Vertex relativeTime="0.0">
+                              <Position>
+                                <WorldPosition x="76.5" y="6.6" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="0.421">
+                              <Position>
+                                <WorldPosition x="76.2" y="2.4" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="0.703">
+                              <Position>
+                                <WorldPosition x="75.9" y="-0.4" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="1.004">
+                              <Position>
+                                <WorldPosition x="76.2" y="-3.4" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="1.254">
+                              <Position>
+                                <WorldPosition x="76.3" y="-5.9" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="1.629">
+                              <Position>
+                                <WorldPosition x="80" y="-6.5" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="2.249">
+                              <Position>
+                                <WorldPosition x="86.2" y="-6.5" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="2.749">
+                              <Position>
+                                <WorldPosition x="91.2" y="-6.4" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="3.189">
+                              <Position>
+                                <WorldPosition x="95.6" y="-6.5" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="3.639">
+                              <Position>
+                                <WorldPosition x="100.1" y="-6.6" z="0.2" />
+                              </Position>
+                            </Vertex>
+                          </Polyline>
+                        </Shapes>
+                      </Trajectory>
+                      <TrajectoryFollowingMode followingMode="position" />
+                    </FollowTrajectoryAction>
+                  </RoutingAction>
+                </PrivateAction>
+              </Action>
+              <StartTrigger>
+                <ConditionGroup>
+                  <Condition name="DistanceTrigger" delay="0" conditionEdge="rising">
+                    <ByEntityCondition>
+                      <TriggeringEntities triggeringEntitiesRule="any">
+                        <EntityRef entityRef="hero" />
+                      </TriggeringEntities>
+                      <EntityCondition>
+                        <RelativeDistanceCondition entityRef="adversary" relativeDistanceType="cartesianDistance" value="15.0" freespace="false" rule="lessThan" />
+                      </EntityCondition>
+                    </ByEntityCondition>
+                  </Condition>
+                </ConditionGroup>
+                <ConditionGroup>
+                  <Condition name="TimeFallback" delay="0" conditionEdge="rising">
+                    <ByValueCondition>
+                      <SimulationTimeCondition value="60" rule="greaterThan" />
+                    </ByValueCondition>
+                  </Condition>
+                </ConditionGroup>
+              </StartTrigger>
+            </Event>
+          </Maneuver>
+        </ManeuverGroup>
+        <StartTrigger>
+          <ConditionGroup>
+            <Condition name="ActStart" delay="0" conditionEdge="rising">
+              <ByValueCondition>
+                <SimulationTimeCondition value="0" rule="greaterThan" />
+              </ByValueCondition>
+            </Condition>
+          </ConditionGroup>
+        </StartTrigger>
+        <StopTrigger>
+          <ConditionGroup>
+            <Condition name="ActEnd" delay="0" conditionEdge="rising">
+              <ByEntityCondition>
+                <TriggeringEntities triggeringEntitiesRule="any">
+                  <EntityRef entityRef="hero" />
+                </TriggeringEntities>
+                <EntityCondition>
+                  <TraveledDistanceCondition value="500.0" />
+                </EntityCondition>
+              </ByEntityCondition>
+            </Condition>
+          </ConditionGroup>
+        </StopTrigger>
+      </Act>
+      <Act name="adversary1Behavior">
+        <ManeuverGroup maximumExecutionCount="1" name="adversary1ManeuverGroup">
+          <Actors selectTriggeringEntities="false">
+            <EntityRef entityRef="adversary1" />
+          </Actors>
+          <Maneuver name="adversary1Maneuver">
+            <Event name="adversary1TrajEvent" priority="overwrite">
+              <Action name="adversary1TrajAction">
+                <PrivateAction>
+                  <RoutingAction>
+                    <FollowTrajectoryAction>
+                      <Trajectory closed="false" name="adversary1Trajectory">
+                        <ParameterDeclarations />
+                        <Shapes>
+                          <Polyline>
+                            <Vertex relativeTime="0.0">
+                              <Position>
+                                <WorldPosition x="83.9" y="14.8" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="0.44">
+                              <Position>
+                                <WorldPosition x="88.3" y="14.6" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="0.631">
+                              <Position>
+                                <WorldPosition x="90.2" y="14.8" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="0.962">
+                              <Position>
+                                <WorldPosition x="93.5" y="15" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="1.212">
+                              <Position>
+                                <WorldPosition x="96" y="15" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="1.355">
+                              <Position>
+                                <WorldPosition x="96.3" y="13.6" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="1.638">
+                              <Position>
+                                <WorldPosition x="95.9" y="10.8" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="1.902">
+                              <Position>
+                                <WorldPosition x="97" y="8.4" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="2.157">
+                              <Position>
+                                <WorldPosition x="98.7" y="6.5" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="2.557">
+                              <Position>
+                                <WorldPosition x="102.7" y="6.4" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="2.967">
+                              <Position>
+                                <WorldPosition x="106.8" y="6.4" z="0.2" />
+                              </Position>
+                            </Vertex>
+                          </Polyline>
+                        </Shapes>
+                      </Trajectory>
+                      <TrajectoryFollowingMode followingMode="position" />
+                    </FollowTrajectoryAction>
+                  </RoutingAction>
+                </PrivateAction>
+              </Action>
+              <StartTrigger>
+                <ConditionGroup>
+                  <Condition name="DistanceTrigger" delay="0" conditionEdge="rising">
+                    <ByEntityCondition>
+                      <TriggeringEntities triggeringEntitiesRule="any">
+                        <EntityRef entityRef="hero" />
+                      </TriggeringEntities>
+                      <EntityCondition>
+                        <RelativeDistanceCondition entityRef="adversary1" relativeDistanceType="cartesianDistance" value="15.0" freespace="false" rule="lessThan" />
+                      </EntityCondition>
+                    </ByEntityCondition>
+                  </Condition>
+                </ConditionGroup>
+                <ConditionGroup>
+                  <Condition name="TimeFallback" delay="0" conditionEdge="rising">
+                    <ByValueCondition>
+                      <SimulationTimeCondition value="60" rule="greaterThan" />
+                    </ByValueCondition>
+                  </Condition>
+                </ConditionGroup>
+              </StartTrigger>
+            </Event>
+          </Maneuver>
+        </ManeuverGroup>
+        <StartTrigger>
+          <ConditionGroup>
+            <Condition name="ActStart" delay="0" conditionEdge="rising">
+              <ByValueCondition>
+                <SimulationTimeCondition value="0" rule="greaterThan" />
+              </ByValueCondition>
+            </Condition>
+          </ConditionGroup>
+        </StartTrigger>
+        <StopTrigger>
+          <ConditionGroup>
+            <Condition name="ActEnd" delay="0" conditionEdge="rising">
+              <ByEntityCondition>
+                <TriggeringEntities triggeringEntitiesRule="any">
+                  <EntityRef entityRef="hero" />
+                </TriggeringEntities>
+                <EntityCondition>
+                  <TraveledDistanceCondition value="500.0" />
+                </EntityCondition>
+              </ByEntityCondition>
+            </Condition>
+          </ConditionGroup>
+        </StopTrigger>
+      </Act>
+      <Act name="adversary2Behavior">
+        <ManeuverGroup maximumExecutionCount="1" name="adversary2ManeuverGroup">
+          <Actors selectTriggeringEntities="false">
+            <EntityRef entityRef="adversary2" />
+          </Actors>
+          <Maneuver name="adversary2Maneuver">
+            <Event name="adversary2TrajEvent" priority="overwrite">
+              <Action name="adversary2TrajAction">
+                <PrivateAction>
+                  <RoutingAction>
+                    <FollowTrajectoryAction>
+                      <Trajectory closed="false" name="adversary2Trajectory">
+                        <ParameterDeclarations />
+                        <Shapes>
+                          <Polyline>
+                            <Vertex relativeTime="0.0">
+                              <Position>
+                                <WorldPosition x="144.96" y="1.954" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="0.866">
+                              <Position>
+                                <WorldPosition x="136.3" y="1.7" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="1.736">
+                              <Position>
+                                <WorldPosition x="127.6" y="1.5" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="2.686">
+                              <Position>
+                                <WorldPosition x="118.1" y="1.7" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="3.526">
+                              <Position>
+                                <WorldPosition x="109.7" y="1.9" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="4.417">
+                              <Position>
+                                <WorldPosition x="100.8" y="1.5" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="5.031">
+                              <Position>
+                                <WorldPosition x="94.7" y="2.2" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="5.431">
+                              <Position>
+                                <WorldPosition x="90.7" y="2.4" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="6.391">
+                              <Position>
+                                <WorldPosition x="81.1" y="2.4" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="7.041">
+                              <Position>
+                                <WorldPosition x="74.6" y="2.2" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="8.241">
+                              <Position>
+                                <WorldPosition x="62.6" y="2.2" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="9.482">
+                              <Position>
+                                <WorldPosition x="50.2" y="2.6" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="10.462">
+                              <Position>
+                                <WorldPosition x="40.4" y="2.5" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="11.176">
+                              <Position>
+                                <WorldPosition x="33.3" y="1.7" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="11.856">
+                              <Position>
+                                <WorldPosition x="26.5" y="1.6" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="12.306">
+                              <Position>
+                                <WorldPosition x="22" y="1.8" z="0.2" />
+                              </Position>
+                            </Vertex>
+                          </Polyline>
+                        </Shapes>
+                      </Trajectory>
+                      <TrajectoryFollowingMode followingMode="position" />
+                    </FollowTrajectoryAction>
+                  </RoutingAction>
+                </PrivateAction>
+              </Action>
+              <StartTrigger>
+                <ConditionGroup>
+                  <Condition name="DistanceTrigger" delay="0" conditionEdge="rising">
+                    <ByEntityCondition>
+                      <TriggeringEntities triggeringEntitiesRule="any">
+                        <EntityRef entityRef="hero" />
+                      </TriggeringEntities>
+                      <EntityCondition>
+                        <RelativeDistanceCondition entityRef="adversary2" relativeDistanceType="cartesianDistance" value="100.0" freespace="false" rule="lessThan" />
+                      </EntityCondition>
+                    </ByEntityCondition>
+                  </Condition>
+                </ConditionGroup>
+                <ConditionGroup>
+                  <Condition name="TimeFallback" delay="0" conditionEdge="rising">
+                    <ByValueCondition>
+                      <SimulationTimeCondition value="60" rule="greaterThan" />
+                    </ByValueCondition>
+                  </Condition>
+                </ConditionGroup>
+              </StartTrigger>
+            </Event>
+          </Maneuver>
+        </ManeuverGroup>
+        <StartTrigger>
+          <ConditionGroup>
+            <Condition name="ActStart" delay="0" conditionEdge="rising">
+              <ByValueCondition>
+                <SimulationTimeCondition value="0" rule="greaterThan" />
+              </ByValueCondition>
+            </Condition>
+          </ConditionGroup>
+        </StartTrigger>
+        <StopTrigger>
+          <ConditionGroup>
+            <Condition name="ActEnd" delay="0" conditionEdge="rising">
+              <ByEntityCondition>
+                <TriggeringEntities triggeringEntitiesRule="any">
+                  <EntityRef entityRef="hero" />
+                </TriggeringEntities>
+                <EntityCondition>
+                  <TraveledDistanceCondition value="500.0" />
+                </EntityCondition>
+              </ByEntityCondition>
+            </Condition>
+          </ConditionGroup>
+        </StopTrigger>
+      </Act>
+    </Story>
+    <StopTrigger>
+      <ConditionGroup>
+        <Condition name="criteria_CollisionTest" delay="0" conditionEdge="rising">
+          <ByValueCondition>
+            <ParameterCondition parameterRef="" value="" rule="lessThan" />
+          </ByValueCondition>
+        </Condition>
+        <Condition name="criteria_DrivenDistanceTest" delay="0" conditionEdge="rising">
+          <ByValueCondition>
+            <ParameterCondition parameterRef="distance_success" value="100" rule="lessThan" />
+          </ByValueCondition>
+        </Condition>
+      </ConditionGroup>
+    </StopTrigger>
+  </Storyboard>
+</OpenSCENARIO>

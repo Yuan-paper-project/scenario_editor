@@ -1,0 +1,23 @@
+<?xml version='1.0' encoding='utf-8'?>
+<routes>
+  <route id="0" town="Town01">
+    <waypoint x="29.379" y="-2.026" z="0.2" pitch="0.0" roll="0.0" yaw="1" />
+    <waypoint x="36.1" y="-2.1" z="0.2" pitch="0.0" roll="0.0" yaw="1" />
+    <waypoint x="40.4" y="-2.3" z="0.2" pitch="0.0" roll="0.0" yaw="1" />
+    <waypoint x="47.1" y="-2.3" z="0.2" pitch="0.0" roll="0.0" yaw="1" />
+    <waypoint x="52.4" y="-2.1" z="0.2" pitch="0.0" roll="0.0" yaw="1" />
+    <waypoint x="59.6" y="-2.3" z="0.2" pitch="0.0" roll="0.0" yaw="1" />
+    <waypoint x="66.1" y="-2.1" z="0.2" pitch="0.0" roll="0.0" yaw="1" />
+    <waypoint x="73.9" y="-2.1" z="0.2" pitch="0.0" roll="0.0" yaw="1" />
+    <waypoint x="80.4" y="-1.5" z="0.2" pitch="0.0" roll="0.0" yaw="1" />
+    <waypoint x="84.9" y="-0.9" z="0.2" pitch="0.0" roll="0.0" yaw="1" />
+    <waypoint x="89.4" y="2.2" z="0.2" pitch="0.0" roll="0.0" yaw="1" />
+    <waypoint x="91.8" y="5.3" z="0.2" pitch="0.0" roll="0.0" yaw="1" />
+    <waypoint x="91.8" y="11.6" z="0.2" pitch="0.0" roll="0.0" yaw="1" />
+    <waypoint x="92.5" y="16.3" z="0.2" pitch="0.0" roll="0.0" yaw="1" />
+    <waypoint x="91.6" y="23.2" z="0.2" pitch="0.0" roll="0.0" yaw="1" />
+    <waypoint x="92.7" y="30" z="0.2" pitch="0.0" roll="0.0" yaw="1" />
+    <waypoint x="92.5" y="34.7" z="0.2" pitch="0.0" roll="0.0" yaw="1" />
+    <waypoint x="92.3" y="39.4" z="0.2" pitch="0.0" roll="0.0" yaw="1" />
+  </route>
+</routes>

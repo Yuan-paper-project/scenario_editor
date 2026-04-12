@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenSCENARIO Editor</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<!-- ═══════════════════════════ HEADER ════════════════════════════════ -->
+<header id="app-header">
+  <div class="header-left">
+    <span class="app-title">OpenSCENARIO Editor</span>
+    <select id="map-select" title="Select CARLA town map">
+      <option value="">— Select Map —</option>
+    </select>
+    <span id="map-status" class="status-badge">No map loaded</span>
+    <div id="layer-toggles" class="layer-toggles hidden">
+      <label class="layer-toggle" title="Show/hide crosswalks">
+        <input type="checkbox" id="toggle-crosswalks" checked>
+        <span class="layer-toggle-icon">&#9618;</span> Crosswalks
+      </label>
+      <label class="layer-toggle" title="Show/hide traffic lights">
+        <input type="checkbox" id="toggle-trafficlights" checked>
+        <span class="layer-toggle-icon" style="color:#ff3333;">&#9679;</span> Lights
+      </label>
+      <label class="layer-toggle" title="Show/hide spawn points">
+        <input type="checkbox" id="toggle-spawns" checked>
+        <span class="layer-toggle-icon" style="color:rgba(255,255,255,.5);">&#8226;</span> Spawns
+      </label>
+      <label class="layer-toggle" title="Show/hide lane center lines">
+        <input type="checkbox" id="toggle-markings" checked>
+        <span class="layer-toggle-icon" style="color:#ffd250;">&#8212;</span> Markings
+      </label>
+      <label class="layer-toggle" title="Show/hide road direction arrows">
+        <input type="checkbox" id="toggle-roaddir" checked>
+        <span class="layer-toggle-icon" style="color:rgba(255,255,255,.5);">&#9654;</span> Direction
+      </label>
+    </div>
+  </div>
+  <div class="header-right">
+    <button id="btn-save"   class="btn btn-secondary" title="Save scenario as JSON">Save</button>
+    <label  id="btn-load-label" class="btn btn-secondary" title="Load scenario from JSON">
+      Load <input type="file" id="btn-load-input" accept=".json" style="display:none">
+    </label>
+    <button id="btn-export" class="btn btn-primary"   title="Export as OpenSCENARIO .xosc">Export .xosc</button>
+    <button id="btn-export-route" class="btn btn-secondary" title="Export ego route as XML (for Autoware/CARLA planner)">Export Route</button>
+  </div>
+</header>
+
+<!-- ═══════════════════════════ MAIN AREA ══════════════════════════════ -->
+<div id="main-area">
+
+  <!-- ── LEFT TOOLBAR ── -->
+  <aside id="toolbar">
+    <div class="toolbar-section-label">EGO</div>
+    <button class="tool-btn" data-tool="ego"         title="Place Ego Vehicle (AV under test)">
+      <svg viewBox="0 0 32 32"><rect x="6" y="11" width="20" height="11" rx="2" fill="#4488ff"/><rect x="9" y="8" width="14" height="7" rx="1" fill="#6aacff"/><circle cx="10" cy="23" r="3" fill="#222"/><circle cx="22" cy="23" r="3" fill="#222"/></svg>
+      <span>Ego</span>
+    </button>
+
+    <div class="toolbar-section-label">VEHICLES</div>
+    <button class="tool-btn" data-tool="car"         title="Place NPC Car">
+      <svg viewBox="0 0 32 32"><rect x="6" y="11" width="20" height="11" rx="2" fill="#ff9933"/><rect x="9" y="8" width="14" height="7" rx="1" fill="#ffbb66"/><circle cx="10" cy="23" r="3" fill="#222"/><circle cx="22" cy="23" r="3" fill="#222"/></svg>
+      <span>Car</span>
+    </button>
+    <button class="tool-btn" data-tool="truck"       title="Place NPC Truck">
+      <svg viewBox="0 0 32 32"><rect x="4" y="10" width="22" height="13" rx="2" fill="#cc5522"/><rect x="4" y="7" width="10" height="8" rx="1" fill="#dd7744"/><circle cx="9" cy="24" r="3" fill="#222"/><circle cx="22" cy="24" r="3" fill="#222"/></svg>
+      <span>Truck</span>
+    </button>
+    <button class="tool-btn" data-tool="bus"         title="Place NPC Bus">
+      <svg viewBox="0 0 32 32"><rect x="4" y="9" width="24" height="14" rx="2" fill="#ddaa00"/><rect x="6" y="6" width="20" height="7" rx="1" fill="#ffcc33"/><circle cx="9" cy="24" r="3" fill="#222"/><circle cx="23" cy="24" r="3" fill="#222"/></svg>
+      <span>Bus</span>
+    </button>
+    <button class="tool-btn" data-tool="motorcycle"  title="Place NPC Motorcycle">
+      <svg viewBox="0 0 32 32"><ellipse cx="10" cy="22" rx="4" ry="4" fill="none" stroke="#ff7755" stroke-width="2"/><ellipse cx="22" cy="22" rx="4" ry="4" fill="none" stroke="#ff7755" stroke-width="2"/><line x1="10" y1="22" x2="22" y2="22" stroke="#ff7755" stroke-width="2"/><rect x="13" y="14" width="6" height="8" rx="1" fill="#ff7755"/></svg>
+      <span>Moto</span>
+    </button>
+
+    <div class="toolbar-section-label">PEOPLE</div>
+    <button class="tool-btn" data-tool="pedestrian"  title="Place Pedestrian">
+      <svg viewBox="0 0 32 32"><circle cx="16" cy="9" r="4" fill="#cc66cc"/><line x1="16" y1="13" x2="16" y2="22" stroke="#cc66cc" stroke-width="2"/><line x1="10" y1="17" x2="22" y2="17" stroke="#cc66cc" stroke-width="2"/><line x1="16" y1="22" x2="11" y2="28" stroke="#cc66cc" stroke-width="2"/><line x1="16" y1="22" x2="21" y2="28" stroke="#cc66cc" stroke-width="2"/></svg>
+      <span>Pedestrian</span>
+    </button>
+    <button class="tool-btn" data-tool="cyclist"     title="Place Cyclist">
+      <svg viewBox="0 0 32 32"><circle cx="10" cy="22" r="5" fill="none" stroke="#33bb88" stroke-width="1.5"/><circle cx="22" cy="22" r="5" fill="none" stroke="#33bb88" stroke-width="1.5"/><polyline points="10,22 16,14 22,22" fill="none" stroke="#33bb88" stroke-width="1.5"/><line x1="16" y1="14" x2="16" y2="9" stroke="#33bb88" stroke-width="1.5"/><circle cx="16" cy="7" r="2.5" fill="#33bb88"/></svg>
+      <span>Cyclist</span>
+    </button>
+
+    <div class="toolbar-section-label">TOOLS</div>
+    <button class="tool-btn" data-tool="ruler"       title="Measure distance (R)">
+      <svg viewBox="0 0 32 32">
+        <line x1="4" y1="28" x2="28" y2="4" stroke="#ffcc00" stroke-width="2"/>
+        <line x1="4" y1="28" x2="4" y2="22" stroke="#ffcc00" stroke-width="1.5"/>
+        <line x1="4" y1="28" x2="10" y2="28" stroke="#ffcc00" stroke-width="1.5"/>
+        <line x1="28" y1="4" x2="28" y2="10" stroke="#ffcc00" stroke-width="1.5"/>
+        <line x1="28" y1="4" x2="22" y2="4" stroke="#ffcc00" stroke-width="1.5"/>
+        <line x1="9" y1="23" x2="12" y2="20" stroke="#ffcc00" stroke-width="1" opacity="0.5"/>
+        <line x1="14" y1="18" x2="17" y2="15" stroke="#ffcc00" stroke-width="1" opacity="0.5"/>
+        <line x1="19" y1="13" x2="22" y2="10" stroke="#ffcc00" stroke-width="1" opacity="0.5"/>
+      </svg>
+      <span>Ruler</span>
+    </button>
+
+  </aside>
+
+  <!-- ── MAP CANVAS ── -->
+  <main id="map-container">
+    <div id="map-overlay-msg">Select a map from the dropdown above to begin</div>
+    <svg id="map-svg" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="arrow-ego" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+          <polygon points="0,0 6,3 0,6" fill="#4488ff"/>
+        </marker>
+        <marker id="arrow-npc" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+          <polygon points="0,0 6,3 0,6" fill="#ff9933"/>
+        </marker>
+        <!-- Trajectory path arrow (smaller than before) -->
+        <marker id="arrow-traj" markerWidth="4" markerHeight="4" refX="2" refY="2" orient="auto" markerUnits="strokeWidth">
+          <polygon points="0,0 4,2 0,4" fill="#00ccff" opacity="0.8"/>
+        </marker>
+        <!-- Road direction chevron (subtle, placed along centerlines) -->
+        <marker id="arrow-road" markerWidth="3" markerHeight="3" refX="1.5" refY="1.5" orient="auto" markerUnits="strokeWidth">
+          <polygon points="0,0 3,1.5 0,3" fill="rgba(255,255,255,0.35)"/>
+        </marker>
+      </defs>
+      <!-- background fills the whole SVG viewBox before the world group -->
+      <rect id="map-background" fill="#2d5a2d"/>
+      <g id="world">
+        <g id="layer-roads"></g>
+        <g id="layer-markings"></g>
+        <g id="layer-spawns"></g>
+        <g id="layer-intersections"></g>
+        <g id="layer-trajectories"></g>
+        <g id="layer-actors"></g>
+      </g>
+    </svg>
+    <!-- Scale ruler -->
+    <div id="scale-ruler" class="scale-ruler">
+      <div class="scale-bar"><div class="scale-bar-fill"></div></div>
+      <span id="scale-label" class="scale-label">100 m</span>
+    </div>
+    <!-- Trajectory mode banner -->
+    <div id="traj-banner" class="traj-banner hidden">
+      Drawing path for <strong id="traj-banner-name"></strong> — click map to add waypoints &nbsp;
+      <button id="traj-done-btn" class="btn btn-small btn-primary">Done</button>
+      <button id="traj-undo-btn" class="btn btn-small btn-secondary">Undo</button>
+    </div>
+  </main>
+
+  <!-- ── RIGHT PROPERTIES PANEL ── -->
+  <aside id="properties-panel">
+    <div id="props-empty" class="props-placeholder">
+      <p>Click an object<br>to edit its properties</p>
+    </div>
+    <div id="props-content" class="hidden">
+      <div class="props-header">
+        <span id="props-title">Object</span>
+        <button id="props-delete" class="btn btn-danger btn-small">Delete</button>
+      </div>
+
+      <div class="props-group">
+        <label>X (m)</label>
+        <input type="number" id="prop-x" step="0.1">
+        <label>Y (m)</label>
+        <input type="number" id="prop-y" step="0.1">
+        <label>Z (m)</label>
+        <input type="number" id="prop-z" step="0.1" value="0.2">
+        <label>Yaw (°)</label>
+        <input type="number" id="prop-yaw" step="1" min="-180" max="360">
+      </div>
+
+      <!-- NPC-only section (also shows trajectory for ego) -->
+      <div id="props-npc-section" class="hidden">
+        <div class="props-group-label">Behaviors (if no path drawn)</div>
+        <div id="behavior-checkboxes" class="behavior-list">
+          <label><input type="checkbox" name="behavior" value="constant_speed" checked> Constant Speed</label>
+          <label><input type="checkbox" name="behavior" value="accelerate"> Accelerate</label>
+          <label><input type="checkbox" name="behavior" value="decelerate"> Decelerate</label>
+          <label><input type="checkbox" name="behavior" value="stop"> Stop</label>
+          <label><input type="checkbox" name="behavior" value="change_lane_left"> Lane Change Left</label>
+          <label><input type="checkbox" name="behavior" value="change_lane_right"> Lane Change Right</label>
+        </div>
+
+        <div id="trigger-section">
+          <div class="props-group-label">Activation Trigger</div>
+          <div class="props-group">
+            <label>Distance (m)</label>
+            <input type="number" id="prop-trigger-dist" step="10" min="5" max="1000" value="400" title="NPC activates when ego is within this distance">
+          </div>
+          <div class="trigger-hint">NPC starts when ego is within this distance</div>
+        </div>
+
+        <div class="props-group-label">Trajectory Path</div>
+        <div id="ego-route-hint" class="trigger-hint hidden">Ego route waypoints for Autoware/CARLA planner</div>
+        <div class="traj-controls">
+          <button id="btn-draw-path"   class="btn btn-secondary btn-small">Draw Path</button>
+          <button id="btn-clear-path"  class="btn btn-danger    btn-small">Clear Path</button>
+          <button id="btn-toggle-path" class="btn btn-secondary btn-small" title="Show/hide this actor's path on map">Hide Path</button>
+        </div>
+        <div id="waypoint-list" class="waypoint-list"></div>
+      </div>
+    </div>
+  </aside>
+
+</div><!-- /#main-area -->
+
+<!-- ═══════════════════════════ BOTTOM WEATHER BAR ════════════════════ -->
+<footer id="weather-bar">
+  <div class="weather-inner">
+    <div class="weather-item">
+      <label>Time</label>
+      <select id="w-time">
+        <option value="daytime">Daytime</option>
+        <option value="morning">Morning</option>
+        <option value="noon">Noon</option>
+        <option value="afternoon">Afternoon</option>
+        <option value="dusk">Dusk</option>
+        <option value="nighttime">Night</option>
+      </select>
+    </div>
+    <div class="weather-item">
+      <label>Fog <span class="w-val" id="wv-fog">0.0</span></label>
+      <input type="range" id="w-fog" min="0" max="1" step="0.05" value="0">
+    </div>
+    <div class="weather-item">
+      <label>Rain <span class="w-val" id="wv-rainy">0.0</span></label>
+      <input type="range" id="w-rainy" min="0" max="1" step="0.05" value="0">
+    </div>
+    <div class="weather-item">
+      <label>Cloud <span class="w-val" id="wv-cloudy">0.0</span></label>
+      <input type="range" id="w-cloudy" min="0" max="1" step="0.05" value="0">
+    </div>
+    <div class="weather-item">
+      <label>Sun <span class="w-val" id="wv-sunny">0.0</span></label>
+      <input type="range" id="w-sunny" min="0" max="1" step="0.05" value="0">
+    </div>
+    <div class="weather-item">
+      <label>Wet <span class="w-val" id="wv-wet_road">0.0</span></label>
+      <input type="range" id="w-wet_road" min="0" max="1" step="0.05" value="0">
+    </div>
+    <div class="weather-item">
+      <label>Snow <span class="w-val" id="wv-snowy">0.0</span></label>
+      <input type="range" id="w-snowy" min="0" max="1" step="0.05" value="0">
+    </div>
+    <div class="weather-item">
+      <label>Dust <span class="w-val" id="wv-dust_storm">0.0</span></label>
+      <input type="range" id="w-dust_storm" min="0" max="1" step="0.05" value="0">
+    </div>
+  </div>
+</footer>
+
+<!-- ── Toast container ── -->
+<div id="toast-container"></div>
+
+<!-- ── Keyboard shortcuts overlay ── -->
+<div id="shortcuts-overlay" class="hidden">
+  <div class="shortcuts-card">
+    <h2>Keyboard Shortcuts</h2>
+    <div class="shortcut-row"><span>Cancel tool / trajectory</span><span class="shortcut-key">Esc</span></div>
+    <div class="shortcut-row"><span>Delete selected actor</span><span class="shortcut-key">Del</span></div>
+    <div class="shortcut-row"><span>Undo last delete</span><span class="shortcut-key">Ctrl+Z</span></div>
+    <div class="shortcut-row"><span>Ruler (measure distance)</span><span class="shortcut-key">R</span></div>
+    <div class="shortcut-row"><span>Clear all measurements</span><span class="shortcut-key">Shift+R</span></div>
+    <div class="shortcut-row"><span>Show this help</span><span class="shortcut-key">?</span></div>
+    <div class="shortcut-row"><span>Pan the map</span><span>Click + drag background</span></div>
+    <div class="shortcut-row"><span>Zoom in / out</span><span>Scroll wheel</span></div>
+    <div class="shortcut-row"><span>Rotate actor</span><span>Drag yaw arrow</span></div>
+    <p class="close-hint">Press <span class="shortcut-key">Esc</span> or <span class="shortcut-key">?</span> to close</p>
+  </div>
+</div>
+
+<!-- ── Confirm dialog ── -->
+<div id="confirm-overlay" class="hidden">
+  <div class="confirm-card">
+    <p id="confirm-message">Are you sure?</p>
+    <div class="confirm-actions">
+      <button id="confirm-cancel" class="btn btn-secondary">Cancel</button>
+      <button id="confirm-ok" class="btn btn-danger">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── JS modules (load order matters) ── -->
+<script src="/static/js/app.js"></script>
+<script src="/static/js/api.js"></script>
+<script src="/static/js/mapView.js"></script>
+<script src="/static/js/toolbar.js"></script>
+<script src="/static/js/objects.js"></script>
+<script src="/static/js/properties.js"></script>
+<script src="/static/js/weather.js"></script>
+<script src="/static/js/scenarioIO.js"></script>
+<script src="/static/js/simulate.js"></script>
+
+</body>
+</html>
