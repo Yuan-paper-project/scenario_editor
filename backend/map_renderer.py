@@ -13,23 +13,16 @@ from pathlib import Path
 
 # ── Map file paths ─────────────────────────────────────────────────────────────
 
-_LLMGEN   = Path("/home/dellpro2/CC/llm-scenario-gen")
-_VEC_MAPS = Path("/home/dellpro2/CC/map_data/vector_maps/xodr")
+_MAPS_DIR = Path(__file__).resolve().parent.parent / "maps"
 
 XODR_PATHS: dict[str, Path] = {
-    "Town01":   _LLMGEN / "maps/Town01/Town01.xodr",
-    "Town02":   _LLMGEN / "maps/Town02/Town02.xodr",
-    "Town03":   _LLMGEN / "maps/Town03/Town03.xodr",
-    "Town04":   _LLMGEN / "maps/Town04/Town04.xodr",
-    "Town05":   _LLMGEN / "maps/Town05/Town05.xodr",
-    "Town06":   _LLMGEN / "maps/Town06/Town06.xodr",
-    "Town07":   _LLMGEN / "maps/Town07/Town07.xodr",
-    "Town10":   _LLMGEN / "maps/Town10/Town10.xodr",
-    "Town10HD": _VEC_MAPS / "Town10HD.xodr",
+    t: _MAPS_DIR / t / f"{t}.xodr"
+    for t in ["Town01", "Town02", "Town03", "Town04", "Town05",
+              "Town06", "Town07", "Town10", "Town10HD"]
 }
 
 THUMBNAIL_PATHS: dict[str, Path] = {
-    t: _LLMGEN / f"maps/{t}/{t}.jpg"
+    t: _MAPS_DIR / t / f"{t}.jpg"
     for t in ["Town01", "Town02", "Town03", "Town04", "Town05", "Town06", "Town07", "Town10"]
 }
 
