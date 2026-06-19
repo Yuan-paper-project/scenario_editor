@@ -44,7 +44,7 @@ scenario_editor/
 └── example/               Sample scenario files (Town01)
 ```
 
-The backend parses CARLA's OpenDRIVE maps into JSON geometry and delegates `.xosc` generation to the `llm-scenario-gen` library. The frontend is a zero-dependency single-page app — no Node.js, no bundler, just plain JavaScript modules served as static files.
+The backend parses CARLA's OpenDRIVE maps into JSON geometry and delegates `.xosc` generation to the [`llm-scenario-gen`](../llm-scenario-gen/) library — the sibling repo that also powers LLM-driven scenario generation. This editor is the manual/interactive counterpart; both share the same vehicle catalog and export logic. The frontend is a zero-dependency single-page app — no Node.js, no bundler, just plain JavaScript modules served as static files.
 
 ---
 
