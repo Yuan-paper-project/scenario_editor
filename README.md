@@ -137,3 +137,9 @@ Maps are auto-discovered from the CARLA OpenDRIVE directory and pre-cached at se
 | Map Format | OpenDRIVE (`.xodr`) |
 | Export Format | OpenSCENARIO 1.0 (`.xosc`) |
 | Simulator | CARLA |
+
+---
+
+## License
+
+Licensed under the [Apache License 2.0](LICENSE). Copyright © 2026 yuangao-tum.
