@@ -24,13 +24,13 @@
 
   function _validateScenario() {
     const warnings = [];
-    if (!AppState.map) warnings.push('No map selected');
-    if (!AppState.ego) return { errors: ['Place an Ego vehicle before exporting.'], warnings };
+    if (!AppState.map) warnings.push('Keine Karte ausgewählt');
+    if (!AppState.ego) return { errors: ['Bitte zuerst ein Ego-Fahrzeug platzieren.'], warnings };
 
     for (const npc of AppState.npcs) {
       const label = `${npc.type.toUpperCase()} (${npc.id})`;
       if ((!npc.behaviors || npc.behaviors.length === 0) && (!npc.trajectory || npc.trajectory.length < 2)) {
-        warnings.push(`${label} has no behaviors and no trajectory`);
+        warnings.push(`${label} hat kein Verhalten und keine Trajektorie`);
       }
     }
     return { errors: [], warnings };
@@ -38,7 +38,7 @@
 
   function buildScenarioParams() {
     if (!AppState.ego) {
-      throw new Error('Place an Ego vehicle before exporting.');
+      throw new Error('Bitte zuerst ein Ego-Fahrzeug platzieren.');
     }
     return {
       map:       AppState.map || 'Town01',
@@ -93,7 +93,7 @@
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const town = AppState.map || 'scenario';
     downloadBlob(blob, `${town}_scenario.json`);
-    Toast.success(`Scenario saved as ${town}_scenario.json`);
+    Toast.success(`Szenario gespeichert als ${town}_scenario.json`);
   });
 
   // ── Load from JSON ────────────────────────────────────────────────────────────
@@ -107,9 +107,9 @@
       AppState.loadJSON(data);
       e.target.value = '';
       const npcCount = (data.npcs || []).length;
-      Toast.success(`Loaded scenario: ${data.map || 'unknown map'}, ${npcCount} NPC${npcCount !== 1 ? 's' : ''}`);
+      Toast.success(`Szenario geladen: ${data.map || 'Karte unbekannt'}, ${npcCount} NPC${npcCount !== 1 ? 's' : ''}`);
     } catch (err) {
-      Toast.error(`Failed to load scenario: ${err.message}`);
+      Toast.error(`Szenario konnte nicht geladen werden: ${err.message}`);
       e.target.value = '';
     }
   });
@@ -134,15 +134,15 @@
     }
 
     btnExport.disabled   = true;
-    btnExport.textContent = 'Exporting\u2026';
+    btnExport.textContent = 'Exportiere\u2026';
 
     try {
       const blob = await Api.exportScenario(params);
       const town = AppState.map || 'scenario';
       downloadBlob(blob, `${town}_scenario.xosc`);
-      Toast.success(`Exported ${town}_scenario.xosc`);
+      Toast.success(`Exportiert: ${town}_scenario.xosc`);
     } catch (err) {
-      Toast.error(`Export failed: ${err.message}`);
+      Toast.error(`Export fehlgeschlagen: ${err.message}`);
     } finally {
       btnExport.disabled   = false;
       btnExport.textContent = 'Export .xosc';
@@ -153,12 +153,12 @@
 
   btnExportRoute.addEventListener('click', async () => {
     if (!AppState.ego) {
-      Toast.error('Place an Ego vehicle first.');
+      Toast.error('Bitte zuerst ein Ego-Fahrzeug platzieren.');
       return;
     }
     const egoTraj = AppState.ego.trajectory || [];
     if (egoTraj.length === 0) {
-      Toast.warn('No ego route drawn. Draw a path on the Ego vehicle first.');
+      Toast.warn('Keine Ego-Route gezeichnet. Zuerst einen Pfad für das Ego-Fahrzeug zeichnen.');
       return;
     }
 
@@ -166,18 +166,18 @@
     try { params = buildScenarioParams(); } catch (err) { Toast.error(err.message); return; }
 
     btnExportRoute.disabled    = true;
-    btnExportRoute.textContent = 'Exporting\u2026';
+    btnExportRoute.textContent = 'Exportiere\u2026';
 
     try {
       const blob = await Api.exportRoute(params);
       const town = AppState.map || 'scenario';
       downloadBlob(blob, `${town}_route.xml`);
-      Toast.success(`Exported ${town}_route.xml`);
+      Toast.success(`Exportiert: ${town}_route.xml`);
     } catch (err) {
-      Toast.error(`Route export failed: ${err.message}`);
+      Toast.error(`Routen-Export fehlgeschlagen: ${err.message}`);
     } finally {
       btnExportRoute.disabled    = false;
-      btnExportRoute.textContent = 'Export Route';
+      btnExportRoute.textContent = 'Route exportieren';
     }
   });
 })();

@@ -42,6 +42,17 @@
       }
       return res.blob();
     },
+
+    async uploadMap(file) {
+      const form = new FormData();
+      form.append('file', file, file.name);
+      const res = await fetch('/api/maps/upload', { method: 'POST', body: form });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(body.detail || `Upload failed: ${res.status}`);
+      }
+      return res.json();   // { town, roads }
+    },
   };
 
   window.Api = Api;

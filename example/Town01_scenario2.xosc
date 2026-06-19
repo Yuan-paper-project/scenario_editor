@@ -26,15 +26,21 @@
       </Vehicle>
     </ScenarioObject>
     <ScenarioObject name="adversary">
-      <Pedestrian model="walker.pedestrian.0001" mass="90" name="adversary" pedestrianCategory="pedestrian">
+      <Vehicle name="vehicle.carlamotors.carlacola" vehicleCategory="truck">
+        <ParameterDeclarations />
+        <Performance maxSpeed="69.444" maxAcceleration="200" maxDeceleration="10.0" />
         <BoundingBox>
-          <Center x="0.0" y="0.0" z="0.9" />
-          <Dimensions width="1.0" length="1.0" height="1.8" />
+          <Center x="1.5" y="0.0" z="0.9" />
+          <Dimensions width="2.1" length="4.5" height="1.8" />
         </BoundingBox>
+        <Axles>
+          <FrontAxle maxSteering="0.5" wheelDiameter="0.6" trackWidth="1.8" positionX="3.1" positionZ="0.3" />
+          <RearAxle maxSteering="0.0" wheelDiameter="0.6" trackWidth="1.8" positionX="0.0" positionZ="0.3" />
+        </Axles>
         <Properties>
           <Property name="type" value="simulation" />
         </Properties>
-      </Pedestrian>
+      </Vehicle>
     </ScenarioObject>
     <ScenarioObject name="adversary1">
       <Pedestrian model="walker.pedestrian.0001" mass="90" name="adversary1" pedestrianCategory="pedestrian">
@@ -48,16 +54,16 @@
       </Pedestrian>
     </ScenarioObject>
     <ScenarioObject name="adversary2">
-      <Vehicle name="vehicle.carlamotors.carlacola" vehicleCategory="truck">
+      <Vehicle name="vehicle.bh.crossbike" vehicleCategory="bicycle">
         <ParameterDeclarations />
-        <Performance maxSpeed="69.444" maxAcceleration="200" maxDeceleration="10.0" />
+        <Performance maxSpeed="10.0" maxAcceleration="5" maxDeceleration="5.0" />
         <BoundingBox>
-          <Center x="1.5" y="0.0" z="0.9" />
-          <Dimensions width="2.1" length="4.5" height="1.8" />
+          <Center x="0.5" y="0.0" z="0.9" />
+          <Dimensions width="0.6" length="1.7" height="1.2" />
         </BoundingBox>
         <Axles>
-          <FrontAxle maxSteering="0.5" wheelDiameter="0.6" trackWidth="1.8" positionX="3.1" positionZ="0.3" />
-          <RearAxle maxSteering="0.0" wheelDiameter="0.6" trackWidth="1.8" positionX="0.0" positionZ="0.3" />
+          <FrontAxle maxSteering="0.5" wheelDiameter="0.6" trackWidth="0.6" positionX="1.1" positionZ="0.3" />
+          <RearAxle maxSteering="0.0" wheelDiameter="0.6" trackWidth="0.6" positionX="0.0" positionZ="0.3" />
         </Axles>
         <Properties>
           <Property name="type" value="simulation" />
@@ -85,7 +91,7 @@
           <PrivateAction>
             <TeleportAction>
               <Position>
-                <WorldPosition x="29.379" y="-2.026" z="0.2" h="1" />
+                <WorldPosition x="27.7" y="1.8" z="0.2" h="-0.034907" />
               </Position>
             </TeleportAction>
           </PrivateAction>
@@ -113,27 +119,84 @@
           <PrivateAction>
             <TeleportAction>
               <Position>
-                <WorldPosition x="76.5" y="6.5" z="0.2" h="-91" />
+                <WorldPosition x="144.96" y="-2.046" z="0.2" h="3.141593" />
               </Position>
             </TeleportAction>
+          </PrivateAction>
+          <PrivateAction>
+            <ControllerAction>
+              <AssignControllerAction>
+                <Controller name="adversaryAgent">
+                  <Properties>
+                    <Property name="module" value="simple_vehicle_control" />
+                  </Properties>
+                </Controller>
+              </AssignControllerAction>
+              <OverrideControllerValueAction>
+                <Throttle value="0" active="false" />
+                <Brake value="0" active="false" />
+                <Clutch value="0" active="false" />
+                <ParkingBrake value="0" active="false" />
+                <SteeringWheel value="0" active="false" />
+                <Gear number="0" active="false" />
+              </OverrideControllerValueAction>
+            </ControllerAction>
           </PrivateAction>
         </Private>
         <Private entityRef="adversary1">
           <PrivateAction>
             <TeleportAction>
               <Position>
-                <WorldPosition x="83.9" y="14.8" z="0.2" h="0" />
+                <WorldPosition x="79" y="-6.1" z="0.2" h="0.855211" />
               </Position>
             </TeleportAction>
+          </PrivateAction>
+          <PrivateAction>
+            <ControllerAction>
+              <AssignControllerAction>
+                <Controller name="adversary1Agent">
+                  <Properties>
+                    <Property name="module" value="pedestrian_control" />
+                  </Properties>
+                </Controller>
+              </AssignControllerAction>
+              <OverrideControllerValueAction>
+                <Throttle value="0" active="false" />
+                <Brake value="0" active="false" />
+                <Clutch value="0" active="false" />
+                <ParkingBrake value="0" active="false" />
+                <SteeringWheel value="0" active="false" />
+                <Gear number="0" active="false" />
+              </OverrideControllerValueAction>
+            </ControllerAction>
           </PrivateAction>
         </Private>
         <Private entityRef="adversary2">
           <PrivateAction>
             <TeleportAction>
               <Position>
-                <WorldPosition x="144.96" y="1.954" z="0.2" h="-179" />
+                <WorldPosition x="68.6" y="1.6" z="0.2" h="0.034907" />
               </Position>
             </TeleportAction>
+          </PrivateAction>
+          <PrivateAction>
+            <ControllerAction>
+              <AssignControllerAction>
+                <Controller name="adversary2Agent">
+                  <Properties>
+                    <Property name="module" value="simple_vehicle_control" />
+                  </Properties>
+                </Controller>
+              </AssignControllerAction>
+              <OverrideControllerValueAction>
+                <Throttle value="0" active="false" />
+                <Brake value="0" active="false" />
+                <Clutch value="0" active="false" />
+                <ParkingBrake value="0" active="false" />
+                <SteeringWheel value="0" active="false" />
+                <Gear number="0" active="false" />
+              </OverrideControllerValueAction>
+            </ControllerAction>
           </PrivateAction>
         </Private>
       </Actions>
@@ -156,52 +219,107 @@
                           <Polyline>
                             <Vertex relativeTime="0.0">
                               <Position>
-                                <WorldPosition x="76.5" y="6.6" z="0.2" />
+                                <WorldPosition x="144.96" y="-2.046" z="0.2" />
                               </Position>
                             </Vertex>
-                            <Vertex relativeTime="0.421">
+                            <Vertex relativeTime="0.967">
                               <Position>
-                                <WorldPosition x="76.2" y="2.4" z="0.2" />
+                                <WorldPosition x="135.3" y="-2.4" z="0.2" />
                               </Position>
                             </Vertex>
-                            <Vertex relativeTime="0.703">
+                            <Vertex relativeTime="1.678">
                               <Position>
-                                <WorldPosition x="75.9" y="-0.4" z="0.2" />
+                                <WorldPosition x="128.2" y="-2.7" z="0.2" />
                               </Position>
                             </Vertex>
-                            <Vertex relativeTime="1.004">
+                            <Vertex relativeTime="2.609">
                               <Position>
-                                <WorldPosition x="76.2" y="-3.4" z="0.2" />
+                                <WorldPosition x="118.9" y="-2.3" z="0.2" />
                               </Position>
                             </Vertex>
-                            <Vertex relativeTime="1.254">
+                            <Vertex relativeTime="3.519">
                               <Position>
-                                <WorldPosition x="76.3" y="-5.9" z="0.2" />
+                                <WorldPosition x="109.8" y="-2.1" z="0.2" />
                               </Position>
                             </Vertex>
-                            <Vertex relativeTime="1.629">
+                            <Vertex relativeTime="4.18">
                               <Position>
-                                <WorldPosition x="80" y="-6.5" z="0.2" />
+                                <WorldPosition x="103.2" y="-1.8" z="0.2" />
                               </Position>
                             </Vertex>
-                            <Vertex relativeTime="2.249">
+                            <Vertex relativeTime="5.16">
                               <Position>
-                                <WorldPosition x="86.2" y="-6.5" z="0.2" />
+                                <WorldPosition x="93.4" y="-1.8" z="0.2" />
                               </Position>
                             </Vertex>
-                            <Vertex relativeTime="2.749">
+                            <Vertex relativeTime="5.583">
                               <Position>
-                                <WorldPosition x="91.2" y="-6.4" z="0.2" />
+                                <WorldPosition x="89.2" y="-1.3" z="0.2" />
                               </Position>
                             </Vertex>
-                            <Vertex relativeTime="3.189">
+                            <Vertex relativeTime="6.013">
                               <Position>
-                                <WorldPosition x="95.6" y="-6.5" z="0.2" />
+                                <WorldPosition x="89.3" y="3" z="0.2" />
                               </Position>
                             </Vertex>
-                            <Vertex relativeTime="3.639">
+                            <Vertex relativeTime="6.488">
                               <Position>
-                                <WorldPosition x="100.1" y="-6.6" z="0.2" />
+                                <WorldPosition x="88.6" y="7.7" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="7.008">
+                              <Position>
+                                <WorldPosition x="88.6" y="12.9" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="7.598">
+                              <Position>
+                                <WorldPosition x="88.6" y="18.8" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="8.041">
+                              <Position>
+                                <WorldPosition x="88.1" y="23.2" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="8.681">
+                              <Position>
+                                <WorldPosition x="88.1" y="29.6" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="9.241">
+                              <Position>
+                                <WorldPosition x="88.2" y="35.2" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="9.942">
+                              <Position>
+                                <WorldPosition x="88.6" y="42.2" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="10.682">
+                              <Position>
+                                <WorldPosition x="88.4" y="49.6" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="11.323">
+                              <Position>
+                                <WorldPosition x="88.7" y="56" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="11.807">
+                              <Position>
+                                <WorldPosition x="88.1" y="60.8" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="12.357">
+                              <Position>
+                                <WorldPosition x="88.2" y="66.3" z="0.2" />
+                              </Position>
+                            </Vertex>
+                            <Vertex relativeTime="12.948">
+                              <Position>
+                                <WorldPosition x="88.6" y="72.2" z="0.2" />
                               </Position>
                             </Vertex>
                           </Polyline>
@@ -220,7 +338,7 @@
                         <EntityRef entityRef="hero" />
                       </TriggeringEntities>
                       <EntityCondition>
-                        <RelativeDistanceCondition entityRef="adversary" relativeDistanceType="cartesianDistance" value="15.0" freespace="false" rule="lessThan" />
+                        <RelativeDistanceCondition entityRef="adversary" relativeDistanceType="cartesianDistance" value="100.0" freespace="false" rule="lessThan" />
                       </EntityCondition>
                     </ByEntityCondition>
                   </Condition>
@@ -253,7 +371,7 @@
                   <EntityRef entityRef="hero" />
                 </TriggeringEntities>
                 <EntityCondition>
-                  <TraveledDistanceCondition value="500.0" />
+                  <TraveledDistanceCondition value="200.0" />
                 </EntityCondition>
               </ByEntityCondition>
             </Condition>
@@ -277,57 +395,47 @@
                           <Polyline>
                             <Vertex relativeTime="0.0">
                               <Position>
-                                <WorldPosition x="83.9" y="14.8" z="0.2" />
+                                <WorldPosition x="79.4" y="-4.2" z="0.2" />
                               </Position>
                             </Vertex>
-                            <Vertex relativeTime="0.44">
+                            <Vertex relativeTime="5.022">
                               <Position>
-                                <WorldPosition x="88.3" y="14.6" z="0.2" />
+                                <WorldPosition x="80.5" y="0.7" z="0.2" />
                               </Position>
                             </Vertex>
-                            <Vertex relativeTime="0.631">
+                            <Vertex relativeTime="9.298">
                               <Position>
-                                <WorldPosition x="90.2" y="14.8" z="0.2" />
+                                <WorldPosition x="81.3" y="4.9" z="0.2" />
                               </Position>
                             </Vertex>
-                            <Vertex relativeTime="0.962">
+                            <Vertex relativeTime="11.8">
                               <Position>
-                                <WorldPosition x="93.5" y="15" z="0.2" />
+                                <WorldPosition x="81.4" y="7.4" z="0.2" />
                               </Position>
                             </Vertex>
-                            <Vertex relativeTime="1.212">
+                            <Vertex relativeTime="14.589">
                               <Position>
-                                <WorldPosition x="96" y="15" z="0.2" />
+                                <WorldPosition x="84.1" y="8.1" z="0.2" />
                               </Position>
                             </Vertex>
-                            <Vertex relativeTime="1.355">
+                            <Vertex relativeTime="19.044">
                               <Position>
-                                <WorldPosition x="96.3" y="13.6" z="0.2" />
+                                <WorldPosition x="84.8" y="12.5" z="0.2" />
                               </Position>
                             </Vertex>
-                            <Vertex relativeTime="1.638">
+                            <Vertex relativeTime="22.645">
                               <Position>
-                                <WorldPosition x="95.9" y="10.8" z="0.2" />
+                                <WorldPosition x="84.7" y="16.1" z="0.2" />
                               </Position>
                             </Vertex>
-                            <Vertex relativeTime="1.902">
+                            <Vertex relativeTime="26.068">
                               <Position>
-                                <WorldPosition x="97" y="8.4" z="0.2" />
+                                <WorldPosition x="84.3" y="19.5" z="0.2" />
                               </Position>
                             </Vertex>
-                            <Vertex relativeTime="2.157">
+                            <Vertex relativeTime="29.505">
                               <Position>
-                                <WorldPosition x="98.7" y="6.5" z="0.2" />
-                              </Position>
-                            </Vertex>
-                            <Vertex relativeTime="2.557">
-                              <Position>
-                                <WorldPosition x="102.7" y="6.4" z="0.2" />
-                              </Position>
-                            </Vertex>
-                            <Vertex relativeTime="2.967">
-                              <Position>
-                                <WorldPosition x="106.8" y="6.4" z="0.2" />
+                                <WorldPosition x="84.8" y="22.9" z="0.2" />
                               </Position>
                             </Vertex>
                           </Polyline>
@@ -346,7 +454,7 @@
                         <EntityRef entityRef="hero" />
                       </TriggeringEntities>
                       <EntityCondition>
-                        <RelativeDistanceCondition entityRef="adversary1" relativeDistanceType="cartesianDistance" value="15.0" freespace="false" rule="lessThan" />
+                        <RelativeDistanceCondition entityRef="adversary1" relativeDistanceType="cartesianDistance" value="38.0" freespace="false" rule="lessThan" />
                       </EntityCondition>
                     </ByEntityCondition>
                   </Condition>
@@ -379,7 +487,7 @@
                   <EntityRef entityRef="hero" />
                 </TriggeringEntities>
                 <EntityCondition>
-                  <TraveledDistanceCondition value="500.0" />
+                  <TraveledDistanceCondition value="200.0" />
                 </EntityCondition>
               </ByEntityCondition>
             </Condition>
@@ -403,82 +511,47 @@
                           <Polyline>
                             <Vertex relativeTime="0.0">
                               <Position>
-                                <WorldPosition x="144.96" y="1.954" z="0.2" />
+                                <WorldPosition x="68.6" y="1.6" z="0.2" />
                               </Position>
                             </Vertex>
-                            <Vertex relativeTime="0.866">
+                            <Vertex relativeTime="3.057">
                               <Position>
-                                <WorldPosition x="136.3" y="1.7" z="0.2" />
+                                <WorldPosition x="74.7" y="2" z="0.2" />
                               </Position>
                             </Vertex>
-                            <Vertex relativeTime="1.736">
+                            <Vertex relativeTime="5.857">
                               <Position>
-                                <WorldPosition x="127.6" y="1.5" z="0.2" />
+                                <WorldPosition x="80.3" y="2" z="0.2" />
                               </Position>
                             </Vertex>
-                            <Vertex relativeTime="2.686">
+                            <Vertex relativeTime="9.463">
                               <Position>
-                                <WorldPosition x="118.1" y="1.7" z="0.2" />
+                                <WorldPosition x="87.5" y="1.6" z="0.2" />
                               </Position>
                             </Vertex>
-                            <Vertex relativeTime="3.526">
+                            <Vertex relativeTime="12.413">
                               <Position>
-                                <WorldPosition x="109.7" y="1.9" z="0.2" />
+                                <WorldPosition x="93.4" y="1.6" z="0.2" />
                               </Position>
                             </Vertex>
-                            <Vertex relativeTime="4.417">
+                            <Vertex relativeTime="16.368">
                               <Position>
-                                <WorldPosition x="100.8" y="1.5" z="0.2" />
+                                <WorldPosition x="101.3" y="2" z="0.2" />
                               </Position>
                             </Vertex>
-                            <Vertex relativeTime="5.031">
+                            <Vertex relativeTime="19.17">
                               <Position>
-                                <WorldPosition x="94.7" y="2.2" z="0.2" />
+                                <WorldPosition x="106.9" y="2.2" z="0.2" />
                               </Position>
                             </Vertex>
-                            <Vertex relativeTime="5.431">
+                            <Vertex relativeTime="22.871">
                               <Position>
-                                <WorldPosition x="90.7" y="2.4" z="0.2" />
+                                <WorldPosition x="114.3" y="2" z="0.2" />
                               </Position>
                             </Vertex>
-                            <Vertex relativeTime="6.391">
+                            <Vertex relativeTime="26.021">
                               <Position>
-                                <WorldPosition x="81.1" y="2.4" z="0.2" />
-                              </Position>
-                            </Vertex>
-                            <Vertex relativeTime="7.041">
-                              <Position>
-                                <WorldPosition x="74.6" y="2.2" z="0.2" />
-                              </Position>
-                            </Vertex>
-                            <Vertex relativeTime="8.241">
-                              <Position>
-                                <WorldPosition x="62.6" y="2.2" z="0.2" />
-                              </Position>
-                            </Vertex>
-                            <Vertex relativeTime="9.482">
-                              <Position>
-                                <WorldPosition x="50.2" y="2.6" z="0.2" />
-                              </Position>
-                            </Vertex>
-                            <Vertex relativeTime="10.462">
-                              <Position>
-                                <WorldPosition x="40.4" y="2.5" z="0.2" />
-                              </Position>
-                            </Vertex>
-                            <Vertex relativeTime="11.176">
-                              <Position>
-                                <WorldPosition x="33.3" y="1.7" z="0.2" />
-                              </Position>
-                            </Vertex>
-                            <Vertex relativeTime="11.856">
-                              <Position>
-                                <WorldPosition x="26.5" y="1.6" z="0.2" />
-                              </Position>
-                            </Vertex>
-                            <Vertex relativeTime="12.306">
-                              <Position>
-                                <WorldPosition x="22" y="1.8" z="0.2" />
+                                <WorldPosition x="120.6" y="2.1" z="0.2" />
                               </Position>
                             </Vertex>
                           </Polyline>
@@ -497,7 +570,7 @@
                         <EntityRef entityRef="hero" />
                       </TriggeringEntities>
                       <EntityCondition>
-                        <RelativeDistanceCondition entityRef="adversary2" relativeDistanceType="cartesianDistance" value="100.0" freespace="false" rule="lessThan" />
+                        <RelativeDistanceCondition entityRef="adversary2" relativeDistanceType="cartesianDistance" value="400.0" freespace="false" rule="lessThan" />
                       </EntityCondition>
                     </ByEntityCondition>
                   </Condition>
@@ -530,7 +603,7 @@
                   <EntityRef entityRef="hero" />
                 </TriggeringEntities>
                 <EntityCondition>
-                  <TraveledDistanceCondition value="500.0" />
+                  <TraveledDistanceCondition value="200.0" />
                 </EntityCondition>
               </ByEntityCondition>
             </Condition>
@@ -540,6 +613,31 @@
     </Story>
     <StopTrigger>
       <ConditionGroup>
+        <Condition name="criteria_RunningStopTest" delay="0" conditionEdge="rising">
+          <ByValueCondition>
+            <ParameterCondition parameterRef="" value="" rule="lessThan" />
+          </ByValueCondition>
+        </Condition>
+        <Condition name="criteria_RunningRedLightTest" delay="0" conditionEdge="rising">
+          <ByValueCondition>
+            <ParameterCondition parameterRef="" value="" rule="lessThan" />
+          </ByValueCondition>
+        </Condition>
+        <Condition name="criteria_WrongLaneTest" delay="0" conditionEdge="rising">
+          <ByValueCondition>
+            <ParameterCondition parameterRef="" value="" rule="lessThan" />
+          </ByValueCondition>
+        </Condition>
+        <Condition name="criteria_OnSidewalkTest" delay="0" conditionEdge="rising">
+          <ByValueCondition>
+            <ParameterCondition parameterRef="" value="" rule="lessThan" />
+          </ByValueCondition>
+        </Condition>
+        <Condition name="criteria_KeepLaneTest" delay="0" conditionEdge="rising">
+          <ByValueCondition>
+            <ParameterCondition parameterRef="" value="" rule="lessThan" />
+          </ByValueCondition>
+        </Condition>
         <Condition name="criteria_CollisionTest" delay="0" conditionEdge="rising">
           <ByValueCondition>
             <ParameterCondition parameterRef="" value="" rule="lessThan" />

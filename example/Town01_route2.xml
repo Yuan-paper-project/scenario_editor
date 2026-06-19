@@ -1,0 +1,30 @@
+<?xml version='1.0' encoding='utf-8'?>
+<routes>
+  <route id="0" town="Town01">
+    <waypoint x="29.381" y="1.974" z="0.2" pitch="0.0" roll="0.0" yaw="0.96" />
+    <waypoint x="36.9" y="2.1" z="0.2" pitch="0.0" roll="0.0" yaw="-1.66" />
+    <waypoint x="43.8" y="1.9" z="0.2" pitch="0.0" roll="0.0" yaw="1.71" />
+    <waypoint x="50.5" y="2.1" z="0.2" pitch="0.0" roll="0.0" yaw="-3.47" />
+    <waypoint x="57.1" y="1.7" z="0.2" pitch="0.0" roll="0.0" yaw="2.54" />
+    <waypoint x="61.6" y="1.9" z="0.2" pitch="0.0" roll="0.0" yaw="-2.08" />
+    <waypoint x="67.1" y="1.7" z="0.2" pitch="0.0" roll="0.0" yaw="-3.27" />
+    <waypoint x="70.6" y="1.5" z="0.2" pitch="0.0" roll="0.0" yaw="-7.02" />
+    <waypoint x="77.1" y="0.7" z="0.2" pitch="0.0" roll="0.0" yaw="2.44" />
+    <waypoint x="81.8" y="0.9" z="0.2" pitch="0.0" roll="0.0" yaw="25.02" />
+    <waypoint x="86.3" y="3" z="0.2" pitch="0.0" roll="0.0" yaw="56.31" />
+    <waypoint x="87.9" y="5.4" z="0.2" pitch="0.0" roll="0.0" yaw="83.29" />
+    <waypoint x="88.5" y="10.5" z="0.2" pitch="0.0" roll="0.0" yaw="95.71" />
+    <waypoint x="87.9" y="16.5" z="0.2" pitch="0.0" roll="0.0" yaw="83.19" />
+    <waypoint x="88.7" y="23.2" z="0.2" pitch="0.0" roll="0.0" yaw="99.31" />
+    <waypoint x="87.7" y="29.3" z="0.2" pitch="0.0" roll="0.0" yaw="85.68" />
+    <waypoint x="88.1" y="34.6" z="0.2" pitch="0.0" roll="0.0" yaw="84.64" />
+    <waypoint x="88.7" y="41" z="0.2" pitch="0.0" roll="0.0" yaw="87.98" />
+    <waypoint x="89" y="49.5" z="0.2" pitch="0.0" roll="0.0" yaw="92.45" />
+    <waypoint x="88.7" y="56.5" z="0.2" pitch="0.0" roll="0.0" yaw="35.36" />
+    <waypoint x="91.8" y="58.7" z="0.2" pitch="0.0" roll="0.0" yaw="2.66" />
+    <waypoint x="100.4" y="59.1" z="0.2" pitch="0.0" roll="0.0" yaw="3.37" />
+    <waypoint x="110.6" y="59.7" z="0.2" pitch="0.0" roll="0.0" yaw="0" />
+    <waypoint x="122" y="59.7" z="0.2" pitch="0.0" roll="0.0" yaw="0.65" />
+    <waypoint x="130.8" y="59.8" z="0.2" pitch="0.0" roll="0.0" yaw="0.65" />
+  </route>
+</routes>

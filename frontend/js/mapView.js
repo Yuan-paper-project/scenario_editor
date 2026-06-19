@@ -125,7 +125,7 @@
     bgRect.setAttribute('y',      bounds.yMin - pad);
     bgRect.setAttribute('width',  w + pad*2);
     bgRect.setAttribute('height', h + pad*2);
-    bgRect.setAttribute('fill',   grassColor || '#2d5a2d');
+    bgRect.setAttribute('fill',   'transparent');
 
     // Reset pan/zoom so new map fills the view
     _pan  = { x: 0, y: 0 };
@@ -231,7 +231,7 @@
         const angle = Math.atan2(dy, dx) * 180 / Math.PI;
         // Small chevron triangle
         const arrow = _svgEl('polygon', {
-          points: '-2,0 2,-1.2 2,1.2',
+          points: '2,0 -2,-1.2 -2,1.2',
           fill: 'rgba(255,255,255,0.30)',
           transform: `translate(${mx.toFixed(1)},${my.toFixed(1)}) rotate(${angle.toFixed(1)})`,
         });

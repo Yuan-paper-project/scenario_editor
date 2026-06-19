@@ -14,17 +14,38 @@ from pathlib import Path
 # ── Map file paths ─────────────────────────────────────────────────────────────
 
 _MAPS_DIR = Path(__file__).resolve().parent.parent / "maps"
+_LLMGEN   = Path(__file__).resolve().parent.parent.parent / "llm-scenario-gen"
 
-XODR_PATHS: dict[str, Path] = {
-    t: _MAPS_DIR / t / f"{t}.xodr"
-    for t in ["Town01", "Town02", "Town03", "Town04", "Town05",
-              "Town06", "Town07", "Town10", "Town10HD"]
-}
+def _scan_xodr_paths(maps_dir: Path) -> dict[str, Path]:
+    """Scan maps/ for any subdirectory that contains a .xodr file."""
+    result = {}
+    if not maps_dir.exists():
+        return result
+    for sub in sorted(maps_dir.iterdir()):
+        if not sub.is_dir() or sub.name.startswith("_"):
+            continue
+        for xodr in sub.glob("*.xodr"):
+            result[sub.name] = xodr
+            break   # take the first .xodr found per folder
+    return result
 
-THUMBNAIL_PATHS: dict[str, Path] = {
-    t: _MAPS_DIR / t / f"{t}.jpg"
-    for t in ["Town01", "Town02", "Town03", "Town04", "Town05", "Town06", "Town07", "Town10"]
-}
+def _scan_thumbnail_paths(maps_dir: Path) -> dict[str, Path]:
+    """Scan maps/ for thumbnail images (.jpg or .png) per town folder."""
+    result = {}
+    if not maps_dir.exists():
+        return result
+    for sub in sorted(maps_dir.iterdir()):
+        if not sub.is_dir() or sub.name.startswith("_"):
+            continue
+        for ext in ("jpg", "jpeg", "png"):
+            thumb = sub / f"{sub.name}.{ext}"
+            if thumb.exists():
+                result[sub.name] = thumb
+                break
+    return result
+
+XODR_PATHS: dict[str, Path]      = _scan_xodr_paths(_MAPS_DIR)
+THUMBNAIL_PATHS: dict[str, Path] = _scan_thumbnail_paths(_MAPS_DIR)
 
 # ── Lane type colours (matched to SafetyPool Studio dark palette) ──────────────
 
@@ -316,7 +337,7 @@ def build_map_render_data(town_name: str, interval: float = 4.0) -> dict:
       "intersections": [...],                             # {id, cx, cy}
     }
     """
-    xodr_path = XODR_PATHS.get(town_name)
+    xodr_path = XODR_PATHS.get(town_name) or _scan_xodr_paths(_MAPS_DIR).get(town_name)
     if xodr_path is None or not xodr_path.exists():
         raise FileNotFoundError(f"No .xodr file found for town '{town_name}'")
 
@@ -414,6 +435,91 @@ def build_map_render_data(town_name: str, interval: float = 4.0) -> dict:
     }
 
 
+def build_map_render_data_from_path(xodr_path: Path, town_name: str, interval: float = 4.0) -> dict:
+    """
+    Same as build_map_render_data but works from an arbitrary .xodr file path
+    instead of the pre-registered XODR_PATHS dict. Used for user-uploaded maps.
+    """
+    if not xodr_path.exists():
+        raise FileNotFoundError(f"File not found: {xodr_path}")
+
+    tree = ET.parse(str(xodr_path))
+    root = tree.getroot()
+    header = root.find('header')
+
+    w = float(header.get('west',   -500)) if header is not None else -500
+    e = float(header.get('east',    500)) if header is not None else  500
+    s = float(header.get('south', -500)) if header is not None else -500
+    n = float(header.get('north',   500)) if header is not None else  500
+
+    bounds = {
+        'xMin': round(w, 2),
+        'xMax': round(e, 2),
+        'yMin': round(-n, 2),
+        'yMax': round(-s, 2),
+    }
+
+    roads_out = []
+    for road in root.findall('road'):
+        length = float(road.get('length', 0))
+        if length < 5.0:
+            continue
+        samples = _sample_geometry(road, interval)
+        if not samples:
+            continue
+        lane_defs = _get_lane_defs(road)
+        if not lane_defs:
+            continue
+
+        lanes_out = []
+        for ld in lane_defs:
+            poly  = _build_lane_polygon(samples, ld['inner'], ld['outer'], ld['side'])
+            color = LANE_COLORS.get(ld['type'], DEFAULT_LANE_COLOR)
+            lane_entry = {
+                'laneId':  ld['id'],
+                'type':    ld['type'],
+                'color':   color,
+                'polygon': poly,
+            }
+            if ld['type'] in ('driving', 'bidirectional'):
+                center_offset = (ld['inner'] + ld['outer']) / 2.0
+                sign = +1.0 if ld['side'] == 'L' else -1.0
+                lane_cl = []
+                for (px, py, ph, _s) in samples:
+                    perp = ph + sign * math.pi / 2.0
+                    cx = round(px + center_offset * math.cos(perp), 2)
+                    cy = round(-(py + center_offset * math.sin(perp)), 2)
+                    lane_cl.append([cx, cy])
+                if ld['side'] == 'L':
+                    lane_cl.reverse()
+                lane_entry['directionLine'] = lane_cl
+            lanes_out.append(lane_entry)
+
+        centreline = [[round(px, 2), round(-py, 2)] for (px, py, _ph, _s) in samples]
+        roads_out.append({
+            'id':         road.get('id'),
+            'junction':   road.get('junction', '-1'),
+            'length':     round(length, 1),
+            'lanes':      lanes_out,
+            'centerline': centreline,
+        })
+
+    spawn_points, intersections = _load_spawn_points(str(xodr_path))
+    traffic_lights = _extract_traffic_lights(root)
+    crosswalks     = _extract_crosswalks(root)
+
+    return {
+        'town':          town_name,
+        'bounds':        bounds,
+        'roads':         roads_out,
+        'spawnPoints':   spawn_points,
+        'intersections': intersections,
+        'trafficLights': traffic_lights,
+        'crosswalks':    crosswalks,
+        'grassColor':    GRASS_COLOR,
+    }
+
+
 def list_available_towns() -> list[str]:
-    """Return names of towns whose .xodr files actually exist on disk."""
-    return [name for name, path in XODR_PATHS.items() if path.exists()]
+    """Return names of all towns discovered on disk (live scan)."""
+    return sorted(_scan_xodr_paths(_MAPS_DIR).keys())

@@ -1,19 +1,19 @@
 /* ════════════════════════════════════════════════════════
-   OpenSCENARIO Editor — Dark UI Theme
+   OpenSCENARIO Editor — Light UI Theme
    ════════════════════════════════════════════════════════ */
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg:          #1a1e26;
-  --panel:       #242936;
-  --panel2:      #2e3549;
-  --border:      #3a4255;
-  --accent:      #4488ff;
-  --accent2:     #ff9933;
-  --danger:      #cc3333;
-  --text:        #d8dde8;
-  --text-dim:    #7a8499;
+  --bg:          #f4f6fa;
+  --panel:       #ffffff;
+  --panel2:      #eef1f7;
+  --border:      #d0d6e2;
+  --accent:      #2a6fdb;
+  --accent2:     #e07a00;
+  --danger:      #c0392b;
+  --text:        #1a1e2e;
+  --text-dim:    #6b7590;
   --header-h:    48px;
   --toolbar-w:   78px;
   --props-w:     270px;
@@ -102,7 +102,7 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
 
 /* ── Map container ───────────────────────────────────────── */
 #map-container {
-  flex: 1; position: relative; overflow: hidden; background: #111;
+  flex: 1; position: relative; overflow: hidden; background: #e8edf2;
 }
 #map-svg {
   width: 100%; height: 100%; display: block; cursor: default;
@@ -123,18 +123,18 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
   pointer-events: none; user-select: none;
 }
 .scale-bar {
-  height: 6px; background: rgba(255,255,255,0.15);
+  height: 6px; background: rgba(0,0,0,0.12);
   border-radius: 1px; position: relative;
-  border-left: 2px solid rgba(255,255,255,0.7);
-  border-right: 2px solid rgba(255,255,255,0.7);
+  border-left: 2px solid rgba(0,0,0,0.5);
+  border-right: 2px solid rgba(0,0,0,0.5);
 }
 .scale-bar-fill {
-  height: 100%; background: rgba(255,255,255,0.5);
+  height: 100%; background: rgba(0,0,0,0.35);
   border-radius: 1px;
 }
 .scale-label {
-  font-size: 11px; color: rgba(255,255,255,0.75);
-  font-weight: 600; text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+  font-size: 11px; color: #333;
+  font-weight: 600; text-shadow: 0 1px 2px rgba(255,255,255,0.8);
 }
 
 /* Trajectory drawing banner */
@@ -245,7 +245,8 @@ input[type="range"] {
 }
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none; width: 12px; height: 12px;
-  background: var(--accent); border-radius: 50%;
+  background: var(--accent); border-radius: 50%; border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0,0,0,.2);
 }
 
 /* ── SVG actor styles ────────────────────────────────────── */
@@ -424,8 +425,138 @@ body.simulating #btn-export,
 body.simulating #btn-export-route { opacity: 0.4; pointer-events: none; }
 body.simulating #properties-panel { opacity: 0.5; pointer-events: none; }
 
+/* ── Karten-Import Drag-and-drop Overlay ─────────────────── */
+.map-drop-overlay {
+  position: absolute; inset: 0; z-index: 500;
+  background: rgba(42, 111, 219, 0.18);
+  border: 3px dashed var(--accent);
+  border-radius: 4px;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none;
+  transition: opacity .15s;
+}
+.map-drop-overlay.hidden { display: none !important; }
+.map-drop-inner {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  background: white; border-radius: 12px; padding: 24px 36px;
+  box-shadow: 0 4px 24px rgba(42,111,219,.25);
+}
+.map-drop-icon  { font-size: 40px; color: var(--accent); line-height: 1; }
+.map-drop-text  { font-size: 16px; font-weight: 700; color: var(--text); }
+.map-drop-sub   { font-size: 12px; color: var(--text-dim); }
+
 /* ── Utility ──────────────────────────────────────────────── */
 .hidden { display: none !important; }
+
+/* ══════════════════════ WILLKOMMENS-MODAL ═══════════════════════════ */
+
+.welcome-overlay {
+  position: fixed; inset: 0; z-index: 20000;
+  background: rgba(0,0,0,.75); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+}
+.welcome-overlay.hidden { display: none !important; }
+
+.welcome-card {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 16px; padding: 28px 32px;
+  width: 100%; max-width: 680px; max-height: 92vh;
+  overflow-y: auto;
+  box-shadow: 0 16px 56px rgba(0,0,0,.7);
+}
+
+.welcome-header {
+  display: flex; align-items: center; gap: 16px; margin-bottom: 18px;
+}
+.welcome-logo svg { flex-shrink: 0; }
+.welcome-title {
+  font-size: 22px; font-weight: 800; color: var(--accent); margin: 0 0 4px;
+}
+.welcome-subtitle {
+  font-size: 13px; color: var(--text-dim); margin: 0;
+}
+
+.welcome-intro {
+  font-size: 13px; line-height: 1.65; color: var(--text);
+  background: var(--panel2); border-radius: 8px; padding: 12px 14px;
+  margin-bottom: 20px; border-left: 3px solid var(--accent);
+}
+
+/* Step list */
+.welcome-steps {
+  display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;
+}
+.welcome-step {
+  display: flex; gap: 12px; align-items: flex-start;
+  background: var(--panel2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 10px 14px;
+  transition: border-color .15s;
+}
+.welcome-step:hover { border-color: var(--accent); }
+.step-num {
+  flex-shrink: 0; width: 26px; height: 26px;
+  background: var(--accent); color: #fff;
+  border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 800;
+}
+.step-body {
+  display: flex; flex-direction: column; gap: 3px;
+}
+.step-body strong {
+  font-size: 13px; color: var(--text); font-weight: 700;
+}
+.step-body span {
+  font-size: 12px; color: var(--text-dim); line-height: 1.5;
+}
+.step-body em {
+  font-style: normal; color: var(--accent); font-weight: 600;
+}
+
+/* Format cards */
+.welcome-formats {
+  display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap;
+}
+.format-card {
+  flex: 1; min-width: 170px;
+  display: flex; align-items: center; gap: 10px;
+  background: var(--panel2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 12px;
+}
+.format-icon { font-size: 20px; flex-shrink: 0; }
+.format-info {
+  display: flex; flex-direction: column; gap: 2px;
+}
+.format-info strong { font-size: 13px; color: var(--text); }
+.format-info span   { font-size: 11px; color: var(--text-dim); line-height: 1.4; }
+
+/* Shortcuts row */
+.welcome-shortcuts {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 20px;
+}
+.shortcut-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--panel2); border: 1px solid var(--border);
+  border-radius: 20px; padding: 4px 10px; font-size: 11px; color: var(--text-dim);
+}
+.shortcut-pill kbd {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 3px; padding: 1px 5px; font-family: monospace;
+  font-size: 10px; color: var(--text);
+}
+
+/* Actions row */
+.welcome-actions {
+  display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: wrap; gap: 12px;
+  padding-top: 16px; border-top: 1px solid var(--border);
+}
+.welcome-check {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12px; color: var(--text-dim); cursor: pointer; user-select: none;
+}
+.welcome-check input { accent-color: var(--accent); cursor: pointer; }
+.welcome-start-btn { padding: 9px 24px; font-size: 13px; }
 
 /* Scrollbar styling */
 ::-webkit-scrollbar { width: 6px; height: 6px; }

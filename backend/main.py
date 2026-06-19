@@ -14,13 +14,17 @@ import os
 import sys
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+import shutil
+import tempfile
+
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
 from backend.map_renderer import (
     build_map_render_data,
+    build_map_render_data_from_path,
     list_available_towns,
     THUMBNAIL_PATHS,
 )
@@ -28,8 +32,9 @@ from backend.scenario_io import export_to_xosc, export_route_xml
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 
-_HERE     = Path(__file__).resolve().parent
-_FRONTEND = _HERE.parent / "frontend"
+_HERE        = Path(__file__).resolve().parent
+_FRONTEND    = _HERE.parent / "frontend"
+_UPLOADS_DIR = _HERE.parent / "maps" / "_uploaded"   # persisted user maps
 
 # ── App ────────────────────────────────────────────────────────────────────────
 
@@ -42,6 +47,9 @@ MAP_CACHE: dict[str, dict] = {}
 
 @app.on_event("startup")
 async def preload_maps():
+    _UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Pre-load bundled towns
     towns = list_available_towns()
     print(f"[startup] Pre-loading map geometry for {len(towns)} towns …")
     for town in towns:
@@ -50,6 +58,17 @@ async def preload_maps():
             print(f"  ✓ {town}  ({len(MAP_CACHE[town]['roads'])} roads)")
         except Exception as exc:
             print(f"  ✗ {town}: {exc}")
+
+    # Re-load any previously uploaded maps
+    for xodr_file in sorted(_UPLOADS_DIR.glob("*.xodr")):
+        town_name = xodr_file.stem
+        if town_name not in MAP_CACHE:
+            try:
+                MAP_CACHE[town_name] = build_map_render_data_from_path(xodr_file, town_name)
+                print(f"  ✓ (uploaded) {town_name}  ({len(MAP_CACHE[town_name]['roads'])} roads)")
+            except Exception as exc:
+                print(f"  ✗ (uploaded) {town_name}: {exc}")
+
     print(f"[startup] Map cache ready. {len(MAP_CACHE)} towns loaded.")
 
 
@@ -83,6 +102,41 @@ async def get_map_preview(town: str):
     if thumb and thumb.exists():
         return FileResponse(str(thumb), media_type="image/jpeg")
     raise HTTPException(status_code=404, detail=f"No preview image for '{town}'")
+
+
+@app.post("/api/maps/upload")
+async def upload_map(file: UploadFile = File(...)):
+    """
+    Accept a .xodr file, parse it, cache it, and return the town name.
+    The file is persisted in maps/_uploaded/ so it survives server restarts.
+    """
+    if not file.filename or not file.filename.lower().endswith(".xodr"):
+        raise HTTPException(status_code=400, detail="Only .xodr files are accepted.")
+
+    # Derive a clean town name from the filename
+    raw_stem = Path(file.filename).stem
+    town_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in raw_stem)
+    if not town_name:
+        town_name = "CustomMap"
+
+    # Save to the persistent uploads directory
+    dest_path = _UPLOADS_DIR / f"{town_name}.xodr"
+    try:
+        content = await file.read()
+        dest_path.write_bytes(content)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to save file: {exc}")
+
+    # Parse and cache
+    try:
+        MAP_CACHE[town_name] = build_map_render_data_from_path(dest_path, town_name)
+    except Exception as exc:
+        dest_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=422, detail=f"Failed to parse .xodr: {exc}")
+
+    road_count = len(MAP_CACHE[town_name]["roads"])
+    print(f"[upload] Imported '{town_name}' ({road_count} roads)")
+    return {"town": town_name, "roads": road_count}
 
 
 # ── Export API ─────────────────────────────────────────────────────────────────
@@ -121,6 +175,17 @@ async def export_scenario(request: Request):
         filename=filename,
         background=BackgroundTask(os.remove, tmp_path),
     )
+
+
+@app.get("/api/presentation.pptx")
+async def download_presentation():
+    """Generate and serve the PowerPoint presentation."""
+    import subprocess, sys
+    script = _HERE.parent / "generate_pptx.py"
+    out    = _HERE.parent / "OpenSCENARIO_Editor_Praesentation.pptx"
+    subprocess.run([sys.executable, str(script)], cwd=str(_HERE.parent), check=True)
+    return FileResponse(str(out), media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                        filename="OpenSCENARIO_Editor_Praesentation.pptx")
 
 
 @app.post("/api/export/route")

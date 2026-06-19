@@ -44,7 +44,7 @@
   async function loadMapList() {
     try {
       const { maps } = await Api.getMaps();
-      mapSelect.innerHTML = '<option value="">— Select Map —</option>';
+      mapSelect.innerHTML = '<option value="">— Karte wählen —</option>';
       maps.forEach(name => {
         const opt = document.createElement('option');
         opt.value = name;
@@ -52,7 +52,7 @@
         mapSelect.appendChild(opt);
       });
     } catch (e) {
-      mapStatus.textContent = 'Error loading maps';
+      mapStatus.textContent = 'Fehler beim Laden der Karten';
       console.error(e);
     }
   }
@@ -61,15 +61,15 @@
     const town = mapSelect.value;
     if (!town) return;
 
-    mapStatus.textContent = `Loading ${town}…`;
+    mapStatus.textContent = `Lade ${town}…`;
     try {
       const mapData = await Api.getMapRender(town);
       AppState.set({ map: town, mapData });
       MapView.renderMap(mapData);
       MapView.renderAllActors();
-      mapStatus.textContent = `${town} (${mapData.roads.length} roads)`;
+      mapStatus.textContent = `${town} (${mapData.roads.length} Straßen)`;
     } catch (e) {
-      mapStatus.textContent = 'Failed to load map';
+      mapStatus.textContent = 'Karte konnte nicht geladen werden';
       console.error(e);
     }
   });
@@ -79,13 +79,13 @@
     if (data.map) {
       mapSelect.value = data.map;
       if (!AppState.mapData) {
-        mapStatus.textContent = `Loading ${data.map}…`;
+        mapStatus.textContent = `Lade ${data.map}…`;
         try {
           const mapData = await Api.getMapRender(data.map);
           AppState.set({ mapData });
           MapView.renderMap(mapData);
           MapView.renderAllActors();
-          mapStatus.textContent = `${data.map} loaded`;
+          mapStatus.textContent = `${data.map} geladen`;
         } catch (e) {
           console.error(e);
         }

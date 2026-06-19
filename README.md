@@ -7,6 +7,7 @@ A browser-based visual editor for creating, editing, and exporting autonomous dr
 ## What It Does
 
 - **Visualises CARLA maps** — Parses OpenDRIVE (`.xodr`) road networks and renders them as interactive SVG with lane polygons, direction arrows, crosswalks, traffic lights, and spawn points.
+- **Import your own maps** — Upload any CARLA `.xodr` file via the header button or by dragging it onto the canvas; imported maps appear in the dropdown (marked ★) and render instantly.
 - **Place & configure actors** — Drag-and-drop ego vehicle, cars, trucks, buses, motorcycles, cyclists, and pedestrians onto the map. Snap-to-spawn for precise placement.
 - **Draw trajectories** — Click to draw waypoint-based paths for each actor with per-waypoint velocity. Ego trajectory doubles as the planner route.
 - **Set trigger conditions** — Configure per-NPC trigger distance so actors activate when the ego approaches.
@@ -20,22 +21,26 @@ A browser-based visual editor for creating, editing, and exporting autonomous dr
 ```
 scenario_editor/
 ├── backend/               Python (FastAPI)
-│   ├── main.py            REST API + static file server
+│   ├── main.py            REST API + static file server (incl. map upload, .pptx)
 │   ├── map_renderer.py    OpenDRIVE parser → road geometry JSON
 │   └── scenario_io.py     Validation + export to .xosc / route XML
 ├── frontend/              Vanilla JS + CSS (no build step)
 │   ├── index.html         Single-page application shell
+│   ├── presentation.html  Standalone project presentation (TUM-style slides)
 │   ├── css/style.css      Dark theme UI
 │   └── js/
 │       ├── app.js         Global state store + event bus
 │       ├── api.js         HTTP client
 │       ├── mapView.js     SVG map rendering, pan/zoom, layers
+│       ├── mapImport.js   Custom .xodr import (button + drag-and-drop)
 │       ├── toolbar.js     Tool palette + map selector
 │       ├── objects.js     Actor placement + trajectory drawing
 │       ├── properties.js  Right-panel property editor
 │       ├── weather.js     Weather & time-of-day controls
 │       ├── scenarioIO.js  Save / Load / Export logic
-│       └── simulate.js    Trajectory preview animation
+│       ├── simulate.js    Trajectory preview animation
+│       └── welcome.js     Welcome modal + help button
+├── generate_pptx.py       Generates the project presentation as .pptx
 └── example/               Sample scenario files (Town01)
 ```
 
@@ -48,6 +53,7 @@ The backend parses CARLA's OpenDRIVE maps into JSON geometry and delegates `.xos
 | Feature | Description |
 |---|---|
 | **Interactive Map** | Pan, zoom, and click on rendered CARLA town maps (Town01–Town10HD) |
+| **Custom Map Import** | Upload any CARLA `.xodr` via header button or drag-and-drop; imported maps are marked ★ in the dropdown |
 | **Actor Toolbox** | 7 actor types: ego, car, truck, bus, motorcycle, pedestrian, cyclist |
 | **Trajectory Editor** | Click-to-place waypoints with editable per-point velocity |
 | **NPC Trigger Distance** | Configurable activation radius (5–1000 m) per NPC |
@@ -58,6 +64,8 @@ The backend parses CARLA's OpenDRIVE maps into JSON geometry and delegates `.xos
 | **Weather & Time** | Sliders for fog, rain, clouds, sun, wet road, snow, dust; time-of-day presets |
 | **Undo Support** | Ctrl+Z to restore deleted actors (up to 20 levels) |
 | **Multi-format Export** | `.xosc` (OpenSCENARIO), `.xml` (route for planners), `.json` (save/reload) |
+| **Onboarding Help** | Welcome modal on first load plus a help button to reopen it any time |
+| **Project Presentation** | Built-in slide deck (`presentation.html`) and downloadable `.pptx` via `/api/presentation.pptx` |
 
 ---
 
@@ -116,7 +124,7 @@ Internal format for saving and reloading the full editor state — map, actors, 
 
 Town01, Town02, Town03, Town04, Town05, Town06, Town07, Town10, Town10HD
 
-Maps are auto-discovered from the CARLA OpenDRIVE directory and pre-cached at server startup for fast rendering.
+Maps are auto-discovered from the CARLA OpenDRIVE directory and pre-cached at server startup for fast rendering. You can also **import any other CARLA `.xodr`** at runtime — drag it onto the canvas or use the import button in the header.
 
 ---
 

@@ -1,0 +1,388 @@
+{
+  "map": "Town01",
+  "weather": {
+    "fog": 0,
+    "rainy": 0,
+    "cloudy": 0,
+    "sunny": 0,
+    "wet_road": 0,
+    "snowy": 0,
+    "dust_storm": 0
+  },
+  "time": "daytime",
+  "ego": {
+    "id": "obj-1",
+    "type": "ego",
+    "x": 27.7,
+    "y": 1.8,
+    "z": 0.2,
+    "yaw": -2,
+    "trajectory": [
+      {
+        "x": 29.381,
+        "y": 1.974,
+        "velocity": 10
+      },
+      {
+        "x": 36.9,
+        "y": 2.1,
+        "velocity": 10
+      },
+      {
+        "x": 43.8,
+        "y": 1.9,
+        "velocity": 10
+      },
+      {
+        "x": 50.5,
+        "y": 2.1,
+        "velocity": 10
+      },
+      {
+        "x": 57.1,
+        "y": 1.7,
+        "velocity": 10
+      },
+      {
+        "x": 61.6,
+        "y": 1.9,
+        "velocity": 10
+      },
+      {
+        "x": 67.1,
+        "y": 1.7,
+        "velocity": 10
+      },
+      {
+        "x": 70.6,
+        "y": 1.5,
+        "velocity": 10
+      },
+      {
+        "x": 77.1,
+        "y": 0.7,
+        "velocity": 10
+      },
+      {
+        "x": 81.8,
+        "y": 0.9,
+        "velocity": 10
+      },
+      {
+        "x": 86.3,
+        "y": 3,
+        "velocity": 10
+      },
+      {
+        "x": 87.9,
+        "y": 5.4,
+        "velocity": 10
+      },
+      {
+        "x": 88.5,
+        "y": 10.5,
+        "velocity": 10
+      },
+      {
+        "x": 87.9,
+        "y": 16.5,
+        "velocity": 10
+      },
+      {
+        "x": 88.7,
+        "y": 23.2,
+        "velocity": 10
+      },
+      {
+        "x": 87.7,
+        "y": 29.3,
+        "velocity": 10
+      },
+      {
+        "x": 88.1,
+        "y": 34.6,
+        "velocity": 10
+      },
+      {
+        "x": 88.7,
+        "y": 41,
+        "velocity": 10
+      },
+      {
+        "x": 89,
+        "y": 49.5,
+        "velocity": 10
+      },
+      {
+        "x": 88.7,
+        "y": 56.5,
+        "velocity": 10
+      },
+      {
+        "x": 91.8,
+        "y": 58.7,
+        "velocity": 10
+      },
+      {
+        "x": 100.4,
+        "y": 59.1,
+        "velocity": 10
+      },
+      {
+        "x": 110.6,
+        "y": 59.7,
+        "velocity": 10
+      },
+      {
+        "x": 122,
+        "y": 59.7,
+        "velocity": 10
+      },
+      {
+        "x": 130.8,
+        "y": 59.8,
+        "velocity": 10
+      }
+    ]
+  },
+  "npcs": [
+    {
+      "id": "obj-2",
+      "type": "truck",
+      "x": 144.96,
+      "y": -2.046,
+      "z": 0.2,
+      "yaw": 180,
+      "behaviors": [
+        "constant_speed"
+      ],
+      "trigger_distance": 100,
+      "trajectory": [
+        {
+          "x": 144.96,
+          "y": -2.046,
+          "velocity": 10
+        },
+        {
+          "x": 135.3,
+          "y": -2.4,
+          "velocity": 10
+        },
+        {
+          "x": 128.2,
+          "y": -2.7,
+          "velocity": 10
+        },
+        {
+          "x": 118.9,
+          "y": -2.3,
+          "velocity": 10
+        },
+        {
+          "x": 109.8,
+          "y": -2.1,
+          "velocity": 10
+        },
+        {
+          "x": 103.2,
+          "y": -1.8,
+          "velocity": 10
+        },
+        {
+          "x": 93.4,
+          "y": -1.8,
+          "velocity": 10
+        },
+        {
+          "x": 89.2,
+          "y": -1.3,
+          "velocity": 10
+        },
+        {
+          "x": 89.3,
+          "y": 3,
+          "velocity": 10
+        },
+        {
+          "x": 88.6,
+          "y": 7.7,
+          "velocity": 10
+        },
+        {
+          "x": 88.6,
+          "y": 12.9,
+          "velocity": 10
+        },
+        {
+          "x": 88.6,
+          "y": 18.8,
+          "velocity": 10
+        },
+        {
+          "x": 88.1,
+          "y": 23.2,
+          "velocity": 10
+        },
+        {
+          "x": 88.1,
+          "y": 29.6,
+          "velocity": 10
+        },
+        {
+          "x": 88.2,
+          "y": 35.2,
+          "velocity": 10
+        },
+        {
+          "x": 88.6,
+          "y": 42.2,
+          "velocity": 10
+        },
+        {
+          "x": 88.4,
+          "y": 49.6,
+          "velocity": 10
+        },
+        {
+          "x": 88.7,
+          "y": 56,
+          "velocity": 10
+        },
+        {
+          "x": 88.1,
+          "y": 60.8,
+          "velocity": 10
+        },
+        {
+          "x": 88.2,
+          "y": 66.3,
+          "velocity": 10
+        },
+        {
+          "x": 88.6,
+          "y": 72.2,
+          "velocity": 10
+        }
+      ]
+    },
+    {
+      "id": "obj-4",
+      "type": "pedestrian",
+      "x": 79,
+      "y": -6.1,
+      "z": 0.2,
+      "yaw": 49,
+      "behaviors": [
+        "constant_speed"
+      ],
+      "trigger_distance": 38,
+      "trajectory": [
+        {
+          "x": 79.4,
+          "y": -4.2,
+          "velocity": 1
+        },
+        {
+          "x": 80.5,
+          "y": 0.7,
+          "velocity": 1
+        },
+        {
+          "x": 81.3,
+          "y": 4.9,
+          "velocity": 1
+        },
+        {
+          "x": 81.4,
+          "y": 7.4,
+          "velocity": 1
+        },
+        {
+          "x": 84.1,
+          "y": 8.1,
+          "velocity": 1
+        },
+        {
+          "x": 84.8,
+          "y": 12.5,
+          "velocity": 1
+        },
+        {
+          "x": 84.7,
+          "y": 16.1,
+          "velocity": 1
+        },
+        {
+          "x": 84.3,
+          "y": 19.5,
+          "velocity": 1
+        },
+        {
+          "x": 84.8,
+          "y": 22.9,
+          "velocity": 1
+        }
+      ]
+    },
+    {
+      "id": "obj-5",
+      "type": "cyclist",
+      "x": 68.6,
+      "y": 1.6,
+      "z": 0.2,
+      "yaw": 2,
+      "behaviors": [
+        "constant_speed"
+      ],
+      "trigger_distance": 400,
+      "trajectory": [
+        {
+          "x": 68.6,
+          "y": 1.6,
+          "velocity": 2
+        },
+        {
+          "x": 74.7,
+          "y": 2,
+          "velocity": 2
+        },
+        {
+          "x": 80.3,
+          "y": 2,
+          "velocity": 2
+        },
+        {
+          "x": 87.5,
+          "y": 1.6,
+          "velocity": 2
+        },
+        {
+          "x": 93.4,
+          "y": 1.6,
+          "velocity": 2
+        },
+        {
+          "x": 101.3,
+          "y": 2,
+          "velocity": 2
+        },
+        {
+          "x": 106.9,
+          "y": 2.2,
+          "velocity": 2
+        },
+        {
+          "x": 114.3,
+          "y": 2,
+          "velocity": 2
+        },
+        {
+          "x": 120.6,
+          "y": 2.1,
+          "velocity": 2
+        }
+      ]
+    }
+  ],
+  "staticObjects": []
+}

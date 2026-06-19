@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="de">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12,40 +12,45 @@
 <header id="app-header">
   <div class="header-left">
     <span class="app-title">OpenSCENARIO Editor</span>
-    <select id="map-select" title="Select CARLA town map">
-      <option value="">— Select Map —</option>
+    <select id="map-select" title="CARLA-Stadtkarte auswählen">
+      <option value="">— Karte wählen —</option>
     </select>
-    <span id="map-status" class="status-badge">No map loaded</span>
+    <span id="map-status" class="status-badge">Keine Karte geladen</span>
     <div id="layer-toggles" class="layer-toggles hidden">
-      <label class="layer-toggle" title="Show/hide crosswalks">
+      <label class="layer-toggle" title="Zebrastreifen ein-/ausblenden">
         <input type="checkbox" id="toggle-crosswalks" checked>
-        <span class="layer-toggle-icon">&#9618;</span> Crosswalks
+        <span class="layer-toggle-icon">&#9618;</span> Zebrastreifen
       </label>
-      <label class="layer-toggle" title="Show/hide traffic lights">
+      <label class="layer-toggle" title="Ampeln ein-/ausblenden">
         <input type="checkbox" id="toggle-trafficlights" checked>
-        <span class="layer-toggle-icon" style="color:#ff3333;">&#9679;</span> Lights
+        <span class="layer-toggle-icon" style="color:#ff3333;">&#9679;</span> Ampeln
       </label>
-      <label class="layer-toggle" title="Show/hide spawn points">
+      <label class="layer-toggle" title="Startpunkte ein-/ausblenden">
         <input type="checkbox" id="toggle-spawns" checked>
-        <span class="layer-toggle-icon" style="color:rgba(255,255,255,.5);">&#8226;</span> Spawns
+        <span class="layer-toggle-icon" style="color:rgba(255,255,255,.5);">&#8226;</span> Startpunkte
       </label>
-      <label class="layer-toggle" title="Show/hide lane center lines">
+      <label class="layer-toggle" title="Spurmarkierungen ein-/ausblenden">
         <input type="checkbox" id="toggle-markings" checked>
-        <span class="layer-toggle-icon" style="color:#ffd250;">&#8212;</span> Markings
+        <span class="layer-toggle-icon" style="color:#ffd250;">&#8212;</span> Markierungen
       </label>
-      <label class="layer-toggle" title="Show/hide road direction arrows">
+      <label class="layer-toggle" title="Fahrtrichtungspfeile ein-/ausblenden">
         <input type="checkbox" id="toggle-roaddir" checked>
-        <span class="layer-toggle-icon" style="color:rgba(255,255,255,.5);">&#9654;</span> Direction
+        <span class="layer-toggle-icon" style="color:rgba(255,255,255,.5);">&#9654;</span> Richtung
       </label>
     </div>
   </div>
   <div class="header-right">
-    <button id="btn-save"   class="btn btn-secondary" title="Save scenario as JSON">Save</button>
-    <label  id="btn-load-label" class="btn btn-secondary" title="Load scenario from JSON">
-      Load <input type="file" id="btn-load-input" accept=".json" style="display:none">
+    <button id="btn-help" class="btn btn-secondary" title="Anleitung anzeigen">? Hilfe</button>
+    <label id="btn-import-map-label" class="btn btn-secondary" title="CARLA-Karte (.xodr) importieren">
+      &#8853; Karte importieren
+      <input type="file" id="btn-import-map-input" accept=".xodr" style="display:none">
     </label>
-    <button id="btn-export" class="btn btn-primary"   title="Export as OpenSCENARIO .xosc">Export .xosc</button>
-    <button id="btn-export-route" class="btn btn-secondary" title="Export ego route as XML (for Autoware/CARLA planner)">Export Route</button>
+    <button id="btn-save"   class="btn btn-secondary" title="Szenario als JSON speichern">Speichern</button>
+    <label  id="btn-load-label" class="btn btn-secondary" title="Szenario aus JSON laden">
+      Laden <input type="file" id="btn-load-input" accept=".json" style="display:none">
+    </label>
+    <button id="btn-export" class="btn btn-primary"   title="Als OpenSCENARIO .xosc exportieren">Export .xosc</button>
+    <button id="btn-export-route" class="btn btn-secondary" title="Ego-Route als XML exportieren (für Autoware/CARLA Planer)">Route exportieren</button>
   </div>
 </header>
 
@@ -55,41 +60,41 @@
   <!-- ── LEFT TOOLBAR ── -->
   <aside id="toolbar">
     <div class="toolbar-section-label">EGO</div>
-    <button class="tool-btn" data-tool="ego"         title="Place Ego Vehicle (AV under test)">
+    <button class="tool-btn" data-tool="ego" title="Ego-Fahrzeug platzieren (zu testendes autonomes Fahrzeug)">
       <svg viewBox="0 0 32 32"><rect x="6" y="11" width="20" height="11" rx="2" fill="#4488ff"/><rect x="9" y="8" width="14" height="7" rx="1" fill="#6aacff"/><circle cx="10" cy="23" r="3" fill="#222"/><circle cx="22" cy="23" r="3" fill="#222"/></svg>
       <span>Ego</span>
     </button>
 
-    <div class="toolbar-section-label">VEHICLES</div>
-    <button class="tool-btn" data-tool="car"         title="Place NPC Car">
+    <div class="toolbar-section-label">FAHRZEUGE</div>
+    <button class="tool-btn" data-tool="car" title="NPC-Auto platzieren">
       <svg viewBox="0 0 32 32"><rect x="6" y="11" width="20" height="11" rx="2" fill="#ff9933"/><rect x="9" y="8" width="14" height="7" rx="1" fill="#ffbb66"/><circle cx="10" cy="23" r="3" fill="#222"/><circle cx="22" cy="23" r="3" fill="#222"/></svg>
-      <span>Car</span>
+      <span>Auto</span>
     </button>
-    <button class="tool-btn" data-tool="truck"       title="Place NPC Truck">
+    <button class="tool-btn" data-tool="truck" title="NPC-LKW platzieren">
       <svg viewBox="0 0 32 32"><rect x="4" y="10" width="22" height="13" rx="2" fill="#cc5522"/><rect x="4" y="7" width="10" height="8" rx="1" fill="#dd7744"/><circle cx="9" cy="24" r="3" fill="#222"/><circle cx="22" cy="24" r="3" fill="#222"/></svg>
-      <span>Truck</span>
+      <span>LKW</span>
     </button>
-    <button class="tool-btn" data-tool="bus"         title="Place NPC Bus">
+    <button class="tool-btn" data-tool="bus" title="NPC-Bus platzieren">
       <svg viewBox="0 0 32 32"><rect x="4" y="9" width="24" height="14" rx="2" fill="#ddaa00"/><rect x="6" y="6" width="20" height="7" rx="1" fill="#ffcc33"/><circle cx="9" cy="24" r="3" fill="#222"/><circle cx="23" cy="24" r="3" fill="#222"/></svg>
       <span>Bus</span>
     </button>
-    <button class="tool-btn" data-tool="motorcycle"  title="Place NPC Motorcycle">
+    <button class="tool-btn" data-tool="motorcycle" title="NPC-Motorrad platzieren">
       <svg viewBox="0 0 32 32"><ellipse cx="10" cy="22" rx="4" ry="4" fill="none" stroke="#ff7755" stroke-width="2"/><ellipse cx="22" cy="22" rx="4" ry="4" fill="none" stroke="#ff7755" stroke-width="2"/><line x1="10" y1="22" x2="22" y2="22" stroke="#ff7755" stroke-width="2"/><rect x="13" y="14" width="6" height="8" rx="1" fill="#ff7755"/></svg>
       <span>Moto</span>
     </button>
 
-    <div class="toolbar-section-label">PEOPLE</div>
-    <button class="tool-btn" data-tool="pedestrian"  title="Place Pedestrian">
+    <div class="toolbar-section-label">PERSONEN</div>
+    <button class="tool-btn" data-tool="pedestrian" title="Fußgänger platzieren">
       <svg viewBox="0 0 32 32"><circle cx="16" cy="9" r="4" fill="#cc66cc"/><line x1="16" y1="13" x2="16" y2="22" stroke="#cc66cc" stroke-width="2"/><line x1="10" y1="17" x2="22" y2="17" stroke="#cc66cc" stroke-width="2"/><line x1="16" y1="22" x2="11" y2="28" stroke="#cc66cc" stroke-width="2"/><line x1="16" y1="22" x2="21" y2="28" stroke="#cc66cc" stroke-width="2"/></svg>
-      <span>Pedestrian</span>
+      <span>Fußgänger</span>
     </button>
-    <button class="tool-btn" data-tool="cyclist"     title="Place Cyclist">
+    <button class="tool-btn" data-tool="cyclist" title="Radfahrer platzieren">
       <svg viewBox="0 0 32 32"><circle cx="10" cy="22" r="5" fill="none" stroke="#33bb88" stroke-width="1.5"/><circle cx="22" cy="22" r="5" fill="none" stroke="#33bb88" stroke-width="1.5"/><polyline points="10,22 16,14 22,22" fill="none" stroke="#33bb88" stroke-width="1.5"/><line x1="16" y1="14" x2="16" y2="9" stroke="#33bb88" stroke-width="1.5"/><circle cx="16" cy="7" r="2.5" fill="#33bb88"/></svg>
-      <span>Cyclist</span>
+      <span>Radfahrer</span>
     </button>
 
-    <div class="toolbar-section-label">TOOLS</div>
-    <button class="tool-btn" data-tool="ruler"       title="Measure distance (R)">
+    <div class="toolbar-section-label">WERKZEUGE</div>
+    <button class="tool-btn" data-tool="ruler" title="Abstand messen (R)">
       <svg viewBox="0 0 32 32">
         <line x1="4" y1="28" x2="28" y2="4" stroke="#ffcc00" stroke-width="2"/>
         <line x1="4" y1="28" x2="4" y2="22" stroke="#ffcc00" stroke-width="1.5"/>
@@ -100,14 +105,14 @@
         <line x1="14" y1="18" x2="17" y2="15" stroke="#ffcc00" stroke-width="1" opacity="0.5"/>
         <line x1="19" y1="13" x2="22" y2="10" stroke="#ffcc00" stroke-width="1" opacity="0.5"/>
       </svg>
-      <span>Ruler</span>
+      <span>Lineal</span>
     </button>
 
   </aside>
 
   <!-- ── MAP CANVAS ── -->
   <main id="map-container">
-    <div id="map-overlay-msg">Select a map from the dropdown above to begin</div>
+    <div id="map-overlay-msg">Karte aus dem Dropdown oben auswählen, um zu beginnen</div>
     <svg id="map-svg" xmlns="http://www.w3.org/2000/svg">
       <defs>
         <marker id="arrow-ego" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
@@ -116,17 +121,14 @@
         <marker id="arrow-npc" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
           <polygon points="0,0 6,3 0,6" fill="#ff9933"/>
         </marker>
-        <!-- Trajectory path arrow (smaller than before) -->
         <marker id="arrow-traj" markerWidth="4" markerHeight="4" refX="2" refY="2" orient="auto" markerUnits="strokeWidth">
           <polygon points="0,0 4,2 0,4" fill="#00ccff" opacity="0.8"/>
         </marker>
-        <!-- Road direction chevron (subtle, placed along centerlines) -->
         <marker id="arrow-road" markerWidth="3" markerHeight="3" refX="1.5" refY="1.5" orient="auto" markerUnits="strokeWidth">
           <polygon points="0,0 3,1.5 0,3" fill="rgba(255,255,255,0.35)"/>
         </marker>
       </defs>
-      <!-- background fills the whole SVG viewBox before the world group -->
-      <rect id="map-background" fill="#2d5a2d"/>
+      <rect id="map-background" fill="transparent"/>
       <g id="world">
         <g id="layer-roads"></g>
         <g id="layer-markings"></g>
@@ -136,28 +138,37 @@
         <g id="layer-actors"></g>
       </g>
     </svg>
-    <!-- Scale ruler -->
+    <!-- Maßstabsleiste -->
     <div id="scale-ruler" class="scale-ruler">
       <div class="scale-bar"><div class="scale-bar-fill"></div></div>
       <span id="scale-label" class="scale-label">100 m</span>
     </div>
-    <!-- Trajectory mode banner -->
+    <!-- Drag-and-drop Karten-Import-Overlay -->
+    <div id="map-drop-overlay" class="map-drop-overlay hidden">
+      <div class="map-drop-inner">
+        <div class="map-drop-icon">&#8853;</div>
+        <div class="map-drop-text">.xodr Datei hier ablegen</div>
+        <div class="map-drop-sub">CARLA OpenDRIVE Karte importieren</div>
+      </div>
+    </div>
+
+    <!-- Trajektorienmodus-Banner -->
     <div id="traj-banner" class="traj-banner hidden">
-      Drawing path for <strong id="traj-banner-name"></strong> — click map to add waypoints &nbsp;
-      <button id="traj-done-btn" class="btn btn-small btn-primary">Done</button>
-      <button id="traj-undo-btn" class="btn btn-small btn-secondary">Undo</button>
+      Pfad für <strong id="traj-banner-name"></strong> zeichnen — auf die Karte klicken, um Wegpunkte zu setzen &nbsp;
+      <button id="traj-done-btn" class="btn btn-small btn-primary">Fertig</button>
+      <button id="traj-undo-btn" class="btn btn-small btn-secondary">Rückgängig</button>
     </div>
   </main>
 
   <!-- ── RIGHT PROPERTIES PANEL ── -->
   <aside id="properties-panel">
     <div id="props-empty" class="props-placeholder">
-      <p>Click an object<br>to edit its properties</p>
+      <p>Objekt anklicken,<br>um Eigenschaften zu bearbeiten</p>
     </div>
     <div id="props-content" class="hidden">
       <div class="props-header">
-        <span id="props-title">Object</span>
-        <button id="props-delete" class="btn btn-danger btn-small">Delete</button>
+        <span id="props-title">Objekt</span>
+        <button id="props-delete" class="btn btn-danger btn-small">Löschen</button>
       </div>
 
       <div class="props-group">
@@ -167,37 +178,37 @@
         <input type="number" id="prop-y" step="0.1">
         <label>Z (m)</label>
         <input type="number" id="prop-z" step="0.1" value="0.2">
-        <label>Yaw (°)</label>
+        <label>Gier (°)</label>
         <input type="number" id="prop-yaw" step="1" min="-180" max="360">
       </div>
 
-      <!-- NPC-only section (also shows trajectory for ego) -->
+      <!-- NPC-Bereich (auch Trajektorie für Ego) -->
       <div id="props-npc-section" class="hidden">
-        <div class="props-group-label">Behaviors (if no path drawn)</div>
+        <div class="props-group-label">Verhalten (wenn kein Pfad gezeichnet)</div>
         <div id="behavior-checkboxes" class="behavior-list">
-          <label><input type="checkbox" name="behavior" value="constant_speed" checked> Constant Speed</label>
-          <label><input type="checkbox" name="behavior" value="accelerate"> Accelerate</label>
-          <label><input type="checkbox" name="behavior" value="decelerate"> Decelerate</label>
-          <label><input type="checkbox" name="behavior" value="stop"> Stop</label>
-          <label><input type="checkbox" name="behavior" value="change_lane_left"> Lane Change Left</label>
-          <label><input type="checkbox" name="behavior" value="change_lane_right"> Lane Change Right</label>
+          <label><input type="checkbox" name="behavior" value="constant_speed" checked> Konstante Geschwindigkeit</label>
+          <label><input type="checkbox" name="behavior" value="accelerate"> Beschleunigen</label>
+          <label><input type="checkbox" name="behavior" value="decelerate"> Abbremsen</label>
+          <label><input type="checkbox" name="behavior" value="stop"> Anhalten</label>
+          <label><input type="checkbox" name="behavior" value="change_lane_left"> Spurwechsel links</label>
+          <label><input type="checkbox" name="behavior" value="change_lane_right"> Spurwechsel rechts</label>
         </div>
 
         <div id="trigger-section">
-          <div class="props-group-label">Activation Trigger</div>
+          <div class="props-group-label">Aktivierungsauslöser</div>
           <div class="props-group">
-            <label>Distance (m)</label>
-            <input type="number" id="prop-trigger-dist" step="10" min="5" max="1000" value="400" title="NPC activates when ego is within this distance">
+            <label>Abstand (m)</label>
+            <input type="number" id="prop-trigger-dist" step="10" min="5" max="1000" value="400" title="NPC aktiviert sich, wenn das Ego-Fahrzeug innerhalb dieses Abstands ist">
           </div>
-          <div class="trigger-hint">NPC starts when ego is within this distance</div>
+          <div class="trigger-hint">NPC startet, wenn das Ego-Fahrzeug in diesem Abstand ist</div>
         </div>
 
-        <div class="props-group-label">Trajectory Path</div>
-        <div id="ego-route-hint" class="trigger-hint hidden">Ego route waypoints for Autoware/CARLA planner</div>
+        <div class="props-group-label">Trajektorienpfad</div>
+        <div id="ego-route-hint" class="trigger-hint hidden">Ego-Routen-Wegpunkte für Autoware/CARLA-Planer</div>
         <div class="traj-controls">
-          <button id="btn-draw-path"   class="btn btn-secondary btn-small">Draw Path</button>
-          <button id="btn-clear-path"  class="btn btn-danger    btn-small">Clear Path</button>
-          <button id="btn-toggle-path" class="btn btn-secondary btn-small" title="Show/hide this actor's path on map">Hide Path</button>
+          <button id="btn-draw-path"   class="btn btn-secondary btn-small">Pfad zeichnen</button>
+          <button id="btn-clear-path"  class="btn btn-danger    btn-small">Pfad löschen</button>
+          <button id="btn-toggle-path" class="btn btn-secondary btn-small" title="Pfad dieses Akteurs ein-/ausblenden">Pfad ausblenden</button>
         </div>
         <div id="waypoint-list" class="waypoint-list"></div>
       </div>
@@ -210,42 +221,42 @@
 <footer id="weather-bar">
   <div class="weather-inner">
     <div class="weather-item">
-      <label>Time</label>
+      <label>Tageszeit</label>
       <select id="w-time">
-        <option value="daytime">Daytime</option>
-        <option value="morning">Morning</option>
-        <option value="noon">Noon</option>
-        <option value="afternoon">Afternoon</option>
-        <option value="dusk">Dusk</option>
-        <option value="nighttime">Night</option>
+        <option value="daytime">Tagsüber</option>
+        <option value="morning">Morgen</option>
+        <option value="noon">Mittag</option>
+        <option value="afternoon">Nachmittag</option>
+        <option value="dusk">Dämmerung</option>
+        <option value="nighttime">Nacht</option>
       </select>
     </div>
     <div class="weather-item">
-      <label>Fog <span class="w-val" id="wv-fog">0.0</span></label>
+      <label>Nebel <span class="w-val" id="wv-fog">0.0</span></label>
       <input type="range" id="w-fog" min="0" max="1" step="0.05" value="0">
     </div>
     <div class="weather-item">
-      <label>Rain <span class="w-val" id="wv-rainy">0.0</span></label>
+      <label>Regen <span class="w-val" id="wv-rainy">0.0</span></label>
       <input type="range" id="w-rainy" min="0" max="1" step="0.05" value="0">
     </div>
     <div class="weather-item">
-      <label>Cloud <span class="w-val" id="wv-cloudy">0.0</span></label>
+      <label>Wolken <span class="w-val" id="wv-cloudy">0.0</span></label>
       <input type="range" id="w-cloudy" min="0" max="1" step="0.05" value="0">
     </div>
     <div class="weather-item">
-      <label>Sun <span class="w-val" id="wv-sunny">0.0</span></label>
+      <label>Sonne <span class="w-val" id="wv-sunny">0.0</span></label>
       <input type="range" id="w-sunny" min="0" max="1" step="0.05" value="0">
     </div>
     <div class="weather-item">
-      <label>Wet <span class="w-val" id="wv-wet_road">0.0</span></label>
+      <label>Nasse Str. <span class="w-val" id="wv-wet_road">0.0</span></label>
       <input type="range" id="w-wet_road" min="0" max="1" step="0.05" value="0">
     </div>
     <div class="weather-item">
-      <label>Snow <span class="w-val" id="wv-snowy">0.0</span></label>
+      <label>Schnee <span class="w-val" id="wv-snowy">0.0</span></label>
       <input type="range" id="w-snowy" min="0" max="1" step="0.05" value="0">
     </div>
     <div class="weather-item">
-      <label>Dust <span class="w-val" id="wv-dust_storm">0.0</span></label>
+      <label>Staub <span class="w-val" id="wv-dust_storm">0.0</span></label>
       <input type="range" id="w-dust_storm" min="0" max="1" step="0.05" value="0">
     </div>
   </div>
@@ -254,30 +265,143 @@
 <!-- ── Toast container ── -->
 <div id="toast-container"></div>
 
-<!-- ── Keyboard shortcuts overlay ── -->
-<div id="shortcuts-overlay" class="hidden">
-  <div class="shortcuts-card">
-    <h2>Keyboard Shortcuts</h2>
-    <div class="shortcut-row"><span>Cancel tool / trajectory</span><span class="shortcut-key">Esc</span></div>
-    <div class="shortcut-row"><span>Delete selected actor</span><span class="shortcut-key">Del</span></div>
-    <div class="shortcut-row"><span>Undo last delete</span><span class="shortcut-key">Ctrl+Z</span></div>
-    <div class="shortcut-row"><span>Ruler (measure distance)</span><span class="shortcut-key">R</span></div>
-    <div class="shortcut-row"><span>Clear all measurements</span><span class="shortcut-key">Shift+R</span></div>
-    <div class="shortcut-row"><span>Show this help</span><span class="shortcut-key">?</span></div>
-    <div class="shortcut-row"><span>Pan the map</span><span>Click + drag background</span></div>
-    <div class="shortcut-row"><span>Zoom in / out</span><span>Scroll wheel</span></div>
-    <div class="shortcut-row"><span>Rotate actor</span><span>Drag yaw arrow</span></div>
-    <p class="close-hint">Press <span class="shortcut-key">Esc</span> or <span class="shortcut-key">?</span> to close</p>
+<!-- ══════════════════════ WILLKOMMENS-MODAL ══════════════════════════ -->
+<div id="welcome-overlay" class="welcome-overlay">
+  <div class="welcome-card">
+    <div class="welcome-header">
+      <div class="welcome-logo">
+        <svg viewBox="0 0 48 48" width="48" height="48">
+          <rect x="8" y="18" width="32" height="16" rx="3" fill="#4488ff"/>
+          <rect x="13" y="12" width="22" height="11" rx="2" fill="#6aacff"/>
+          <circle cx="15" cy="35" r="4.5" fill="#1a1e26"/>
+          <circle cx="33" cy="35" r="4.5" fill="#1a1e26"/>
+          <circle cx="15" cy="35" r="2.5" fill="#444"/>
+          <circle cx="33" cy="35" r="2.5" fill="#444"/>
+        </svg>
+      </div>
+      <div>
+        <h1 class="welcome-title">OpenSCENARIO Editor</h1>
+        <p class="welcome-subtitle">Visueller Szenario-Editor für autonomes Fahren (CARLA)</p>
+      </div>
+    </div>
+
+    <p class="welcome-intro">
+      Erstellen Sie komplexe Testszenarien für autonome Fahrzeuge im OpenSCENARIO 1.0-Format
+      — ohne eine einzige Zeile Code zu schreiben. Platzieren Sie Akteure, zeichnen Sie Trajektorien
+      und exportieren Sie direkt für den CARLA ScenarioRunner.
+    </p>
+
+    <div class="welcome-steps">
+      <div class="welcome-step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Karte auswählen</strong>
+          <span>Wählen Sie im Dropdown oben eine der 9 CARLA-Stadtkarten (Town01–Town10HD).</span>
+        </div>
+      </div>
+      <div class="welcome-step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>Ego-Fahrzeug platzieren</strong>
+          <span>Klicken Sie auf <em>Ego</em> in der linken Werkzeugleiste, dann auf die Karte. Das Fahrzeug rastet automatisch am nächsten Startpunkt ein.</span>
+        </div>
+      </div>
+      <div class="welcome-step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>Route des Ego zeichnen</strong>
+          <span>Wählen Sie das Ego auf der Karte → klicken Sie rechts auf <em>Pfad zeichnen</em> → setzen Sie Wegpunkte durch Klicken → <em>Fertig</em>.</span>
+        </div>
+      </div>
+      <div class="welcome-step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <strong>NPC-Akteure hinzufügen</strong>
+          <span>Werkzeuge: Auto, LKW, Bus, Motorrad, Fußgänger, Radfahrer. Gleiche Vorgehensweise wie beim Ego. NPCs erhalten Verhalten und Auslöserabstand.</span>
+        </div>
+      </div>
+      <div class="welcome-step">
+        <div class="step-num">5</div>
+        <div class="step-body">
+          <strong>Umgebung konfigurieren</strong>
+          <span>Nutzen Sie die Wetterleiste unten: Tageszeit, Nebel, Regen, Wolken, Sonne, nasse Straße, Schnee, Staub (je 0–1).</span>
+        </div>
+      </div>
+      <div class="welcome-step">
+        <div class="step-num">6</div>
+        <div class="step-body">
+          <strong>Vorschau &amp; Export</strong>
+          <span>Mit <em>▶ Abspielen</em> animieren Sie das Szenario. Exportieren Sie als <strong>.xosc</strong> (OpenSCENARIO), als Route-<strong>.xml</strong> (Autoware) oder speichern Sie als <strong>.json</strong> zum Weitarbeiten.</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="welcome-formats">
+      <div class="format-card">
+        <div class="format-icon">📄</div>
+        <div class="format-info">
+          <strong>.xosc</strong>
+          <span>OpenSCENARIO 1.0 — für CARLA ScenarioRunner</span>
+        </div>
+      </div>
+      <div class="format-card">
+        <div class="format-icon">🗺️</div>
+        <div class="format-info">
+          <strong>.xml</strong>
+          <span>Route-Datei — für Autoware &amp; CARLA-Planer</span>
+        </div>
+      </div>
+      <div class="format-card">
+        <div class="format-icon">💾</div>
+        <div class="format-info">
+          <strong>.json</strong>
+          <span>Szenario speichern &amp; wieder laden</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="welcome-shortcuts">
+      <span class="shortcut-pill"><kbd>Esc</kbd> Abbrechen</span>
+      <span class="shortcut-pill"><kbd>Entf</kbd> Löschen</span>
+      <span class="shortcut-pill"><kbd>Strg+Z</kbd> Rückgängig</span>
+      <span class="shortcut-pill"><kbd>R</kbd> Lineal</span>
+      <span class="shortcut-pill"><kbd>Shift+R</kbd> Messungen löschen</span>
+      <span class="shortcut-pill"><kbd>?</kbd> Tastenkürzel</span>
+    </div>
+
+    <div class="welcome-actions">
+      <label class="welcome-check">
+        <input type="checkbox" id="welcome-dont-show"> Beim nächsten Start nicht mehr anzeigen
+      </label>
+      <button id="welcome-close" class="btn btn-primary welcome-start-btn">Jetzt starten →</button>
+    </div>
   </div>
 </div>
 
-<!-- ── Confirm dialog ── -->
+<!-- ── Tastaturkürzel-Overlay ── -->
+<div id="shortcuts-overlay" class="hidden">
+  <div class="shortcuts-card">
+    <h2>Tastaturkürzel</h2>
+    <div class="shortcut-row"><span>Werkzeug / Trajektorie abbrechen</span><span class="shortcut-key">Esc</span></div>
+    <div class="shortcut-row"><span>Ausgewählten Akteur löschen</span><span class="shortcut-key">Entf</span></div>
+    <div class="shortcut-row"><span>Letztes Löschen rückgängig</span><span class="shortcut-key">Strg+Z</span></div>
+    <div class="shortcut-row"><span>Lineal (Abstand messen)</span><span class="shortcut-key">R</span></div>
+    <div class="shortcut-row"><span>Alle Messungen löschen</span><span class="shortcut-key">Shift+R</span></div>
+    <div class="shortcut-row"><span>Diese Hilfe anzeigen</span><span class="shortcut-key">?</span></div>
+    <div class="shortcut-row"><span>Karte verschieben</span><span>Klicken + Ziehen</span></div>
+    <div class="shortcut-row"><span>Karte zoomen</span><span>Mausrad</span></div>
+    <div class="shortcut-row"><span>Akteur drehen</span><span>Gier-Pfeil ziehen</span></div>
+    <p class="close-hint">Drücken Sie <span class="shortcut-key">Esc</span> oder <span class="shortcut-key">?</span> zum Schließen</p>
+  </div>
+</div>
+
+<!-- ── Bestätigungsdialog ── -->
 <div id="confirm-overlay" class="hidden">
   <div class="confirm-card">
-    <p id="confirm-message">Are you sure?</p>
+    <p id="confirm-message">Sind Sie sicher?</p>
     <div class="confirm-actions">
-      <button id="confirm-cancel" class="btn btn-secondary">Cancel</button>
-      <button id="confirm-ok" class="btn btn-danger">Delete</button>
+      <button id="confirm-cancel" class="btn btn-secondary">Abbrechen</button>
+      <button id="confirm-ok" class="btn btn-danger">Löschen</button>
     </div>
   </div>
 </div>
@@ -292,6 +416,8 @@
 <script src="/static/js/weather.js"></script>
 <script src="/static/js/scenarioIO.js"></script>
 <script src="/static/js/simulate.js"></script>
+<script src="/static/js/mapImport.js"></script>
+<script src="/static/js/welcome.js"></script>
 
 </body>
 </html>

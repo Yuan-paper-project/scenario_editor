@@ -46,31 +46,31 @@
     AppState.npcs.forEach(n => { npcBreakdown[n.type] = (npcBreakdown[n.type] || 0) + 1; });
 
     let html = '<div class="scenario-summary">';
-    html += '<h3>Scenario Overview</h3>';
-    html += `<div class="summary-row"><span class="label">Map</span><span class="value">${mapName}</span></div>`;
-    html += `<div class="summary-row"><span class="label">Ego Vehicle</span><span class="value">${hasEgo ? 'Placed' : 'Not placed'}</span></div>`;
+    html += '<h3>Szenario-Übersicht</h3>';
+    html += `<div class="summary-row"><span class="label">Karte</span><span class="value">${mapName}</span></div>`;
+    html += `<div class="summary-row"><span class="label">Ego-Fahrzeug</span><span class="value">${hasEgo ? 'Platziert' : 'Nicht platziert'}</span></div>`;
     html += `<div class="summary-row"><span class="label">NPCs</span><span class="value">${npcCount}</span></div>`;
 
     if (npcCount > 0) {
-      html += '<div class="summary-section">NPC Breakdown</div>';
+      html += '<div class="summary-section">NPC-Aufschlüsselung</div>';
       for (const [type, count] of Object.entries(npcBreakdown)) {
         html += `<div class="summary-row"><span class="label">${type}</span><span class="value">${count}</span></div>`;
       }
-      html += `<div class="summary-row"><span class="label">With trajectory</span><span class="value">${withTraj}</span></div>`;
+      html += `<div class="summary-row"><span class="label">Mit Trajektorie</span><span class="value">${withTraj}</span></div>`;
     }
 
-    html += `<div class="summary-section">Weather</div>`;
-    html += `<div class="summary-row"><span class="label">Time</span><span class="value">${AppState.time}</span></div>`;
+    html += `<div class="summary-section">Wetter</div>`;
+    html += `<div class="summary-row"><span class="label">Tageszeit</span><span class="value">${AppState.time}</span></div>`;
     const activeWeather = Object.entries(AppState.weather).filter(([, v]) => v > 0);
     if (activeWeather.length > 0) {
       activeWeather.forEach(([k, v]) => {
         html += `<div class="summary-row"><span class="label">${k.replace('_', ' ')}</span><span class="value">${v.toFixed(2)}</span></div>`;
       });
     } else {
-      html += `<div class="summary-row"><span class="label">Conditions</span><span class="value">Clear</span></div>`;
+      html += `<div class="summary-row"><span class="label">Bedingungen</span><span class="value">Klar</span></div>`;
     }
 
-    html += '<div class="summary-hint">Click an actor to edit properties<br>Press <b>?</b> for keyboard shortcuts</div>';
+    html += '<div class="summary-hint">Akteur anklicken, um Eigenschaften zu bearbeiten<br>Drücken Sie <b>?</b> für Tastaturkürzel</div>';
     html += '</div>';
 
     propsEmpty.innerHTML = html;
@@ -91,7 +91,7 @@
     propsContent.classList.remove('hidden');
 
     // Title
-    const typeLabel = actor.type === 'ego' ? 'Ego Vehicle' : actor.type.charAt(0).toUpperCase() + actor.type.slice(1);
+    const typeLabel = actor.type === 'ego' ? 'Ego-Fahrzeug' : actor.type.charAt(0).toUpperCase() + actor.type.slice(1);
     propsTitle.textContent = typeLabel;
 
     // Position / yaw
@@ -132,7 +132,7 @@
 
       // Toggle path visibility button state
       const pathVisible = MapView.isTrajectoryVisible(actor.id);
-      btnTogglePath.textContent = pathVisible ? 'Hide Path' : 'Show Path';
+      btnTogglePath.textContent = pathVisible ? 'Pfad ausblenden' : 'Pfad anzeigen';
 
       // Waypoint list (both ego and NPCs)
       _renderWaypointList(actor);
@@ -146,7 +146,7 @@
     if (traj.length === 0) {
       const empty = document.createElement('div');
       empty.style.cssText = 'color:var(--text-dim);font-size:11px;padding:4px 0';
-      empty.textContent = 'No path drawn yet.';
+      empty.textContent = 'Noch kein Pfad gezeichnet.';
       waypointList.appendChild(empty);
       return;
     }
@@ -169,7 +169,7 @@
       velInput.max  = '50';
       velInput.step = '0.5';
       velInput.value = (wp.velocity || 10).toFixed(1);
-      velInput.title = 'Velocity (m/s)';
+      velInput.title = 'Geschwindigkeit (m/s)';
       velInput.dataset.idx = i;
       velInput.addEventListener('change', ev => {
         ObjectsManager.setWaypointVelocity(actor.id, i, ev.target.value);
@@ -182,7 +182,7 @@
       const delBtn = document.createElement('button');
       delBtn.className = 'wp-delete';
       delBtn.textContent = '×';
-      delBtn.title = 'Remove waypoint';
+      delBtn.title = 'Wegpunkt entfernen';
       delBtn.addEventListener('click', () => {
         ObjectsManager.deleteWaypoint(actor.id, i);
       });
@@ -257,7 +257,7 @@
     if (!id) return;
     MapView.toggleTrajectoryVisibility(id);
     const visible = MapView.isTrajectoryVisible(id);
-    btnTogglePath.textContent = visible ? 'Hide Path' : 'Show Path';
+    btnTogglePath.textContent = visible ? 'Pfad ausblenden' : 'Pfad anzeigen';
   });
 
   // ── Delete ──────────────────────────────────────────────────────────────────
@@ -267,15 +267,14 @@
     if (!id) return;
     const actor = AppState.findById(id);
     if (!actor) return;
-    const label = actor.type === 'ego' ? 'Ego Vehicle' : `${actor.type.toUpperCase()} (${actor.id})`;
-    const ok = await Confirm.show(`Delete ${label}?`, 'Delete');
+    const label = actor.type === 'ego' ? 'Ego-Fahrzeug' : `${actor.type.toUpperCase()} (${actor.id})`;
+    const ok = await Confirm.show(`${label} l\u00f6schen?`, 'L\u00f6schen');
     if (!ok) return;
-    // Save to undo stack before removing
     UndoStack.push({ action: 'delete', actor: JSON.parse(JSON.stringify(actor)) });
     AppState.removeById(id);
     MapView.renderAllActors();
     render();
-    Toast.info(`Deleted ${label} \u2014 press Ctrl+Z to undo`);
+    Toast.info(`${label} gel\u00f6scht \u2014 Strg+Z zum R\u00fcckg\u00e4ngigmachen`);
   });
 
   // ── Listen for state changes ─────────────────────────────────────────────────
