@@ -60,6 +60,15 @@
         yaw:              n.yaw || 0,
         behaviors:        n.behaviors || ['constant_speed'],
         trigger_distance: n.trigger_distance ?? 400,
+        path_mode:        n.path_mode || 'trajectory',
+        route_velocity:   n.route_velocity ?? 10.0,
+        route_speed_dynamics_value: n.route_speed_dynamics_value ?? 0.0,
+        route_speed_dynamics_dimension: n.route_speed_dynamics_dimension === 'time' ? 'time' : 'distance',
+        route: (n.route || []).map(wp => ({
+          x: wp.x,
+          y: wp.y,
+          z: wp.z || 0.2,
+        })),
         trajectory: (n.trajectory || []).map(wp => ({
           x:        wp.x,
           y:        wp.y,

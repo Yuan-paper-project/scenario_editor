@@ -1,8 +1,8 @@
 /**
  * simulate.js — Simple trajectory preview simulation.
  *
- * Animates all actors with trajectories along their paths at their
- * configured velocities. Ego follows its route waypoints.
+ * Animates actors along the path selected in the editor.
+ * Trajectory mode uses per-waypoint velocities; route mode uses one shared speed.
  * Purely visual — no physics, no collision.
  */
 (function () {
@@ -100,6 +100,43 @@
     return tl;
   }
 
+  function _buildRouteTimeline(route, velocity) {
+    if (!route || route.length < 2) return null;
+
+    const speed = Math.max(0.1, parseFloat(velocity) || 10);
+    const tl = [{ t: 0, x: route[0].x, y: route[0].y, yaw: 0 }];
+
+    for (let i = 1; i < route.length; i++) {
+      const prev = route[i - 1];
+      const curr = route[i];
+      const dx = curr.x - prev.x;
+      const dy = curr.y - prev.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const yaw = Math.atan2(dy, dx) * 180 / Math.PI;
+
+      tl.push({
+        t: tl[tl.length - 1].t + dist / speed,
+        x: curr.x,
+        y: curr.y,
+        yaw: yaw,
+      });
+    }
+
+    if (tl.length >= 2) {
+      tl[0].yaw = tl[1].yaw;
+    }
+
+    return tl;
+  }
+
+  function _getActorTimeline(actor) {
+    if (!actor) return null;
+    if (actor.type !== 'ego' && actor.path_mode === 'route') {
+      return _buildRouteTimeline(actor.route, actor.route_velocity ?? 10);
+    }
+    return _buildTimeline(actor.trajectory);
+  }
+
   /**
    * Interpolate position on a timeline at time t.
    * Returns {x, y, yaw} or null if past the end.
@@ -143,26 +180,26 @@
     _npcTriggers.clear();
     _egoId = null;
 
-    // Gather all actors with trajectories
+    // Gather all actors with a playable path.
     const actors = [];
-    if (AppState.ego && AppState.ego.trajectory && AppState.ego.trajectory.length >= 2) {
+    if (_getActorTimeline(AppState.ego)) {
       actors.push(AppState.ego);
       _egoId = AppState.ego.id;
     }
     for (const npc of AppState.npcs) {
-      if (npc.trajectory && npc.trajectory.length >= 2) {
+      if (_getActorTimeline(npc)) {
         actors.push(npc);
       }
     }
 
     if (actors.length === 0) {
-      Toast.warn('No actors have trajectories to simulate. Draw paths first.');
+      Toast.warn('No actors have paths to simulate. Draw paths first.');
       return false;
     }
 
     for (const actor of actors) {
       _originals.set(actor.id, { x: actor.x, y: actor.y, yaw: actor.yaw });
-      _timelines.set(actor.id, _buildTimeline(actor.trajectory));
+      _timelines.set(actor.id, _getActorTimeline(actor));
 
       // Track NPC trigger distances (ego has none)
       if (actor.type !== 'ego') {
@@ -319,8 +356,8 @@
 
   // Stop simulation if user interacts with editing tools
   AppState.on('change', patch => {
-    if (_running && ('activeTool' in patch || 'trajectoryMode' in patch)) {
-      if (AppState.activeTool || AppState.trajectoryMode) {
+    if (_running && ('activeTool' in patch || 'trajectoryMode' in patch || 'routeMode' in patch)) {
+      if (AppState.activeTool || AppState.trajectoryMode || AppState.routeMode) {
         _stopSimulation();
         Toast.info('Simulation stopped — editing resumed');
       }

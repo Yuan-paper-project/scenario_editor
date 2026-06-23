@@ -30,6 +30,8 @@
     activeTool:          null,   // 'ego'|'car'|'truck'|'bus'|'motorcycle'|'pedestrian'|'tree'|'building'|null
     trajectoryMode:      false,  // true while drawing a path
     activeTrajectoryId:  null,   // npc id whose trajectory we're drawing
+    routeMode:           false,  // true while drawing a route
+    activeRouteId:       null,   // actor id whose route we're drawing
 
     // ── Listeners ─────────────────────────────────────────────
     _listeners: {},
@@ -115,10 +117,15 @@
         map:           this.map,
         weather:       { ...this.weather },
         time:          this.time,
-        ego:           this.ego ? { ...this.ego } : null,
+        ego:           this.ego ? {
+          ...this.ego,
+          trajectory: (this.ego.trajectory || []).map(wp => ({ ...wp })),
+          route:      (this.ego.route || []).map(wp => ({ ...wp })),
+        } : null,
         npcs:          this.npcs.map(n => ({
           ...n,
           trajectory: (n.trajectory || []).map(wp => ({ ...wp })),
+          route:      (n.route || []).map(wp => ({ ...wp })),
         })),
         staticObjects: this.staticObjects.map(o => ({ ...o })),
       };
@@ -126,16 +133,27 @@
 
     /** Restore state from a plain object (e.g. loaded JSON). */
     loadJSON(data) {
+      const normalizeActor = actor => ({
+        ...actor,
+        trajectory: actor.trajectory || [],
+        route: actor.route || [],
+        route_velocity: actor.route_velocity ?? 10.0,
+        route_speed_dynamics_value: actor.route_speed_dynamics_value ?? 0.0,
+        route_speed_dynamics_dimension: actor.route_speed_dynamics_dimension === 'time' ? 'time' : 'distance',
+      });
+
       this.map           = data.map     || null;
       this.weather       = { ...data.weather } || { ...this.weather };
       this.time          = data.time    || 'daytime';
-      this.ego           = data.ego     || null;
-      this.npcs          = (data.npcs || []).map(n => ({ ...n, trajectory: n.trajectory || [] }));
+      this.ego           = data.ego ? normalizeActor(data.ego) : null;
+      this.npcs          = (data.npcs || []).map(normalizeActor);
       this.staticObjects = data.staticObjects || [];
       this.selectedId    = null;
       this.activeTool    = null;
       this.trajectoryMode     = false;
       this.activeTrajectoryId = null;
+      this.routeMode          = false;
+      this.activeRouteId      = null;
       this.emit('stateLoaded', data);
     },
   };

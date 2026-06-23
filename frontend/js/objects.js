@@ -34,6 +34,10 @@
       _addWaypoint(AppState.activeTrajectoryId, world.x, world.y);
       return;
     }
+    if (AppState.routeMode && AppState.activeRouteId) {
+      _addRouteWaypoint(AppState.activeRouteId, world.x, world.y);
+      return;
+    }
 
     // ── Check for actor click first (even with tool active — clicking existing actor selects it) ──
     const actorGroup = e.target.closest('.actor-group');
@@ -66,7 +70,15 @@
 
     let newId;
     if (type === 'ego') {
-      const actor = { id: AppState.nextId(), type: 'ego', x, y, z: 0.2, yaw, trajectory: [] };
+      const actor = {
+        id: AppState.nextId(), type: 'ego', x, y, z: 0.2, yaw,
+        trajectory: [],
+        route: [],
+        route_velocity: 10.0,
+        route_speed_dynamics_value: 0.0,
+        route_speed_dynamics_dimension: 'distance',
+        path_mode: 'trajectory',
+      };
       AppState.set({ ego: actor });
       newId = actor.id;
     } else if (['tree', 'building'].includes(type)) {
@@ -80,6 +92,11 @@
         behaviors: ['constant_speed'],
         trigger_distance: 400,
         trajectory: [],
+        route: [],
+        route_velocity: 10.0,
+        route_speed_dynamics_value: 0.0,
+        route_speed_dynamics_dimension: 'distance',
+        path_mode: 'trajectory',
       };
       AppState.npcs = [...AppState.npcs, actor];
       AppState.set({});
@@ -123,7 +140,7 @@
 
     // Actor body drag
     const actorGroup = e.target.closest('.actor-group');
-    if (actorGroup && !AppState.activeTool && !AppState.trajectoryMode) {
+    if (actorGroup && !AppState.activeTool && !AppState.trajectoryMode && !AppState.routeMode) {
       const id     = actorGroup.dataset.id;
       const actor  = AppState.findById(id);
       const world  = MapView.svgToWorld(e);
@@ -175,28 +192,38 @@
   // ── Trajectory mode ───────────────────────────────────────────────────────────
 
   AppState.on('change', patch => {
-    if (!('trajectoryMode' in patch) && !('activeTrajectoryId' in patch)) return;
-    const active = AppState.trajectoryMode && AppState.activeTrajectoryId;
+    if (!('trajectoryMode' in patch) && !('activeTrajectoryId' in patch) &&
+        !('routeMode' in patch) && !('activeRouteId' in patch)) return;
+    const activeId = (AppState.trajectoryMode && AppState.activeTrajectoryId) ||
+                     (AppState.routeMode && AppState.activeRouteId);
+    const active = !!activeId;
     trajBanner.classList.toggle('hidden', !active);
     svg.classList.toggle('trajectory-mode', !!active);
     if (active) {
-      const actor = AppState.findById(AppState.activeTrajectoryId);
+      const actor = AppState.findById(activeId);
       trajBannerName.textContent = actor
         ? `${actor.type.toUpperCase()} (${actor.id})`
-        : AppState.activeTrajectoryId;
+        : activeId;
     }
   });
 
   trajDoneBtn.addEventListener('click', () => {
-    AppState.set({ trajectoryMode: false, activeTrajectoryId: null });
+    AppState.set({ trajectoryMode: false, activeTrajectoryId: null, routeMode: false, activeRouteId: null });
   });
 
   trajUndoBtn.addEventListener('click', () => {
-    const id = AppState.activeTrajectoryId;
+    const isRoute = AppState.routeMode && AppState.activeRouteId;
+    const id = isRoute ? AppState.activeRouteId : AppState.activeTrajectoryId;
     if (!id) return;
     const actor = _findActor(id);
-    if (!actor || !actor.trajectory || !actor.trajectory.length) return;
-    actor.trajectory = actor.trajectory.slice(0, -1);
+    if (!actor) return;
+    if (isRoute) {
+      if (!actor.route || !actor.route.length) return;
+      actor.route = actor.route.slice(0, -1);
+    } else {
+      if (!actor.trajectory || !actor.trajectory.length) return;
+      actor.trajectory = actor.trajectory.slice(0, -1);
+    }
     AppState.emit('actorUpdated', id);
   });
 
@@ -210,6 +237,7 @@
   function startTrajectoryMode(actorId) {
     const actor = _findActor(actorId);
     if (!actor) return;
+    actor.path_mode = 'trajectory';
     // Ensure trajectory array exists; pre-seed with actor position if empty
     if (!actor.trajectory || actor.trajectory.length === 0) {
       actor.trajectory = [{ x: actor.x, y: actor.y, velocity: 10.0 }];
@@ -218,6 +246,31 @@
       activeTool: null,
       trajectoryMode: true,
       activeTrajectoryId: actorId,
+      routeMode: false,
+      activeRouteId: null,
+    });
+    MapView.renderAllActors();
+  }
+
+  /** Enter route drawing mode for any actor (ego or NPC). */
+  function startRouteMode(actorId) {
+    const actor = _findActor(actorId);
+    if (!actor) return;
+    actor.path_mode = 'route';
+    if (!actor.route || actor.route.length === 0) {
+      actor.route = [{ x: actor.x, y: actor.y }];
+    }
+    if (actor.route_velocity == null) actor.route_velocity = 10.0;
+    if (actor.route_speed_dynamics_value == null) actor.route_speed_dynamics_value = 0.0;
+    if (!['distance', 'time'].includes(actor.route_speed_dynamics_dimension)) {
+      actor.route_speed_dynamics_dimension = 'distance';
+    }
+    AppState.set({
+      activeTool: null,
+      trajectoryMode: false,
+      activeTrajectoryId: null,
+      routeMode: true,
+      activeRouteId: actorId,
     });
     MapView.renderAllActors();
   }
@@ -232,11 +285,32 @@
     AppState.emit('actorUpdated', actorId);
   }
 
+  function _addRouteWaypoint(actorId, wx, wy) {
+    const actor = _findActor(actorId);
+    if (!actor) return;
+    if (!actor.route) actor.route = [];
+    if (actor.route_velocity == null) actor.route_velocity = 10.0;
+    if (actor.route_speed_dynamics_value == null) actor.route_speed_dynamics_value = 0.0;
+    if (!['distance', 'time'].includes(actor.route_speed_dynamics_dimension)) {
+      actor.route_speed_dynamics_dimension = 'distance';
+    }
+    actor.route.push({ x: Math.round(wx * 10) / 10, y: Math.round(wy * 10) / 10 });
+    AppState.emit('actorUpdated', actorId);
+  }
+
   /** Delete a waypoint by index. */
   function deleteWaypoint(actorId, idx) {
     const actor = _findActor(actorId);
     if (!actor) return;
     actor.trajectory.splice(idx, 1);
+    AppState.emit('actorUpdated', actorId);
+  }
+
+  /** Delete a route waypoint by index. */
+  function deleteRouteWaypoint(actorId, idx) {
+    const actor = _findActor(actorId);
+    if (!actor || !actor.route) return;
+    actor.route.splice(idx, 1);
     AppState.emit('actorUpdated', actorId);
   }
 
@@ -248,6 +322,25 @@
     AppState.emit('actorUpdated', actorId);
   }
 
+  /** Update the single route velocity shared by all route waypoints. */
+  function setRouteVelocity(actorId, velocity) {
+    const actor = _findActor(actorId);
+    if (!actor) return;
+    const parsed = parseFloat(velocity);
+    actor.route_velocity = Number.isFinite(parsed) ? parsed : 10.0;
+    AppState.emit('actorUpdated', actorId);
+  }
+
+  /** Update route SpeedActionDynamics value and dimension. */
+  function setRouteSpeedDynamics(actorId, value, dimension) {
+    const actor = _findActor(actorId);
+    if (!actor) return;
+    const parsed = parseFloat(value);
+    actor.route_speed_dynamics_value = Number.isFinite(parsed) ? parsed : 0.0;
+    actor.route_speed_dynamics_dimension = dimension === 'time' ? 'time' : 'distance';
+    AppState.emit('actorUpdated', actorId);
+  }
+
   /** Clear all waypoints for an actor. */
   function clearTrajectory(actorId) {
     const actor = _findActor(actorId);
@@ -256,11 +349,24 @@
     AppState.emit('actorUpdated', actorId);
   }
 
+  /** Clear all route waypoints for an actor. */
+  function clearRoute(actorId) {
+    const actor = _findActor(actorId);
+    if (!actor) return;
+    actor.route = [];
+    AppState.emit('actorUpdated', actorId);
+  }
+
   // ── Public interface ─────────────────────────────────────────────────────────
   window.ObjectsManager = {
     startTrajectoryMode,
+    startRouteMode,
     deleteWaypoint,
+    deleteRouteWaypoint,
     setWaypointVelocity,
+    setRouteVelocity,
+    setRouteSpeedDynamics,
     clearTrajectory,
+    clearRoute,
   };
 })();

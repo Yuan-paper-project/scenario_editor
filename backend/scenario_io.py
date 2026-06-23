@@ -9,7 +9,9 @@ import uuid
 import tempfile
 from pathlib import Path
 
-_LLMGEN = Path("/home/dellpro2/CC/llm-scenario-gen")
+_LLMGEN = Path(__file__).resolve().parent.parent.parent / "llm-scenario-gen"
+if not _LLMGEN.exists():
+    _LLMGEN = Path("/home/dellpro2/CC/llm-scenario-gen")
 
 
 def _ensure_llmgen_on_path():
@@ -47,8 +49,17 @@ def validate_scenario_params(params: dict) -> dict:
         npc.setdefault("yaw", 0.0)
         npc.setdefault("behaviors", ["constant_speed"])
         npc.setdefault("trajectory", [])
+        npc.setdefault("route", [])
+        npc.setdefault("path_mode", "trajectory")
+        npc.setdefault("route_velocity", 10.0)
+        npc.setdefault("route_speed_dynamics_value", 0.0)
+        npc.setdefault("route_speed_dynamics_dimension", "distance")
         npc.setdefault("trigger_distance", 400)
         npc["trigger_distance"] = max(5.0, min(1000.0, float(npc["trigger_distance"])))
+        npc["route_velocity"] = max(0.0, min(100.0, float(npc["route_velocity"])))
+        npc["route_speed_dynamics_value"] = max(0.0, float(npc["route_speed_dynamics_value"]))
+        if npc["route_speed_dynamics_dimension"] not in {"distance", "time"}:
+            npc["route_speed_dynamics_dimension"] = "distance"
 
     # Weather
     params.setdefault("weather", {})

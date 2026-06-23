@@ -268,12 +268,14 @@
     const fx = Math.cos(rad), fy = Math.sin(rad);   // road-forward unit vector
     const px = -fy, py = fx;                         // perpendicular (across road)
 
-    const STRIPE_W   = 1.8;   // stripe thickness (across-road direction) (m)
-    const STRIPE_GAP = 1.4;   // gap between stripes (m)
-    const STRIPE_LEN = 12.0;  // stripe length along-road direction (m)
-    const NUM_STRIPES = 6;
-    const totalStep  = STRIPE_W + STRIPE_GAP;
-    const startOff   = -(NUM_STRIPES * totalStep) / 2;
+    const crosswalkWidth = Math.max(1.0, Number(cw.width) || 3.0);   // along-road direction (m)
+    const crosswalkLength = Math.max(2.0, Number(cw.length) || 12.0); // across-road direction (m)
+    const STRIPE_W = Math.min(1.2, Math.max(0.55, crosswalkLength / 12));
+    const STRIPE_GAP = STRIPE_W * 0.75;
+    const totalStep = STRIPE_W + STRIPE_GAP;
+    const NUM_STRIPES = Math.max(2, Math.floor((crosswalkLength + STRIPE_GAP) / totalStep));
+    const usedLength = (NUM_STRIPES * STRIPE_W) + ((NUM_STRIPES - 1) * STRIPE_GAP);
+    const startOff = -usedLength / 2;
 
     const g = _svgEl('g', { class: 'crosswalk-group' });
 
@@ -283,7 +285,7 @@
       const cx = cw.x + px * offset;
       const cy = cw.y + py * offset;
       const hw = STRIPE_W / 2;   // half-width in perpendicular direction
-      const hl = STRIPE_LEN / 2; // half-length in road-forward direction
+      const hl = crosswalkWidth / 2; // half-length in road-forward direction
       // Rectangle: long side along road (fx), short side across road (px)
       const pts = [
         [cx + fx*hl + px*hw, cy + fy*hl + py*hw],
@@ -351,6 +353,8 @@
     cyclist:    { w: 2.0, h: 0.8 },
   };
 
+  const ROUTE_ACTOR_TYPES = new Set(['car', 'truck', 'bus', 'motorcycle']);
+
   function renderAllActors() {
     while (layerActors.firstChild) layerActors.removeChild(layerActors.firstChild);
     while (layerTraj.firstChild)   layerTraj.removeChild(layerTraj.firstChild);
@@ -360,7 +364,8 @@
 
     // Trajectories: render non-selected first, selected last (on top)
     const allActors = AppState.ego ? [AppState.ego, ...AppState.npcs] : [...AppState.npcs];
-    const withTraj  = allActors.filter(a => a.trajectory && a.trajectory.length >= 2);
+    const withTraj  = allActors.filter(a => a.trajectory && a.trajectory.length >= 2 && _shouldRenderPath(a, 'trajectory'));
+    const withRoute = allActors.filter(a => a.route && a.route.length >= 2 && _shouldRenderPath(a, 'route'));
     const selId     = AppState.selectedId;
 
     // Non-selected trajectories first (underneath)
@@ -371,6 +376,23 @@
     for (const actor of withTraj) {
       if (actor.id === selId) _renderTrajectory(actor);
     }
+
+    // Routes are separate from trajectories; render them after trajectories.
+    for (const actor of withRoute) {
+      if (actor.id !== selId) _renderRoute(actor);
+    }
+    for (const actor of withRoute) {
+      if (actor.id === selId) _renderRoute(actor);
+    }
+  }
+
+  function _shouldRenderPath(actor, pathType) {
+    return _getActorPathMode(actor) === pathType;
+  }
+
+  function _getActorPathMode(actor) {
+    if (!actor || !ROUTE_ACTOR_TYPES.has(actor.type)) return 'trajectory';
+    return actor.path_mode === 'route' ? 'route' : 'trajectory';
   }
 
   function _renderActor(actor) {
@@ -465,6 +487,7 @@
 
   // Track which actors have their trajectory hidden (toggled off by user)
   const _hiddenTrajectories = new Set();
+  const _hiddenRoutes = new Set();
 
   function _ensureArrowMarker(actorId, color) {
     // Create a per-actor arrow marker so each trajectory gets its own color
@@ -563,6 +586,81 @@
     layerTraj.appendChild(g);
   }
 
+  function _renderRoute(actor) {
+    const col = ACTOR_COLORS[actor.type] || ACTOR_COLORS.car;
+    const route = actor.route;
+    if (!route || route.length < 2) return;
+
+    const isSel    = AppState.selectedId === actor.id;
+    const isHidden = _hiddenRoutes.has(actor.id);
+
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('data-route-id', actor.id);
+    g.setAttribute('class', `route-group${isSel ? ' route-selected' : ''}`);
+
+    if (isHidden && !isSel) {
+      layerTraj.appendChild(g);
+      return;
+    }
+
+    g.setAttribute('opacity', isSel ? '1.0' : '0.35');
+
+    const markerId = _ensureArrowMarker(actor.id, col.body);
+
+    const pts = route.map(wp => `${wp.x},${wp.y}`).join(' ');
+    const line = _svgEl('polyline', {
+      points: pts,
+      class: 'route-line',
+      stroke: col.body,
+      'stroke-width': isSel ? '1.4' : '0.8',
+      'marker-mid': `url(#${markerId})`,
+    });
+    g.appendChild(line);
+
+    route.forEach((wp, i) => {
+      const wg = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      wg.setAttribute('class', 'route-waypoint');
+      wg.setAttribute('data-route-id', actor.id);
+      wg.setAttribute('data-wp-idx', i);
+
+      wg.appendChild(_svgEl('rect', {
+        x: wp.x - (isSel ? 1.1 : 0.75),
+        y: wp.y - (isSel ? 1.1 : 0.75),
+        width: isSel ? 2.2 : 1.5,
+        height: isSel ? 2.2 : 1.5,
+        rx: 0.2,
+        fill: col.body,
+        opacity: '0.9',
+        stroke: '#fff',
+        'stroke-width': 0.2,
+      }));
+
+      if (isSel) {
+        const num = _svgEl('text', {
+          x: wp.x, y: wp.y + 0.5,
+          'text-anchor': 'middle', 'font-size': '1.2', fill: '#fff',
+          'font-weight': 'bold', style: 'pointer-events:none'
+        });
+        num.textContent = i + 1;
+        wg.appendChild(num);
+      }
+
+      g.appendChild(wg);
+    });
+
+    if (isSel) {
+      const speed = _svgEl('text', {
+        x: route[0].x + 2, y: route[0].y - 2,
+        'font-size': '1.8', fill: '#fff',
+        style: 'pointer-events:none'
+      });
+      speed.textContent = `${(actor.route_velocity ?? 10).toFixed(0)} m/s`;
+      g.appendChild(speed);
+    }
+
+    layerTraj.appendChild(g);
+  }
+
   // ── SVG helper ───────────────────────────────────────────────────────────────
 
   function _svgEl(tag, attrs) {
@@ -577,7 +675,7 @@
   svg.addEventListener('mousedown', e => {
     if (e.button !== 0) return;
     // Only pan if no active tool and click is not on an actor
-    if (AppState.activeTool || AppState.trajectoryMode) return;
+    if (AppState.activeTool || AppState.trajectoryMode || AppState.routeMode) return;
     if (e.target.closest('.actor-group') || e.target.closest('.yaw-arrow')) return;
 
     _dragging  = true;
@@ -631,7 +729,7 @@
         _shortcutsOverlay.classList.add('hidden');
         return;
       }
-      AppState.set({ activeTool: null, trajectoryMode: false, activeTrajectoryId: null });
+      AppState.set({ activeTool: null, trajectoryMode: false, activeTrajectoryId: null, routeMode: false, activeRouteId: null });
       return;
     }
 
@@ -646,7 +744,7 @@
     // R — toggle ruler tool
     if (e.key === 'r' && !e.ctrlKey && !e.metaKey) {
       const newTool = AppState.activeTool === 'ruler' ? null : 'ruler';
-      AppState.set({ activeTool: newTool, trajectoryMode: false, activeTrajectoryId: null });
+      AppState.set({ activeTool: newTool, trajectoryMode: false, activeTrajectoryId: null, routeMode: false, activeRouteId: null });
       return;
     }
 
@@ -902,6 +1000,14 @@
     },
     isTrajectoryVisible(actorId) {
       return !_hiddenTrajectories.has(actorId);
+    },
+    toggleRouteVisibility(actorId) {
+      if (_hiddenRoutes.has(actorId)) _hiddenRoutes.delete(actorId);
+      else _hiddenRoutes.add(actorId);
+      renderAllActors();
+    },
+    isRouteVisible(actorId) {
+      return !_hiddenRoutes.has(actorId);
     },
     clearAllRulers: _clearAllRulers,
   };

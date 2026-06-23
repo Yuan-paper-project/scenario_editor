@@ -196,6 +196,28 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
 }
 
 /* Trajectory controls */
+.path-mode-tabs {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
+  margin: 10px 0 8px; border-top: 1px solid var(--border); padding-top: 8px;
+}
+.path-mode-tab {
+  background: var(--panel2); color: var(--text-dim); border: 1px solid var(--border);
+  border-radius: 5px; padding: 5px 6px; font-size: 11px; font-weight: 700;
+  cursor: pointer;
+}
+.path-mode-tab.active {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+}
+.route-param-row {
+  display: grid; grid-template-columns: 1fr 64px auto; gap: 6px; align-items: center;
+  margin-bottom: 8px; font-size: 11px; color: var(--text-dim);
+}
+.route-param-row input[type="number"],
+.route-param-row select {
+  background: var(--panel2); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px; padding: 4px 6px; width: 100%;
+}
+.route-param-row select { cursor: pointer; }
 .traj-controls { display: flex; gap: 6px; margin-bottom: 8px; }
 
 /* Waypoint list */
@@ -271,6 +293,9 @@ input[type="range"]::-webkit-slider-thumb {
 .traj-selected .traj-line { stroke-dasharray: 4,2; }
 .traj-waypoint { cursor: pointer; }
 .traj-waypoint:hover circle { opacity: 1; }
+.route-line { fill: none; stroke-dasharray: 8,3; }
+.route-group { transition: opacity .15s; }
+.route-waypoint { cursor: pointer; }
 
 .yaw-arrow { cursor: grab; }
 .yaw-arrow:active { cursor: grabbing; }

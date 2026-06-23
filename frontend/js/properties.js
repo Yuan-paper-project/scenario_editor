@@ -26,6 +26,14 @@
   const triggerSection  = document.getElementById('trigger-section');
   const propTriggerDist = document.getElementById('prop-trigger-dist');
   const egoRouteHint   = document.getElementById('ego-route-hint');
+  const pathSectionLabel = document.getElementById('path-section-label');
+  const btnModeTrajectory = document.getElementById('btn-path-mode-trajectory');
+  const btnModeRoute      = document.getElementById('btn-path-mode-route');
+  const routeSpeedRow     = document.getElementById('route-speed-row');
+  const propRouteSpeed    = document.getElementById('prop-route-speed');
+  const routeSpeedDynamicsRow  = document.getElementById('route-speed-dynamics-row');
+  const propRouteSpeedDynamicsValue = document.getElementById('prop-route-speed-dynamics-value');
+  const propRouteSpeedDynamicsUnit  = document.getElementById('prop-route-speed-dynamics-unit');
   const btnDrawPath    = document.getElementById('btn-draw-path');
   const btnClearPath   = document.getElementById('btn-clear-path');
   const btnTogglePath  = document.getElementById('btn-toggle-path');
@@ -33,6 +41,7 @@
 
   // Track whether we're syncing to avoid loops
   let _syncing = false;
+  const ROUTE_ACTOR_TYPES = new Set(['car', 'truck', 'bus', 'motorcycle']);
 
   // ── Render panel for selected actor ─────────────────────────────────────────
 
@@ -118,7 +127,20 @@
       // Trigger distance — only for NPCs
       triggerSection.style.display = isNpc ? '' : 'none';
 
-      // Ego route hint — only for ego
+      const canUseRoute = ROUTE_ACTOR_TYPES.has(actor.type);
+      const isRouteMode = _getActorPathMode(actor) === 'route';
+      const hasCompleteRoute = isRouteMode && (actor.route || []).length >= 2;
+
+      pathSectionLabel.classList.toggle('hidden', canUseRoute);
+      btnModeTrajectory.parentElement.classList.toggle('hidden', !canUseRoute);
+      btnModeTrajectory.classList.toggle('active', !isRouteMode);
+      btnModeRoute.classList.toggle('active', isRouteMode);
+      btnDrawPath.textContent = isRouteMode ? 'Route zeichnen' : 'Pfad zeichnen';
+      btnClearPath.textContent = isRouteMode ? 'Route löschen' : 'Pfad löschen';
+      routeSpeedRow.classList.toggle('hidden', !hasCompleteRoute);
+      routeSpeedDynamicsRow.classList.toggle('hidden', !hasCompleteRoute);
+
+      // Ego keeps the original trajectory-only route hint.
       egoRouteHint.classList.toggle('hidden', actor.type !== 'ego');
 
       if (isNpc) {
@@ -130,12 +152,24 @@
         _syncing = false;
       }
 
+      if (isRouteMode) {
+        _syncing = true;
+        propRouteSpeed.value = (actor.route_velocity ?? 10).toFixed(1);
+        propRouteSpeedDynamicsValue.value = (actor.route_speed_dynamics_value ?? 0.0).toFixed(1);
+        propRouteSpeedDynamicsUnit.value = actor.route_speed_dynamics_dimension === 'time' ? 'time' : 'distance';
+        _syncing = false;
+      }
+
       // Toggle path visibility button state
-      const pathVisible = MapView.isTrajectoryVisible(actor.id);
-      btnTogglePath.textContent = pathVisible ? 'Pfad ausblenden' : 'Pfad anzeigen';
+      const pathVisible = isRouteMode
+        ? MapView.isRouteVisible(actor.id)
+        : MapView.isTrajectoryVisible(actor.id);
+      const pathLabel = isRouteMode ? 'Route' : 'Pfad';
+      btnTogglePath.textContent = pathVisible ? `${pathLabel} ausblenden` : `${pathLabel} anzeigen`;
 
       // Waypoint list (both ego and NPCs)
-      _renderWaypointList(actor);
+      if (isRouteMode) _renderRouteList(actor);
+      else _renderWaypointList(actor);
     }
   }
 
@@ -196,6 +230,61 @@
     });
   }
 
+  function _renderRouteList(actor) {
+    waypointList.innerHTML = '';
+    const route = actor.route || [];
+
+    if (route.length === 0) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'color:var(--text-dim);font-size:11px;padding:4px 0';
+      empty.textContent = 'Noch keine Route gezeichnet.';
+      waypointList.appendChild(empty);
+      return;
+    }
+
+    route.forEach((wp, i) => {
+      const item = document.createElement('div');
+      item.className = 'waypoint-item route-waypoint-item';
+
+      const num = document.createElement('span');
+      num.className = 'wp-num';
+      num.textContent = i + 1;
+
+      const coords = document.createElement('span');
+      coords.className = 'wp-coords';
+      coords.textContent = `(${wp.x.toFixed(1)}, ${wp.y.toFixed(1)})`;
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'wp-delete';
+      delBtn.textContent = '×';
+      delBtn.title = 'Wegpunkt entfernen';
+      delBtn.addEventListener('click', () => {
+        ObjectsManager.deleteRouteWaypoint(actor.id, i);
+      });
+
+      item.appendChild(num);
+      item.appendChild(coords);
+      item.appendChild(delBtn);
+      waypointList.appendChild(item);
+    });
+  }
+
+  function _canSelectedActorUseRoute() {
+    const id = AppState.selectedId;
+    const actor = id ? AppState.findById(id) : null;
+    return !!actor && ROUTE_ACTOR_TYPES.has(actor.type);
+  }
+
+  function _getActorPathMode(actor) {
+    if (!actor || !ROUTE_ACTOR_TYPES.has(actor.type)) return 'trajectory';
+    return actor.path_mode === 'route' ? 'route' : 'trajectory';
+  }
+
+  function _getSelectedPathMode() {
+    const id = AppState.selectedId;
+    return _getActorPathMode(id ? AppState.findById(id) : null);
+  }
+
   // ── Input → state bindings ───────────────────────────────────────────────────
 
   function _onPosChange() {
@@ -237,27 +326,73 @@
     AppState.updateById(id, { trigger_distance: val });
   });
 
-  // ── Trajectory buttons ───────────────────────────────────────────────────────
+  // ── Path mode + buttons ──────────────────────────────────────────────────────
+
+  btnModeTrajectory.addEventListener('click', () => {
+    const id = AppState.selectedId;
+    if (id) AppState.updateById(id, { path_mode: 'trajectory' });
+    AppState.set({ routeMode: false, activeRouteId: null });
+    render();
+  });
+
+  btnModeRoute.addEventListener('click', () => {
+    if (!_canSelectedActorUseRoute()) return;
+    const id = AppState.selectedId;
+    if (id) AppState.updateById(id, { path_mode: 'route' });
+    AppState.set({ trajectoryMode: false, activeTrajectoryId: null });
+    render();
+  });
+
+  propRouteSpeed.addEventListener('change', () => {
+    if (_syncing) return;
+    const id = AppState.selectedId;
+    if (!id) return;
+    const raw = parseFloat(propRouteSpeed.value);
+    const val = Math.max(0, Math.min(50, Number.isFinite(raw) ? raw : 10));
+    propRouteSpeed.value = val.toFixed(1);
+    ObjectsManager.setRouteVelocity(id, val);
+  });
+
+  function _onRouteSpeedDynamicsChange() {
+    if (_syncing) return;
+    const id = AppState.selectedId;
+    if (!id) return;
+    const raw = parseFloat(propRouteSpeedDynamicsValue.value);
+    const val = Math.max(0, Number.isFinite(raw) ? raw : 0.0);
+    const dimension = propRouteSpeedDynamicsUnit.value === 'time' ? 'time' : 'distance';
+    propRouteSpeedDynamicsValue.value = val.toFixed(1);
+    ObjectsManager.setRouteSpeedDynamics(id, val, dimension);
+  }
+
+  propRouteSpeedDynamicsValue.addEventListener('change', _onRouteSpeedDynamicsChange);
+  propRouteSpeedDynamicsUnit.addEventListener('change', _onRouteSpeedDynamicsChange);
 
   btnDrawPath.addEventListener('click', () => {
     const id = AppState.selectedId;
     if (!id) return;
-    ObjectsManager.startTrajectoryMode(id);
+    if (_getSelectedPathMode() === 'route') ObjectsManager.startRouteMode(id);
+    else ObjectsManager.startTrajectoryMode(id);
   });
 
   btnClearPath.addEventListener('click', () => {
     const id = AppState.selectedId;
     if (!id) return;
-    ObjectsManager.clearTrajectory(id);
+    if (_getSelectedPathMode() === 'route') ObjectsManager.clearRoute(id);
+    else ObjectsManager.clearTrajectory(id);
     render();
   });
 
   btnTogglePath.addEventListener('click', () => {
     const id = AppState.selectedId;
     if (!id) return;
-    MapView.toggleTrajectoryVisibility(id);
-    const visible = MapView.isTrajectoryVisible(id);
-    btnTogglePath.textContent = visible ? 'Pfad ausblenden' : 'Pfad anzeigen';
+    const routeModeActive = _getSelectedPathMode() === 'route';
+    if (routeModeActive) MapView.toggleRouteVisibility(id);
+    else MapView.toggleTrajectoryVisibility(id);
+    const visible = routeModeActive
+      ? MapView.isRouteVisible(id)
+      : MapView.isTrajectoryVisible(id);
+    const pathLabel = routeModeActive ? 'Route' : 'Pfad';
+    btnTogglePath.textContent = visible ? `${pathLabel} ausblenden` : `${pathLabel} anzeigen`;
   });
 
   // ── Delete ──────────────────────────────────────────────────────────────────

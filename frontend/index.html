@@ -203,12 +203,29 @@
           <div class="trigger-hint">NPC startet, wenn das Ego-Fahrzeug in diesem Abstand ist</div>
         </div>
 
-        <div class="props-group-label">Trajektorienpfad</div>
+        <div id="path-section-label" class="props-group-label hidden">Trajektorienpfad</div>
+        <div class="path-mode-tabs" role="tablist" aria-label="Pfadtyp">
+          <button id="btn-path-mode-trajectory" class="path-mode-tab active" type="button">Trajektorienpfad</button>
+          <button id="btn-path-mode-route" class="path-mode-tab" type="button">Route</button>
+        </div>
         <div id="ego-route-hint" class="trigger-hint hidden">Ego-Routen-Wegpunkte für Autoware/CARLA-Planer</div>
         <div class="traj-controls">
           <button id="btn-draw-path"   class="btn btn-secondary btn-small">Pfad zeichnen</button>
           <button id="btn-clear-path"  class="btn btn-danger    btn-small">Pfad löschen</button>
           <button id="btn-toggle-path" class="btn btn-secondary btn-small" title="Pfad dieses Akteurs ein-/ausblenden">Pfad ausblenden</button>
+        </div>
+        <div id="route-speed-row" class="route-param-row hidden">
+          <label for="prop-route-speed">Geschwindigkeit</label>
+          <input type="number" id="prop-route-speed" min="0" max="50" step="0.5" value="10.0">
+          <span>m/s</span>
+        </div>
+        <div id="route-speed-dynamics-row" class="route-param-row route-dynamics-row hidden">
+          <label for="prop-route-speed-dynamics-value">Erreichen nach</label>
+          <input type="number" id="prop-route-speed-dynamics-value" min="0" step="0.1" value="0.0">
+          <select id="prop-route-speed-dynamics-unit" title="Einheit für SpeedActionDynamics">
+            <option value="distance">m</option>
+            <option value="time">s</option>
+          </select>
         </div>
         <div id="waypoint-list" class="waypoint-list"></div>
       </div>
