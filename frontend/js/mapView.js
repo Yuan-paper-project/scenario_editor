@@ -28,6 +28,7 @@
   let layerCrosswalks    = null;
   let layerTrafficLights = null;
   let layerRoadDir       = null;   // road direction arrows
+  let layerTriggerPoints = null;
 
   // ── Pan / zoom state ────────────────────────────────────────────────────────
   let _pan  = { x: 0, y: 0 };
@@ -35,6 +36,10 @@
   let _dragging = false;
   let _dragStart = null;
   let _panStart  = null;
+  let _panMoved = false;
+  let _suppressNextClick = false;
+  const _PAN_CLICK_THRESHOLD = 4;
+  let _triggerRadiusDrag = null;
 
   // ── Scale ruler ──────────────────────────────────────────────────────────────
   const _scaleBar   = document.querySelector('.scale-bar');
@@ -88,6 +93,15 @@
     return { x: w.x, y: w.y };
   }
 
+  function _clientToSvg(evt) {
+    const pt = svg.createSVGPoint();
+    pt.x = evt.clientX;
+    pt.y = evt.clientY;
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return null;
+    return pt.matrixTransform(ctm.inverse());
+  }
+
   // ── Road rendering ───────────────────────────────────────────────────────────
   function _polyToPoints(polygon) {
     return polygon.map(p => `${p[0]},${p[1]}`).join(' ');
@@ -103,13 +117,16 @@
     if (layerCrosswalks)    layerCrosswalks.remove();
     if (layerTrafficLights) layerTrafficLights.remove();
     if (layerRoadDir)       layerRoadDir.remove();
+    if (layerTriggerPoints) layerTriggerPoints.remove();
     layerCrosswalks    = _svgEl('g', { id: 'layer-crosswalks' });
     layerTrafficLights = _svgEl('g', { id: 'layer-trafficlights' });
     layerRoadDir       = _svgEl('g', { id: 'layer-roaddir' });
+    layerTriggerPoints = _svgEl('g', { id: 'layer-trigger-points' });
     const layerTrajEl  = document.getElementById('layer-trajectories');
     worldGroup.insertBefore(layerRoadDir,       layerTrajEl);
     worldGroup.insertBefore(layerCrosswalks,    layerTrajEl);
     worldGroup.insertBefore(layerTrafficLights, layerTrajEl);
+    worldGroup.insertBefore(layerTriggerPoints, layerTrajEl);
 
     const { bounds, roads, spawnPoints, intersections, trafficLights, crosswalks, grassColor } = mapData;
     const w = bounds.xMax - bounds.xMin;
@@ -197,7 +214,7 @@
     // ── Traffic lights ─────────────────────────────────────────────────────
     console.log(`[MapView] Rendering ${(trafficLights || []).length} traffic lights`);
     for (const tl of (trafficLights || [])) {
-      _renderTrafficLight(tl.x, tl.y);
+      _renderTrafficLight(tl);
     }
     console.log(`[MapView] layer-trafficlights children: ${layerTrafficLights.children.length}`);
 
@@ -306,29 +323,62 @@
 
   // ── Traffic light rendering ────────────────────────────────────────────────
 
-  function _renderTrafficLight(x, y) {
+  function _renderTrafficLight(tl) {
+    const x = tl.x;
+    const y = tl.y;
+    const id = String(tl.id ?? `${x},${y}`);
+    const action = TrafficSignals.actionById(id);
+    const selected = String(AppState.selectedTrafficLightId || '') === id;
+    const configured = (action?.events || []).length > 0;
+    const lastEvent = configured ? action.events[action.events.length - 1] : null;
+
     // Simplified traffic-light icon: a bright coloured dot with glow,
     // large enough to be visible at the default zoom level.
-    const g = _svgEl('g', { transform: `translate(${x},${y})`, class: 'traffic-light' });
+    const g = _svgEl('g', {
+      transform: `translate(${x},${y})`,
+      class: `traffic-light${selected ? ' selected' : ''}`,
+      'data-traffic-light-id': id,
+    });
+    g.addEventListener('click', e => {
+      if (AppState.activeTool || AppState.trajectoryMode || AppState.routeMode || AppState.triggerPointMode) return;
+      e.preventDefault();
+      e.stopPropagation();
+      TrafficSignals.select(id);
+    });
+
+    // Selection ring
+    g.appendChild(_svgEl('circle', {
+      cx: '0', cy: '0', r: '4.5',
+      fill: 'none',
+      stroke: '#ffff00',
+      'stroke-width': '0.6',
+      class: 'traffic-light-select-ring',
+    }));
 
     // Outer glow
     g.appendChild(_svgEl('circle', {
       cx: '0', cy: '0', r: '4',
-      fill: '#ff2222', 'fill-opacity': '0.15',
+      class: 'traffic-light-glow',
+      fill: configured ? '#4488ff' : 'red', 'fill-opacity': '0.15',
     }));
-    // Main red dot — the most visible element
+
+    // Main circle dot — the most visible element
     g.appendChild(_svgEl('circle', {
       cx: '0', cy: '0', r: '2.2',
-      fill: '#ff3333',
+      class: 'traffic-light-dot',
+      fill: configured ? '#4488ff' : 'red',
       stroke: '#ffffff', 'stroke-width': '0.5',
-    }));
-    // Small inner highlight
-    g.appendChild(_svgEl('circle', {
-      cx: '-0.4', cy: '-0.4', r: '0.7',
-      fill: '#ff8888', 'fill-opacity': '0.6',
     }));
 
     layerTrafficLights.appendChild(g);
+  }
+
+  function _renderTrafficLights() {
+    if (!layerTrafficLights || !AppState.mapData) return;
+    while (layerTrafficLights.firstChild) layerTrafficLights.removeChild(layerTrafficLights.firstChild);
+    for (const tl of (AppState.mapData.trafficLights || [])) {
+      _renderTrafficLight(tl);
+    }
   }
 
   // ── Actor rendering ──────────────────────────────────────────────────────────
@@ -353,46 +403,146 @@
     cyclist:    { w: 2.0, h: 0.8 },
   };
 
-  const ROUTE_ACTOR_TYPES = new Set(['car', 'truck', 'bus', 'motorcycle']);
-
   function renderAllActors() {
     while (layerActors.firstChild) layerActors.removeChild(layerActors.firstChild);
     while (layerTraj.firstChild)   layerTraj.removeChild(layerTraj.firstChild);
+    if (layerTriggerPoints) {
+      while (layerTriggerPoints.firstChild) layerTriggerPoints.removeChild(layerTriggerPoints.firstChild);
+    }
 
     if (AppState.ego) _renderActor(AppState.ego);
     for (const npc of AppState.npcs) _renderActor(npc);
 
-    // Trajectories: render non-selected first, selected last (on top)
+    // Paths: ego path is actor-level; NPC paths live inside event actions.
     const allActors = AppState.ego ? [AppState.ego, ...AppState.npcs] : [...AppState.npcs];
-    const withTraj  = allActors.filter(a => a.trajectory && a.trajectory.length >= 2 && _shouldRenderPath(a, 'trajectory'));
-    const withRoute = allActors.filter(a => a.route && a.route.length >= 2 && _shouldRenderPath(a, 'route'));
+    const withTraj  = allActors.flatMap(a => _pathItems(a, 'trajectory')).filter(item => _shouldRenderPath(item));
+    const withRoute = allActors.flatMap(a => _pathItems(a, 'route')).filter(item => _shouldRenderPath(item));
     const selId     = AppState.selectedId;
 
     // Non-selected trajectories first (underneath)
-    for (const actor of withTraj) {
-      if (actor.id !== selId) _renderTrajectory(actor);
+    for (const item of withTraj) {
+      if (item.actor.id !== selId) _renderTrajectory(item);
     }
     // Selected trajectory last (on top)
-    for (const actor of withTraj) {
-      if (actor.id === selId) _renderTrajectory(actor);
+    for (const item of withTraj) {
+      if (item.actor.id === selId) _renderTrajectory(item);
     }
 
     // Routes are separate from trajectories; render them after trajectories.
-    for (const actor of withRoute) {
-      if (actor.id !== selId) _renderRoute(actor);
+    for (const item of withRoute) {
+      if (item.actor.id !== selId) _renderRoute(item);
     }
-    for (const actor of withRoute) {
-      if (actor.id === selId) _renderRoute(actor);
+    for (const item of withRoute) {
+      if (item.actor.id === selId) _renderRoute(item);
     }
+
+    _renderTriggerPoints();
   }
 
-  function _shouldRenderPath(actor, pathType) {
-    return _getActorPathMode(actor) === pathType;
+  function _renderTriggerPoints() {
+    if (!layerTriggerPoints) return;
+    const actor = AppState.npcs.find(n => n.id === AppState.selectedId);
+    if (!actor) return;
+    (actor.events || []).forEach(ev => {
+      const point = ev.trigger?.point;
+      if (!point) return;
+      const radius = Math.max(0, Number(ev.trigger?.value ?? 20));
+      const g = _svgEl('g', { class: 'trigger-point', transform: `translate(${point.x},${point.y})` });
+      const ring = _svgEl('circle', {
+        cx: '0', cy: '0', r: _formatSvgNumber(radius),
+        fill: 'rgba(0, 0, 0, 0.05)',
+        stroke: '#808080',
+        'stroke-width': '0.3',
+        'stroke-dasharray': '1,1',
+        class: 'trigger-radius-control trigger-radius-ring',
+      });
+      _attachTriggerRadiusDrag(ring, actor.id, ev.id, point);
+      g.appendChild(ring);
+      g.appendChild(_svgEl('circle', {
+        cx: '0', cy: '0', r: '0.7',
+        fill: '#ffffff00',
+        stroke: '#ffffff',
+        'stroke-width': '0.5',
+      }));
+      const label = _svgEl('text', {
+        x: '0', y: '-4',
+        'text-anchor': 'middle',
+        'font-size': '2.2',
+        fill: '#fff',
+        style: 'pointer-events:none',
+      });
+      label.textContent = point.name || 'Point';
+      g.appendChild(label);
+      const handle = _svgEl('rect', {
+        x: _formatSvgNumber(radius - 0.7),
+        y: '-0.7',
+        width: '1.4',
+        height: '1.4',
+        fill: '#ffffff',
+        stroke: '#808080',
+        'stroke-width': '0.3',
+        class: 'trigger-radius-control trigger-radius-handle',
+      });
+      _attachTriggerRadiusDrag(handle, actor.id, ev.id, point);
+      g.appendChild(handle);
+      layerTriggerPoints.appendChild(g);
+    });
   }
 
-  function _getActorPathMode(actor) {
-    if (!actor || !ROUTE_ACTOR_TYPES.has(actor.type)) return 'trajectory';
-    return actor.path_mode === 'route' ? 'route' : 'trajectory';
+  function _formatSvgNumber(value) {
+    return Number(value).toFixed(2).replace(/\.?0+$/, '');
+  }
+
+  function _attachTriggerRadiusDrag(el, actorId, eventId, point) {
+    el.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      _triggerRadiusDrag = { actorId, eventId, point: { ...point } };
+      e.preventDefault();
+      e.stopPropagation();
+    });
+  }
+
+  function _updateTriggerRadiusDrag(e) {
+    const actor = AppState.npcs.find(n => n.id === _triggerRadiusDrag.actorId);
+    if (!actor) return;
+    const world = svgToWorld(e);
+    const p = _triggerRadiusDrag.point;
+    const distance = Math.round(Math.hypot(world.x - p.x, world.y - p.y) * 10) / 10;
+    const events = (actor.events || []).map(ev => {
+      if (ev.id !== _triggerRadiusDrag.eventId) return ev;
+      return {
+        ...ev,
+        trigger: {
+          ...ev.trigger,
+          type: 'distance_to_point',
+          value: distance,
+        },
+      };
+    });
+    AppState.updateById(actor.id, { events });
+  }
+
+  function _pathKey(actorId, eventId, pathType) {
+    return `${actorId}:${eventId || 'actor'}:${pathType}`;
+  }
+
+  function _pathItems(actor, pathType) {
+    if (actor.type === 'ego') {
+      const points = pathType === 'trajectory' ? (actor.trajectory || []) : [];
+      return points.length >= 2 ? [{ actor, eventId: null, pathType, points }] : [];
+    }
+    return (actor.events || []).flatMap(ev => {
+      const action = ev.action || {};
+      const points = pathType === 'route'
+        ? (action.type === 'assign_route' ? (action.waypoints || []) : [])
+        : (action.type === 'follow_trajectory' ? (action.trajectory || []) : []);
+      return points.length >= 2 ? [{ actor, eventId: ev.id, pathType, points }] : [];
+    });
+  }
+
+  function _shouldRenderPath(item) {
+    const hidden = item.pathType === 'route' ? _hiddenRoutes : _hiddenTrajectories;
+    return !hidden.has(_pathKey(item.actor.id, item.eventId, item.pathType));
   }
 
   function _renderActor(actor) {
@@ -438,7 +588,7 @@
       'text-anchor': 'middle', 'font-size': '2.2',
       fill: '#fff', style: 'pointer-events:none'
     });
-    label.textContent = actor.type === 'ego' ? 'EGO' : actor.type.toUpperCase();
+    label.textContent = _actorMapLabel(actor);
     g.appendChild(label);
 
     // Yaw arrow (vehicles and pedestrians — not static objects)
@@ -448,6 +598,10 @@
     }
 
     layerActors.appendChild(g);
+  }
+
+  function _actorMapLabel(actor) {
+    return AppState.actorLabel(actor, {ego: 'EGO'});
   }
 
   function _buildYawArrow(actor, color, size) {
@@ -491,7 +645,7 @@
 
   function _ensureArrowMarker(actorId, color) {
     // Create a per-actor arrow marker so each trajectory gets its own color
-    const markerId = `arrow-traj-${actorId}`;
+    const markerId = `arrow-traj-${String(actorId).replace(/[^a-zA-Z0-9_-]/g, '-')}`;
     if (!document.getElementById(markerId)) {
       const defs = svg.querySelector('defs');
       const marker = _svgEl('marker', {
@@ -506,30 +660,24 @@
     return markerId;
   }
 
-  function _renderTrajectory(actor) {
+  function _renderTrajectory(item) {
+    const actor = item.actor;
     const col  = ACTOR_COLORS[actor.type] || ACTOR_COLORS.car;
-    const traj = actor.trajectory;
+    const traj = item.points;
     if (!traj || traj.length < 2) return;
 
     const isSel    = AppState.selectedId === actor.id;
-    const isHidden = _hiddenTrajectories.has(actor.id);
 
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     g.setAttribute('data-traj-id', actor.id);
     g.setAttribute('class', `traj-group${isSel ? ' traj-selected' : ''}`);
-
-    // Hidden trajectories: skip rendering entirely
-    if (isHidden && !isSel) {
-      layerTraj.appendChild(g);
-      return;
-    }
 
     // Non-selected trajectories render dimmed; selected at full opacity
     const groupOpacity = isSel ? '1.0' : '0.3';
     g.setAttribute('opacity', groupOpacity);
 
     // Per-actor arrow marker color
-    const markerId = _ensureArrowMarker(actor.id, col.body);
+    const markerId = _ensureArrowMarker(_pathKey(actor.id, item.eventId, 'trajectory'), col.body);
 
     // Dashed path line
     const pts = traj.map(wp => `${wp.x},${wp.y}`).join(' ');
@@ -586,26 +734,21 @@
     layerTraj.appendChild(g);
   }
 
-  function _renderRoute(actor) {
+  function _renderRoute(item) {
+    const actor = item.actor;
     const col = ACTOR_COLORS[actor.type] || ACTOR_COLORS.car;
-    const route = actor.route;
+    const route = item.points;
     if (!route || route.length < 2) return;
 
     const isSel    = AppState.selectedId === actor.id;
-    const isHidden = _hiddenRoutes.has(actor.id);
 
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     g.setAttribute('data-route-id', actor.id);
     g.setAttribute('class', `route-group${isSel ? ' route-selected' : ''}`);
 
-    if (isHidden && !isSel) {
-      layerTraj.appendChild(g);
-      return;
-    }
-
     g.setAttribute('opacity', isSel ? '1.0' : '0.35');
 
-    const markerId = _ensureArrowMarker(actor.id, col.body);
+    const markerId = _ensureArrowMarker(_pathKey(actor.id, item.eventId, 'route'), col.body);
 
     const pts = route.map(wp => `${wp.x},${wp.y}`).join(' ');
     const line = _svgEl('polyline', {
@@ -654,7 +797,7 @@
         'font-size': '1.8', fill: '#fff',
         style: 'pointer-events:none'
       });
-      speed.textContent = `${(actor.route_velocity ?? 10).toFixed(0)} m/s`;
+      speed.textContent = '10 m/s';
       g.appendChild(speed);
     }
 
@@ -674,44 +817,66 @@
   // Pan with left-drag on the background (not on actors)
   svg.addEventListener('mousedown', e => {
     if (e.button !== 0) return;
-    // Only pan if no active tool and click is not on an actor
-    if (AppState.activeTool || AppState.trajectoryMode || AppState.routeMode) return;
-    if (e.target.closest('.actor-group') || e.target.closest('.yaw-arrow')) return;
+    if (e.target.closest('.actor-group') ||
+        e.target.closest('.yaw-arrow') ||
+        e.target.closest('.trigger-radius-control')) return;
 
     _dragging  = true;
     _dragStart = { x: e.clientX, y: e.clientY };
     _panStart  = { ...(_pan) };
+    _panMoved = false;
     svg.style.cursor = 'grabbing';
     e.preventDefault();
-  });
+  }, true);
 
   window.addEventListener('mousemove', e => {
+    if (_triggerRadiusDrag) {
+      _updateTriggerRadiusDrag(e);
+      return;
+    }
     if (!_dragging) return;
-    _pan.x = _panStart.x + (e.clientX - _dragStart.x);
-    _pan.y = _panStart.y + (e.clientY - _dragStart.y);
+    const dx = e.clientX - _dragStart.x;
+    const dy = e.clientY - _dragStart.y;
+    if (!_panMoved && Math.hypot(dx, dy) <= _PAN_CLICK_THRESHOLD) return;
+    _panMoved = true;
+    _pan.x = _panStart.x + dx;
+    _pan.y = _panStart.y + dy;
     _applyTransform();
   });
 
   window.addEventListener('mouseup', () => {
+    if (_triggerRadiusDrag) {
+      _triggerRadiusDrag = null;
+      _suppressNextClick = true;
+      return;
+    }
     if (_dragging) {
+      if (_panMoved) _suppressNextClick = true;
       _dragging = false;
+      _panMoved = false;
       svg.style.cursor = '';
     }
   });
 
+  svg.addEventListener('click', e => {
+    if (!_suppressNextClick) return;
+    _suppressNextClick = false;
+    e.preventDefault();
+    e.stopPropagation();
+  }, true);
+
   // Zoom with mouse wheel
   svg.addEventListener('wheel', e => {
     e.preventDefault();
-    const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
-    const rect   = svg.getBoundingClientRect();
+    const factor = e.deltaY < 0 ? 1.06 : 1 / 1.06;
+    const cursor = _clientToSvg(e);
+    if (!cursor) return;
 
-    // Zoom around mouse position (in SVG element coords)
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-
-    _pan.x  = mx - factor * (mx - _pan.x);
-    _pan.y  = my - factor * (my - _pan.y);
-    _zoom  *= factor;
+    // Keep the world point under the cursor fixed while zooming.
+    const world = svgToWorld(e);
+    _zoom *= factor;
+    _pan.x = cursor.x - world.x * _zoom;
+    _pan.y = cursor.y - world.y * _zoom;
 
     _applyTransform();
   }, { passive: false });
@@ -729,7 +894,7 @@
         _shortcutsOverlay.classList.add('hidden');
         return;
       }
-      AppState.set({ activeTool: null, trajectoryMode: false, activeTrajectoryId: null, routeMode: false, activeRouteId: null });
+      AppState.set({ activeTool: null, trajectoryMode: false, activeTrajectoryId: null, routeMode: false, activeRouteId: null, activePathEventId: null, triggerPointMode: null });
       return;
     }
 
@@ -744,7 +909,7 @@
     // R — toggle ruler tool
     if (e.key === 'r' && !e.ctrlKey && !e.metaKey) {
       const newTool = AppState.activeTool === 'ruler' ? null : 'ruler';
-      AppState.set({ activeTool: newTool, trajectoryMode: false, activeTrajectoryId: null, routeMode: false, activeRouteId: null });
+      AppState.set({ activeTool: newTool, trajectoryMode: false, activeTrajectoryId: null, routeMode: false, activeRouteId: null, activePathEventId: null });
       return;
     }
 
@@ -773,7 +938,7 @@
         }
         AppState.select(actor.id);
         MapView.renderAllActors();
-        Toast.success(`Restored ${actor.type.toUpperCase()}`);
+        Toast.success(`Restored ${AppState.actorLabel(actor, { ego: 'EGO' })}`);
       }
       return;
     }
@@ -783,7 +948,7 @@
       const actor = AppState.findById(AppState.selectedId);
       if (actor) {
         UndoStack.push({ action: 'delete', actor: JSON.parse(JSON.stringify(actor)) });
-        const label = actor.type === 'ego' ? 'Ego Vehicle' : actor.type.toUpperCase();
+        const label = AppState.actorLabel(actor, { ego: 'Ego Vehicle' });
         AppState.removeById(AppState.selectedId);
         MapView.renderAllActors();
         Toast.info(`Deleted ${label} \u2014 Ctrl+Z to undo`);
@@ -969,7 +1134,7 @@
   }, true);  // capture phase so it fires before the objects.js click handler
 
   svg.addEventListener('mousemove', e => {
-    if (AppState.activeTool !== 'ruler' || !_rulerStart) return;
+    if (AppState.activeTool !== 'ruler' || !_rulerStart || _dragging) return;
     const world = svgToWorld(e);
     _rulerEnd = { x: world.x, y: world.y };
     _redrawRuler();
@@ -993,21 +1158,23 @@
     renderAllActors,
     svgToWorld,
     get svg() { return svg; },
-    toggleTrajectoryVisibility(actorId) {
-      if (_hiddenTrajectories.has(actorId)) _hiddenTrajectories.delete(actorId);
-      else _hiddenTrajectories.add(actorId);
+    toggleTrajectoryVisibility(actorId, eventId = null) {
+      const key = _pathKey(actorId, eventId, 'trajectory');
+      if (_hiddenTrajectories.has(key)) _hiddenTrajectories.delete(key);
+      else _hiddenTrajectories.add(key);
       renderAllActors();
     },
-    isTrajectoryVisible(actorId) {
-      return !_hiddenTrajectories.has(actorId);
+    isTrajectoryVisible(actorId, eventId = null) {
+      return !_hiddenTrajectories.has(_pathKey(actorId, eventId, 'trajectory'));
     },
-    toggleRouteVisibility(actorId) {
-      if (_hiddenRoutes.has(actorId)) _hiddenRoutes.delete(actorId);
-      else _hiddenRoutes.add(actorId);
+    toggleRouteVisibility(actorId, eventId = null) {
+      const key = _pathKey(actorId, eventId, 'route');
+      if (_hiddenRoutes.has(key)) _hiddenRoutes.delete(key);
+      else _hiddenRoutes.add(key);
       renderAllActors();
     },
-    isRouteVisible(actorId) {
-      return !_hiddenRoutes.has(actorId);
+    isRouteVisible(actorId, eventId = null) {
+      return !_hiddenRoutes.has(_pathKey(actorId, eventId, 'route'));
     },
     clearAllRulers: _clearAllRulers,
   };
@@ -1017,8 +1184,14 @@
   // ── React to state changes ───────────────────────────────────────────────────
   AppState.on('actorUpdated',  () => MapView.renderAllActors());
   AppState.on('actorRemoved',  () => MapView.renderAllActors());
-  AppState.on('selectionChanged', () => MapView.renderAllActors());
+  AppState.on('selectionChanged', () => {
+    MapView.renderAllActors();
+    _renderTrafficLights();
+  });
+  AppState.on('trafficSignalSelected', () => _renderTrafficLights());
+  AppState.on('trafficSignalUpdated', () => _renderTrafficLights());
   AppState.on('stateLoaded',   () => {
     if (AppState.mapData) MapView.renderAllActors();
+    _renderTrafficLights();
   });
 })();

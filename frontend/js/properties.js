@@ -4,7 +4,7 @@
  * Handles:
  *   - x/y/z/yaw numeric inputs
  *   - NPC behavior checkboxes
- *   - Trajectory "Draw Path" button + waypoint list with velocity inputs
+ *   - Ego trajectory "Draw Path" button + waypoint list with velocity inputs
  *   - Delete button
  */
 (function () {
@@ -15,6 +15,9 @@
   const propsContent = document.getElementById('props-content');
   const propsTitle   = document.getElementById('props-title');
   const propsDelete  = document.getElementById('props-delete');
+  const trafficSignalPanel = document.getElementById('traffic-signal-panel');
+  const btnAddTrafficEvent = document.getElementById('btn-add-traffic-event');
+  const trafficSignalEventList = document.getElementById('traffic-signal-event-list');
 
   const propX = document.getElementById('prop-x');
   const propY = document.getElementById('prop-y');
@@ -22,26 +25,20 @@
   const propYaw = document.getElementById('prop-yaw');
 
   const npcSection     = document.getElementById('props-npc-section');
+  const behaviorPanel  = document.getElementById('behavior-panel');
   const behaviorBoxes  = document.querySelectorAll('#behavior-checkboxes input[type="checkbox"]');
   const triggerSection  = document.getElementById('trigger-section');
   const propTriggerDist = document.getElementById('prop-trigger-dist');
   const egoRouteHint   = document.getElementById('ego-route-hint');
   const pathSectionLabel = document.getElementById('path-section-label');
-  const btnModeTrajectory = document.getElementById('btn-path-mode-trajectory');
-  const btnModeRoute      = document.getElementById('btn-path-mode-route');
-  const routeSpeedRow     = document.getElementById('route-speed-row');
-  const propRouteSpeed    = document.getElementById('prop-route-speed');
-  const routeSpeedDynamicsRow  = document.getElementById('route-speed-dynamics-row');
-  const propRouteSpeedDynamicsValue = document.getElementById('prop-route-speed-dynamics-value');
-  const propRouteSpeedDynamicsUnit  = document.getElementById('prop-route-speed-dynamics-unit');
   const btnDrawPath    = document.getElementById('btn-draw-path');
   const btnClearPath   = document.getElementById('btn-clear-path');
   const btnTogglePath  = document.getElementById('btn-toggle-path');
   const waypointList   = document.getElementById('waypoint-list');
+  const eventSection   = document.getElementById('event-section');
 
   // Track whether we're syncing to avoid loops
   let _syncing = false;
-  const ROUTE_ACTOR_TYPES = new Set(['car', 'truck', 'bus', 'motorcycle']);
 
   // ── Render panel for selected actor ─────────────────────────────────────────
 
@@ -49,7 +46,10 @@
     const hasEgo = !!AppState.ego;
     const npcCount = AppState.npcs.length;
     const mapName = AppState.map || 'None';
-    const withTraj = AppState.npcs.filter(n => n.trajectory && n.trajectory.length >= 2).length;
+    const withTraj = AppState.npcs.filter(n => (n.events || []).some(ev => {
+      const action = ev.action || {};
+      return (action.trajectory || action.waypoints || []).length >= 2;
+    })).length;
 
     const npcBreakdown = {};
     AppState.npcs.forEach(n => { npcBreakdown[n.type] = (npcBreakdown[n.type] || 0) + 1; });
@@ -88,20 +88,30 @@
   function render() {
     const id    = AppState.selectedId;
     const actor = id ? AppState.findById(id) : null;
+    const trafficLightId = AppState.selectedTrafficLightId;
+    const trafficLight = trafficLightId ? TrafficSignals.mapSignalById(trafficLightId) : null;
+
+    if (trafficLight) {
+      _renderTrafficSignalPanel(trafficLight);
+      return;
+    }
 
     if (!actor) {
       propsEmpty.classList.remove('hidden');
       propsContent.classList.add('hidden');
+      if (trafficSignalPanel) trafficSignalPanel.classList.add('hidden');
       _renderSummary();
       return;
     }
 
     propsEmpty.classList.add('hidden');
     propsContent.classList.remove('hidden');
+    if (trafficSignalPanel) trafficSignalPanel.classList.add('hidden');
+    if (propsDelete) propsDelete.classList.remove('hidden');
+    document.getElementById('spawn-panel')?.classList.remove('hidden');
 
     // Title
-    const typeLabel = actor.type === 'ego' ? 'Ego-Fahrzeug' : actor.type.charAt(0).toUpperCase() + actor.type.slice(1);
-    propsTitle.textContent = typeLabel;
+    propsTitle.textContent = AppState.actorLabel(actor, { ego: 'Ego-Fahrzeug' });
 
     // Position / yaw
     _syncing = true;
@@ -119,26 +129,21 @@
     if (isScenarioActor) {
       // Behavior checkboxes — only for NPCs (hide for ego)
       const behaviorSection = document.getElementById('behavior-checkboxes');
-      const behaviorLabel   = behaviorSection?.previousElementSibling; // .props-group-label
       if (behaviorSection) behaviorSection.style.display = isNpc ? '' : 'none';
-      if (behaviorLabel && behaviorLabel.classList.contains('props-group-label'))
-        behaviorLabel.style.display = isNpc ? '' : 'none';
+      if (behaviorPanel) behaviorPanel.classList.toggle('hidden', !isNpc);
 
       // Trigger distance — only for NPCs
       triggerSection.style.display = isNpc ? '' : 'none';
+      eventSection.classList.toggle('hidden', !isNpc);
 
-      const canUseRoute = ROUTE_ACTOR_TYPES.has(actor.type);
-      const isRouteMode = _getActorPathMode(actor) === 'route';
-      const hasCompleteRoute = isRouteMode && (actor.route || []).length >= 2;
-
-      pathSectionLabel.classList.toggle('hidden', canUseRoute);
-      btnModeTrajectory.parentElement.classList.toggle('hidden', !canUseRoute);
-      btnModeTrajectory.classList.toggle('active', !isRouteMode);
-      btnModeRoute.classList.toggle('active', isRouteMode);
-      btnDrawPath.textContent = isRouteMode ? 'Route zeichnen' : 'Pfad zeichnen';
-      btnClearPath.textContent = isRouteMode ? 'Route löschen' : 'Pfad löschen';
-      routeSpeedRow.classList.toggle('hidden', !hasCompleteRoute);
-      routeSpeedDynamicsRow.classList.toggle('hidden', !hasCompleteRoute);
+      pathSectionLabel.classList.toggle('hidden', isNpc);
+      btnDrawPath.textContent = 'Zeichnen';
+      btnClearPath.textContent = 'Löschen';
+      btnDrawPath.parentElement.classList.toggle('hidden', isNpc);
+      waypointList.classList.toggle('hidden', isNpc);
+      const hasEgoPath = !isNpc && (actor.trajectory || []).length > 0;
+      btnTogglePath.classList.toggle('hidden', !hasEgoPath);
+      btnClearPath.classList.toggle('hidden', !hasEgoPath);
 
       // Ego keeps the original trajectory-only route hint.
       egoRouteHint.classList.toggle('hidden', actor.type !== 'ego');
@@ -152,32 +157,130 @@
         _syncing = false;
       }
 
-      if (isRouteMode) {
-        _syncing = true;
-        propRouteSpeed.value = (actor.route_velocity ?? 10).toFixed(1);
-        propRouteSpeedDynamicsValue.value = (actor.route_speed_dynamics_value ?? 0.0).toFixed(1);
-        propRouteSpeedDynamicsUnit.value = actor.route_speed_dynamics_dimension === 'time' ? 'time' : 'distance';
-        _syncing = false;
+      // Toggle path visibility button state
+      const pathVisible = MapView.isTrajectoryVisible(actor.id);
+      btnTogglePath.textContent = pathVisible ? 'Ausblenden' : 'Einblenden';
+
+      // Waypoint list: ego uses the original global editor; NPCs edit paths inside events.
+      if (!isNpc) {
+        _renderEgoPathList(actor);
+      } else {
+        waypointList.innerHTML = '';
       }
 
-      // Toggle path visibility button state
-      const pathVisible = isRouteMode
-        ? MapView.isRouteVisible(actor.id)
-        : MapView.isTrajectoryVisible(actor.id);
-      const pathLabel = isRouteMode ? 'Route' : 'Pfad';
-      btnTogglePath.textContent = pathVisible ? `${pathLabel} ausblenden` : `${pathLabel} anzeigen`;
-
-      // Waypoint list (both ego and NPCs)
-      if (isRouteMode) _renderRouteList(actor);
-      else _renderWaypointList(actor);
+      if (isNpc) {
+        EventPanel.render(actor);
+      }
     }
   }
 
-  function _renderWaypointList(actor) {
-    waypointList.innerHTML = '';
-    const traj = actor.trajectory || [];
+  function _renderTrafficSignalPanel(tl) {
+    const action = TrafficSignals.actionById(tl.id);
+    propsEmpty.classList.add('hidden');
+    propsContent.classList.remove('hidden');
+    propsTitle.textContent = `Ampel ${tl.id}`;
+    if (propsDelete) propsDelete.classList.add('hidden');
+    document.getElementById('spawn-panel')?.classList.add('hidden');
+    npcSection.classList.add('hidden');
+    if (trafficSignalPanel) trafficSignalPanel.classList.remove('hidden');
+    _renderTrafficSignalEvents(tl, action);
+  }
 
-    if (traj.length === 0) {
+  function _defaultTrafficSignalEvent(action) {
+    const events = action?.events || [];
+    const idx = _nextIndexedId(events, 'traffic-event');
+    return {
+      id: `traffic-event-${idx}`,
+      trigger_distance: 40,
+      state: 'red',
+    };
+  }
+
+  function _renderTrafficSignalEvents(tl, action) {
+    if (!trafficSignalEventList) return;
+    trafficSignalEventList.innerHTML = '';
+    const events = action?.events || [];
+    if (events.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'event-empty';
+      empty.textContent = 'Noch keine Events definiert.';
+      trafficSignalEventList.appendChild(empty);
+      return;
+    }
+
+    events.forEach(ev => {
+      const card = document.createElement('div');
+      card.className = 'event-card traffic-event-card';
+
+      const header = document.createElement('div');
+      header.className = 'event-card-header traffic-event-header';
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'event-delete';
+      deleteBtn.type = 'button';
+      deleteBtn.textContent = '×';
+      deleteBtn.title = 'Event löschen';
+      deleteBtn.addEventListener('click', () => _deleteTrafficSignalEvent(tl.id, ev.id));
+
+      header.appendChild(_trafficStatePicker(tl.id, ev));
+      header.appendChild(deleteBtn);
+      card.appendChild(header);
+
+      const distanceInput = document.createElement('input');
+      distanceInput.type = 'number';
+      distanceInput.min = '0';
+      distanceInput.step = '1';
+      distanceInput.value = ev.trigger_distance ?? 40;
+      distanceInput.addEventListener('change', e => {
+        _updateTrafficSignalEvent(tl.id, ev.id, {
+          trigger_distance: Math.max(0, parseFloat(e.target.value) || 0),
+        });
+      });
+      card.appendChild(_paramRow('Ego <=', distanceInput, 'm'));
+
+      trafficSignalEventList.appendChild(card);
+    });
+  }
+
+  function _trafficStatePicker(signalId, ev) {
+    const current = ['red', 'yellow', 'green'].includes(ev.state) ? ev.state : 'red';
+    const wrap = document.createElement('div');
+    wrap.className = 'traffic-state-picker';
+    [
+      ['red', 'Rot'],
+      ['yellow', 'Gelb'],
+      ['green', 'Grün'],
+    ].forEach(([state, title]) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `traffic-state-option ${state}${state === current ? ' active' : ''}`;
+      btn.dataset.state = state;
+      btn.title = title;
+      btn.addEventListener('click', () => _updateTrafficSignalEvent(signalId, ev.id, { state }));
+      wrap.appendChild(btn);
+    });
+    return wrap;
+  }
+
+  function _paramRow(labelText, control, unitText) {
+    const row = document.createElement('div');
+    row.className = 'event-param-row';
+    const label = document.createElement('label');
+    label.textContent = labelText;
+    const unit = document.createElement('span');
+    unit.style.cssText = 'color:var(--text-dim);font-size:10px;';
+    unit.textContent = unitText;
+    row.appendChild(label);
+    row.appendChild(control);
+    row.appendChild(unit);
+    return row;
+  }
+
+  function _renderEgoPathList(actor) {
+    waypointList.innerHTML = '';
+    const points = actor.trajectory || [];
+
+    if (points.length === 0) {
       const empty = document.createElement('div');
       empty.style.cssText = 'color:var(--text-dim);font-size:11px;padding:4px 0';
       empty.textContent = 'Noch kein Pfad gezeichnet.';
@@ -185,7 +288,7 @@
       return;
     }
 
-    traj.forEach((wp, i) => {
+    points.forEach((wp, i) => {
       const item = document.createElement('div');
       item.className = 'waypoint-item';
 
@@ -197,6 +300,16 @@
       coords.className = 'wp-coords';
       coords.textContent = `(${wp.x.toFixed(1)}, ${wp.y.toFixed(1)})`;
 
+      const delBtn = document.createElement('button');
+      delBtn.className = 'wp-delete';
+      delBtn.textContent = '×';
+      delBtn.title = 'Wegpunkt entfernen';
+      delBtn.addEventListener('click', () => {
+        ObjectsManager.deletePathPoint(actor.id, 'trajectory', i);
+      });
+
+      item.appendChild(num);
+      item.appendChild(coords);
       const velInput = document.createElement('input');
       velInput.type = 'number';
       velInput.min  = '0';
@@ -205,84 +318,43 @@
       velInput.value = (wp.velocity || 10).toFixed(1);
       velInput.title = 'Geschwindigkeit (m/s)';
       velInput.dataset.idx = i;
-      velInput.addEventListener('change', ev => {
-        ObjectsManager.setWaypointVelocity(actor.id, i, ev.target.value);
+      velInput.addEventListener('change', e => {
+        ObjectsManager.setPathPointVelocity(actor.id, 'trajectory', i, e.target.value);
       });
 
       const msSuffix = document.createElement('span');
       msSuffix.style.cssText = 'color:var(--text-dim);font-size:10px;';
       msSuffix.textContent = 'm/s';
 
-      const delBtn = document.createElement('button');
-      delBtn.className = 'wp-delete';
-      delBtn.textContent = '×';
-      delBtn.title = 'Wegpunkt entfernen';
-      delBtn.addEventListener('click', () => {
-        ObjectsManager.deleteWaypoint(actor.id, i);
-      });
-
-      item.appendChild(num);
-      item.appendChild(coords);
       item.appendChild(velInput);
       item.appendChild(msSuffix);
+
       item.appendChild(delBtn);
       waypointList.appendChild(item);
     });
   }
 
-  function _renderRouteList(actor) {
-    waypointList.innerHTML = '';
-    const route = actor.route || [];
-
-    if (route.length === 0) {
-      const empty = document.createElement('div');
-      empty.style.cssText = 'color:var(--text-dim);font-size:11px;padding:4px 0';
-      empty.textContent = 'Noch keine Route gezeichnet.';
-      waypointList.appendChild(empty);
-      return;
-    }
-
-    route.forEach((wp, i) => {
-      const item = document.createElement('div');
-      item.className = 'waypoint-item route-waypoint-item';
-
-      const num = document.createElement('span');
-      num.className = 'wp-num';
-      num.textContent = i + 1;
-
-      const coords = document.createElement('span');
-      coords.className = 'wp-coords';
-      coords.textContent = `(${wp.x.toFixed(1)}, ${wp.y.toFixed(1)})`;
-
-      const delBtn = document.createElement('button');
-      delBtn.className = 'wp-delete';
-      delBtn.textContent = '×';
-      delBtn.title = 'Wegpunkt entfernen';
-      delBtn.addEventListener('click', () => {
-        ObjectsManager.deleteRouteWaypoint(actor.id, i);
-      });
-
-      item.appendChild(num);
-      item.appendChild(coords);
-      item.appendChild(delBtn);
-      waypointList.appendChild(item);
-    });
+  function _nextIndexedId(events, prefix) {
+    const used = new Set((events || []).map(ev => String(ev.id || '')));
+    let idx = events.length + 1;
+    while (used.has(`${prefix}-${idx}`)) idx += 1;
+    return idx;
   }
 
-  function _canSelectedActorUseRoute() {
-    const id = AppState.selectedId;
-    const actor = id ? AppState.findById(id) : null;
-    return !!actor && ROUTE_ACTOR_TYPES.has(actor.type);
+  function _updateTrafficSignalEvent(signalId, eventId, patch) {
+    const signal = TrafficSignals.actionById(signalId);
+    if (!signal) return;
+    const events = (signal.events || []).map(ev => (
+      ev.id === eventId ? { ...ev, ...patch } : ev
+    ));
+    TrafficSignals.update(signalId, { events });
   }
 
-  function _getActorPathMode(actor) {
-    if (!actor || !ROUTE_ACTOR_TYPES.has(actor.type)) return 'trajectory';
-    return actor.path_mode === 'route' ? 'route' : 'trajectory';
-  }
-
-  function _getSelectedPathMode() {
-    const id = AppState.selectedId;
-    return _getActorPathMode(id ? AppState.findById(id) : null);
+  function _deleteTrafficSignalEvent(signalId, eventId) {
+    const signal = TrafficSignals.actionById(signalId);
+    if (!signal) return;
+    const events = (signal.events || []).filter(ev => ev.id !== eventId);
+    TrafficSignals.update(signalId, { events });
   }
 
   // ── Input → state bindings ───────────────────────────────────────────────────
@@ -326,73 +398,36 @@
     AppState.updateById(id, { trigger_distance: val });
   });
 
-  // ── Path mode + buttons ──────────────────────────────────────────────────────
-
-  btnModeTrajectory.addEventListener('click', () => {
-    const id = AppState.selectedId;
-    if (id) AppState.updateById(id, { path_mode: 'trajectory' });
-    AppState.set({ routeMode: false, activeRouteId: null });
-    render();
-  });
-
-  btnModeRoute.addEventListener('click', () => {
-    if (!_canSelectedActorUseRoute()) return;
-    const id = AppState.selectedId;
-    if (id) AppState.updateById(id, { path_mode: 'route' });
-    AppState.set({ trajectoryMode: false, activeTrajectoryId: null });
-    render();
-  });
-
-  propRouteSpeed.addEventListener('change', () => {
-    if (_syncing) return;
-    const id = AppState.selectedId;
+  btnAddTrafficEvent.addEventListener('click', () => {
+    const id = AppState.selectedTrafficLightId;
     if (!id) return;
-    const raw = parseFloat(propRouteSpeed.value);
-    const val = Math.max(0, Math.min(50, Number.isFinite(raw) ? raw : 10));
-    propRouteSpeed.value = val.toFixed(1);
-    ObjectsManager.setRouteVelocity(id, val);
+    const signal = TrafficSignals.actionById(id);
+    if (!signal) return;
+    const events = [...(signal.events || []), _defaultTrafficSignalEvent(signal)];
+    TrafficSignals.update(id, { events });
   });
 
-  function _onRouteSpeedDynamicsChange() {
-    if (_syncing) return;
-    const id = AppState.selectedId;
-    if (!id) return;
-    const raw = parseFloat(propRouteSpeedDynamicsValue.value);
-    const val = Math.max(0, Number.isFinite(raw) ? raw : 0.0);
-    const dimension = propRouteSpeedDynamicsUnit.value === 'time' ? 'time' : 'distance';
-    propRouteSpeedDynamicsValue.value = val.toFixed(1);
-    ObjectsManager.setRouteSpeedDynamics(id, val, dimension);
-  }
-
-  propRouteSpeedDynamicsValue.addEventListener('change', _onRouteSpeedDynamicsChange);
-  propRouteSpeedDynamicsUnit.addEventListener('change', _onRouteSpeedDynamicsChange);
+  // ── Ego path buttons ─────────────────────────────────────────────────────────
 
   btnDrawPath.addEventListener('click', () => {
     const id = AppState.selectedId;
     if (!id) return;
-    if (_getSelectedPathMode() === 'route') ObjectsManager.startRouteMode(id);
-    else ObjectsManager.startTrajectoryMode(id);
+    ObjectsManager.startPathMode(id, 'trajectory');
   });
 
   btnClearPath.addEventListener('click', () => {
     const id = AppState.selectedId;
     if (!id) return;
-    if (_getSelectedPathMode() === 'route') ObjectsManager.clearRoute(id);
-    else ObjectsManager.clearTrajectory(id);
+    ObjectsManager.clearPath(id, 'trajectory');
     render();
   });
 
   btnTogglePath.addEventListener('click', () => {
     const id = AppState.selectedId;
     if (!id) return;
-    const routeModeActive = _getSelectedPathMode() === 'route';
-    if (routeModeActive) MapView.toggleRouteVisibility(id);
-    else MapView.toggleTrajectoryVisibility(id);
-    const visible = routeModeActive
-      ? MapView.isRouteVisible(id)
-      : MapView.isTrajectoryVisible(id);
-    const pathLabel = routeModeActive ? 'Route' : 'Pfad';
-    btnTogglePath.textContent = visible ? `${pathLabel} ausblenden` : `${pathLabel} anzeigen`;
+    MapView.toggleTrajectoryVisibility(id);
+    const visible = MapView.isTrajectoryVisible(id);
+    btnTogglePath.textContent = visible ? 'Ausblenden' : 'Einblenden';
   });
 
   // ── Delete ──────────────────────────────────────────────────────────────────
@@ -402,7 +437,7 @@
     if (!id) return;
     const actor = AppState.findById(id);
     if (!actor) return;
-    const label = actor.type === 'ego' ? 'Ego-Fahrzeug' : `${actor.type.toUpperCase()} (${actor.id})`;
+    const label = AppState.actorLabel(actor, { ego: 'Ego-Fahrzeug' });
     const ok = await Confirm.show(`${label} l\u00f6schen?`, 'L\u00f6schen');
     if (!ok) return;
     UndoStack.push({ action: 'delete', actor: JSON.parse(JSON.stringify(actor)) });
@@ -412,9 +447,13 @@
     Toast.info(`${label} gel\u00f6scht \u2014 Strg+Z zum R\u00fcckg\u00e4ngigmachen`);
   });
 
+  EventPanel.setRefreshHandler(render);
+
   // ── Listen for state changes ─────────────────────────────────────────────────
 
   AppState.on('selectionChanged', () => render());
+  AppState.on('trafficSignalSelected', () => render());
+  AppState.on('trafficSignalUpdated', () => render());
   AppState.on('actorUpdated',     id => {
     if (id === AppState.selectedId) render();
     else if (!AppState.selectedId) _renderSummary();
@@ -423,6 +462,25 @@
   AppState.on('stateLoaded',      () => render());
   AppState.on('change',           patch => {
     if (!AppState.selectedId && ('weather' in patch || 'time' in patch)) _renderSummary();
+    if ('triggerPointMode' in patch) {
+      const drawing = AppState.triggerPointMode ||
+        (AppState.trajectoryMode && AppState.activeTrajectoryId) ||
+        (AppState.routeMode && AppState.activeRouteId);
+      MapView.svg.classList.toggle('trajectory-mode', !!drawing);
+    }
+  });
+
+  document.querySelectorAll('.collapsible-header[data-collapse-target]').forEach(header => {
+    header.addEventListener('click', e => {
+      if (e.target.closest('input, select, button:not(.collapsible-header)')) return;
+      const targetId = header.dataset.collapseTarget;
+      const target = targetId ? document.getElementById(targetId) : null;
+      const section = target ? target.closest('.collapsible-section') : null;
+      if (!section) return;
+      section.classList.toggle('collapsed');
+      const indicator = header.querySelector('.collapse-indicator');
+      if (indicator) indicator.textContent = section.classList.contains('collapsed') ? '+' : '-';
+    });
   });
 
   // Render initial summary on load

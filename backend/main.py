@@ -11,11 +11,7 @@ Endpoints:
 """
 
 import os
-import sys
 from pathlib import Path
-
-import shutil
-import tempfile
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
@@ -154,20 +150,6 @@ async def export_scenario(request: Request):
         raise HTTPException(status_code=500, detail=f"Export failed: {e}")
 
     filename = f"{map_name}_scenario.xosc"
-
-    # Also generate route XML if ego route waypoints are provided
-    route_wps = params.get("route_waypoints", [])
-    route_path = None
-    if route_wps and len(route_wps) >= 1:
-        try:
-            route_path = export_route_xml(params)
-        except Exception as e:
-            print(f"[export] Route XML generation failed (non-fatal): {e}")
-
-    def _cleanup():
-        os.remove(tmp_path)
-        if route_path and os.path.exists(route_path):
-            pass  # keep route XML — user may need it
 
     return FileResponse(
         tmp_path,

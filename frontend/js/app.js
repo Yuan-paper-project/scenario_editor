@@ -14,9 +14,10 @@
     mapData:  null,       // road render JSON from /api/maps/{town}/render
 
     // ── Scenario ─────────────────────────────────────────────
-    ego: null,            // {id, type:'ego', x, y, z, yaw} or null
-    npcs: [],             // [{id, type, x, y, z, yaw, behaviors:[], trajectory:[]}]
+    ego: null,            // {id, type:'ego', x, y, z, yaw, trajectory} or null
+    npcs: [],             // [{id, type, x, y, z, yaw, events}]
     staticObjects: [],    // [{id, type:'tree'|'building', x, y}]
+    trafficSignals: [],   // configured traffic-light events from the map
 
     // ── Weather / time ────────────────────────────────────────
     weather: {
@@ -27,11 +28,14 @@
 
     // ── Editor interaction ─────────────────────────────────────
     selectedId:          null,   // id of selected actor/object
-    activeTool:          null,   // 'ego'|'car'|'truck'|'bus'|'motorcycle'|'pedestrian'|'tree'|'building'|null
+    selectedTrafficLightId: null, // id of selected map traffic light
+    activeTool:          null,   // selected toolbar tool, or null
     trajectoryMode:      false,  // true while drawing a path
-    activeTrajectoryId:  null,   // npc id whose trajectory we're drawing
+    activeTrajectoryId:  null,   // actor id whose trajectory we're drawing
     routeMode:           false,  // true while drawing a route
     activeRouteId:       null,   // actor id whose route we're drawing
+    activePathEventId:    null,   // event id whose action path/route we're drawing
+    triggerPointMode:    null,   // { actorId, eventId } while picking a distance trigger point
 
     // ── Listeners ─────────────────────────────────────────────
     _listeners: {},
@@ -97,6 +101,7 @@
     /** Select an actor. Pass null to deselect. */
     select(id) {
       this.selectedId = id;
+      this.selectedTrafficLightId = null;
       this.emit('selectionChanged', id);
     },
 
@@ -111,49 +116,65 @@
       return best;
     },
 
-    /** Snapshot state as a plain serialisable object. */
+    /** Human-readable actor label, indexed per actor type for NPCs. */
+    actorLabel(actorOrId, options = {}) {
+      const actor = typeof actorOrId === 'string' ? this.findById(actorOrId) : actorOrId;
+      if (!actor) return options.fallback || 'Actor';
+      if (actor.type === 'ego') return options.ego || 'Ego';
+
+      const type = String(actor.type || 'actor').toUpperCase();
+      const index = this.npcs
+        .filter(n => n.type === actor.type)
+        .findIndex(n => n.id === actor.id);
+      return index >= 0 ? `${type} ${index + 1}` : type;
+    },
+
+    /** Snapshot editor state as scenario JSON. */
     toJSON() {
       return {
-        map:           this.map,
-        weather:       { ...this.weather },
-        time:          this.time,
-        ego:           this.ego ? {
+        schema_version: '1.0',
+        map: this.map,
+        weather: { ...this.weather },
+        time: this.time,
+        ego: {
           ...this.ego,
-          trajectory: (this.ego.trajectory || []).map(wp => ({ ...wp })),
-          route:      (this.ego.route || []).map(wp => ({ ...wp })),
-        } : null,
-        npcs:          this.npcs.map(n => ({
+          trajectory: this.ego.trajectory.map(p => ({ ...p })),
+        },
+        npcs: this.npcs.map(n => ({
           ...n,
-          trajectory: (n.trajectory || []).map(wp => ({ ...wp })),
-          route:      (n.route || []).map(wp => ({ ...wp })),
+          events: n.events.map(ev => ({ ...ev })),
+          behaviors: [...n.behaviors],
         })),
         staticObjects: this.staticObjects.map(o => ({ ...o })),
+        trafficSignals: this.trafficSignals.map(sig => ({
+          ...sig,
+          events: sig.events.map(ev => ({ ...ev })),
+        })),
       };
     },
 
-    /** Restore state from a plain object (e.g. loaded JSON). */
+    /** Restore editor state from scenario JSON. */
     loadJSON(data) {
-      const normalizeActor = actor => ({
-        ...actor,
-        trajectory: actor.trajectory || [],
-        route: actor.route || [],
-        route_velocity: actor.route_velocity ?? 10.0,
-        route_speed_dynamics_value: actor.route_speed_dynamics_value ?? 0.0,
-        route_speed_dynamics_dimension: actor.route_speed_dynamics_dimension === 'time' ? 'time' : 'distance',
-      });
-
-      this.map           = data.map     || null;
-      this.weather       = { ...data.weather } || { ...this.weather };
-      this.time          = data.time    || 'daytime';
-      this.ego           = data.ego ? normalizeActor(data.ego) : null;
-      this.npcs          = (data.npcs || []).map(normalizeActor);
-      this.staticObjects = data.staticObjects || [];
-      this.selectedId    = null;
-      this.activeTool    = null;
-      this.trajectoryMode     = false;
+      this.map             = data.map || null;
+      this.weather         = data.weather ? { ...data.weather } : { ...this.weather };
+      this.time            = data.time || 'daytime';
+      this.ego             = data.ego ? { ...data.ego, trajectory: data.ego.trajectory || [] } : null;
+      this.npcs            = (data.npcs || []).map(n => ({
+        ...n,
+        events: n.events || [],
+        behaviors: n.behaviors || [],
+      }));
+      this.staticObjects   = data.staticObjects || [];
+      this.trafficSignals = (data.trafficSignals || []).map(sig => ({ ...sig, events: sig.events || [] }));
+      this.selectedId      = null;
+      this.selectedTrafficLightId = null;
+      this.activeTool      = null;
+      this.trajectoryMode  = false;
       this.activeTrajectoryId = null;
-      this.routeMode          = false;
-      this.activeRouteId      = null;
+      this.routeMode       = false;
+      this.activeRouteId   = null;
+      this.activePathEventId = null;
+      this.triggerPointMode = null;
       this.emit('stateLoaded', data);
     },
   };

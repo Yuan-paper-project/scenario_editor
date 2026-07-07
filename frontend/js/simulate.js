@@ -131,8 +131,17 @@
 
   function _getActorTimeline(actor) {
     if (!actor) return null;
-    if (actor.type !== 'ego' && actor.path_mode === 'route') {
-      return _buildRouteTimeline(actor.route, actor.route_velocity ?? 10);
+    if (actor.type !== 'ego') {
+      for (const ev of actor.events || []) {
+        const action = ev.action || {};
+        if (action.type === 'assign_route' && (action.waypoints || []).length >= 2) {
+          return _buildRouteTimeline(action.waypoints, 10);
+        }
+        if (action.type === 'follow_trajectory' && (action.trajectory || []).length >= 2) {
+          return _buildTimeline(action.trajectory);
+        }
+      }
+      return null;
     }
     return _buildTimeline(actor.trajectory);
   }

@@ -4,9 +4,7 @@ Also validates and normalises incoming scenario JSON from the frontend.
 """
 
 import sys
-import math
 import uuid
-import tempfile
 from pathlib import Path
 
 _LLMGEN = Path(__file__).resolve().parent.parent.parent / "llm-scenario-gen"
@@ -18,6 +16,115 @@ def _ensure_llmgen_on_path():
     llmgen_str = str(_LLMGEN)
     if llmgen_str not in sys.path:
         sys.path.insert(0, llmgen_str)
+
+
+def _normalize_waypoints(points, include_velocity: bool = False) -> list[dict]:
+    if not isinstance(points, list):
+        return []
+    normalized = []
+    for point in points:
+        if not isinstance(point, dict):
+            continue
+        wp = {
+            "x": float(point.get("x", 0.0)),
+            "y": float(point.get("y", 0.0)),
+            "z": float(point.get("z", 0.2)),
+        }
+        if include_velocity:
+            wp["velocity"] = max(0.0, float(point.get("velocity", 10.0)))
+        normalized.append(wp)
+    return normalized
+
+
+def _entity_ref(raw, actor_refs: dict[str, str], fallback: str = "hero") -> str:
+    if raw is None or raw == "":
+        return fallback
+    return actor_refs.get(str(raw), str(raw))
+
+
+def _normalize_structured_event(event: dict, actor_refs: dict[str, str], default_entity_ref: str = "hero") -> None:
+    trigger = event.get("trigger")
+    if not isinstance(trigger, dict):
+        trigger = {}
+    trigger_kind = trigger.get("type", "simulation_time")
+    if trigger_kind not in {"simulation_time", "distance_to_ego", "distance_to_point", "after_event"}:
+        trigger_kind = "simulation_time"
+    event["trigger"] = {"type": trigger_kind}
+    if trigger_kind == "after_event":
+        event["trigger"]["event_id"] = str(trigger.get("event_id", ""))
+    elif trigger_kind == "distance_to_point":
+        point = trigger.get("point") if isinstance(trigger.get("point"), dict) else {}
+        event["trigger"]["value"] = max(0.0, float(trigger.get("value", 20.0)))
+        event["trigger"]["entity_ref"] = _entity_ref(trigger.get("entity_ref"), actor_refs, default_entity_ref)
+        event["trigger"]["point"] = {
+            "name": str(point.get("name", "Point")),
+            "x": float(point.get("x", 0.0)),
+            "y": float(point.get("y", 0.0)),
+            "z": float(point.get("z", 0.2)),
+        }
+    else:
+        default_value = 400.0 if trigger_kind == "distance_to_ego" else 0.0
+        event["trigger"]["value"] = max(0.0, float(trigger.get("value", default_value)))
+
+    action = event.get("action")
+    if not isinstance(action, dict):
+        action = {}
+    action_kind = action.get("type", "follow_trajectory")
+    if action_kind not in {"follow_trajectory", "assign_route", "set_speed", "set_distance", "lane_change"}:
+        action_kind = "follow_trajectory"
+
+    if action_kind == "follow_trajectory":
+        event["action"] = {
+            "type": "follow_trajectory",
+            "trajectory": _normalize_waypoints(action.get("trajectory"), include_velocity=True),
+        }
+    elif action_kind == "assign_route":
+        event["action"] = {
+            "type": "assign_route",
+            "route_strategy": action.get("route_strategy", "fastest"),
+            "waypoints": _normalize_waypoints(action.get("waypoints")),
+        }
+        event["trigger"] = {"type": "simulation_time", "value": 0.0}
+    elif action_kind == "set_speed":
+        target = action.get("target") if isinstance(action.get("target"), dict) else {}
+        dynamics = action.get("dynamics") if isinstance(action.get("dynamics"), dict) else {}
+        mode = "relative" if target.get("mode") == "relative" else "absolute"
+        speed_target = {"mode": mode}
+        if mode == "relative":
+            speed_target["entity_ref"] = _entity_ref(target.get("entity_ref"), actor_refs)
+            speed_target["delta"] = max(-100.0, min(100.0, float(target.get("delta", 0.0))))
+        else:
+            speed_target["value"] = max(0.0, min(100.0, float(target.get("value", 10.0))))
+        dimension = dynamics.get("dimension", "time")
+        if dimension not in {"distance", "time"}:
+            dimension = "time"
+        event["action"] = {
+            "type": "set_speed",
+            "dynamics": {
+                "shape": dynamics.get("shape", "step"),
+                "dimension": dimension,
+                "value": max(0.0, float(dynamics.get("value", 5.0))),
+            },
+            "target": speed_target,
+        }
+    elif action_kind == "set_distance":
+        axis = "lateral" if action.get("axis") == "lateral" else "longitudinal"
+        event["action"] = {
+            "type": "set_distance",
+            "axis": axis,
+            "entity_ref": _entity_ref(action.get("entity_ref"), actor_refs),
+            "value": float(action.get("value", 10.0)),
+        }
+    else:
+        dynamics = action.get("dynamics") if isinstance(action.get("dynamics"), dict) else {}
+        event["action"] = {
+            "type": "lane_change",
+            "direction": "right" if action.get("direction") == "right" else "left",
+            "dynamics": {
+                "shape": dynamics.get("shape", "linear"),
+                "value": max(0.0, float(dynamics.get("value", 12.0))),
+            },
+        }
 
 
 def validate_scenario_params(params: dict) -> dict:
@@ -41,25 +148,61 @@ def validate_scenario_params(params: dict) -> dict:
     if "x" not in ego or "y" not in ego:
         raise ValueError("ego must have x and y coordinates")
 
+    params.setdefault("trafficSignals", [])
+    if not isinstance(params["trafficSignals"], list):
+        params["trafficSignals"] = []
+    for idx, signal in enumerate(params["trafficSignals"]):
+        if not isinstance(signal, dict):
+            params["trafficSignals"][idx] = signal = {}
+        signal["id"] = str(signal.get("id", f"signal_{idx + 1}"))
+        signal["x"] = float(signal.get("x", 0.0))
+        signal["y"] = float(signal.get("y", 0.0))
+        raw_events = signal.get("events") if isinstance(signal.get("events"), list) else []
+        signal["events"] = []
+        for event_idx, event in enumerate(raw_events):
+            if not isinstance(event, dict):
+                event = {}
+            event["id"] = str(event.get("id", f"event_{event_idx + 1}"))
+            event["trigger_distance"] = max(0.0, float(event.get("trigger_distance", 40.0)))
+            event["state"] = event.get("state", "red")
+            if event["state"] not in {"red", "yellow", "green"}:
+                event["state"] = "red"
+            signal["events"].append(event)
+
     # NPCs
     params.setdefault("npcs", [])
+    actor_refs = {}
+    if ego.get("id"):
+        actor_refs[str(ego["id"])] = "hero"
+    for idx, npc in enumerate(params["npcs"]):
+        if isinstance(npc, dict) and npc.get("id"):
+            actor_refs[str(npc["id"])] = "adversary" if idx == 0 else f"adversary{idx}"
+
     for npc in params["npcs"]:
         npc.setdefault("type", "car")
         npc.setdefault("z", 0.2)
         npc.setdefault("yaw", 0.0)
         npc.setdefault("behaviors", ["constant_speed"])
-        npc.setdefault("trajectory", [])
-        npc.setdefault("route", [])
-        npc.setdefault("path_mode", "trajectory")
-        npc.setdefault("route_velocity", 10.0)
-        npc.setdefault("route_speed_dynamics_value", 0.0)
-        npc.setdefault("route_speed_dynamics_dimension", "distance")
+        npc.setdefault("events", [])
+        if not isinstance(npc["events"], list):
+            npc["events"] = []
         npc.setdefault("trigger_distance", 400)
         npc["trigger_distance"] = max(5.0, min(1000.0, float(npc["trigger_distance"])))
-        npc["route_velocity"] = max(0.0, min(100.0, float(npc["route_velocity"])))
-        npc["route_speed_dynamics_value"] = max(0.0, float(npc["route_speed_dynamics_value"]))
-        if npc["route_speed_dynamics_dimension"] not in {"distance", "time"}:
-            npc["route_speed_dynamics_dimension"] = "distance"
+        npc_ref = actor_refs.get(str(npc.get("id")), "adversary")
+        for idx, event in enumerate(npc["events"]):
+            if not isinstance(event, dict):
+                npc["events"][idx] = event = {}
+            event.setdefault("id", f"event_{idx + 1}")
+            _normalize_structured_event(event, actor_refs, npc_ref)
+        assign_route_ids = {
+            str(event.get("id"))
+            for event in npc["events"]
+            if isinstance(event, dict) and event.get("action", {}).get("type") == "assign_route"
+        }
+        for event in npc["events"]:
+            trigger = event.get("trigger", {})
+            if trigger.get("type") == "after_event" and str(trigger.get("event_id")) in assign_route_ids:
+                event["trigger"] = {"type": "distance_to_ego", "value": 400.0}
 
     # Weather
     params.setdefault("weather", {})
@@ -72,9 +215,6 @@ def validate_scenario_params(params: dict) -> dict:
     valid_times = {"daytime", "morning", "noon", "afternoon", "dusk", "nighttime"}
     if params.get("time") not in valid_times:
         params["time"] = "daytime"
-
-    # Road type (informational, used in file header)
-    params.setdefault("road_type", "road")
 
     # Route waypoints
     params.setdefault("route_waypoints", [])

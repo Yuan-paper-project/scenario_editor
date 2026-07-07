@@ -16,7 +16,7 @@
   --text-dim:    #6b7590;
   --header-h:    48px;
   --toolbar-w:   78px;
-  --props-w:     270px;
+  --props-w:     320px;
   --footer-h:    68px;
 }
 
@@ -106,9 +106,12 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
 }
 #map-svg {
   width: 100%; height: 100%; display: block; cursor: default;
+  user-select: none; -webkit-user-drag: none;
 }
-#map-svg.placing { cursor: crosshair; }
-#map-svg.trajectory-mode { cursor: crosshair; }
+#map-svg.placing,
+#map-svg.placing *,
+#map-svg.trajectory-mode,
+#map-svg.trajectory-mode * { cursor: crosshair !important; }
 
 #map-overlay-msg {
   position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
@@ -174,11 +177,34 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
   border: 1px solid var(--border); border-radius: 4px;
   padding: 4px 6px; width: 100%;
 }
+.collapsible-section { margin-bottom: 8px; }
+.collapsible-header {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  background: transparent; color: var(--text-dim); border: 0;
+  border-top: 1px solid var(--border); padding: 8px 0 6px;
+  font-size: 10px; font-weight: 800; letter-spacing: .8px;
+  text-transform: uppercase; cursor: pointer; text-align: left;
+}
+.collapsible-header:hover { color: var(--text); }
+.collapse-indicator {
+  width: 18px; height: 18px; border: 1px solid var(--border);
+  border-radius: 3px; display: inline-flex; align-items: center; justify-content: center;
+  font-size: 12px; line-height: 1; color: var(--text-dim);
+}
+.collapsible-section.collapsed .collapsible-body { display: none; }
+.collapsible-section.collapsed .collapse-indicator::before { content: '+'; font-size: 12px; }
+.collapsible-section.collapsed .collapse-indicator { font-size: 0; }
+.section-note { color: var(--text-dim); font-size: 10px; margin-bottom: 6px; }
 
 .props-group-label {
   font-size: 10px; font-weight: 700; letter-spacing: .8px;
   color: var(--text-dim); text-transform: uppercase;
   margin: 10px 0 6px; border-top: 1px solid var(--border); padding-top: 8px;
+}
+.props-subgroup-label {
+  font-size: 10px; font-weight: 700; letter-spacing: .8px;
+  color: var(--text-dim); text-transform: uppercase;
+  margin: 8px 0 6px;
 }
 
 /* Behavior checkboxes */
@@ -188,6 +214,7 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
   font-size: 12px; cursor: pointer; color: var(--text);
 }
 .behavior-list input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
+.behavior-trigger-section { margin-top: 4px; }
 
 /* Trigger hint */
 .trigger-hint {
@@ -196,29 +223,8 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
 }
 
 /* Trajectory controls */
-.path-mode-tabs {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
-  margin: 10px 0 8px; border-top: 1px solid var(--border); padding-top: 8px;
-}
-.path-mode-tab {
-  background: var(--panel2); color: var(--text-dim); border: 1px solid var(--border);
-  border-radius: 5px; padding: 5px 6px; font-size: 11px; font-weight: 700;
-  cursor: pointer;
-}
-.path-mode-tab.active {
-  background: var(--accent); border-color: var(--accent); color: #fff;
-}
-.route-param-row {
-  display: grid; grid-template-columns: 1fr 64px auto; gap: 6px; align-items: center;
-  margin-bottom: 8px; font-size: 11px; color: var(--text-dim);
-}
-.route-param-row input[type="number"],
-.route-param-row select {
-  background: var(--panel2); color: var(--text);
-  border: 1px solid var(--border); border-radius: 4px; padding: 4px 6px; width: 100%;
-}
-.route-param-row select { cursor: pointer; }
 .traj-controls { display: flex; gap: 6px; margin-bottom: 8px; }
+.traj-controls .btn { flex: 1 1 0; min-width: 0; }
 
 /* Waypoint list */
 .waypoint-list { display: flex; flex-direction: column; gap: 4px; max-height: 200px; overflow-y: auto; }
@@ -236,6 +242,130 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
 .waypoint-item .wp-delete {
   background: none; border: none; color: var(--danger);
   cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px;
+}
+
+/* Event editor */
+.event-section {
+  margin-top: 8px; border-top: 1px solid var(--border); padding-top: 8px;
+}
+.event-section-titlebar {
+  display: flex; align-items: center; gap: 8px;
+  padding-top: 4px;
+}
+.event-section-title {
+  flex: 1; color: var(--text-dim); font-size: 10px; font-weight: 800;
+  letter-spacing: .8px; text-transform: uppercase;
+}
+.event-section-titlebar .btn-small { flex: 0 0 auto; white-space: nowrap; }
+.event-section-header { border-top: 0; padding: 0 0 6px; }
+.event-action-grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px; margin-top: 5px;
+}
+.event-action-button {
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  border-radius: 4px; padding: 4px 6px; font-size: 10px; line-height: 1.15;
+  min-height: 24px; cursor: pointer; text-align: center;
+}
+.event-action-button:hover {
+  border-color: var(--accent); color: var(--accent);
+}
+.event-list { display: flex; flex-direction: column; gap: 4px; margin-top: 5px; }
+.event-card {
+  background: var(--panel2); border: 1px solid var(--border); border-radius: 5px;
+  padding: 5px; display: flex; flex-direction: column; gap: 4px;
+}
+.event-card-header { display: grid; grid-template-columns: 18px minmax(0, 1fr) minmax(0, 110px) 18px; gap: 5px; align-items: center; }
+.event-title-text {
+  color: var(--text); font-size: 11px; font-weight: 700; line-height: 1.2;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.event-trigger-summary {
+  color: var(--text-dim); font-size: 9px; line-height: 1.2;
+  text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  min-width: 0;
+}
+.event-card input,
+.event-card select {
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  border-radius: 3px; padding: 2px 5px; font-size: 10px; min-width: 0;
+  min-height: 22px;
+}
+.event-card label { color: var(--text-dim); font-size: 9px; }
+.event-row { display: grid; grid-template-columns: 70px 1fr; gap: 5px; align-items: center; }
+.event-param-row { display: grid; grid-template-columns: 70px 1fr auto; gap: 5px; align-items: center; }
+.event-toggle {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 3px; width: 100%;
+}
+.event-toggle button {
+  background: var(--bg); color: var(--text-dim); border: 1px solid var(--border);
+  border-radius: 3px; padding: 3px 5px; font-size: 10px; cursor: pointer;
+}
+.event-toggle button:hover {
+  border-color: var(--accent); color: var(--accent);
+}
+.event-toggle button.active {
+  background: #2563eb; border-color: #2563eb; color: #fff; font-weight: 700;
+}
+.event-toggle button.danger {
+  background: var(--danger); border-color: var(--danger); color: #fff;
+}
+.traffic-signal-divider {
+  border-top: 1px solid var(--border);
+  margin: 4px 0 8px;
+}
+.traffic-event-header {
+  grid-template-columns: 1fr 18px;
+  gap: 5px;
+}
+.traffic-state-picker {
+  display: grid; grid-template-columns: repeat(3, 24px); gap: 8px; align-items: center;
+}
+.traffic-state-option {
+  width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--border);
+  justify-self: center; cursor: pointer; box-shadow: none;
+}
+.traffic-state-option.red { background: #ef4444; }
+.traffic-state-option.yellow { background: #facc15; }
+.traffic-state-option.green { background: #22c55e; }
+.traffic-state-option.active {
+  border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, .28);
+}
+.event-speed-row {
+  display: grid; grid-template-columns: auto minmax(54px, 1fr) auto auto minmax(54px, 1fr) auto;
+  gap: 4px; align-items: center;
+}
+.event-speed-row label,
+.event-speed-row span {
+  color: var(--text-dim); font-size: 9px; white-space: nowrap;
+}
+.event-point-distance-row {
+  display: grid; grid-template-columns: minmax(58px, .8fr) auto minmax(48px, 64px) auto minmax(0, 1fr);
+  gap: 4px; align-items: center;
+}
+.event-point-distance-row label,
+.event-point-distance-row span {
+  color: var(--text-dim); font-size: 9px; white-space: nowrap;
+}
+.event-primary-row label {
+  color: var(--accent); font-weight: 800; letter-spacing: .5px; text-transform: uppercase;
+}
+.event-compact-divider { height: 1px; background: var(--border); margin: 1px 0; }
+.event-collapse,
+.event-delete {
+  background: none; border: none; cursor: pointer;
+  font-size: 13px; line-height: 1; padding: 1px;
+}
+.event-collapse { color: var(--text-dim); }
+.event-delete { color: var(--danger); }
+.event-summary { color: var(--text-dim); font-size: 9px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.event-path-controls { grid-template-columns: 1fr; }
+.event-path-controls.has-path { grid-template-columns: repeat(3, 1fr); }
+.event-waypoint-list { max-height: 160px; }
+.event-empty { color: var(--text-dim); font-size: 11px; padding: 3px 0; }
+.event-point-info {
+  color: var(--text-dim); font-size: 10px; line-height: 1.2;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
 /* ── Bottom weather bar ──────────────────────────────────── */
@@ -283,10 +413,14 @@ input[type="range"]::-webkit-slider-thumb {
 
 .junction-zone { fill: rgba(255,200,0,.05); stroke: rgba(255,200,0,.15); stroke-width: 0.5; }
 
-.lane-center { fill: none; stroke: rgba(255,255,255,.12); stroke-width: 0.3; stroke-dasharray: 3,6; }
-
 .crosswalk-group { pointer-events: none; }
-.traffic-light  { pointer-events: none; }
+.traffic-light  { pointer-events: auto; cursor: pointer; }
+#map-svg.placing .traffic-light,
+#map-svg.trajectory-mode .traffic-light { cursor: crosshair; }
+.traffic-light-select-ring { display: none; }
+.traffic-light.selected .traffic-light-select-ring {
+  display: block;
+}
 
 .traj-line { fill: none; stroke-dasharray: 3,3; }
 .traj-group { transition: opacity .15s; }
@@ -296,6 +430,9 @@ input[type="range"]::-webkit-slider-thumb {
 .route-line { fill: none; stroke-dasharray: 8,3; }
 .route-group { transition: opacity .15s; }
 .route-waypoint { cursor: pointer; }
+.trigger-point { pointer-events: none; }
+.trigger-radius-control { pointer-events: stroke; cursor: ew-resize; }
+.trigger-radius-handle { pointer-events: all; cursor: ew-resize; }
 
 .yaw-arrow { cursor: grab; }
 .yaw-arrow:active { cursor: grabbing; }

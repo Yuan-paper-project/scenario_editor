@@ -1,13 +1,14 @@
 /**
  * objects.js — Actor placement, selection, dragging, yaw-arrow rotation,
- *              and trajectory waypoint drawing.
+ *              and path waypoint drawing.
  *
  * Interactions:
  *   - Click on map with active tool → place actor at nearest spawn point (or cursor)
+ *     Pedestrians/cyclists stay at the clicked point and face the nearest road.
  *   - Click on existing actor → select it
  *   - Drag actor body → move actor
  *   - Drag yaw arrow head → rotate actor
- *   - In trajectory mode → click on map to add waypoint
+ *   - In path drawing mode → click on map to add waypoint
  */
 (function () {
   'use strict';
@@ -29,13 +30,15 @@
 
     const world = MapView.svgToWorld(e);
 
-    // ── Trajectory mode: add waypoint ──
-    if (AppState.trajectoryMode && AppState.activeTrajectoryId) {
-      _addWaypoint(AppState.activeTrajectoryId, world.x, world.y);
+    if (AppState.triggerPointMode) {
+      _setTriggerPoint(AppState.triggerPointMode, world.x, world.y);
       return;
     }
-    if (AppState.routeMode && AppState.activeRouteId) {
-      _addRouteWaypoint(AppState.activeRouteId, world.x, world.y);
+
+    const activeType = AppState.routeMode ? 'route' : 'trajectory';
+    const activeId = AppState.routeMode ? AppState.activeRouteId : AppState.activeTrajectoryId;
+    if ((AppState.trajectoryMode || AppState.routeMode) && activeId) {
+      _addPathPoint(activeId, activeType, world.x, world.y, AppState.activePathEventId);
       return;
     }
 
@@ -61,23 +64,21 @@
 
   // ── Place actor ──────────────────────────────────────────────────────────────
 
+  const ROAD_FACING_TYPES = new Set(['pedestrian', 'cyclist', 'bicycle']);
+
   function _placeActor(type, wx, wy) {
-    // Snap to nearest spawn point
-    const snap = AppState.nearestSpawn(wx, wy, 12);
-    const x   = snap ? snap.x   : Math.round(wx * 10) / 10;
-    const y   = snap ? snap.y   : Math.round(wy * 10) / 10;
-    const yaw = snap ? snap.yaw : 0;
+    const roadFacing = ROAD_FACING_TYPES.has(type);
+    const snap = roadFacing ? null : AppState.nearestSpawn(wx, wy, 12);
+    const x = snap ? snap.x : Math.round(wx * 10) / 10;
+    const y = snap ? snap.y : Math.round(wy * 10) / 10;
+    const yaw = snap ? snap.yaw : (roadFacing ? _roadFacingYaw(wx, wy) : 0);
 
     let newId;
     if (type === 'ego') {
       const actor = {
         id: AppState.nextId(), type: 'ego', x, y, z: 0.2, yaw,
         trajectory: [],
-        route: [],
-        route_velocity: 10.0,
-        route_speed_dynamics_value: 0.0,
-        route_speed_dynamics_dimension: 'distance',
-        path_mode: 'trajectory',
+        events: [],
       };
       AppState.set({ ego: actor });
       newId = actor.id;
@@ -91,12 +92,7 @@
         id: AppState.nextId(), type, x, y, z: 0.2, yaw,
         behaviors: ['constant_speed'],
         trigger_distance: 400,
-        trajectory: [],
-        route: [],
-        route_velocity: 10.0,
-        route_speed_dynamics_value: 0.0,
-        route_speed_dynamics_dimension: 'distance',
-        path_mode: 'trajectory',
+        events: [],
       };
       AppState.npcs = [...AppState.npcs, actor];
       AppState.set({});
@@ -107,6 +103,39 @@
     AppState.set({ activeTool: null });
     AppState.select(newId);
     MapView.renderAllActors();
+  }
+
+  function _roadFacingYaw(wx, wy) {
+    const nearest = _nearestLaneProjection(wx, wy);
+    if (!nearest) return 0;
+    const towardRoad = Math.atan2(nearest.y - wy, nearest.x - wx) * 180 / Math.PI;
+    if (Math.hypot(nearest.x - wx, nearest.y - wy) > 0.2) return Math.round(towardRoad);
+    return Math.round(nearest.laneYaw + 90);
+  }
+
+  function _nearestLaneProjection(wx, wy) {
+    let best = null;
+    for (const road of AppState.mapData?.roads || []) {
+      for (const lane of road.lanes || []) {
+        const line = lane.directionLine || [];
+        for (let i = 1; i < line.length; i++) {
+          const [x0, y0] = line[i - 1];
+          const [x1, y1] = line[i];
+          const dx = x1 - x0;
+          const dy = y1 - y0;
+          const len2 = dx * dx + dy * dy;
+          if (len2 <= 0) continue;
+          const t = Math.max(0, Math.min(1, ((wx - x0) * dx + (wy - y0) * dy) / len2));
+          const x = x0 + t * dx;
+          const y = y0 + t * dy;
+          const dist = Math.hypot(wx - x, wy - y);
+          if (!best || dist < best.dist) {
+            best = { x, y, dist, laneYaw: Math.atan2(dy, dx) * 180 / Math.PI };
+          }
+        }
+      }
+    }
+    return best;
   }
 
   // ── Drag actors ───────────────────────────────────────────────────────────────
@@ -189,11 +218,12 @@
     }
   });
 
-  // ── Trajectory mode ───────────────────────────────────────────────────────────
+  // ── Path drawing mode ─────────────────────────────────────────────────────────
 
   AppState.on('change', patch => {
     if (!('trajectoryMode' in patch) && !('activeTrajectoryId' in patch) &&
-        !('routeMode' in patch) && !('activeRouteId' in patch)) return;
+        !('routeMode' in patch) && !('activeRouteId' in patch) &&
+        !('activePathEventId' in patch)) return;
     const activeId = (AppState.trajectoryMode && AppState.activeTrajectoryId) ||
                      (AppState.routeMode && AppState.activeRouteId);
     const active = !!activeId;
@@ -201,172 +231,166 @@
     svg.classList.toggle('trajectory-mode', !!active);
     if (active) {
       const actor = AppState.findById(activeId);
-      trajBannerName.textContent = actor
-        ? `${actor.type.toUpperCase()} (${actor.id})`
-        : activeId;
+      trajBannerName.textContent = actor ? AppState.actorLabel(actor, { ego: 'EGO' }) : activeId;
     }
   });
 
   trajDoneBtn.addEventListener('click', () => {
-    AppState.set({ trajectoryMode: false, activeTrajectoryId: null, routeMode: false, activeRouteId: null });
+    _finishPathMode();
   });
 
   trajUndoBtn.addEventListener('click', () => {
-    const isRoute = AppState.routeMode && AppState.activeRouteId;
-    const id = isRoute ? AppState.activeRouteId : AppState.activeTrajectoryId;
+    const type = AppState.routeMode ? 'route' : 'trajectory';
+    const id = AppState.routeMode ? AppState.activeRouteId : AppState.activeTrajectoryId;
+    const eventId = AppState.activePathEventId;
     if (!id) return;
     const actor = _findActor(id);
-    if (!actor) return;
-    if (isRoute) {
-      if (!actor.route || !actor.route.length) return;
-      actor.route = actor.route.slice(0, -1);
-    } else {
-      if (!actor.trajectory || !actor.trajectory.length) return;
-      actor.trajectory = actor.trajectory.slice(0, -1);
-    }
+    const path = actor ? _eventPath(actor, eventId, type) : null;
+    if (!path?.length) return;
+    if (eventId && actor.type !== 'ego') _setEventPath(actor, eventId, type, path.slice(0, -1));
+    else if (type === 'trajectory') actor.trajectory = path.slice(0, -1);
     AppState.emit('actorUpdated', id);
   });
 
-  /** Find any actor (ego or NPC) that supports trajectory. */
+  function _finishPathMode() {
+    AppState.set({ trajectoryMode: false, activeTrajectoryId: null, routeMode: false, activeRouteId: null, activePathEventId: null });
+  }
+
+  /** Find any actor (ego or NPC) that supports path drawing. */
   function _findActor(id) {
     if (AppState.ego && AppState.ego.id === id) return AppState.ego;
     return AppState.npcs.find(n => n.id === id) || null;
   }
 
-  /** Enter trajectory drawing mode for any actor (ego or NPC). */
-  function startTrajectoryMode(actorId) {
+  function _eventPath(actor, eventId, type) {
+    if (!eventId || actor.type === 'ego') {
+      return type === 'trajectory' ? actor.trajectory : null;
+    }
+    const ev = (actor.events || []).find(item => item.id === eventId);
+    const action = ev?.action;
+    if (!action) return null;
+    return type === 'route' ? action.waypoints : action.trajectory;
+  }
+
+  function _setEventPath(actor, eventId, type, points) {
+    actor.events = (actor.events || []).map(ev => {
+      if (ev.id !== eventId) return ev;
+      const action = ev.action || { type: type === 'route' ? 'assign_route' : 'follow_trajectory' };
+      return {
+        ...ev,
+        action: type === 'route'
+          ? { ...action, type: 'assign_route', waypoints: points }
+          : { ...action, type: 'follow_trajectory', trajectory: points },
+      };
+    });
+  }
+
+  function startPathMode(actorId, type, eventId = null) {
     const actor = _findActor(actorId);
     if (!actor) return;
-    actor.path_mode = 'trajectory';
-    // Ensure trajectory array exists; pre-seed with actor position if empty
-    if (!actor.trajectory || actor.trajectory.length === 0) {
-      actor.trajectory = [{ x: actor.x, y: actor.y, velocity: 10.0 }];
+    if (type === 'route' && (!eventId || actor.type === 'ego')) return;
+    let path = _eventPath(actor, eventId, type);
+    if (!path || path.length === 0) {
+      path = type === 'trajectory'
+        ? [{ x: actor.x, y: actor.y, velocity: 10.0 }]
+        : [{ x: actor.x, y: actor.y }];
+      if (eventId && actor.type !== 'ego') _setEventPath(actor, eventId, type, path);
+      else if (type === 'trajectory') actor.trajectory = path;
     }
     AppState.set({
       activeTool: null,
-      trajectoryMode: true,
-      activeTrajectoryId: actorId,
-      routeMode: false,
-      activeRouteId: null,
+      trajectoryMode: type === 'trajectory',
+      activeTrajectoryId: type === 'trajectory' ? actorId : null,
+      routeMode: type === 'route',
+      activeRouteId: type === 'route' ? actorId : null,
+      activePathEventId: eventId,
+      triggerPointMode: null,
     });
     MapView.renderAllActors();
   }
 
-  /** Enter route drawing mode for any actor (ego or NPC). */
-  function startRouteMode(actorId) {
+  function _addPathPoint(actorId, type, wx, wy, eventId = null) {
     const actor = _findActor(actorId);
     if (!actor) return;
-    actor.path_mode = 'route';
-    if (!actor.route || actor.route.length === 0) {
-      actor.route = [{ x: actor.x, y: actor.y }];
+    let path = _eventPath(actor, eventId, type);
+    if (!path) path = [];
+    const point = { x: Math.round(wx * 10) / 10, y: Math.round(wy * 10) / 10 };
+    if (type === 'trajectory') {
+      point.velocity = path.length > 0
+        ? path[path.length - 1].velocity
+        : 10.0;
     }
-    if (actor.route_velocity == null) actor.route_velocity = 10.0;
-    if (actor.route_speed_dynamics_value == null) actor.route_speed_dynamics_value = 0.0;
-    if (!['distance', 'time'].includes(actor.route_speed_dynamics_dimension)) {
-      actor.route_speed_dynamics_dimension = 'distance';
-    }
-    AppState.set({
-      activeTool: null,
-      trajectoryMode: false,
-      activeTrajectoryId: null,
-      routeMode: true,
-      activeRouteId: actorId,
+    path.push(point);
+    if (eventId && actor.type !== 'ego') _setEventPath(actor, eventId, type, path);
+    else if (type === 'trajectory') actor.trajectory = path;
+    AppState.emit('actorUpdated', actorId);
+  }
+
+  function _setTriggerPoint(target, wx, wy) {
+    const actor = _findActor(target.actorId);
+    if (!actor) return;
+    const events = actor.events || [];
+    const currentEvent = events.find(ev => ev.id === target.eventId);
+    const pointIndex = events.reduce((max, ev) => {
+      const match = String(ev.trigger?.point?.name || '').match(/^Point\s+(\d+)$/);
+      return match ? Math.max(max, parseInt(match[1], 10)) : max;
+    }, 0) + 1;
+    const point = {
+      name: currentEvent?.trigger?.point?.name || `Point ${pointIndex}`,
+      x: Math.round(wx * 10) / 10,
+      y: Math.round(wy * 10) / 10,
+      z: 0.2,
+    };
+    const patchedEvents = events.map(ev => {
+      if (ev.id !== target.eventId) return ev;
+      return {
+        ...ev,
+        trigger: {
+          type: 'distance_to_point',
+          value: ev.trigger?.value ?? 20,
+          entity_ref: ev.trigger?.entity_ref || actor.id,
+          point,
+        },
+      };
     });
-    MapView.renderAllActors();
+    AppState.updateById(actor.id, { events: patchedEvents });
+    AppState.set({ triggerPointMode: null });
   }
 
-  function _addWaypoint(actorId, wx, wy) {
+  function deletePathPoint(actorId, type, idx, eventId = null) {
+    const actor = _findActor(actorId);
+    const path = actor ? _eventPath(actor, eventId, type) : null;
+    if (!actor || !path) return;
+    path.splice(idx, 1);
+    if (eventId && actor.type !== 'ego') _setEventPath(actor, eventId, type, path);
+    else if (type === 'trajectory') actor.trajectory = path;
+    AppState.emit('actorUpdated', actorId);
+  }
+
+  function setPathPointVelocity(actorId, type, idx, velocity, eventId = null) {
+    if (type !== 'trajectory') return;
+    const actor = _findActor(actorId);
+    const path = actor ? _eventPath(actor, eventId, type) : null;
+    if (!actor || !path?.[idx]) return;
+    path[idx].velocity = parseFloat(velocity) || 10.0;
+    if (eventId && actor.type !== 'ego') _setEventPath(actor, eventId, type, path);
+    else actor.trajectory = path;
+    AppState.emit('actorUpdated', actorId);
+  }
+
+  function clearPath(actorId, type, eventId = null) {
     const actor = _findActor(actorId);
     if (!actor) return;
-    const lastVel = actor.trajectory.length > 0
-      ? actor.trajectory[actor.trajectory.length - 1].velocity
-      : 10.0;
-    actor.trajectory.push({ x: Math.round(wx * 10) / 10, y: Math.round(wy * 10) / 10, velocity: lastVel });
-    AppState.emit('actorUpdated', actorId);
-  }
-
-  function _addRouteWaypoint(actorId, wx, wy) {
-    const actor = _findActor(actorId);
-    if (!actor) return;
-    if (!actor.route) actor.route = [];
-    if (actor.route_velocity == null) actor.route_velocity = 10.0;
-    if (actor.route_speed_dynamics_value == null) actor.route_speed_dynamics_value = 0.0;
-    if (!['distance', 'time'].includes(actor.route_speed_dynamics_dimension)) {
-      actor.route_speed_dynamics_dimension = 'distance';
-    }
-    actor.route.push({ x: Math.round(wx * 10) / 10, y: Math.round(wy * 10) / 10 });
-    AppState.emit('actorUpdated', actorId);
-  }
-
-  /** Delete a waypoint by index. */
-  function deleteWaypoint(actorId, idx) {
-    const actor = _findActor(actorId);
-    if (!actor) return;
-    actor.trajectory.splice(idx, 1);
-    AppState.emit('actorUpdated', actorId);
-  }
-
-  /** Delete a route waypoint by index. */
-  function deleteRouteWaypoint(actorId, idx) {
-    const actor = _findActor(actorId);
-    if (!actor || !actor.route) return;
-    actor.route.splice(idx, 1);
-    AppState.emit('actorUpdated', actorId);
-  }
-
-  /** Update a waypoint's velocity. */
-  function setWaypointVelocity(actorId, idx, velocity) {
-    const actor = _findActor(actorId);
-    if (!actor || !actor.trajectory[idx]) return;
-    actor.trajectory[idx].velocity = parseFloat(velocity) || 10.0;
-    AppState.emit('actorUpdated', actorId);
-  }
-
-  /** Update the single route velocity shared by all route waypoints. */
-  function setRouteVelocity(actorId, velocity) {
-    const actor = _findActor(actorId);
-    if (!actor) return;
-    const parsed = parseFloat(velocity);
-    actor.route_velocity = Number.isFinite(parsed) ? parsed : 10.0;
-    AppState.emit('actorUpdated', actorId);
-  }
-
-  /** Update route SpeedActionDynamics value and dimension. */
-  function setRouteSpeedDynamics(actorId, value, dimension) {
-    const actor = _findActor(actorId);
-    if (!actor) return;
-    const parsed = parseFloat(value);
-    actor.route_speed_dynamics_value = Number.isFinite(parsed) ? parsed : 0.0;
-    actor.route_speed_dynamics_dimension = dimension === 'time' ? 'time' : 'distance';
-    AppState.emit('actorUpdated', actorId);
-  }
-
-  /** Clear all waypoints for an actor. */
-  function clearTrajectory(actorId) {
-    const actor = _findActor(actorId);
-    if (!actor) return;
-    actor.trajectory = [];
-    AppState.emit('actorUpdated', actorId);
-  }
-
-  /** Clear all route waypoints for an actor. */
-  function clearRoute(actorId) {
-    const actor = _findActor(actorId);
-    if (!actor) return;
-    actor.route = [];
+    if (eventId && actor.type !== 'ego') _setEventPath(actor, eventId, type, []);
+    else if (type === 'trajectory') actor.trajectory = [];
     AppState.emit('actorUpdated', actorId);
   }
 
   // ── Public interface ─────────────────────────────────────────────────────────
   window.ObjectsManager = {
-    startTrajectoryMode,
-    startRouteMode,
-    deleteWaypoint,
-    deleteRouteWaypoint,
-    setWaypointVelocity,
-    setRouteVelocity,
-    setRouteSpeedDynamics,
-    clearTrajectory,
-    clearRoute,
+    startPathMode,
+    deletePathPoint,
+    setPathPointVelocity,
+    clearPath,
   };
 })();

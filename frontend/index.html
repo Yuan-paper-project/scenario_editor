@@ -171,63 +171,77 @@
         <button id="props-delete" class="btn btn-danger btn-small">Löschen</button>
       </div>
 
-      <div class="props-group">
-        <label>X (m)</label>
-        <input type="number" id="prop-x" step="0.1">
-        <label>Y (m)</label>
-        <input type="number" id="prop-y" step="0.1">
-        <label>Z (m)</label>
-        <input type="number" id="prop-z" step="0.1" value="0.2">
-        <label>Gier (°)</label>
-        <input type="number" id="prop-yaw" step="1" min="-180" max="360">
+      <div id="traffic-signal-panel" class="hidden">
+        <div class="traffic-signal-divider"></div>
+        <div class="event-section-titlebar">
+          <span class="event-section-title">Events</span>
+          <button id="btn-add-traffic-event" class="btn btn-secondary btn-small" type="button">Event hinzufügen</button>
+        </div>
+        <div id="traffic-signal-event-list" class="event-list"></div>
+      </div>
+
+      <div id="spawn-panel" class="collapsible-section">
+        <button class="collapsible-header" type="button" data-collapse-target="spawn-panel-body">
+          <span>Spawnpunkt</span><span class="collapse-indicator">-</span>
+        </button>
+        <div id="spawn-panel-body" class="collapsible-body">
+          <div class="props-group">
+            <label>X (m)</label>
+            <input type="number" id="prop-x" step="0.1">
+            <label>Y (m)</label>
+            <input type="number" id="prop-y" step="0.1">
+            <label>Z (m)</label>
+            <input type="number" id="prop-z" step="0.1" value="0.2">
+            <label>Gier (°)</label>
+            <input type="number" id="prop-yaw" step="1" min="-180" max="360">
+          </div>
+        </div>
       </div>
 
       <!-- NPC-Bereich (auch Trajektorie für Ego) -->
       <div id="props-npc-section" class="hidden">
-        <div class="props-group-label">Verhalten (wenn kein Pfad gezeichnet)</div>
-        <div id="behavior-checkboxes" class="behavior-list">
-          <label><input type="checkbox" name="behavior" value="constant_speed" checked> Konstante Geschwindigkeit</label>
-          <label><input type="checkbox" name="behavior" value="accelerate"> Beschleunigen</label>
-          <label><input type="checkbox" name="behavior" value="decelerate"> Abbremsen</label>
-          <label><input type="checkbox" name="behavior" value="stop"> Anhalten</label>
-          <label><input type="checkbox" name="behavior" value="change_lane_left"> Spurwechsel links</label>
-          <label><input type="checkbox" name="behavior" value="change_lane_right"> Spurwechsel rechts</label>
-        </div>
-
-        <div id="trigger-section">
-          <div class="props-group-label">Aktivierungsauslöser</div>
-          <div class="props-group">
-            <label>Abstand (m)</label>
-            <input type="number" id="prop-trigger-dist" step="10" min="5" max="1000" value="400" title="NPC aktiviert sich, wenn das Ego-Fahrzeug innerhalb dieses Abstands ist">
+        <div id="behavior-panel" class="collapsible-section">
+          <button class="collapsible-header" type="button" data-collapse-target="behavior-panel-body">
+            <span>Verhalten</span><span class="collapse-indicator">-</span>
+          </button>
+          <div id="behavior-panel-body" class="collapsible-body">
+            <div class="section-note">Wenn kein Event-Pfad aktiv ist</div>
+            <div id="behavior-checkboxes" class="behavior-list">
+              <label><input type="checkbox" name="behavior" value="constant_speed" checked> Konstante Geschwindigkeit</label>
+              <label><input type="checkbox" name="behavior" value="accelerate"> Beschleunigen</label>
+              <label><input type="checkbox" name="behavior" value="decelerate"> Abbremsen</label>
+              <label><input type="checkbox" name="behavior" value="stop"> Anhalten</label>
+              <label><input type="checkbox" name="behavior" value="change_lane_left"> Spurwechsel links</label>
+              <label><input type="checkbox" name="behavior" value="change_lane_right"> Spurwechsel rechts</label>
+            </div>
+            <div id="trigger-section" class="behavior-trigger-section">
+              <div class="props-subgroup-label">Aktivierungsauslöser</div>
+              <div class="props-group">
+                <label>Abstand (m)</label>
+                <input type="number" id="prop-trigger-dist" step="10" min="5" max="1000" value="400" title="NPC aktiviert sich, wenn das Ego-Fahrzeug innerhalb dieses Abstands ist">
+              </div>
+              <div class="trigger-hint">NPC startet, wenn das Ego-Fahrzeug in diesem Abstand ist</div>
+            </div>
           </div>
-          <div class="trigger-hint">NPC startet, wenn das Ego-Fahrzeug in diesem Abstand ist</div>
         </div>
 
         <div id="path-section-label" class="props-group-label hidden">Trajektorienpfad</div>
-        <div class="path-mode-tabs" role="tablist" aria-label="Pfadtyp">
-          <button id="btn-path-mode-trajectory" class="path-mode-tab active" type="button">Trajektorienpfad</button>
-          <button id="btn-path-mode-route" class="path-mode-tab" type="button">Route</button>
-        </div>
         <div id="ego-route-hint" class="trigger-hint hidden">Ego-Routen-Wegpunkte für Autoware/CARLA-Planer</div>
         <div class="traj-controls">
-          <button id="btn-draw-path"   class="btn btn-secondary btn-small">Pfad zeichnen</button>
-          <button id="btn-clear-path"  class="btn btn-danger    btn-small">Pfad löschen</button>
-          <button id="btn-toggle-path" class="btn btn-secondary btn-small" title="Pfad dieses Akteurs ein-/ausblenden">Pfad ausblenden</button>
-        </div>
-        <div id="route-speed-row" class="route-param-row hidden">
-          <label for="prop-route-speed">Geschwindigkeit</label>
-          <input type="number" id="prop-route-speed" min="0" max="50" step="0.5" value="10.0">
-          <span>m/s</span>
-        </div>
-        <div id="route-speed-dynamics-row" class="route-param-row route-dynamics-row hidden">
-          <label for="prop-route-speed-dynamics-value">Erreichen nach</label>
-          <input type="number" id="prop-route-speed-dynamics-value" min="0" step="0.1" value="0.0">
-          <select id="prop-route-speed-dynamics-unit" title="Einheit für SpeedActionDynamics">
-            <option value="distance">m</option>
-            <option value="time">s</option>
-          </select>
+          <button id="btn-draw-path"   class="btn btn-secondary btn-small">Zeichnen</button>
+          <button id="btn-toggle-path" class="btn btn-secondary btn-small" title="Ein-/ausblenden">Ausblenden</button>
+          <button id="btn-clear-path"  class="btn btn-danger    btn-small">Löschen</button>
         </div>
         <div id="waypoint-list" class="waypoint-list"></div>
+        <div id="event-section" class="collapsible-section event-section hidden">
+          <button class="collapsible-header event-section-header" type="button" data-collapse-target="event-section-body">
+            <span>Events</span><span class="collapse-indicator">-</span>
+          </button>
+          <div id="event-section-body" class="collapsible-body">
+            <div id="event-action-grid" class="event-action-grid"></div>
+            <div id="event-list" class="event-list"></div>
+          </div>
+        </div>
       </div>
     </div>
   </aside>
@@ -327,7 +341,7 @@
         <div class="step-num">3</div>
         <div class="step-body">
           <strong>Route des Ego zeichnen</strong>
-          <span>Wählen Sie das Ego auf der Karte → klicken Sie rechts auf <em>Pfad zeichnen</em> → setzen Sie Wegpunkte durch Klicken → <em>Fertig</em>.</span>
+          <span>Wählen Sie das Ego auf der Karte → klicken Sie rechts auf <em>Zeichnen</em> → setzen Sie Wegpunkte durch Klicken → <em>Fertig</em>.</span>
         </div>
       </div>
       <div class="welcome-step">
@@ -426,9 +440,11 @@
 <!-- ── JS modules (load order matters) ── -->
 <script src="/static/js/app.js"></script>
 <script src="/static/js/api.js"></script>
+<script src="/static/js/trafficSignals.js"></script>
 <script src="/static/js/mapView.js"></script>
 <script src="/static/js/toolbar.js"></script>
 <script src="/static/js/objects.js"></script>
+<script src="/static/js/eventPanel.js"></script>
 <script src="/static/js/properties.js"></script>
 <script src="/static/js/weather.js"></script>
 <script src="/static/js/scenarioIO.js"></script>

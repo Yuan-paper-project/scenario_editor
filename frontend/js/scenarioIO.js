@@ -28,69 +28,68 @@
     if (!AppState.ego) return { errors: ['Bitte zuerst ein Ego-Fahrzeug platzieren.'], warnings };
 
     for (const npc of AppState.npcs) {
-      const label = `${npc.type.toUpperCase()} (${npc.id})`;
-      if ((!npc.behaviors || npc.behaviors.length === 0) && (!npc.trajectory || npc.trajectory.length < 2)) {
-        warnings.push(`${label} hat kein Verhalten und keine Trajektorie`);
+      const label = AppState.actorLabel(npc);
+      if ((!npc.behaviors || npc.behaviors.length === 0) && (!npc.events || npc.events.length === 0)) {
+        warnings.push(`${label} hat kein Verhalten und keine Events`);
       }
     }
     return { errors: [], warnings };
   }
 
   function buildScenarioParams() {
-    if (!AppState.ego) {
-      throw new Error('Bitte zuerst ein Ego-Fahrzeug platzieren.');
-    }
+    if (!AppState.ego) throw new Error('Bitte zuerst ein Ego-Fahrzeug platzieren.');
+
+    // Map internal actor id → OSC entity ref name
+    const entityRef = id => {
+      if (AppState.ego && id === AppState.ego.id) return 'hero';
+      const idx = AppState.npcs.findIndex(n => n.id === id);
+      return idx === 0 ? 'adversary' : idx > 0 ? `adversary${idx}` : 'hero';
+    };
+
+    // Actions are already in the correct new format in state — just resolve entity_refs
+    const resolveAction = (action) => {
+      if (!action) return { type: 'follow_trajectory', trajectory: [] };
+      if (action.type === 'set_speed' && action.target?.mode === 'relative') {
+        return { ...action, target: { ...action.target, entity_ref: entityRef(action.target.entity_ref) } };
+      }
+      if (action.type === 'set_distance') {
+        return { ...action, entity_ref: entityRef(action.entity_ref) };
+      }
+      return action;
+    };
+
+    const ego = AppState.ego;
+    const traj = ego.trajectory || [];
+
     return {
-      map:       AppState.map || 'Town01',
-      road_type: 'road',
-      weather:   { ...AppState.weather },
-      time:      AppState.time,
+      schema_version: '1.0',
+      map:     AppState.map || 'Town01',
+      weather: { ...AppState.weather },
       ego: {
-        type: AppState.ego.type === 'ego' ? 'car' : AppState.ego.type,
-        x:    AppState.ego.x,
-        y:    AppState.ego.y,
-        z:    AppState.ego.z || 0.2,
-        yaw:  AppState.ego.yaw || 0,
+        type: ego.type === 'ego' ? 'car' : ego.type,
+        x: ego.x, y: ego.y, z: ego.z??0.2, yaw: ego.yaw??0,
       },
+      trafficSignals: (AppState.trafficSignals||[])
+        .filter(sig => (sig.events||[]).length > 0)
+        .map(sig => ({ id: sig.id, x: sig.x, y: sig.y, events: sig.events })),
       npcs: AppState.npcs.map(n => ({
-        type:             n.type,
-        x:                n.x,
-        y:                n.y,
-        z:                n.z || 0.2,
-        yaw:              n.yaw || 0,
-        behaviors:        n.behaviors || ['constant_speed'],
-        trigger_distance: n.trigger_distance ?? 400,
-        path_mode:        n.path_mode || 'trajectory',
-        route_velocity:   n.route_velocity ?? 10.0,
-        route_speed_dynamics_value: n.route_speed_dynamics_value ?? 0.0,
-        route_speed_dynamics_dimension: n.route_speed_dynamics_dimension === 'time' ? 'time' : 'distance',
-        route: (n.route || []).map(wp => ({
-          x: wp.x,
-          y: wp.y,
-          z: wp.z || 0.2,
-        })),
-        trajectory: (n.trajectory || []).map(wp => ({
-          x:        wp.x,
-          y:        wp.y,
-          z:        wp.z || 0.2,
-          velocity: wp.velocity || 10.0,
+        id: n.id, type: n.type,
+        x: n.x, y: n.y, z: n.z??0.2, yaw: n.yaw??0,
+        behaviors:        n.behaviors||['constant_speed'],
+        trigger_distance: n.trigger_distance??400,
+        events: (n.events||[]).map(ev => ({
+          id: ev.id, name: ev.name,
+          trigger: ev.action?.type === 'assign_route' ? { type: 'simulation_time', value: 0 } : ev.trigger,
+          action: resolveAction(ev.action),
         })),
       })),
-      // Ego trajectory → route waypoints for the route XML
-      // Compute per-waypoint heading from direction to next waypoint
-      route_waypoints: (AppState.ego.trajectory || []).map((wp, i, arr) => {
-        let yaw = AppState.ego.yaw || 0;
-        if (i < arr.length - 1) {
-          const dx = arr[i + 1].x - wp.x;
-          const dy = arr[i + 1].y - wp.y;
-          yaw = Math.atan2(dy, dx) * 180 / Math.PI;  // degrees for route XML
-        } else if (i > 0) {
-          // Last waypoint: use same heading as previous segment
-          const dx = wp.x - arr[i - 1].x;
-          const dy = wp.y - arr[i - 1].y;
-          yaw = Math.atan2(dy, dx) * 180 / Math.PI;
-        }
-        return { x: wp.x, y: wp.y, z: wp.z || 0.2, yaw: Math.round(yaw * 100) / 100 };
+      // Ego route waypoints with per-segment yaw (used by route XML export)
+      route_waypoints: traj.map((wp, i, arr) => {
+        let yaw = ego.yaw??0;
+        const next = arr[i+1], prev = arr[i-1];
+        if (next)      yaw = Math.atan2(next.y-wp.y, next.x-wp.x)*180/Math.PI;
+        else if (prev) yaw = Math.atan2(wp.y-prev.y, wp.x-prev.x)*180/Math.PI;
+        return { x: wp.x, y: wp.y, z: wp.z??0.2, yaw: Math.round(yaw*100)/100 };
       }),
     };
   }

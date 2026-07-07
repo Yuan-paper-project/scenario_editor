@@ -1,0 +1,865 @@
+/**
+ * eventPanel.js — NPC event action/trigger editor for the properties panel.
+ */
+(function () {
+  'use strict';
+
+  const eventSection = document.getElementById('event-section');
+  const eventActionGrid = document.getElementById('event-action-grid');
+  const eventList = document.getElementById('event-list');
+
+  const EVENT_ACTIONS = [
+    ['follow_trajectory', 'Follow trajectory'],
+    ['assign_route', 'Assign route'],
+    ['set_speed', 'Set speed'],
+    ['set_distance', 'Set distance'],
+    ['lane_change', 'Lane change'],
+  ];
+
+  let _refresh = () => {};
+
+  // ── Public API ──────────────────────────────────────────────────────────────
+
+  function render(actor) {
+    _renderEventActionGrid(actor);
+    _renderEventList(actor);
+  }
+
+  function setRefreshHandler(handler) {
+    _refresh = typeof handler === 'function' ? handler : () => {};
+  }
+
+  // ── Event Rendering ─────────────────────────────────────────────────────────
+
+  function _renderEventActionGrid(actor) {
+    if (!eventActionGrid) return;
+    eventActionGrid.innerHTML = '';
+    if (!actor) return;
+
+    const hasPathEvent = (actor.events || []).some(ev => {
+      const type = _eventAction(ev).type;
+      return type === 'follow_trajectory' || type === 'assign_route';
+    });
+
+    EVENT_ACTIONS.forEach(([actionType, label]) => {
+      const isPathAction = actionType === 'follow_trajectory' || actionType === 'assign_route';
+      if (isPathAction && hasPathEvent) return;
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'event-action-button';
+      btn.textContent = label;
+      btn.addEventListener('click', () => {
+        eventSection.classList.remove('collapsed');
+        const indicator = eventSection.querySelector('.event-section-header .collapse-indicator');
+        if (indicator) indicator.textContent = '-';
+        const currentEvents = actor.events || [];
+        const newEvent = _defaultEvent(actor, actionType, isPathAction);
+        const events = isPathAction ? [newEvent, ...currentEvents] : [...currentEvents, newEvent];
+        AppState.updateById(actor.id, { events });
+        if (isPathAction) {
+          ObjectsManager.startPathMode(actor.id, actionType === 'assign_route' ? 'route' : 'trajectory', newEvent.id);
+        }
+      });
+      eventActionGrid.appendChild(btn);
+    });
+  }
+
+  function _renderEventList(actor) {
+    if (!eventList) return;
+    eventList.innerHTML = '';
+    const events = actor.events || [];
+
+    if (events.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'event-empty';
+      empty.textContent = 'Noch keine Events definiert.';
+      eventList.appendChild(empty);
+      return;
+    }
+
+    events.forEach((ev, i) => {
+      const action = _eventAction(ev);
+      const actionType = action.type || 'follow_trajectory';
+      const displayName = _eventDisplayName(ev, i);
+      const triggerSummary = _eventTriggerSummary(ev, events, actor);
+      const card = document.createElement('div');
+      const isCollapsed = !!ev.collapsed;
+      card.className = `event-card${isCollapsed ? ' collapsed' : ''}`;
+
+      const header = document.createElement('div');
+      header.className = 'event-card-header';
+
+      const collapseBtn = document.createElement('button');
+      collapseBtn.className = 'event-collapse';
+      collapseBtn.type = 'button';
+      collapseBtn.textContent = isCollapsed ? '+' : '-';
+      collapseBtn.title = isCollapsed ? 'Event ausklappen' : 'Event einklappen';
+      collapseBtn.addEventListener('click', () => {
+        _updateEvent(actor, ev.id, { collapsed: !isCollapsed });
+      });
+
+      const nameText = document.createElement('div');
+      nameText.className = 'event-title-text';
+      nameText.textContent = displayName;
+      nameText.title = displayName;
+
+      const triggerText = document.createElement('div');
+      triggerText.className = 'event-trigger-summary';
+      triggerText.textContent = triggerSummary;
+      triggerText.title = triggerSummary;
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'event-delete';
+      deleteBtn.type = 'button';
+      deleteBtn.textContent = '×';
+      deleteBtn.title = 'Event löschen';
+      deleteBtn.addEventListener('click', () => _deleteEvent(actor, ev.id));
+
+      header.appendChild(collapseBtn);
+      header.appendChild(nameText);
+      header.appendChild(triggerText);
+      header.appendChild(deleteBtn);
+      card.appendChild(header);
+
+      const summary = document.createElement('div');
+      summary.className = 'event-summary';
+      summary.textContent = _eventActionSummary(ev, actor);
+      card.appendChild(summary);
+
+      if (isCollapsed) {
+        eventList.appendChild(card);
+        return;
+      }
+
+      if (actionType === 'set_speed') {
+        _appendSpeedActionControls(card, actor, ev, action);
+      } else if (actionType === 'set_distance') {
+        _appendDistanceActionControls(card, actor, ev, action);
+      } else if (actionType === 'lane_change') {
+        _appendLaneChangeControls(card, actor, ev, action);
+      } else {
+        _appendEventPathControls(card, actor, ev);
+        const pathList = document.createElement('div');
+        pathList.className = 'event-waypoint-list waypoint-list';
+        _renderPathList(actor, actionType === 'assign_route' ? 'route' : 'trajectory', pathList, ev);
+        card.appendChild(pathList);
+      }
+
+      if (actionType !== 'assign_route') {
+        const divider = document.createElement('div');
+        divider.className = 'event-compact-divider';
+        card.appendChild(divider);
+        _appendEventTriggerControls(card, actor, ev, events);
+      }
+
+      eventList.appendChild(card);
+    });
+  }
+
+  // ── Action Controls ─────────────────────────────────────────────────────────
+
+  function _appendSpeedActionControls(card, actor, ev, action) {
+    const speedTarget = action.target || { mode: 'absolute', value: 10.0 };
+    const speedDynamics = action.dynamics || { shape: 'step', dimension: 'time', value: 5.0 };
+    const isRelativeSpeed = _speedMode(ev) === 'relative';
+    card.appendChild(_row('Modus', _speedModeToggle(actor, ev)));
+    if (isRelativeSpeed) {
+      const targetOptions = _relativeActorOptions(actor);
+      const selectedTarget = speedTarget.entity_ref || _defaultRelativeActorId(actor);
+      const targetSelect = _select(targetOptions.length ? targetOptions : [['', 'Kein Actor']], selectedTarget);
+      targetSelect.disabled = targetOptions.length === 0;
+      targetSelect.addEventListener('change', e => {
+        _patchEventAction(actor, ev, {
+          target: { ...speedTarget, mode: 'relative', entity_ref: e.target.value },
+        });
+      });
+      card.appendChild(_row('Relativ zu', targetSelect));
+    }
+
+    const speedInput = document.createElement('input');
+    speedInput.type = 'number';
+    speedInput.max = '100';
+    speedInput.step = '0.5';
+    speedInput.value = isRelativeSpeed ? (speedTarget.delta ?? 10.0) : (speedTarget.value ?? 10.0);
+    speedInput.addEventListener('change', e => {
+      const parsed = parseFloat(e.target.value);
+      const value = Number.isFinite(parsed) ? parsed : 0;
+      _patchEventAction(actor, ev, {
+        target: isRelativeSpeed
+          ? { ...speedTarget, mode: 'relative', delta: value }
+          : { ...speedTarget, mode: 'absolute', value: Math.max(0, value) },
+      });
+    });
+    if (!isRelativeSpeed) speedInput.min = '0';
+
+    const timeInput = document.createElement('input');
+    timeInput.type = 'number';
+    timeInput.min = '0';
+    timeInput.step = '0.1';
+    timeInput.value = speedDynamics.value ?? 5.0;
+    timeInput.addEventListener('change', e => {
+      _patchEventAction(actor, ev, {
+        dynamics: {
+          ...speedDynamics,
+          shape: speedDynamics.shape || 'step',
+          dimension: 'time',
+          value: Math.max(0, parseFloat(e.target.value) || 0),
+        },
+      });
+    });
+    card.appendChild(_speedTimingRow(speedInput, timeInput));
+  }
+
+  function _appendDistanceActionControls(card, actor, ev, action) {
+    card.appendChild(_row('Richtung', _axisToggle(actor, ev)));
+
+    const targetOptions = _relativeActorOptions(actor);
+    const selectedTarget = action.entity_ref || _defaultRelativeActorId(actor);
+    const targetSelect = _select(targetOptions.length ? targetOptions : [['', 'Kein Actor']], selectedTarget);
+    targetSelect.disabled = targetOptions.length === 0;
+    targetSelect.addEventListener('change', e => {
+      _patchEventAction(actor, ev, { entity_ref: e.target.value });
+    });
+    card.appendChild(_row('Relativ zu', targetSelect));
+
+    const distanceInput = document.createElement('input');
+    distanceInput.type = 'number';
+    distanceInput.step = '0.1';
+    distanceInput.value = action.value ?? 10.0;
+    distanceInput.addEventListener('change', e => {
+      const parsed = parseFloat(e.target.value);
+      _patchEventAction(actor, ev, { value: Number.isFinite(parsed) ? parsed : 0 });
+    });
+    card.appendChild(_paramRow('Distanz', distanceInput, 'm'));
+  }
+
+  function _appendLaneChangeControls(card, actor, ev, action) {
+    const laneDynamics = action.dynamics || { shape: 'linear', value: 12.0 };
+    const directionSelect = _select([
+      ['left', 'Links'],
+      ['right', 'Rechts'],
+    ], action.direction === 'right' ? 'right' : 'left');
+    directionSelect.addEventListener('change', e => {
+      _patchEventAction(actor, ev, { direction: e.target.value === 'right' ? 'right' : 'left' });
+    });
+    card.appendChild(_row('Richtung', directionSelect));
+
+    const durationInput = document.createElement('input');
+    durationInput.type = 'number';
+    durationInput.min = '0';
+    durationInput.step = '0.1';
+    durationInput.value = laneDynamics.value ?? 12.0;
+    durationInput.addEventListener('change', e => {
+      _patchEventAction(actor, ev, {
+        dynamics: {
+          ...laneDynamics,
+          shape: laneDynamics.shape || 'linear',
+          value: Math.max(0, parseFloat(e.target.value) || 0),
+        },
+      });
+    });
+    card.appendChild(_paramRow('Distanz', durationInput, 'm'));
+  }
+
+  // ── Summaries And Labels ────────────────────────────────────────────────────
+
+  function _eventActionLabel(actionType) {
+    return (EVENT_ACTIONS.find(([value]) => value === (actionType || 'follow_trajectory')) || EVENT_ACTIONS[0])[1];
+  }
+
+  function _eventDisplayName(ev, index) {
+    return `${_eventActionLabel(_eventAction(ev).type)} ${index + 1}`;
+  }
+
+  function _eventTriggerSummary(ev, events, actor) {
+    const trigger = _eventTrigger(ev);
+    if (trigger.type === 'after_event') {
+      const refIndex = events.findIndex(other => other.id === trigger.event_id);
+      return refIndex >= 0 ? `Nach ${_eventDisplayName(events[refIndex], refIndex)}` : 'Nach Event';
+    }
+    const pointTarget = trigger.entity_ref || actor?.id;
+    const triggerLabels = {
+      simulation_time: `Nach ${trigger.value ?? 0}s`,
+      distance_to_ego: `Ego-Abstand ${trigger.value ?? 0}m`,
+      distance_to_point: `${trigger.point?.name || 'Point'} ${trigger.value ?? 20}m zu ${_eventActorLabel(pointTarget)}`,
+    };
+    return triggerLabels[trigger.type];
+  }
+
+  function _eventActorLabel(actorId) {
+    if (AppState.ego && actorId === AppState.ego.id) return 'Ego';
+    const npc = AppState.npcs.find(n => n.id === actorId);
+    return npc ? AppState.actorLabel(npc) : 'Ego';
+  }
+
+  function _eventActionSummary(ev, actor) {
+    const action = _eventAction(ev);
+    const target = action.target || {};
+    const dynamics = action.dynamics || {};
+    const speedMode = _speedMode(ev);
+    const relativeSpeedTarget = target.entity_ref || _defaultRelativeActorId(actor);
+    const distanceTarget = action.entity_ref || _defaultRelativeActorId(actor);
+    const hasTrajectory = (action.trajectory || []).length > 0;
+    const hasRoute = (action.waypoints || []).length > 0;
+    const trajectoryVisible = MapView.isTrajectoryVisible(actor.id, ev.id);
+    const routeVisible = MapView.isRouteVisible(actor.id, ev.id);
+    const actionLabels = {
+      follow_trajectory: hasTrajectory
+        ? `Pfad gezeichnet${trajectoryVisible ? '' : ', ausgeblendet'}`
+        : 'Pfad nicht gezeichnet',
+      assign_route: hasRoute
+        ? `Route gezeichnet${routeVisible ? '' : ', ausgeblendet'}`
+        : 'Route nicht gezeichnet',
+      set_speed: speedMode === 'relative'
+        ? `${target.delta ?? 10} m/s relativ zu ${_eventActorLabel(relativeSpeedTarget)} für ${dynamics.value ?? 5}s`
+        : `${target.value ?? 10} m/s für ${dynamics.value ?? 5}s`,
+      set_distance: `${action.axis === 'lateral' ? 'Lateral' : 'Longitudinal'} ${action.value ?? 10} m relativ zu ${_eventActorLabel(distanceTarget)}`,
+      lane_change: `${action.direction === 'right' ? 'Rechts' : 'Links'} innerhalb ${dynamics.value ?? 12} m`,
+    };
+    return actionLabels[action.type];
+  }
+
+  // ── Trigger Controls ────────────────────────────────────────────────────────
+
+  function _appendEventTriggerControls(card, actor, ev, events) {
+    const trigger = _eventTrigger(ev);
+    const triggerSelect = _select([
+      ['simulation_time', 'Simulation time'],
+      ['distance_to_ego', 'Distance to ego vehicle'],
+      ['distance_to_point', 'Distance to a point'],
+      ['after_event', 'After other event ends'],
+    ], trigger.type || 'simulation_time');
+    triggerSelect.addEventListener('change', e => {
+      if (e.target.value === 'after_event') {
+        const ref = events.find(other => other.id !== ev.id && _eventAction(other).type !== 'assign_route');
+        _updateEvent(actor, ev.id, { trigger: { type: 'after_event', event_id: ref ? ref.id : '' } });
+      } else if (e.target.value === 'distance_to_point') {
+        _updateEvent(actor, ev.id, {
+          trigger: {
+            type: 'distance_to_point',
+            value: trigger.value ?? 20,
+            entity_ref: trigger.entity_ref || actor.id,
+            point: trigger.point || null,
+          },
+        });
+        _startTriggerPointMode(actor.id, ev.id);
+      } else {
+        _updateEvent(actor, ev.id, {
+          trigger: {
+            type: e.target.value,
+            value: e.target.value === 'distance_to_ego' ? (trigger.value ?? 400) : (trigger.value ?? 0),
+          },
+        });
+      }
+    });
+    card.appendChild(_row('Trigger', triggerSelect));
+
+    if ((trigger.type || 'simulation_time') === 'after_event') {
+      const refs = events
+        .map((other, otherIndex) => ({ other, otherIndex }))
+        .filter(({ other }) => other.id !== ev.id && _eventAction(other).type !== 'assign_route')
+        .map(({ other, otherIndex }) => [other.id, _eventDisplayName(other, otherIndex)]);
+      const refSelect = _select(refs.length ? refs : [['', 'Kein Event']], trigger.event_id || '');
+      refSelect.disabled = refs.length === 0;
+      refSelect.addEventListener('change', e => {
+        _updateEvent(actor, ev.id, { trigger: { type: 'after_event', event_id: e.target.value } });
+      });
+      card.appendChild(_row('Nach Event', refSelect));
+    } else if ((trigger.type || 'simulation_time') === 'distance_to_point') {
+      const point = trigger.point;
+      const selectedTarget = trigger.entity_ref || actor.id;
+      const pointInfo = document.createElement('div');
+      pointInfo.className = 'event-point-info';
+      pointInfo.textContent = point
+        ? `${point.name}: (${Number(point.x).toFixed(1)}, ${Number(point.y).toFixed(1)})`
+        : 'Kein Punkt gesetzt';
+      card.appendChild(pointInfo);
+
+      const pickBtn = document.createElement('button');
+      pickBtn.type = 'button';
+      pickBtn.className = 'event-action-button';
+      pickBtn.textContent = point ? 'Neu setzen' : 'Setzen';
+      pickBtn.addEventListener('click', () => _startTriggerPointMode(actor.id, ev.id));
+
+      const distanceInput = document.createElement('input');
+      distanceInput.type = 'number';
+      distanceInput.min = '0';
+      distanceInput.step = '1';
+      distanceInput.value = trigger.value ?? 20;
+      distanceInput.addEventListener('change', e => {
+        _patchEventTrigger(actor, ev, {
+          type: 'distance_to_point',
+          value: Math.max(0, parseFloat(e.target.value) || 0),
+          entity_ref: trigger.entity_ref || actor.id,
+          point: trigger.point || null,
+        });
+      });
+
+      const targetSelect = _select(_triggerActorOptions(actor), selectedTarget);
+      targetSelect.addEventListener('change', e => {
+        _patchEventTrigger(actor, ev, {
+          type: 'distance_to_point',
+          value: trigger.value ?? 20,
+          entity_ref: e.target.value,
+          point: trigger.point || null,
+        });
+      });
+      card.appendChild(_pointDistanceRow(pickBtn, distanceInput, targetSelect));
+    } else {
+      const valueInput = document.createElement('input');
+      valueInput.type = 'number';
+      valueInput.min = '0';
+      valueInput.step = (trigger.type || 'simulation_time') === 'distance_to_ego' ? '1' : '0.1';
+      valueInput.value = trigger.value ?? 0;
+      valueInput.addEventListener('change', e => {
+        _patchEventTrigger(actor, ev, {
+          type: trigger.type || 'simulation_time',
+          value: Math.max(0, parseFloat(e.target.value) || 0),
+        });
+      });
+      const unit = (trigger.type || 'simulation_time') === 'distance_to_ego' ? 'm' : 's';
+      card.appendChild(_paramRow('Wert', valueInput, unit));
+    }
+  }
+
+  function _startTriggerPointMode(actorId, eventId) {
+    AppState.set({
+      activeTool: null,
+      trajectoryMode: false,
+      activeTrajectoryId: null,
+      routeMode: false,
+      activeRouteId: null,
+      activePathEventId: null,
+      triggerPointMode: { actorId, eventId },
+    });
+    Toast.info('Punkt auf der Karte anklicken');
+  }
+
+  // ── Actor References And Toggles ────────────────────────────────────────────
+
+  function _speedMode(ev) {
+    const target = _eventAction(ev).target || {};
+    return target.mode === 'relative' ? 'relative' : 'absolute';
+  }
+
+  function _defaultRelativeActorId(actor) {
+    if (AppState.ego && AppState.ego.id !== actor?.id) return AppState.ego.id;
+    const fallback = AppState.npcs.find(n => n.id !== actor?.id);
+    return fallback ? fallback.id : '';
+  }
+
+  function _relativeActorOptions(actor) {
+    const options = [];
+    if (AppState.ego && AppState.ego.id !== actor?.id) {
+      options.push([AppState.ego.id, 'Ego']);
+    }
+    AppState.npcs
+      .filter(n => n.id !== actor?.id)
+      .forEach(n => options.push([n.id, AppState.actorLabel(n)]));
+    return options;
+  }
+
+  function _triggerActorOptions(actor) {
+    const options = actor?.id ? [[actor.id, AppState.actorLabel(actor)]] : [];
+    if (AppState.ego && AppState.ego.id !== actor?.id) {
+      options.push([AppState.ego.id, 'Ego']);
+    }
+    AppState.npcs
+      .filter(n => n.id !== actor?.id)
+      .forEach(n => options.push([n.id, AppState.actorLabel(n)]));
+    return options;
+  }
+
+  function _select(options, selectedValue) {
+    const select = document.createElement('select');
+    options.forEach(([value, label]) => {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = label;
+      select.appendChild(option);
+    });
+    select.value = selectedValue;
+    return select;
+  }
+
+  function _axisToggle(actor, ev) {
+    const action = _eventAction(ev);
+    const current = action.axis === 'lateral' ? 'lateral' : 'longitudinal';
+    const wrap = document.createElement('div');
+    wrap.className = 'event-toggle';
+
+    [
+      ['longitudinal', 'Longitudinal'],
+      ['lateral', 'Lateral'],
+    ].forEach(([value, label]) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = label;
+      btn.className = value === current ? 'active' : '';
+      btn.addEventListener('click', () => {
+        _patchEventAction(actor, ev, { axis: value });
+      });
+      wrap.appendChild(btn);
+    });
+    return wrap;
+  }
+
+  function _speedModeToggle(actor, ev) {
+    const current = _speedMode(ev);
+    const action = _eventAction(ev);
+    const target = action.target || { mode: 'absolute', value: 10.0 };
+    const wrap = document.createElement('div');
+    wrap.className = 'event-toggle';
+
+    [
+      ['absolute', 'Absolute'],
+      ['relative', 'Relative'],
+    ].forEach(([value, label]) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = label;
+      btn.className = value === current ? 'active' : '';
+      btn.addEventListener('click', () => {
+        _patchEventAction(actor, ev, {
+          type: 'set_speed',
+          target: value === 'relative'
+            ? {
+              mode: 'relative',
+              entity_ref: target.entity_ref || _defaultRelativeActorId(actor),
+              delta: target.delta ?? target.value ?? 10.0,
+            }
+            : {
+              mode: 'absolute',
+              value: target.value ?? target.delta ?? 10.0,
+            },
+        });
+      });
+      wrap.appendChild(btn);
+    });
+    return wrap;
+  }
+
+  // ── DOM Helpers ─────────────────────────────────────────────────────────────
+
+  function _row(labelText, control) {
+    const row = document.createElement('div');
+    row.className = 'event-row';
+    if (labelText === 'Trigger') {
+      row.classList.add('event-primary-row');
+    }
+    const label = document.createElement('label');
+    label.textContent = labelText;
+    row.appendChild(label);
+    row.appendChild(control);
+    return row;
+  }
+
+  function _paramRow(labelText, control, unitText) {
+    const row = document.createElement('div');
+    row.className = 'event-param-row';
+    const label = document.createElement('label');
+    label.textContent = labelText;
+    const unit = document.createElement('span');
+    unit.style.cssText = 'color:var(--text-dim);font-size:10px;';
+    unit.textContent = unitText;
+    row.appendChild(label);
+    row.appendChild(control);
+    row.appendChild(unit);
+    return row;
+  }
+
+  function _speedTimingRow(speedInput, timeInput) {
+    const row = document.createElement('div');
+    row.className = 'event-speed-row';
+
+    const speedLabel = document.createElement('label');
+    speedLabel.textContent = 'Speed';
+    const speedUnit = document.createElement('span');
+    speedUnit.textContent = 'm/s';
+
+    const timeLabel = document.createElement('label');
+    timeLabel.textContent = 'Für';
+    const timeUnit = document.createElement('span');
+    timeUnit.textContent = 's';
+
+    row.appendChild(speedLabel);
+    row.appendChild(speedInput);
+    row.appendChild(speedUnit);
+    row.appendChild(timeLabel);
+    row.appendChild(timeInput);
+    row.appendChild(timeUnit);
+    return row;
+  }
+
+  function _pointDistanceRow(pointButton, distanceInput, targetSelect) {
+    const row = document.createElement('div');
+    row.className = 'event-point-distance-row';
+
+    const distanceLabel = document.createElement('label');
+    distanceLabel.textContent = 'Distanz';
+    const unit = document.createElement('span');
+    unit.textContent = 'm zu';
+
+    row.appendChild(pointButton);
+    row.appendChild(distanceLabel);
+    row.appendChild(distanceInput);
+    row.appendChild(unit);
+    row.appendChild(targetSelect);
+    return row;
+  }
+
+  // ── Path Action Controls ────────────────────────────────────────────────────
+
+  function _eventPathPoints(ev) {
+    const action = _eventAction(ev);
+    return action.type === 'assign_route'
+      ? (action.waypoints || [])
+      : (action.trajectory || []);
+  }
+
+  function _renderPathList(actor, type, target, ev) {
+    target.innerHTML = '';
+    const points = _eventPathPoints(ev);
+    const isRoute = type === 'route';
+
+    if (points.length === 0) {
+      const empty = document.createElement('div');
+      empty.style.cssText = 'color:var(--text-dim);font-size:11px;padding:4px 0';
+      empty.textContent = isRoute ? 'Noch keine Route gezeichnet.' : 'Noch kein Pfad gezeichnet.';
+      target.appendChild(empty);
+      return;
+    }
+
+    points.forEach((wp, i) => {
+      const item = document.createElement('div');
+      item.className = `waypoint-item${isRoute ? ' route-waypoint-item' : ''}`;
+
+      const num = document.createElement('span');
+      num.className = 'wp-num';
+      num.textContent = i + 1;
+
+      const coords = document.createElement('span');
+      coords.className = 'wp-coords';
+      coords.textContent = `(${wp.x.toFixed(1)}, ${wp.y.toFixed(1)})`;
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'wp-delete';
+      delBtn.textContent = '×';
+      delBtn.title = 'Wegpunkt entfernen';
+      delBtn.addEventListener('click', () => {
+        ObjectsManager.deletePathPoint(actor.id, type, i, ev.id);
+      });
+
+      item.appendChild(num);
+      item.appendChild(coords);
+      if (!isRoute) {
+        const velInput = document.createElement('input');
+        velInput.type = 'number';
+        velInput.min = '0';
+        velInput.max = '50';
+        velInput.step = '0.5';
+        velInput.value = (wp.velocity || 10).toFixed(1);
+        velInput.title = 'Geschwindigkeit (m/s)';
+        velInput.dataset.idx = i;
+        velInput.addEventListener('change', e => {
+          ObjectsManager.setPathPointVelocity(actor.id, type, i, e.target.value, ev.id);
+        });
+
+        const msSuffix = document.createElement('span');
+        msSuffix.style.cssText = 'color:var(--text-dim);font-size:10px;';
+        msSuffix.textContent = 'm/s';
+
+        item.appendChild(velInput);
+        item.appendChild(msSuffix);
+      }
+
+      item.appendChild(delBtn);
+      target.appendChild(item);
+    });
+  }
+
+  function _appendEventPathControls(card, actor, ev) {
+    const actionType = _eventAction(ev).type || 'follow_trajectory';
+    const isRouteAction = actionType === 'assign_route';
+    const pathMode = isRouteAction ? 'route' : 'trajectory';
+    const pathPoints = _eventPathPoints(ev);
+    const hasPath = pathPoints.length > 0;
+    const visible = isRouteAction
+      ? MapView.isRouteVisible(actor.id, ev.id)
+      : MapView.isTrajectoryVisible(actor.id, ev.id);
+
+    const controls = document.createElement('div');
+    controls.className = `event-toggle event-path-controls${hasPath ? ' has-path' : ''}`;
+
+    const drawBtn = document.createElement('button');
+    drawBtn.type = 'button';
+    drawBtn.textContent = 'Zeichnen';
+    drawBtn.addEventListener('click', () => {
+      ObjectsManager.startPathMode(actor.id, pathMode, ev.id);
+    });
+
+    const clearBtn = document.createElement('button');
+    clearBtn.type = 'button';
+    clearBtn.className = 'danger';
+    clearBtn.textContent = 'Löschen';
+    clearBtn.addEventListener('click', () => {
+      ObjectsManager.clearPath(actor.id, pathMode, ev.id);
+      _refresh();
+    });
+
+    const toggleBtn = document.createElement('button');
+    toggleBtn.type = 'button';
+    toggleBtn.textContent = visible ? 'Ausblenden' : 'Anzeigen';
+    toggleBtn.addEventListener('click', () => {
+      if (isRouteAction) MapView.toggleRouteVisibility(actor.id, ev.id);
+      else MapView.toggleTrajectoryVisibility(actor.id, ev.id);
+      _refresh();
+    });
+
+    controls.appendChild(drawBtn);
+    if (hasPath) {
+      controls.appendChild(toggleBtn);
+      controls.appendChild(clearBtn);
+    }
+    card.appendChild(controls);
+  }
+
+  // ── Event State ─────────────────────────────────────────────────────────────
+
+  function _defaultEvent(actor, actionType = 'set_speed', forceFirst = false) {
+    const events = actor.events || [];
+    const idx = _nextIndexedId(events, 'evt');
+    const previous = events[events.length - 1];
+    const previousActionType = previous ? _eventAction(previous).type : null;
+    const trigger = actionType === 'assign_route'
+      ? { type: 'simulation_time', value: 0 }
+      : events.length > 0 && !forceFirst && previousActionType !== 'assign_route'
+        ? { type: 'after_event', event_id: previous.id }
+        : { type: 'distance_to_ego', value: 400 };
+    return {
+      id: `evt-${idx}`,
+      trigger,
+      action: _defaultAction(actor, actionType),
+    };
+  }
+
+  function _defaultAction(actor, actionType = 'set_speed') {
+    if (actionType === 'set_distance') {
+      return {
+        type: 'set_distance',
+        axis: 'longitudinal',
+        entity_ref: _defaultRelativeActorId(actor),
+        value: 10.0,
+      };
+    }
+    if (actionType === 'lane_change') {
+      return {
+        type: 'lane_change',
+        direction: 'left',
+        dynamics: { shape: 'linear', value: 12.0 },
+      };
+    }
+    if (actionType === 'assign_route') {
+      return {
+        type: 'assign_route',
+        route_strategy: 'fastest',
+        waypoints: [],
+      };
+    }
+    if (actionType === 'follow_trajectory') {
+      return {
+        type: 'follow_trajectory',
+        trajectory: [],
+      };
+    }
+    return {
+      type: 'set_speed',
+      dynamics: { shape: 'step', dimension: 'time', value: 5.0 },
+      target: { mode: 'absolute', value: 10.0 },
+    };
+  }
+
+  function _nextIndexedId(events, prefix) {
+    const used = new Set((events || []).map(ev => String(ev.id || '')));
+    let idx = events.length + 1;
+    while (used.has(`${prefix}-${idx}`)) idx += 1;
+    return idx;
+  }
+
+  function _eventAction(ev) {
+    return ev.action || { type: 'follow_trajectory' };
+  }
+
+  function _eventTrigger(ev) {
+    return ev.trigger || { type: 'simulation_time', value: 0 };
+  }
+
+  function _patchEventAction(actor, ev, patch) {
+    const currentEvent = _currentEvent(actor.id, ev.id) || ev;
+    _updateEvent(actor, ev.id, { action: { ..._eventAction(currentEvent), ...patch } });
+  }
+
+  function _patchEventTrigger(actor, ev, patch) {
+    const currentEvent = _currentEvent(actor.id, ev.id) || ev;
+    _updateEvent(actor, ev.id, { trigger: { ..._eventTrigger(currentEvent), ...patch } });
+  }
+
+  function _updateEvent(actor, eventId, patch) {
+    const currentActor = AppState.findById(actor.id) || actor;
+    const events = (currentActor.events || []).map(ev => (
+      ev.id === eventId ? { ...ev, ...patch } : ev
+    ));
+    AppState.updateById(currentActor.id, { events });
+  }
+
+  function _currentEvent(actorId, eventId) {
+    const actor = AppState.findById(actorId);
+    return (actor?.events || []).find(ev => ev.id === eventId) || null;
+  }
+
+  function _deleteEvent(actor, eventId) {
+    const currentActor = AppState.findById(actor.id) || actor;
+    const currentEvents = currentActor.events || [];
+    const deletedIndex = currentEvents.findIndex(ev => ev.id === eventId);
+    if (deletedIndex < 0) return;
+
+    const previousEvent = currentEvents[deletedIndex - 1] || null;
+    const firstEventTriggerPatch = ev => ({
+      ...ev,
+      trigger: {
+        type: 'distance_to_ego',
+        value: _eventTrigger(ev).type === 'distance_to_ego' ? (_eventTrigger(ev).value ?? 400) : 400,
+      },
+    });
+    const events = currentEvents
+      .filter(ev => ev.id !== eventId)
+      .map(ev => {
+        const trigger = _eventTrigger(ev);
+        if (trigger.type === 'after_event' && trigger.event_id === eventId) {
+          return previousEvent && _eventAction(previousEvent).type !== 'assign_route'
+            ? { ...ev, trigger: { type: 'after_event', event_id: previousEvent.id } }
+            : firstEventTriggerPatch(ev);
+        }
+        return ev;
+      });
+
+    if (AppState.activePathEventId === eventId) {
+      AppState.set({
+        trajectoryMode: false,
+        activeTrajectoryId: null,
+        routeMode: false,
+        activeRouteId: null,
+        activePathEventId: null,
+      });
+    }
+    AppState.updateById(currentActor.id, { events });
+  }
+
+  // ── Export ──────────────────────────────────────────────────────────────────
+
+  window.EventPanel = {
+    render,
+    setRefreshHandler,
+  };
+})();

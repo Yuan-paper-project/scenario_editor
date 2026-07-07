@@ -7,7 +7,6 @@ Coordinate convention:
 """
 
 import math
-import os
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -339,7 +338,13 @@ def _extract_traffic_lights(root: ET.Element) -> list[dict]:
             px, py, ph = res
             wx = px - t * math.sin(ph)
             wy = py + t * math.cos(ph)
-            results.append({'x': round(wx, 1), 'y': round(-wy, 1)})
+            editor_id = f"traffic_light_{len(results) + 1}"
+            results.append({
+                'id': editor_id,
+                'name': f"Traffic Light {len(results) + 1}",
+                'x': round(wx, 1),
+                'y': round(-wy, 1),
+            })
     return results
 
 
