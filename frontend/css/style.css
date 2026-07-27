@@ -156,9 +156,28 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
   padding: 10px; flex-shrink: 0;
 }
 .props-placeholder {
-  display: flex; align-items: flex-start; justify-content: center;
-  height: 100%; color: var(--text-dim); text-align: center; line-height: 1.6;
+  display: flex; flex-direction: column;
+  height: 100%; color: var(--text-dim); line-height: 1.6;
   padding-top: 8px;
+}
+.props-info-tabs {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px; margin-bottom: 10px;
+}
+.props-info-tab {
+  min-width: 0; height: 28px;
+  background: var(--panel2); color: var(--text-dim);
+  border: 1px solid var(--border); border-radius: 4px;
+  font-size: 11px; font-weight: 700; cursor: pointer;
+}
+.props-info-tab:hover { color: var(--text); border-color: var(--accent); }
+.props-info-tab.active {
+  background: var(--accent); color: #fff; border-color: var(--accent);
+}
+.props-info-tab-panel { flex: 1 1 auto; min-height: 0; }
+.props-info-tab-panel > p { margin: 8px 0 0; text-align: center; }
+.templates-panel {
+  min-height: 1px; display: flex; flex-direction: column; gap: 4px;
 }
 .props-header {
   display: flex; align-items: center; justify-content: space-between;
@@ -522,6 +541,7 @@ input[type="range"]::-webkit-slider-thumb {
 .scenario-summary h3 {
   font-size: 12px; color: var(--accent); margin-bottom: 10px;
   border-bottom: 1px solid var(--border); padding-bottom: 6px;
+  text-align: center;
 }
 .summary-row {
   display: flex; justify-content: space-between; align-items: center;
@@ -533,6 +553,7 @@ input[type="range"]::-webkit-slider-thumb {
   margin-top: 12px; font-size: 10px; font-weight: 700;
   letter-spacing: .8px; color: var(--text-dim); text-transform: uppercase;
   border-top: 1px solid var(--border); padding-top: 8px; margin-bottom: 6px;
+  text-align: center;
 }
 .summary-hint {
   margin-top: 16px; padding: 10px; background: var(--panel2);

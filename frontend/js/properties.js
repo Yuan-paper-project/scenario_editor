@@ -11,7 +11,7 @@
   'use strict';
 
   // Elements
-  const propsEmpty   = document.getElementById('props-empty');
+  const propsOverview = document.getElementById('props-overview');
   const propsContent = document.getElementById('props-content');
   const propsTitle   = document.getElementById('props-title');
   const propsDelete  = document.getElementById('props-delete');
@@ -39,10 +39,32 @@
 
   // Track whether we're syncing to avoid loops
   let _syncing = false;
+  let _overviewPanelTab = 'overview';
 
   // ── Render panel for selected actor ─────────────────────────────────────────
 
-  function _renderSummary() {
+  function _renderOverviewPanel() {
+    const activeTab = _overviewPanelTab === 'templates' ? 'templates' : 'overview';
+    propsOverview.innerHTML = `
+      <div class="props-info-tabs" role="tablist" aria-label="Panel ohne Auswahl">
+        <button class="props-info-tab${activeTab === 'overview' ? ' active' : ''}" type="button" role="tab" aria-selected="${activeTab === 'overview'}" data-overview-tab="overview">Übersicht</button>
+        <button class="props-info-tab${activeTab === 'templates' ? ' active' : ''}" type="button" role="tab" aria-selected="${activeTab === 'templates'}" data-overview-tab="templates">Templates</button>
+      </div>
+      <div class="props-info-tab-panel" role="tabpanel">
+        ${activeTab === 'overview' ? _summaryHtml() : ScenarioTemplates.renderPanel()}
+      </div>
+    `;
+    propsOverview.querySelectorAll('[data-overview-tab]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        _overviewPanelTab = btn.dataset.overviewTab;
+        _renderOverviewPanel();
+      });
+    });
+    ScenarioTemplates.bindPanel(propsOverview);
+    _bindCollapsibleHeaders(propsOverview);
+  }
+
+  function _summaryHtml() {
     const hasEgo = !!AppState.ego;
     const npcCount = AppState.npcs.length;
     const mapName = AppState.map || 'None';
@@ -82,7 +104,7 @@
     html += '<div class="summary-hint">Akteur anklicken, um Eigenschaften zu bearbeiten<br>Drücken Sie <b>?</b> für Tastaturkürzel</div>';
     html += '</div>';
 
-    propsEmpty.innerHTML = html;
+    return html;
   }
 
   function render() {
@@ -97,14 +119,14 @@
     }
 
     if (!actor) {
-      propsEmpty.classList.remove('hidden');
+      propsOverview.classList.remove('hidden');
       propsContent.classList.add('hidden');
       if (trafficSignalPanel) trafficSignalPanel.classList.add('hidden');
-      _renderSummary();
+      _renderOverviewPanel();
       return;
     }
 
-    propsEmpty.classList.add('hidden');
+    propsOverview.classList.add('hidden');
     propsContent.classList.remove('hidden');
     if (trafficSignalPanel) trafficSignalPanel.classList.add('hidden');
     if (propsDelete) propsDelete.classList.remove('hidden');
@@ -163,7 +185,7 @@
 
       // Waypoint list: ego uses the original global editor; NPCs edit paths inside events.
       if (!isNpc) {
-        _renderEgoPathList(actor);
+        EventPanel.renderPathList(actor, 'trajectory', waypointList, null);
       } else {
         waypointList.innerHTML = '';
       }
@@ -176,7 +198,7 @@
 
   function _renderTrafficSignalPanel(tl) {
     const action = TrafficSignals.actionById(tl.id);
-    propsEmpty.classList.add('hidden');
+    propsOverview.classList.add('hidden');
     propsContent.classList.remove('hidden');
     propsTitle.textContent = `Ampel ${tl.id}`;
     if (propsDelete) propsDelete.classList.add('hidden');
@@ -188,7 +210,7 @@
 
   function _defaultTrafficSignalEvent(action) {
     const events = action?.events || [];
-    const idx = _nextIndexedId(events, 'traffic-event');
+    const idx = UIUtils.nextIndexedId(events, 'traffic-event');
     return {
       id: `traffic-event-${idx}`,
       trigger_distance: 40,
@@ -236,7 +258,7 @@
           trigger_distance: Math.max(0, parseFloat(e.target.value) || 0),
         });
       });
-      card.appendChild(_paramRow('Ego <=', distanceInput, 'm'));
+      card.appendChild(UIUtils.paramRow('Ego <=', distanceInput, 'm'));
 
       trafficSignalEventList.appendChild(card);
     });
@@ -262,85 +284,6 @@
     return wrap;
   }
 
-  function _paramRow(labelText, control, unitText) {
-    const row = document.createElement('div');
-    row.className = 'event-param-row';
-    const label = document.createElement('label');
-    label.textContent = labelText;
-    const unit = document.createElement('span');
-    unit.style.cssText = 'color:var(--text-dim);font-size:10px;';
-    unit.textContent = unitText;
-    row.appendChild(label);
-    row.appendChild(control);
-    row.appendChild(unit);
-    return row;
-  }
-
-  function _renderEgoPathList(actor) {
-    waypointList.innerHTML = '';
-    const points = actor.trajectory || [];
-
-    if (points.length === 0) {
-      const empty = document.createElement('div');
-      empty.style.cssText = 'color:var(--text-dim);font-size:11px;padding:4px 0';
-      empty.textContent = 'Noch kein Pfad gezeichnet.';
-      waypointList.appendChild(empty);
-      return;
-    }
-
-    points.forEach((wp, i) => {
-      const item = document.createElement('div');
-      item.className = 'waypoint-item';
-
-      const num = document.createElement('span');
-      num.className = 'wp-num';
-      num.textContent = i + 1;
-
-      const coords = document.createElement('span');
-      coords.className = 'wp-coords';
-      coords.textContent = `(${wp.x.toFixed(1)}, ${wp.y.toFixed(1)})`;
-
-      const delBtn = document.createElement('button');
-      delBtn.className = 'wp-delete';
-      delBtn.textContent = '×';
-      delBtn.title = 'Wegpunkt entfernen';
-      delBtn.addEventListener('click', () => {
-        ObjectsManager.deletePathPoint(actor.id, 'trajectory', i);
-      });
-
-      item.appendChild(num);
-      item.appendChild(coords);
-      const velInput = document.createElement('input');
-      velInput.type = 'number';
-      velInput.min  = '0';
-      velInput.max  = '50';
-      velInput.step = '0.5';
-      velInput.value = (wp.velocity || 10).toFixed(1);
-      velInput.title = 'Geschwindigkeit (m/s)';
-      velInput.dataset.idx = i;
-      velInput.addEventListener('change', e => {
-        ObjectsManager.setPathPointVelocity(actor.id, 'trajectory', i, e.target.value);
-      });
-
-      const msSuffix = document.createElement('span');
-      msSuffix.style.cssText = 'color:var(--text-dim);font-size:10px;';
-      msSuffix.textContent = 'm/s';
-
-      item.appendChild(velInput);
-      item.appendChild(msSuffix);
-
-      item.appendChild(delBtn);
-      waypointList.appendChild(item);
-    });
-  }
-
-  function _nextIndexedId(events, prefix) {
-    const used = new Set((events || []).map(ev => String(ev.id || '')));
-    let idx = events.length + 1;
-    while (used.has(`${prefix}-${idx}`)) idx += 1;
-    return idx;
-  }
-
   function _updateTrafficSignalEvent(signalId, eventId, patch) {
     const signal = TrafficSignals.actionById(signalId);
     if (!signal) return;
@@ -355,6 +298,23 @@
     if (!signal) return;
     const events = (signal.events || []).filter(ev => ev.id !== eventId);
     TrafficSignals.update(signalId, { events });
+  }
+
+  function _bindCollapsibleHeaders(root) {
+    root.querySelectorAll('.collapsible-header[data-collapse-target]').forEach(header => {
+      if (header.dataset.collapseBound === 'true') return;
+      header.dataset.collapseBound = 'true';
+      header.addEventListener('click', e => {
+        if (e.target.closest('input, select, button:not(.collapsible-header)')) return;
+        const targetId = header.dataset.collapseTarget;
+        const target = targetId ? document.getElementById(targetId) : null;
+        const section = target ? target.closest('.collapsible-section') : null;
+        if (!section) return;
+        section.classList.toggle('collapsed');
+        const indicator = header.querySelector('.collapse-indicator');
+        if (indicator) indicator.textContent = section.classList.contains('collapsed') ? '+' : '-';
+      });
+    });
   }
 
   // ── Input → state bindings ───────────────────────────────────────────────────
@@ -456,12 +416,12 @@
   AppState.on('trafficSignalUpdated', () => render());
   AppState.on('actorUpdated',     id => {
     if (id === AppState.selectedId) render();
-    else if (!AppState.selectedId) _renderSummary();
+    else if (!AppState.selectedId) _renderOverviewPanel();
   });
   AppState.on('actorRemoved',     () => render());
   AppState.on('stateLoaded',      () => render());
   AppState.on('change',           patch => {
-    if (!AppState.selectedId && ('weather' in patch || 'time' in patch)) _renderSummary();
+    if (!AppState.selectedId && ('weather' in patch || 'time' in patch)) _renderOverviewPanel();
     if ('triggerPointMode' in patch) {
       const drawing = AppState.triggerPointMode ||
         (AppState.trajectoryMode && AppState.activeTrajectoryId) ||
@@ -470,19 +430,8 @@
     }
   });
 
-  document.querySelectorAll('.collapsible-header[data-collapse-target]').forEach(header => {
-    header.addEventListener('click', e => {
-      if (e.target.closest('input, select, button:not(.collapsible-header)')) return;
-      const targetId = header.dataset.collapseTarget;
-      const target = targetId ? document.getElementById(targetId) : null;
-      const section = target ? target.closest('.collapsible-section') : null;
-      if (!section) return;
-      section.classList.toggle('collapsed');
-      const indicator = header.querySelector('.collapse-indicator');
-      if (indicator) indicator.textContent = section.classList.contains('collapsed') ? '+' : '-';
-    });
-  });
+  _bindCollapsibleHeaders(document);
 
   // Render initial summary on load
-  _renderSummary();
+  _renderOverviewPanel();
 })();

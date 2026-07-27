@@ -114,20 +114,9 @@
   <main id="map-container">
     <div id="map-overlay-msg">Karte aus dem Dropdown oben auswählen, um zu beginnen</div>
     <svg id="map-svg" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <marker id="arrow-ego" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
-          <polygon points="0,0 6,3 0,6" fill="#4488ff"/>
-        </marker>
-        <marker id="arrow-npc" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
-          <polygon points="0,0 6,3 0,6" fill="#ff9933"/>
-        </marker>
-        <marker id="arrow-traj" markerWidth="4" markerHeight="4" refX="2" refY="2" orient="auto" markerUnits="strokeWidth">
-          <polygon points="0,0 4,2 0,4" fill="#00ccff" opacity="0.8"/>
-        </marker>
-        <marker id="arrow-road" markerWidth="3" markerHeight="3" refX="1.5" refY="1.5" orient="auto" markerUnits="strokeWidth">
-          <polygon points="0,0 3,1.5 0,3" fill="rgba(255,255,255,0.35)"/>
-        </marker>
-      </defs>
+      <!-- Trajectory arrow markers are created per actor at runtime by
+           mapView.js `_ensureArrowMarker`, which appends into this <defs>. -->
+      <defs></defs>
       <rect id="map-background" fill="transparent"/>
       <g id="world">
         <g id="layer-roads"></g>
@@ -162,8 +151,14 @@
 
   <!-- ── RIGHT PROPERTIES PANEL ── -->
   <aside id="properties-panel">
-    <div id="props-empty" class="props-placeholder">
-      <p>Objekt anklicken,<br>um Eigenschaften zu bearbeiten</p>
+    <div id="props-overview" class="props-placeholder">
+      <div class="props-info-tabs" role="tablist" aria-label="Panel ohne Auswahl">
+        <button class="props-info-tab active" type="button" role="tab" aria-selected="true">Übersicht</button>
+        <button class="props-info-tab" type="button" role="tab" aria-selected="false">Templates</button>
+      </div>
+      <div class="props-info-tab-panel" role="tabpanel">
+        <p>Objekt anklicken,<br>um Eigenschaften zu bearbeiten</p>
+      </div>
     </div>
     <div id="props-content" class="hidden">
       <div class="props-header">
@@ -441,6 +436,7 @@
 <script src="/static/js/app.js"></script>
 <script src="/static/js/api.js"></script>
 <script src="/static/js/trafficSignals.js"></script>
+<script src="/static/js/templates.js"></script>
 <script src="/static/js/mapView.js"></script>
 <script src="/static/js/toolbar.js"></script>
 <script src="/static/js/objects.js"></script>

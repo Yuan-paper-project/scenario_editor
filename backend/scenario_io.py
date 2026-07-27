@@ -188,12 +188,11 @@ def validate_scenario_params(params: dict) -> dict:
             npc["events"] = []
         npc.setdefault("trigger_distance", 400)
         npc["trigger_distance"] = max(5.0, min(1000.0, float(npc["trigger_distance"])))
-        npc_ref = actor_refs.get(str(npc.get("id")), "adversary")
         for idx, event in enumerate(npc["events"]):
             if not isinstance(event, dict):
                 npc["events"][idx] = event = {}
             event.setdefault("id", f"event_{idx + 1}")
-            _normalize_structured_event(event, actor_refs, npc_ref)
+            _normalize_structured_event(event, actor_refs)
         assign_route_ids = {
             str(event.get("id"))
             for event in npc["events"]

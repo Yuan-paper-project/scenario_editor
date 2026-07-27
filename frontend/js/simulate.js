@@ -372,12 +372,4 @@
       }
     }
   });
-
-  // Public API
-  window.Simulator = {
-    get running() { return _running; },
-    start: _startSimulation,
-    pause: _pauseSimulation,
-    stop:  _stopSimulation,
-  };
 })();

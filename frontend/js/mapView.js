@@ -184,7 +184,8 @@
           // Per-lane direction arrows (each lane has its own directionLine
           // with correct travel direction — left lanes are reversed)
           for (const lane of road.lanes) {
-            if (lane.directionLine && lane.directionLine.length > 1) {
+            if ((lane.type === 'driving' || lane.type === 'bidirectional') &&
+                lane.directionLine && lane.directionLine.length > 1) {
               _renderRoadDirArrows(lane.directionLine);
             }
           }
@@ -894,7 +895,7 @@
         _shortcutsOverlay.classList.add('hidden');
         return;
       }
-      AppState.set({ activeTool: null, trajectoryMode: false, activeTrajectoryId: null, routeMode: false, activeRouteId: null, activePathEventId: null, triggerPointMode: null });
+      AppState.set({ activeTool: null, pendingTemplate: null, trajectoryMode: false, activeTrajectoryId: null, routeMode: false, activeRouteId: null, activePathEventId: null, triggerPointMode: null });
       return;
     }
 
@@ -909,7 +910,7 @@
     // R — toggle ruler tool
     if (e.key === 'r' && !e.ctrlKey && !e.metaKey) {
       const newTool = AppState.activeTool === 'ruler' ? null : 'ruler';
-      AppState.set({ activeTool: newTool, trajectoryMode: false, activeTrajectoryId: null, routeMode: false, activeRouteId: null, activePathEventId: null });
+      AppState.set({ activeTool: newTool, pendingTemplate: null, trajectoryMode: false, activeTrajectoryId: null, routeMode: false, activeRouteId: null, activePathEventId: null });
       return;
     }
 
@@ -1176,7 +1177,6 @@
     isRouteVisible(actorId, eventId = null) {
       return !_hiddenRoutes.has(_pathKey(actorId, eventId, 'route'));
     },
-    clearAllRulers: _clearAllRulers,
   };
 
   window.MapView = MapView;

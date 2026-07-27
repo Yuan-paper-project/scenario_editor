@@ -608,7 +608,7 @@ def _process_root_to_render_data(root: ET.Element, town_name: str, xodr_path: Pa
                     'polygon': poly,
                 }
 
-                if ld['type'] in ('driving', 'bidirectional'):
+                if ld['type'] in ('driving', 'bidirectional', 'parking', 'shoulder'):
                     sign = +1.0 if ld['side'] == 'L' else -1.0
                     lane_cl = []
                     side_lanes = [l for l in lane_defs if l['side'] == ld['side']]

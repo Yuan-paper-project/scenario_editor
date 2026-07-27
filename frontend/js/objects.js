@@ -46,7 +46,7 @@
     const actorGroup = e.target.closest('.actor-group');
     if (actorGroup) {
       const id = actorGroup.dataset.id;
-      AppState.set({ activeTool: null });   // exit placement mode
+      AppState.set({ activeTool: null, pendingTemplate: null });   // exit placement mode
       AppState.select(AppState.selectedId === id ? null : id);
       e.preventDefault();
       return;
@@ -67,11 +67,24 @@
   const ROAD_FACING_TYPES = new Set(['pedestrian', 'cyclist', 'bicycle']);
 
   function _placeActor(type, wx, wy) {
+    const pendingTemplate = AppState.pendingTemplate;
+    const templatePlacement = ScenarioTemplates.placementFor(pendingTemplate);
     const roadFacing = ROAD_FACING_TYPES.has(type);
-    const snap = roadFacing ? null : AppState.nearestSpawn(wx, wy, 12);
+    const laneSnap = templatePlacement?.snap === 'lane-center'
+      ? _nearestLaneProjection(
+          wx,
+          wy,
+          new Set(templatePlacement.laneTypes || []),
+          templatePlacement.maxDistance
+        )
+      : null;
+    const spawnSnap = roadFacing || templatePlacement ? null : AppState.nearestSpawn(wx, wy, 12);
+    const snap = laneSnap || spawnSnap;
     const x = snap ? snap.x : Math.round(wx * 10) / 10;
     const y = snap ? snap.y : Math.round(wy * 10) / 10;
-    const yaw = snap ? snap.yaw : (roadFacing ? _roadFacingYaw(wx, wy) : 0);
+    let yaw = roadFacing ? _roadFacingYaw(wx, wy) : 0;
+    if (templatePlacement?.orientation === 'along-lane') yaw = _roadAlongYaw(wx, wy);
+    if (snap) yaw = snap.yaw ?? snap.laneYaw;
 
     let newId;
     if (type === 'ego') {
@@ -94,15 +107,20 @@
         trigger_distance: 400,
         events: [],
       };
+      actor.events = ScenarioTemplates.eventsForActor(actor, pendingTemplate);
       AppState.npcs = [...AppState.npcs, actor];
       AppState.set({});
       newId = actor.id;
     }
 
     // Deactivate tool after placing so user can immediately drag/select
-    AppState.set({ activeTool: null });
+    AppState.set({ activeTool: null, pendingTemplate: null });
     AppState.select(newId);
     MapView.renderAllActors();
+    const label = ScenarioTemplates.label(pendingTemplate);
+    if (label) {
+      Toast.success(`${label}-Template erstellt`);
+    }
   }
 
   function _roadFacingYaw(wx, wy) {
@@ -113,10 +131,16 @@
     return Math.round(nearest.laneYaw + 90);
   }
 
-  function _nearestLaneProjection(wx, wy) {
+  function _roadAlongYaw(wx, wy) {
+    const nearest = _nearestLaneProjection(wx, wy);
+    return nearest ? Math.round(nearest.laneYaw) : 0;
+  }
+
+  function _nearestLaneProjection(wx, wy, laneTypes = null, maxDistance = Infinity) {
     let best = null;
     for (const road of AppState.mapData?.roads || []) {
       for (const lane of road.lanes || []) {
+        if (laneTypes?.size && !laneTypes.has(lane.type)) continue;
         const line = lane.directionLine || [];
         for (let i = 1; i < line.length; i++) {
           const [x0, y0] = line[i - 1];
@@ -129,7 +153,7 @@
           const x = x0 + t * dx;
           const y = y0 + t * dy;
           const dist = Math.hypot(wx - x, wy - y);
-          if (!best || dist < best.dist) {
+          if (dist <= maxDistance && (!best || dist < best.dist)) {
             best = { x, y, dist, laneYaw: Math.atan2(dy, dx) * 180 / Math.PI };
           }
         }
@@ -299,6 +323,7 @@
     }
     AppState.set({
       activeTool: null,
+      pendingTemplate: null,
       trajectoryMode: type === 'trajectory',
       activeTrajectoryId: type === 'trajectory' ? actorId : null,
       routeMode: type === 'route',
@@ -348,7 +373,7 @@
         trigger: {
           type: 'distance_to_point',
           value: ev.trigger?.value ?? 20,
-          entity_ref: ev.trigger?.entity_ref || actor.id,
+          entity_ref: ev.trigger?.entity_ref || AppState.ego?.id || actor.id,
           point,
         },
       };

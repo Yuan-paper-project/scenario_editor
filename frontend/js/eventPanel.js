@@ -231,7 +231,7 @@
       const parsed = parseFloat(e.target.value);
       _patchEventAction(actor, ev, { value: Number.isFinite(parsed) ? parsed : 0 });
     });
-    card.appendChild(_paramRow('Distanz', distanceInput, 'm'));
+    card.appendChild(UIUtils.paramRow('Distanz', distanceInput, 'm'));
   }
 
   function _appendLaneChangeControls(card, actor, ev, action) {
@@ -259,7 +259,7 @@
         },
       });
     });
-    card.appendChild(_paramRow('Distanz', durationInput, 'm'));
+    card.appendChild(UIUtils.paramRow('Distanz', durationInput, 'm'));
   }
 
   // ── Summaries And Labels ────────────────────────────────────────────────────
@@ -278,7 +278,7 @@
       const refIndex = events.findIndex(other => other.id === trigger.event_id);
       return refIndex >= 0 ? `Nach ${_eventDisplayName(events[refIndex], refIndex)}` : 'Nach Event';
     }
-    const pointTarget = trigger.entity_ref || actor?.id;
+    const pointTarget = trigger.entity_ref || _defaultPointTriggerActorId(actor);
     const triggerLabels = {
       simulation_time: `Nach ${trigger.value ?? 0}s`,
       distance_to_ego: `Ego-Abstand ${trigger.value ?? 0}m`,
@@ -339,7 +339,7 @@
           trigger: {
             type: 'distance_to_point',
             value: trigger.value ?? 20,
-            entity_ref: trigger.entity_ref || actor.id,
+            entity_ref: trigger.entity_ref || _defaultPointTriggerActorId(actor),
             point: trigger.point || null,
           },
         });
@@ -368,7 +368,7 @@
       card.appendChild(_row('Nach Event', refSelect));
     } else if ((trigger.type || 'simulation_time') === 'distance_to_point') {
       const point = trigger.point;
-      const selectedTarget = trigger.entity_ref || actor.id;
+      const selectedTarget = trigger.entity_ref || _defaultPointTriggerActorId(actor);
       const pointInfo = document.createElement('div');
       pointInfo.className = 'event-point-info';
       pointInfo.textContent = point
@@ -391,7 +391,7 @@
         _patchEventTrigger(actor, ev, {
           type: 'distance_to_point',
           value: Math.max(0, parseFloat(e.target.value) || 0),
-          entity_ref: trigger.entity_ref || actor.id,
+          entity_ref: trigger.entity_ref || _defaultPointTriggerActorId(actor),
           point: trigger.point || null,
         });
       });
@@ -419,13 +419,14 @@
         });
       });
       const unit = (trigger.type || 'simulation_time') === 'distance_to_ego' ? 'm' : 's';
-      card.appendChild(_paramRow('Wert', valueInput, unit));
+      card.appendChild(UIUtils.paramRow('Wert', valueInput, unit));
     }
   }
 
   function _startTriggerPointMode(actorId, eventId) {
     AppState.set({
       activeTool: null,
+      pendingTemplate: null,
       trajectoryMode: false,
       activeTrajectoryId: null,
       routeMode: false,
@@ -460,10 +461,17 @@
     return options;
   }
 
+  function _defaultPointTriggerActorId(actor) {
+    return AppState.ego?.id || actor?.id || '';
+  }
+
   function _triggerActorOptions(actor) {
-    const options = actor?.id ? [[actor.id, AppState.actorLabel(actor)]] : [];
-    if (AppState.ego && AppState.ego.id !== actor?.id) {
+    const options = [];
+    if (AppState.ego) {
       options.push([AppState.ego.id, 'Ego']);
+    }
+    if (actor?.id && actor.id !== AppState.ego?.id) {
+      options.push([actor.id, AppState.actorLabel(actor)]);
     }
     AppState.npcs
       .filter(n => n.id !== actor?.id)
@@ -555,20 +563,6 @@
     return row;
   }
 
-  function _paramRow(labelText, control, unitText) {
-    const row = document.createElement('div');
-    row.className = 'event-param-row';
-    const label = document.createElement('label');
-    label.textContent = labelText;
-    const unit = document.createElement('span');
-    unit.style.cssText = 'color:var(--text-dim);font-size:10px;';
-    unit.textContent = unitText;
-    row.appendChild(label);
-    row.appendChild(control);
-    row.appendChild(unit);
-    return row;
-  }
-
   function _speedTimingRow(speedInput, timeInput) {
     const row = document.createElement('div');
     row.className = 'event-speed-row';
@@ -618,9 +612,15 @@
       : (action.trajectory || []);
   }
 
+  /**
+   * Render a waypoint list into `target`.
+   * `ev` is the owning event for NPC paths; pass null for the ego's own
+   * trajectory, which lives on the actor rather than inside an event.
+   */
   function _renderPathList(actor, type, target, ev) {
     target.innerHTML = '';
-    const points = _eventPathPoints(ev);
+    const points  = ev ? _eventPathPoints(ev) : (actor.trajectory || []);
+    const eventId = ev?.id ?? null;
     const isRoute = type === 'route';
 
     if (points.length === 0) {
@@ -648,7 +648,7 @@
       delBtn.textContent = '×';
       delBtn.title = 'Wegpunkt entfernen';
       delBtn.addEventListener('click', () => {
-        ObjectsManager.deletePathPoint(actor.id, type, i, ev.id);
+        ObjectsManager.deletePathPoint(actor.id, type, i, eventId);
       });
 
       item.appendChild(num);
@@ -663,7 +663,7 @@
         velInput.title = 'Geschwindigkeit (m/s)';
         velInput.dataset.idx = i;
         velInput.addEventListener('change', e => {
-          ObjectsManager.setPathPointVelocity(actor.id, type, i, e.target.value, ev.id);
+          ObjectsManager.setPathPointVelocity(actor.id, type, i, e.target.value, eventId);
         });
 
         const msSuffix = document.createElement('span');
@@ -729,7 +729,7 @@
 
   function _defaultEvent(actor, actionType = 'set_speed', forceFirst = false) {
     const events = actor.events || [];
-    const idx = _nextIndexedId(events, 'evt');
+    const idx = UIUtils.nextIndexedId(events, 'evt');
     const previous = events[events.length - 1];
     const previousActionType = previous ? _eventAction(previous).type : null;
     const trigger = actionType === 'assign_route'
@@ -778,13 +778,6 @@
       dynamics: { shape: 'step', dimension: 'time', value: 5.0 },
       target: { mode: 'absolute', value: 10.0 },
     };
-  }
-
-  function _nextIndexedId(events, prefix) {
-    const used = new Set((events || []).map(ev => String(ev.id || '')));
-    let idx = events.length + 1;
-    while (used.has(`${prefix}-${idx}`)) idx += 1;
-    return idx;
   }
 
   function _eventAction(ev) {
@@ -861,5 +854,6 @@
   window.EventPanel = {
     render,
     setRefreshHandler,
+    renderPathList: _renderPathList,
   };
 })();

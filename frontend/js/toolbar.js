@@ -16,10 +16,10 @@
       const tool = btn.dataset.tool;
       if (AppState.activeTool === tool) {
         // Toggle off
-        AppState.set({ activeTool: null });
+        AppState.set({ activeTool: null, pendingTemplate: null });
       } else {
         // Cancel trajectory mode if starting a new tool
-        AppState.set({ activeTool: tool, trajectoryMode: false, activeTrajectoryId: null, routeMode: false, activeRouteId: null, activePathEventId: null, triggerPointMode: null });
+        AppState.set({ activeTool: tool, pendingTemplate: null, trajectoryMode: false, activeTrajectoryId: null, routeMode: false, activeRouteId: null, activePathEventId: null, triggerPointMode: null });
       }
     });
   });

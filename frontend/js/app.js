@@ -36,6 +36,7 @@
     activeRouteId:       null,   // actor id whose route we're drawing
     activePathEventId:    null,   // event id whose action path/route we're drawing
     triggerPointMode:    null,   // { actorId, eventId } while picking a distance trigger point
+    pendingTemplate:     null,   // scenario template to apply to the next placed actor
 
     // ── Listeners ─────────────────────────────────────────────
     _listeners: {},
@@ -175,6 +176,7 @@
       this.activeRouteId   = null;
       this.activePathEventId = null;
       this.triggerPointMode = null;
+      this.pendingTemplate = null;
       this.emit('stateLoaded', data);
     },
   };
@@ -249,5 +251,32 @@
     },
     pop() { return _undoStack.pop() || null; },
     get length() { return _undoStack.length; },
+  };
+
+  // ── Shared panel helpers (properties.js / eventPanel.js) ────────────────────
+
+  window.UIUtils = {
+    /** Labelled control row with a trailing unit, as used in event cards. */
+    paramRow(labelText, control, unitText) {
+      const row = document.createElement('div');
+      row.className = 'event-param-row';
+      const label = document.createElement('label');
+      label.textContent = labelText;
+      const unit = document.createElement('span');
+      unit.style.cssText = 'color:var(--text-dim);font-size:10px;';
+      unit.textContent = unitText;
+      row.appendChild(label);
+      row.appendChild(control);
+      row.appendChild(unit);
+      return row;
+    },
+
+    /** Next free numeric suffix for `${prefix}-${n}` ids within `events`. */
+    nextIndexedId(events, prefix) {
+      const used = new Set((events || []).map(ev => String(ev.id || '')));
+      let idx = events.length + 1;
+      while (used.has(`${prefix}-${idx}`)) idx += 1;
+      return idx;
+    },
   };
 })();
