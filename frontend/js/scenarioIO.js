@@ -72,6 +72,12 @@
       trafficSignals: (AppState.trafficSignals||[])
         .filter(sig => (sig.events||[]).length > 0)
         .map(sig => ({ id: sig.id, x: sig.x, y: sig.y, events: sig.events })),
+      // Static props: ids and pose only. The backend enriches each entry with
+      // miscObjectCategory / mass / bbox from config/prop_catalog.yaml, so the
+      // client is never the source of truth for what gets emitted.
+      staticObjects: (AppState.staticObjects||[]).map(p => ({
+        prop: p.prop, x: p.x, y: p.y, z: p.z??0, yaw: p.yaw??0,
+      })),
       npcs: AppState.npcs.map(n => ({
         id: n.id, type: n.type,
         x: n.x, y: n.y, z: n.z??0.2, yaw: n.yaw??0,

@@ -16,7 +16,7 @@
     // ── Scenario ─────────────────────────────────────────────
     ego: null,            // {id, type:'ego', x, y, z, yaw, trajectory} or null
     npcs: [],             // [{id, type, x, y, z, yaw, events}]
-    staticObjects: [],    // [{id, type:'tree'|'building', x, y}]
+    staticObjects: [],    // [{id, type:'prop', prop:'static.prop.*', x, y, z, yaw}]
     trafficSignals: [],   // configured traffic-light events from the map
 
     // ── Weather / time ────────────────────────────────────────
@@ -37,12 +37,19 @@
     activePathEventId:    null,   // event id whose action path/route we're drawing
     triggerPointMode:    null,   // { actorId, eventId } while picking a distance trigger point
     pendingTemplate:     null,   // scenario template to apply to the next placed actor
+    pendingProp:         null,   // CARLA blueprint id to place while activeTool === 'prop'
 
     // ── Listeners ─────────────────────────────────────────────
     _listeners: {},
 
     // ── Helpers ───────────────────────────────────────────────
     nextId() { return `obj-${_nextId++}`; },
+
+    /** True for static props, which have no behaviour, events, or path. */
+    isProp(actorOrId) {
+      const actor = typeof actorOrId === 'string' ? this.findById(actorOrId) : actorOrId;
+      return actor?.type === 'prop';
+    },
 
     on(event, fn) {
       if (!this._listeners[event]) this._listeners[event] = [];
@@ -123,6 +130,16 @@
       if (!actor) return options.fallback || 'Actor';
       if (actor.type === 'ego') return options.ego || 'Ego';
 
+      // Props are numbered within staticObjects and labelled by prop, not type
+      // (every prop has type === 'prop', so the type would carry no meaning).
+      if (actor.type === 'prop') {
+        const name = (window.PropCatalog?.label(actor.prop) || 'Requisite').toUpperCase();
+        const idx = this.staticObjects
+          .filter(o => o.prop === actor.prop)
+          .findIndex(o => o.id === actor.id);
+        return idx >= 0 ? `${name} ${idx + 1}` : name;
+      }
+
       const type = String(actor.type || 'actor').toUpperCase();
       const index = this.npcs
         .filter(n => n.type === actor.type)
@@ -137,10 +154,11 @@
         map: this.map,
         weather: { ...this.weather },
         time: this.time,
-        ego: {
+        // Nullable: a scenario may hold only props before an ego is placed.
+        ego: this.ego ? {
           ...this.ego,
-          trajectory: this.ego.trajectory.map(p => ({ ...p })),
-        },
+          trajectory: (this.ego.trajectory || []).map(p => ({ ...p })),
+        } : null,
         npcs: this.npcs.map(n => ({
           ...n,
           events: n.events.map(ev => ({ ...ev })),
@@ -167,6 +185,16 @@
       }));
       this.staticObjects   = data.staticObjects || [];
       this.trafficSignals = (data.trafficSignals || []).map(sig => ({ ...sig, events: sig.events || [] }));
+
+      // Advance the id counter past everything just loaded, otherwise the next
+      // placed object reuses an id that already exists in the file.
+      const loadedIds = [this.ego, ...this.npcs, ...this.staticObjects, ...this.trafficSignals]
+        .filter(Boolean).map(o => o.id);
+      for (const id of loadedIds) {
+        const n = parseInt(String(id).replace(/^obj-/, ''), 10);
+        if (Number.isFinite(n) && n >= _nextId) _nextId = n + 1;
+      }
+
       this.selectedId      = null;
       this.selectedTrafficLightId = null;
       this.activeTool      = null;
@@ -177,6 +205,7 @@
       this.activePathEventId = null;
       this.triggerPointMode = null;
       this.pendingTemplate = null;
+      this.pendingProp     = null;
       this.emit('stateLoaded', data);
     },
   };

@@ -15,7 +15,7 @@
   --text:        #1a1e2e;
   --text-dim:    #6b7590;
   --header-h:    48px;
-  --toolbar-w:   78px;
+  --toolbar-w:   136px;   /* two 64px tool tiles per row */
   --props-w:     320px;
   --footer-h:    68px;
 }
@@ -99,6 +99,41 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
 .tool-btn svg { width: 32px; height: 32px; }
 .tool-btn:hover { background: var(--panel2); color: var(--text); border-color: var(--border); }
 .tool-btn.active { background: var(--panel2); color: var(--accent); border-color: var(--accent); }
+.tool-btn span {
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* Two-column tile grid inside each toolbar section */
+.tool-grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px; width: 100%; padding: 0 2px; justify-items: center;
+}
+
+/* Toolbar tabs: AKTEURE | REQUISITEN */
+.toolbar-tabs {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px; width: 100%; padding: 0 4px 4px; flex-shrink: 0;
+}
+.toolbar-tab {
+  padding: 5px 2px; font-size: 10px; font-weight: 600; cursor: pointer;
+  background: transparent; color: var(--text-dim);
+  border: 1px solid var(--border); border-radius: 5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  transition: all .15s;
+}
+.toolbar-tab:hover { background: var(--panel2); color: var(--text); }
+.toolbar-tab.active {
+  background: var(--panel2); color: var(--accent); border-color: var(--accent);
+}
+.toolbar-tab-panel {
+  display: flex; flex-direction: column; align-items: center;
+  width: 100%; gap: 2px;
+}
+.toolbar-tab-panel.hidden { display: none; }
+.toolbar-note {
+  font-size: 9px; line-height: 1.4; color: var(--text-dim);
+  padding: 8px 6px 4px; text-align: center;
+}
 
 /* ── Map container ───────────────────────────────────────── */
 #map-container {

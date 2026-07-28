@@ -90,6 +90,20 @@
       html += `<div class="summary-row"><span class="label">Mit Trajektorie</span><span class="value">${withTraj}</span></div>`;
     }
 
+    const props = AppState.staticObjects || [];
+    html += `<div class="summary-row"><span class="label">Requisiten</span><span class="value">${props.length}</span></div>`;
+    if (props.length > 0) {
+      const propBreakdown = {};
+      props.forEach(p => {
+        const name = window.PropCatalog?.label(p.prop) || p.prop;
+        propBreakdown[name] = (propBreakdown[name] || 0) + 1;
+      });
+      html += '<div class="summary-section">Requisiten-Aufschlüsselung</div>';
+      for (const [name, count] of Object.entries(propBreakdown)) {
+        html += `<div class="summary-row"><span class="label">${name}</span><span class="value">${count}</span></div>`;
+      }
+    }
+
     html += `<div class="summary-section">Wetter</div>`;
     html += `<div class="summary-row"><span class="label">Tageszeit</span><span class="value">${AppState.time}</span></div>`;
     const activeWeather = Object.entries(AppState.weather).filter(([, v]) => v > 0);
@@ -143,8 +157,11 @@
     propYaw.value = actor.yaw != null ? Math.round(actor.yaw) : '0';
     _syncing = false;
 
+    // Prop type picker — props only; lets you swap the blueprint in place
+    _renderPropTypeRow(actor);
+
     // NPC + Ego trajectory section (show for all scenario actors)
-    const isScenarioActor = !['tree', 'building'].includes(actor.type);
+    const isScenarioActor = !AppState.isProp(actor);
     const isNpc = isScenarioActor && actor.type !== 'ego';
     npcSection.classList.toggle('hidden', !isScenarioActor);
 
@@ -323,16 +340,66 @@
     if (_syncing) return;
     const id = AppState.selectedId;
     if (!id) return;
+    const actor = AppState.findById(id);
+    if (!actor) return;
+    // Fall back to the object's own values, not literals: a prop's correct z is
+    // often 0.0, and a hardcoded 0.2 default would silently lift it off the road.
+    const num = (raw, fallback) => {
+      const n = parseFloat(raw);
+      return Number.isFinite(n) ? n : fallback;
+    };
     AppState.updateById(id, {
-      x:   parseFloat(propX.value)   || 0,
-      y:   parseFloat(propY.value)   || 0,
-      z:   parseFloat(propZ.value)   || 0.2,
-      yaw: parseFloat(propYaw.value) || 0,
+      x:   num(propX.value,   actor.x ?? 0),
+      y:   num(propY.value,   actor.y ?? 0),
+      z:   num(propZ.value,   actor.z ?? 0),
+      yaw: num(propYaw.value, actor.yaw ?? 0),
     });
   }
 
   [propX, propY, propZ, propYaw].forEach(inp => {
     inp.addEventListener('change', _onPosChange);
+  });
+
+  // ── Prop type ────────────────────────────────────────────────────────────────
+
+  const propTypeRow    = document.getElementById('prop-type-row');
+  const propTypeSelect = document.getElementById('prop-type-select');
+
+  function _renderPropTypeRow(actor) {
+    if (!propTypeRow || !propTypeSelect) return;
+    const isProp = AppState.isProp(actor);
+    propTypeRow.classList.toggle('hidden', !isProp);
+    if (!isProp || !window.PropCatalog) return;
+
+    if (!propTypeSelect.options.length) {
+      for (const group of PropCatalog.GROUPS) {
+        const ids = PropCatalog.ids().filter(id => PropCatalog.get(id).group === group.id);
+        if (!ids.length) continue;
+        const og = document.createElement('optgroup');
+        og.label = group.label;
+        for (const id of ids) {
+          const opt = document.createElement('option');
+          opt.value = id;
+          opt.textContent = PropCatalog.label(id);
+          og.appendChild(opt);
+        }
+        propTypeSelect.appendChild(og);
+      }
+    }
+    _syncing = true;
+    propTypeSelect.value = actor.prop || '';
+    _syncing = false;
+  }
+
+  propTypeSelect?.addEventListener('change', () => {
+    if (_syncing) return;
+    const id = AppState.selectedId;
+    if (!id || !AppState.isProp(id)) return;
+    const next = propTypeSelect.value;
+    if (!window.PropCatalog?.get(next)) return;
+    AppState.updateById(id, { prop: next, z: PropCatalog.defaultZ(next) });
+    MapView.renderAllActors();
+    render();
   });
 
   behaviorBoxes.forEach(cb => {

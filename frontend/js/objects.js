@@ -43,10 +43,12 @@
     }
 
     // ── Check for actor click first (even with tool active — clicking existing actor selects it) ──
+    // Exception: the prop tool is sticky, so it keeps placing over existing
+    // objects rather than selecting them — you build a cone line by clicking.
     const actorGroup = e.target.closest('.actor-group');
-    if (actorGroup) {
+    if (actorGroup && AppState.activeTool !== 'prop') {
       const id = actorGroup.dataset.id;
-      AppState.set({ activeTool: null, pendingTemplate: null });   // exit placement mode
+      AppState.set({ activeTool: null, pendingTemplate: null, pendingProp: null });   // exit placement mode
       AppState.select(AppState.selectedId === id ? null : id);
       e.preventDefault();
       return;
@@ -54,7 +56,7 @@
 
     // ── Tool active: place actor on empty space (skip non-placement tools) ──
     if (AppState.activeTool && AppState.activeTool !== 'ruler') {
-      _placeActor(AppState.activeTool, world.x, world.y);
+      _placeActor(AppState.activeTool, world.x, world.y, e.shiftKey);
       return;
     }
 
@@ -66,7 +68,9 @@
 
   const ROAD_FACING_TYPES = new Set(['pedestrian', 'cyclist', 'bicycle']);
 
-  function _placeActor(type, wx, wy) {
+  function _placeActor(type, wx, wy, shiftKey = false) {
+    if (type === 'prop') { _placeProp(wx, wy, shiftKey); return; }
+
     const pendingTemplate = AppState.pendingTemplate;
     const templatePlacement = ScenarioTemplates.placementFor(pendingTemplate);
     const roadFacing = ROAD_FACING_TYPES.has(type);
@@ -95,11 +99,6 @@
       };
       AppState.set({ ego: actor });
       newId = actor.id;
-    } else if (['tree', 'building'].includes(type)) {
-      const actor = { id: AppState.nextId(), type, x, y };
-      AppState.staticObjects = [...AppState.staticObjects, actor];
-      AppState.set({});
-      newId = actor.id;
     } else {
       const actor = {
         id: AppState.nextId(), type, x, y, z: 0.2, yaw,
@@ -114,13 +113,88 @@
     }
 
     // Deactivate tool after placing so user can immediately drag/select
-    AppState.set({ activeTool: null, pendingTemplate: null });
+    AppState.set({ activeTool: null, pendingTemplate: null, pendingProp: null });
     AppState.select(newId);
     MapView.renderAllActors();
     const label = ScenarioTemplates.label(pendingTemplate);
     if (label) {
       Toast.success(`${label}-Template erstellt`);
     }
+  }
+
+  /* Static props: free placement by default — cones, barriers and containers
+   * belong on shoulders, tapers and sidewalks, not on lane centres. Shift snaps
+   * to the nearest lane centreline and aligns yaw to lane direction.
+   *
+   * Unlike actors this is sticky (the tool stays armed) and does not select the
+   * new prop, so a cone line is one click per cone.
+   */
+  const PROP_SNAP_MAX_DIST = 20;   // Shift: how far to reach for a lane to snap onto
+  const PROP_YAW_MAX_DIST  = 25;   // how far to reach for a lane to orient against
+
+  /** Normalise degrees into [-180, 180). */
+  function _wrapDeg(deg) {
+    return ((deg + 180) % 360 + 360) % 360 - 180;
+  }
+
+  /* Placement orientation for a prop, from the OpenDRIVE direction of the
+   * specific lane nearest the click. `near.laneYaw` is true lane *travel*
+   * direction — map_renderer reverses directionLine for left-side lanes — so
+   * on a two-way road the two carriageways give yaws 180° apart and an
+   * 'oncoming' prop on each side faces its own lane's traffic.
+   *
+   * wx/wy must be the ORIGINAL click point, not a snapped position: Shift puts
+   * the prop on the lane centreline, where "which side of the lane" degenerates.
+   */
+  function _propYawFor(blueprint, wx, wy, near) {
+    const rule = PropCatalog.facing(blueprint);
+    if (rule === 'none' || !near) return 0;
+
+    const toRoad = Math.atan2(near.y - wy, near.x - wx) * 180 / Math.PI;
+
+    switch (rule) {
+      case 'oncoming':
+        return Math.round(_wrapDeg(near.laneYaw + 180));
+      case 'along':
+        return Math.round(_wrapDeg(near.laneYaw));
+      case 'toward-road':
+        return Math.round(_wrapDeg(toRoad));
+      case 'alongside': {
+        // Long axis stays parallel to the kerb; pick the flip that turns the
+        // object's open side (local +Y, i.e. yaw + 90) toward the carriageway.
+        const openAt = _wrapDeg(near.laneYaw + 90);
+        const flip   = Math.abs(_wrapDeg(openAt - toRoad)) > 90;
+        return Math.round(_wrapDeg(near.laneYaw + (flip ? 180 : 0)));
+      }
+      default:
+        return 0;
+    }
+  }
+
+  function _placeProp(wx, wy, shiftKey) {
+    const blueprint = AppState.pendingProp;
+    if (!blueprint || !window.PropCatalog?.get(blueprint)) {
+      Toast.error('Keine Requisite ausgewählt');
+      AppState.set({ activeTool: null, pendingProp: null });
+      return;
+    }
+
+    // Orientation always applies; Shift only controls POSITION.
+    const near = _nearestLaneProjection(wx, wy, null, PROP_YAW_MAX_DIST);
+    const snap = shiftKey && near && near.dist <= PROP_SNAP_MAX_DIST ? near : null;
+    const prop = {
+      id: AppState.nextId(),
+      type: 'prop',
+      prop: blueprint,
+      x: snap ? Math.round(snap.x * 10) / 10 : Math.round(wx * 10) / 10,
+      y: snap ? Math.round(snap.y * 10) / 10 : Math.round(wy * 10) / 10,
+      z: PropCatalog.defaultZ(blueprint),
+      yaw: _propYawFor(blueprint, wx, wy, near),
+    };
+
+    AppState.staticObjects = [...AppState.staticObjects, prop];
+    AppState.set({});          // empty patch: fires 'change' for the array mutation
+    MapView.renderAllActors();
   }
 
   function _roadFacingYaw(wx, wy) {
@@ -154,7 +228,11 @@
           const y = y0 + t * dy;
           const dist = Math.hypot(wx - x, wy - y);
           if (dist <= maxDistance && (!best || dist < best.dist)) {
-            best = { x, y, dist, laneYaw: Math.atan2(dy, dx) * 180 / Math.PI };
+            best = {
+              x, y, dist,
+              laneYaw: Math.atan2(dy, dx) * 180 / Math.PI,
+              laneId: lane.laneId, laneType: lane.type,
+            };
           }
         }
       }

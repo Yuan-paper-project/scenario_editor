@@ -5,30 +5,61 @@
 (function () {
   'use strict';
 
-  const mapSelect   = document.getElementById('map-select');
-  const mapStatus   = document.getElementById('map-status');
-  const toolButtons = document.querySelectorAll('.tool-btn');
+  const mapSelect = document.getElementById('map-select');
+  const mapStatus = document.getElementById('map-status');
+  const toolbar   = document.getElementById('toolbar');
+
+  // ── Tabs: Akteure | Requisiten ───────────────────────────────────────────────
+  // Pure UI state, kept module-local like properties.js `_overviewPanelTab`.
+
+  const propsPanel = toolbar.querySelector('[data-toolbar-panel="props"]');
+  if (propsPanel && window.PropCatalog) PropCatalog.renderPanel(propsPanel);
+
+  function setTab(name) {
+    toolbar.querySelectorAll('[data-toolbar-tab]').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.toolbarTab === name);
+    });
+    toolbar.querySelectorAll('[data-toolbar-panel]').forEach(panel => {
+      panel.classList.toggle('hidden', panel.dataset.toolbarPanel !== name);
+    });
+  }
 
   // ── Tool buttons ─────────────────────────────────────────────────────────────
+  // Delegated: prop tiles are rendered at load by PropCatalog, so a snapshot of
+  // .tool-btn taken here would miss them.
 
-  toolButtons.forEach(btn => {
-    btn.addEventListener('click', () => {
-      const tool = btn.dataset.tool;
-      if (AppState.activeTool === tool) {
-        // Toggle off
-        AppState.set({ activeTool: null, pendingTemplate: null });
-      } else {
-        // Cancel trajectory mode if starting a new tool
-        AppState.set({ activeTool: tool, pendingTemplate: null, trajectoryMode: false, activeTrajectoryId: null, routeMode: false, activeRouteId: null, activePathEventId: null, triggerPointMode: null });
-      }
-    });
+  toolbar.addEventListener('click', e => {
+    const tab = e.target.closest('[data-toolbar-tab]');
+    if (tab) { setTab(tab.dataset.toolbarTab); return; }
+
+    const btn = e.target.closest('.tool-btn');
+    if (!btn) return;
+
+    const tool = btn.dataset.tool;
+    const prop = btn.dataset.prop || null;
+    const isSame = AppState.activeTool === tool
+      && (AppState.pendingProp || null) === prop;
+
+    if (isSame) {
+      AppState.set({ activeTool: null, pendingTemplate: null, pendingProp: null });
+    } else {
+      // Cancel trajectory mode if starting a new tool
+      AppState.set({
+        activeTool: tool, pendingTemplate: null, pendingProp: prop,
+        trajectoryMode: false, activeTrajectoryId: null,
+        routeMode: false, activeRouteId: null,
+        activePathEventId: null, triggerPointMode: null,
+      });
+    }
   });
 
   // Update button active state when tool changes
   AppState.on('change', patch => {
-    if (!('activeTool' in patch)) return;
-    toolButtons.forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.tool === AppState.activeTool);
+    if (!('activeTool' in patch) && !('pendingProp' in patch)) return;
+    toolbar.querySelectorAll('.tool-btn').forEach(btn => {
+      const match = btn.dataset.tool === AppState.activeTool
+        && (btn.dataset.prop || null) === (AppState.pendingProp || null);
+      btn.classList.toggle('active', match);
     });
     // Update cursor
     const svg = MapView.svg;

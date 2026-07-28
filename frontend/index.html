@@ -29,6 +29,10 @@
         <input type="checkbox" id="toggle-spawns" checked>
         <span class="layer-toggle-icon" style="color:rgba(255,255,255,.5);">&#8226;</span> Startpunkte
       </label>
+      <label class="layer-toggle" title="Requisiten ein-/ausblenden">
+        <input type="checkbox" id="toggle-props" checked>
+        <span class="layer-toggle-icon" style="color:#e8801a;">&#9650;</span> Requisiten
+      </label>
       <label class="layer-toggle" title="Spurmarkierungen ein-/ausblenden">
         <input type="checkbox" id="toggle-markings" checked>
         <span class="layer-toggle-icon" style="color:#ffd250;">&#8212;</span> Markierungen
@@ -59,13 +63,23 @@
 
   <!-- ── LEFT TOOLBAR ── -->
   <aside id="toolbar">
+    <div class="toolbar-tabs">
+      <button class="toolbar-tab active" data-toolbar-tab="actors">Akteure</button>
+      <button class="toolbar-tab" data-toolbar-tab="props">Requisiten</button>
+    </div>
+
+    <div class="toolbar-tab-panel" data-toolbar-panel="actors">
     <div class="toolbar-section-label">EGO</div>
+    <div class="tool-grid">
     <button class="tool-btn" data-tool="ego" title="Ego-Fahrzeug platzieren (zu testendes autonomes Fahrzeug)">
       <svg viewBox="0 0 32 32"><rect x="6" y="11" width="20" height="11" rx="2" fill="#4488ff"/><rect x="9" y="8" width="14" height="7" rx="1" fill="#6aacff"/><circle cx="10" cy="23" r="3" fill="#222"/><circle cx="22" cy="23" r="3" fill="#222"/></svg>
       <span>Ego</span>
     </button>
 
+    </div>
+
     <div class="toolbar-section-label">FAHRZEUGE</div>
+    <div class="tool-grid">
     <button class="tool-btn" data-tool="car" title="NPC-Auto platzieren">
       <svg viewBox="0 0 32 32"><rect x="6" y="11" width="20" height="11" rx="2" fill="#ff9933"/><rect x="9" y="8" width="14" height="7" rx="1" fill="#ffbb66"/><circle cx="10" cy="23" r="3" fill="#222"/><circle cx="22" cy="23" r="3" fill="#222"/></svg>
       <span>Auto</span>
@@ -83,7 +97,10 @@
       <span>Moto</span>
     </button>
 
+    </div>
+
     <div class="toolbar-section-label">PERSONEN</div>
+    <div class="tool-grid">
     <button class="tool-btn" data-tool="pedestrian" title="Fußgänger platzieren">
       <svg viewBox="0 0 32 32"><circle cx="16" cy="9" r="4" fill="#cc66cc"/><line x1="16" y1="13" x2="16" y2="22" stroke="#cc66cc" stroke-width="2"/><line x1="10" y1="17" x2="22" y2="17" stroke="#cc66cc" stroke-width="2"/><line x1="16" y1="22" x2="11" y2="28" stroke="#cc66cc" stroke-width="2"/><line x1="16" y1="22" x2="21" y2="28" stroke="#cc66cc" stroke-width="2"/></svg>
       <span>Fußgänger</span>
@@ -93,7 +110,10 @@
       <span>Radfahrer</span>
     </button>
 
+    </div>
+
     <div class="toolbar-section-label">WERKZEUGE</div>
+    <div class="tool-grid">
     <button class="tool-btn" data-tool="ruler" title="Abstand messen (R)">
       <svg viewBox="0 0 32 32">
         <line x1="4" y1="28" x2="28" y2="4" stroke="#ffcc00" stroke-width="2"/>
@@ -107,6 +127,11 @@
       </svg>
       <span>Lineal</span>
     </button>
+    </div>
+    </div>
+
+    <!-- Prop tiles are rendered from PropCatalog by toolbar.js -->
+    <div class="toolbar-tab-panel hidden" data-toolbar-panel="props"></div>
 
   </aside>
 
@@ -124,6 +149,7 @@
         <g id="layer-spawns"></g>
         <g id="layer-intersections"></g>
         <g id="layer-trajectories"></g>
+        <g id="layer-props"></g>
         <g id="layer-actors"></g>
       </g>
     </svg>
@@ -173,6 +199,12 @@
           <button id="btn-add-traffic-event" class="btn btn-secondary btn-small" type="button">Event hinzufügen</button>
         </div>
         <div id="traffic-signal-event-list" class="event-list"></div>
+      </div>
+
+      <!-- Requisitentyp — nur für Props, gefüllt von properties.js -->
+      <div id="prop-type-row" class="props-group hidden">
+        <label>Requisite</label>
+        <select id="prop-type-select"></select>
       </div>
 
       <div id="spawn-panel" class="collapsible-section">
@@ -437,6 +469,7 @@
 <script src="/static/js/api.js"></script>
 <script src="/static/js/trafficSignals.js"></script>
 <script src="/static/js/templates.js"></script>
+<script src="/static/js/propCatalog.js"></script>  <!-- before toolbar.js: renders the prop tiles -->
 <script src="/static/js/mapView.js"></script>
 <script src="/static/js/toolbar.js"></script>
 <script src="/static/js/objects.js"></script>

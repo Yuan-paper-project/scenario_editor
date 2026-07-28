@@ -127,6 +127,43 @@ def _normalize_structured_event(event: dict, actor_refs: dict[str, str], default
         }
 
 
+def _normalize_static_objects(params: dict):
+    """Validate the placed CARLA static props.
+
+    Unlike events, an unknown prop id is a hard error rather than a silent
+    coercion: a typo'd blueprint would otherwise export cleanly and only fail
+    much later, inside CARLA, as a missing actor.
+
+    Requires _ensure_llmgen_on_path() to have run — the prop catalog lives in
+    the sibling repo alongside vehicle_catalog.yaml. Both export entry points
+    call it before this, so the "missing sibling only fails at export time"
+    property is preserved.
+    """
+    raw = params.get("staticObjects")
+    params["staticObjects"] = []
+    if not isinstance(raw, list) or not raw:
+        return
+
+    from generator.xml_builder import prop_spec  # type: ignore
+
+    for idx, obj in enumerate(raw):
+        if not isinstance(obj, dict):
+            raise ValueError(f"staticObjects[{idx}] must be an object")
+        blueprint = str(obj.get("prop", "")).strip()
+        if not prop_spec(blueprint):
+            raise ValueError(
+                f"staticObjects[{idx}]: unknown prop '{blueprint}' "
+                f"(not in config/prop_catalog.yaml)"
+            )
+        params["staticObjects"].append({
+            "prop": blueprint,
+            "x": float(obj.get("x", 0.0)),
+            "y": float(obj.get("y", 0.0)),
+            "z": float(obj.get("z", 0.0)),
+            "yaw": float(obj.get("yaw", 0.0)),
+        })
+
+
 def validate_scenario_params(params: dict) -> dict:
     """
     Validate and fill defaults for the scenario params dict.
@@ -202,6 +239,9 @@ def validate_scenario_params(params: dict) -> dict:
             trigger = event.get("trigger", {})
             if trigger.get("type") == "after_event" and str(trigger.get("event_id")) in assign_route_ids:
                 event["trigger"] = {"type": "distance_to_ego", "value": 400.0}
+
+    # Static props
+    _normalize_static_objects(params)
 
     # Weather
     params.setdefault("weather", {})

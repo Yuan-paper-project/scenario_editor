@@ -21,6 +21,7 @@
   const layerSpawns      = document.getElementById('layer-spawns');
   const layerJunctions   = document.getElementById('layer-intersections');
   const layerTraj        = document.getElementById('layer-trajectories');
+  const layerProps       = document.getElementById('layer-props');
   const layerActors      = document.getElementById('layer-actors');
   const overlayMsg       = document.getElementById('map-overlay-msg');
 
@@ -407,9 +408,15 @@
   function renderAllActors() {
     while (layerActors.firstChild) layerActors.removeChild(layerActors.firstChild);
     while (layerTraj.firstChild)   layerTraj.removeChild(layerTraj.firstChild);
+    if (layerProps) {
+      while (layerProps.firstChild) layerProps.removeChild(layerProps.firstChild);
+    }
     if (layerTriggerPoints) {
       while (layerTriggerPoints.firstChild) layerTriggerPoints.removeChild(layerTriggerPoints.firstChild);
     }
+
+    // Props sit in their own layer beneath the actors
+    for (const prop of AppState.staticObjects) _renderProp(prop);
 
     if (AppState.ego) _renderActor(AppState.ego);
     for (const npc of AppState.npcs) _renderActor(npc);
@@ -601,12 +608,83 @@
     layerActors.appendChild(g);
   }
 
+  /* Static props. Shares the .actor-group class so selection, body dragging and
+   * the pan-exclusion list all apply without duplicating that wiring; the extra
+   * .prop-group class is there for prop-specific styling.
+   *
+   * The marker is a TOP-DOWN footprint, matching the rest of the map — roads,
+   * lane markings and the vehicle rectangles in _renderActor are all plan view,
+   * and like those it rotates with yaw. (The palette tiles use side-view
+   * silhouettes instead; see PropCatalog.) Footprints are clamped to a floor by
+   * PropCatalog.planSize() — a 0.4 m cone is otherwise invisible on a map
+   * spanning hundreds of metres.
+   */
+  function _renderProp(prop) {
+    if (!layerProps) return;
+    const cat = window.PropCatalog;
+    if (!cat) return;
+
+    const color = cat.color(prop.prop);
+    const fp    = cat.planSize(prop.prop);
+    const size  = Math.max(fp.len, fp.wid);
+    const sel   = AppState.selectedId === prop.id;
+
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('class', `actor-group prop-group${sel ? ' actor-selected' : ''}`);
+    g.setAttribute('data-id', prop.id);
+    g.setAttribute('transform', `translate(${prop.x},${prop.y}) rotate(${prop.yaw || 0})`);
+
+    // Invisible grab target: a real cone is ~4 px wide at default zoom, too
+    // small to click or drag reliably. Same trick as the yaw-arrow handle.
+    g.appendChild(_svgEl('circle', {
+      r: Math.max(size * 0.6, 1.2), fill: 'transparent',
+    }));
+
+    // planRotate is cosmetic: for props whose yaw means "the way the face
+    // points", the body sits ACROSS that direction (a barrier blocks the lane
+    // rather than lying along it). Applied to the body alone, so the selection
+    // ring, hit target and yaw arrow all still track the true facing.
+    const spin = cat.planRotate(prop.prop);
+    const body = _svgEl('g', {
+      class: 'actor-body',
+      ...(spin ? { transform: `rotate(${spin})` } : {}),
+    });
+    cat.planShapes(prop.prop).forEach(s => body.appendChild(s));
+    g.appendChild(body);
+
+    g.appendChild(_svgEl('circle', {
+      r: size * 0.7 + 1, fill: 'none', stroke: '#ffff00',
+      'stroke-width': 0.6, class: 'actor-select-ring',
+    }));
+
+    // Label only while selected: props are placed in runs (a six-cone taper),
+    // and one label per cone buries the glyphs it is meant to annotate.
+    if (sel) {
+      const label = _svgEl('text', {
+        x: 0, y: -size / 2 - 1.2, 'text-anchor': 'middle', 'font-size': '1.8',
+        fill: '#fff', style: 'pointer-events:none',
+      });
+      label.textContent = _actorMapLabel(prop);
+      g.appendChild(label);
+    }
+
+    // Only oriented props get a yaw handle — a cone or barrel has no heading.
+    if (cat.oriented(prop.prop)) {
+      g.appendChild(_buildYawArrow(prop, color, { w: size, h: size },
+        Math.max(fp.len * 0.75, 1.6)));
+    }
+
+    layerProps.appendChild(g);
+  }
+
   function _actorMapLabel(actor) {
     return AppState.actorLabel(actor, {ego: 'EGO'});
   }
 
-  function _buildYawArrow(actor, color, size) {
-    const arrowLen = Math.max(size.w, 4.5) * 0.8;
+  // lenOverride: props are far smaller than a 4.5 m car, and the actor floor
+  // below would draw an arrow longer than the prop it belongs to.
+  function _buildYawArrow(actor, color, size, lenOverride) {
+    const arrowLen = lenOverride ?? Math.max(size.w, 4.5) * 0.8;
     // Arrow group: drawn in local (rotated) coords of the actor
     // so the arrow always points in the actor's heading direction (+X axis = forward)
     const ag = document.createElementNS('http://www.w3.org/2000/svg', 'g');
@@ -895,7 +973,7 @@
         _shortcutsOverlay.classList.add('hidden');
         return;
       }
-      AppState.set({ activeTool: null, pendingTemplate: null, trajectoryMode: false, activeTrajectoryId: null, routeMode: false, activeRouteId: null, activePathEventId: null, triggerPointMode: null });
+      AppState.set({ activeTool: null, pendingTemplate: null, pendingProp: null, trajectoryMode: false, activeTrajectoryId: null, routeMode: false, activeRouteId: null, activePathEventId: null, triggerPointMode: null });
       return;
     }
 
@@ -910,7 +988,7 @@
     // R — toggle ruler tool
     if (e.key === 'r' && !e.ctrlKey && !e.metaKey) {
       const newTool = AppState.activeTool === 'ruler' ? null : 'ruler';
-      AppState.set({ activeTool: newTool, pendingTemplate: null, trajectoryMode: false, activeTrajectoryId: null, routeMode: false, activeRouteId: null, activePathEventId: null });
+      AppState.set({ activeTool: newTool, pendingTemplate: null, pendingProp: null, trajectoryMode: false, activeTrajectoryId: null, routeMode: false, activeRouteId: null, activePathEventId: null });
       return;
     }
 
@@ -930,7 +1008,7 @@
         const actor = entry.actor;
         if (actor.type === 'ego') {
           AppState.set({ ego: actor });
-        } else if (['tree', 'building'].includes(actor.type)) {
+        } else if (actor.type === 'prop') {
           AppState.staticObjects = [...AppState.staticObjects, actor];
           AppState.set({});
         } else {
@@ -971,6 +1049,7 @@
       { id: 'toggle-spawns',         layer: layerSpawns },
       { id: 'toggle-markings',       layer: layerMarkings },
       { id: 'toggle-roaddir',        get layer() { return layerRoadDir; } },
+      { id: 'toggle-props',          layer: layerProps },
     ];
 
     for (const p of pairs) {
