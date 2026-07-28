@@ -360,17 +360,19 @@
     return out;
   }
 
-  /* True measured footprint, drawn to scale — no minimum.
+  /* Scale a footprint up uniformly when it is too small to see on a map
+   * spanning hundreds of metres. Aspect ratio is preserved, so a barrier stays
+   * elongated and a cone stays round; large props are untouched.
    *
-   * There used to be a MIN_PLAN_EXTENT floor here, but it inflated every small
-   * prop to the same size: all three cones are under it, so a 0.34 m
-   * constructioncone and a 0.88 m trafficcone01 both rendered as identical
-   * discs. Clickability does not depend on this — _renderProp adds a separate
-   * invisible hit circle with its own floor — so the visible glyph can simply
-   * tell the truth. */
+   * Known consequence: every prop under the floor is drawn at the floor, so the
+   * three cones (0.88 / 0.46 / 0.34 m) all render at the same diameter and
+   * their real size difference is not visible on the map. */
+  const MIN_PLAN_EXTENT = 1.2;
+
   function planSize(id) {
     const p = PROPS[id]?.plan || { len: 0.5, wid: 0.5 };
-    return { len: p.len, wid: p.wid };
+    const k = Math.max(1, MIN_PLAN_EXTENT / Math.max(p.len, p.wid));
+    return { len: p.len * k, wid: p.wid * k };
   }
 
   const PropCatalog = {
