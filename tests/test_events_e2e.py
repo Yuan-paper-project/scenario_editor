@@ -1,0 +1,288 @@
+"""The event editor: every action and trigger type, through to the .xosc.
+
+Complements test_templates_e2e.py, which only reaches the subset of the event
+model the templates happen to use (set_speed, lane_change, distance_to_ego,
+after_event). This covers the rest — distance_to_point, simulation_time,
+set_distance, assign_route, follow_trajectory — plus the editing rules and the
+failure modes where an event silently disappears from the export.
+
+    bash run.sh 9090            # terminal 1
+    .venv/bin/python3 tests/test_events_e2e.py
+"""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from playwright.sync_api import sync_playwright  # noqa: E402
+import _harness as H  # noqa: E402
+
+check = H.Checks()
+
+EGO = {"id": "obj-1", "type": "ego", "x": 300.631, "y": -2.025,
+       "z": 0.2, "yaw": 180, "trajectory": [], "events": []}
+
+
+def seed(page, events, npc_type="car", extra_npcs=None):
+    """Put one NPC with `events` into AppState and return nothing.
+
+    Uses AppState.loadJSON — the same entry point the Load-scenario button
+    uses — so the state is built the way the app builds it.
+    """
+    page.evaluate("""(payload) => {
+        AppState.loadJSON({
+            map: 'Town01', weather: {}, time: 'daytime',
+            ego: payload.ego,
+            npcs: payload.npcs,
+            staticObjects: [], trafficSignals: [],
+        });
+    }""", {
+        "ego": EGO,
+        "npcs": [{
+            "id": "obj-2", "type": npc_type, "x": 265.364, "y": 1.967,
+            "z": 0.2, "yaw": 0, "behaviors": ["constant_speed"],
+            "trigger_distance": 400, "events": events,
+        }] + (extra_npcs or []),
+    })
+
+
+def speed_event(eid, trigger, value=10.0, duration=5.0):
+    return {"id": eid, "trigger": trigger,
+            "action": {"type": "set_speed",
+                       "dynamics": {"shape": "step", "dimension": "time",
+                                    "value": duration},
+                       "target": {"mode": "absolute", "value": value}}}
+
+
+with sync_playwright() as p:
+    browser, page, errors = H.open_editor(p, "Town01")
+    check("no JS errors on load", not errors, str(errors[:3]))
+
+    # ── The action grid, through the real panel ──────────────────────────────
+    seed(page, [])
+    page.evaluate("AppState.select('obj-2')")
+    labels = page.evaluate(
+        "[...document.querySelectorAll('#event-action-grid .event-action-button')]"
+        ".map(b => b.textContent)")
+    check("event panel offers 5 actions", len(labels) == 5, str(labels))
+    check("action grid lists the documented actions",
+          labels == ["Follow trajectory", "Assign route", "Set speed",
+                     "Set distance", "Lane change"], str(labels))
+
+    # One path-producing event per actor: once a trajectory or route exists,
+    # both path buttons must disappear (eventPanel.js _renderEventActionGrid).
+    seed(page, [{"id": "e1", "trigger": {"type": "simulation_time", "value": 0},
+                 "action": {"type": "follow_trajectory", "trajectory": []}}])
+    page.evaluate("AppState.select('obj-2')")
+    labels = page.evaluate(
+        "[...document.querySelectorAll('#event-action-grid .event-action-button')]"
+        ".map(b => b.textContent)")
+    check("path actions are hidden once one path event exists",
+          labels == ["Set speed", "Set distance", "Lane change"], str(labels))
+
+    # Clicking an action button appends a new event of that kind.
+    seed(page, [])
+    page.evaluate("AppState.select('obj-2')")
+    page.click('#event-action-grid .event-action-button:has-text("Set speed")')
+    evs = page.evaluate("AppState.findById('obj-2').events")
+    check("Set speed adds one event", len(evs) == 1, str(len(evs)))
+    check("new set_speed event has the right action type",
+          evs and evs[0]["action"]["type"] == "set_speed",
+          str(evs[0]["action"]["type"] if evs else None))
+    page.click('#event-action-grid .event-action-button:has-text("Lane change")')
+    evs = page.evaluate("AppState.findById('obj-2').events")
+    check("Lane change appends a second event",
+          len(evs) == 2 and evs[1]["action"]["type"] == "lane_change",
+          str([e["action"]["type"] for e in evs]))
+
+    # ── simulation_time ──────────────────────────────────────────────────────
+    seed(page, [speed_event("e1", {"type": "simulation_time", "value": 10.0})])
+    xml = H.export_xosc(page)
+    ev = H.parse_events(xml, entity="adversary")[0]
+    check("simulation_time exports a SimulationTimeCondition",
+          ev["trigger"]["kind"] == "simulation_time", ev["trigger"]["kind"])
+    check("simulation_time keeps its value",
+          ev["trigger"]["value"] == 10.0, str(ev["trigger"]["value"]))
+
+    # ── distance_to_point, entity_ref left unset ─────────────────────────────
+    # The trigger means "when the EGO reaches this spot". Leaving the actor
+    # unset must not quietly make the NPC trigger off its own position.
+    seed(page, [{"id": "e1",
+                 "trigger": {"type": "distance_to_point", "value": 25.0,
+                             "point": {"name": "P", "x": 240.0, "y": -2.0, "z": 0.2}},
+                 "action": {"type": "set_speed",
+                            "dynamics": {"shape": "step", "dimension": "time", "value": 5.0},
+                            "target": {"mode": "absolute", "value": 8.0}}}])
+    xml = H.export_xosc(page)
+    ev = H.parse_events(xml, entity="adversary")[0]
+    check("distance_to_point exports a DistanceCondition + WorldPosition",
+          ev["trigger"]["kind"] == "distance_to_point", ev["trigger"]["kind"])
+    check("distance_to_point keeps its radius",
+          ev["trigger"]["value"] == 25.0, str(ev["trigger"]["value"]))
+    check("distance_to_point keeps its point",
+          ev["trigger"]["point"] == (240.0, -2.0), str(ev["trigger"]["point"]))
+    check("DISTANCE_TO_POINT DEFAULTS TO THE EGO AS TRIGGERING ENTITY",
+          ev["trigger"]["triggered_by"] == ["hero"],
+          str(ev["trigger"]["triggered_by"]))
+
+    # ...and an explicit NPC target is honoured rather than overridden.
+    seed(page, [{"id": "e1",
+                 "trigger": {"type": "distance_to_point", "value": 25.0,
+                             "entity_ref": "obj-2",
+                             "point": {"x": 240.0, "y": -2.0, "z": 0.2}},
+                 "action": {"type": "set_speed",
+                            "dynamics": {"shape": "step", "dimension": "time", "value": 5.0},
+                            "target": {"mode": "absolute", "value": 8.0}}}])
+    xml = H.export_xosc(page)
+    ev = H.parse_events(xml, entity="adversary")[0]
+    check("distance_to_point honours an explicit npc target",
+          ev["trigger"]["triggered_by"] == ["adversary"],
+          str(ev["trigger"]["triggered_by"]))
+
+    # ── set_distance ─────────────────────────────────────────────────────────
+    for axis, tag in (("longitudinal", "longitudinal"), ("lateral", "lateral")):
+        seed(page, [{"id": "e1", "trigger": {"type": "simulation_time", "value": 0},
+                     "action": {"type": "set_distance", "axis": axis,
+                                "entity_ref": "obj-1", "value": 12.0}}])
+        xml = H.export_xosc(page)
+        ev = H.parse_events(xml, entity="adversary")[0]
+        check(f"set_distance {axis} exports the matching action",
+              ev["action"]["kind"] == "set_distance" and ev["action"]["axis"] == tag,
+              str(ev["action"]))
+        check(f"set_distance {axis} targets hero at 12 m",
+              ev["action"]["entity_ref"] == "hero" and ev["action"]["value"] == 12.0,
+              str(ev["action"]))
+
+    # ── relative set_speed ───────────────────────────────────────────────────
+    seed(page, [{"id": "e1", "trigger": {"type": "simulation_time", "value": 0},
+                 "action": {"type": "set_speed",
+                            "dynamics": {"shape": "linear", "dimension": "time", "value": 4.0},
+                            "target": {"mode": "relative", "entity_ref": "obj-1",
+                                       "delta": -3.0}}}])
+    xml = H.export_xosc(page)
+    ev = H.parse_events(xml, entity="adversary")[0]
+    check("relative speed exports RelativeTargetSpeed vs hero",
+          ev["action"]["mode"] == "relative" and ev["action"]["entity_ref"] == "hero",
+          str(ev["action"]))
+    check("relative speed keeps its negative delta",
+          ev["action"]["value"] == -3.0, str(ev["action"]["value"]))
+    check("linear dynamics survive export",
+          ev["action"]["shape"] == "linear", str(ev["action"]["shape"]))
+    check("relative speed events are named RelativeSpeed",
+          "RelativeSpeed" in ev["name"], ev["name"])
+
+    # ── follow_trajectory ────────────────────────────────────────────────────
+    traj = [{"x": 265.0, "y": 1.9, "z": 0.2, "velocity": 8.0},
+            {"x": 240.0, "y": 1.9, "z": 0.2, "velocity": 8.0},
+            {"x": 215.0, "y": 1.9, "z": 0.2, "velocity": 8.0}]
+    seed(page, [{"id": "e1", "trigger": {"type": "distance_to_ego", "value": 60.0},
+                 "action": {"type": "follow_trajectory", "trajectory": traj}}])
+    xml = H.export_xosc(page)
+    ev = H.parse_events(xml, entity="adversary")[0]
+    check("follow_trajectory exports a polyline",
+          ev["action"]["kind"] == "follow_trajectory", str(ev["action"]))
+    check("follow_trajectory keeps all 3 vertices",
+          ev["action"]["vertices"] == 3, str(ev["action"]["vertices"]))
+
+    # ── assign_route and its forced trigger ──────────────────────────────────
+    route = [{"x": 265.0, "y": 1.9, "z": 0.2}, {"x": 200.0, "y": 1.9, "z": 0.2}]
+    seed(page, [
+        {"id": "r1", "trigger": {"type": "simulation_time", "value": 30.0},
+         "action": {"type": "assign_route", "route_strategy": "fastest",
+                    "waypoints": route}},
+        speed_event("s1", {"type": "after_event", "event_id": "r1"}, 12.0, 5.0),
+    ])
+    xml = H.export_xosc(page)
+    evs = H.parse_events(xml, entity="adversary")
+    check("assign_route exports a Route", evs[0]["action"]["kind"] == "assign_route",
+          str(evs[0]["action"]))
+    check("assign_route keeps both waypoints",
+          evs[0]["action"]["waypoints"] == 2, str(evs[0]["action"]["waypoints"]))
+    check("ASSIGN_ROUTE OVERRIDES ITS OWN TRIGGER TO simulation_time@0",
+          evs[0]["trigger"]["kind"] == "simulation_time"
+          and evs[0]["trigger"]["value"] == 0.0, str(evs[0]["trigger"]))
+    check("AN after_event CHAINED ONTO assign_route BECOMES distance_to_ego@400",
+          evs[1]["trigger"]["kind"] == "distance_to_ego"
+          and evs[1]["trigger"]["value"] == 400.0, str(evs[1]["trigger"]))
+
+    # ── Events that silently vanish from the export ──────────────────────────
+    # _add_follow_trajectory_action returns False below 2 waypoints, so the
+    # event is dropped. build_custom_event_chain still registered its NAME, so
+    # anything chained onto it keeps a storyboardElementRef pointing at an
+    # Event that no longer exists. ScenarioRunner has no way to satisfy that
+    # trigger, so the follow-up event never fires either.
+    seed(page, [
+        {"id": "e1", "trigger": {"type": "simulation_time", "value": 0},
+         "action": {"type": "follow_trajectory", "trajectory": []}},
+        speed_event("e2", {"type": "after_event", "event_id": "e1"}, 9.0, 5.0),
+    ])
+    xml = H.export_xosc(page)
+    evs = H.parse_events(xml, entity="adversary")
+    dangling = H.dangling_event_refs(xml)
+    check("an empty follow_trajectory is dropped from the export",
+          len(evs) == 1, f"{len(evs)} events: {[e['name'] for e in evs]}")
+    check.known_issue(
+        "OPEN DEFECT: after_event ref survives when its target event is dropped",
+        dangling == [],
+        f"unresolvable storyboardElementRef(s): {dangling} — the chained event "
+        f"can never fire. Fix in llm-scenario-gen build_custom_event_chain(): "
+        f"build event_name_by_id from the events actually appended, or drop "
+        f"triggers whose ref was skipped")
+
+    # Same failure via a different route: pedestrians cannot take an
+    # AssignRouteAction, so the event is dropped for them specifically.
+    seed(page, [
+        {"id": "r1", "trigger": {"type": "simulation_time", "value": 0},
+         "action": {"type": "assign_route", "route_strategy": "fastest",
+                    "waypoints": route}},
+        speed_event("s1", {"type": "after_event", "event_id": "r1"}, 2.0, 5.0),
+    ], npc_type="pedestrian")
+    xml = H.export_xosc(page)
+    evs = H.parse_events(xml, entity="adversary")
+    check("assign_route on a pedestrian is dropped",
+          all(e["action"]["kind"] != "assign_route" for e in evs),
+          str([e["action"]["kind"] for e in evs]))
+    check("no dangling ref after a dropped pedestrian route",
+          H.dangling_event_refs(xml) == [], str(H.dangling_event_refs(xml)))
+
+    # ── Multi-NPC entity refs ────────────────────────────────────────────────
+    seed(page,
+         [speed_event("e1", {"type": "simulation_time", "value": 0}, 10.0)],
+         extra_npcs=[
+             {"id": "obj-3", "type": "car", "x": 240.0, "y": 1.967, "z": 0.2,
+              "yaw": 0, "behaviors": ["constant_speed"], "trigger_distance": 400,
+              "events": [{"id": "d1", "trigger": {"type": "simulation_time", "value": 0},
+                          "action": {"type": "set_distance", "axis": "longitudinal",
+                                     "entity_ref": "obj-2", "value": 15.0}}]},
+         ])
+    xml = H.export_xosc(page)
+    names = H.entity_names(xml)
+    check("two npcs export as adversary and adversary1",
+          "adversary" in names and "adversary1" in names, str(names))
+    ev = H.parse_events(xml, entity="adversary1")[0]
+    check("npc-to-npc set_distance resolves to the other npc's entity ref",
+          ev["action"]["entity_ref"] == "adversary", str(ev["action"]))
+
+    # ── Unknown action/trigger reach the export as the coerced kind ──────────
+    seed(page, [{"id": "e1", "trigger": {"type": "teleport_when_ready"},
+                 "action": {"type": "make_it_fly"}}])
+    xml = H.export_xosc(page)
+    evs = H.parse_events(xml, entity="adversary")
+    names = [e["name"] for e in evs]
+    # The typo'd action coerces to follow_trajectory, which then has no
+    # waypoints and gets dropped — so build_custom_event_chain() adds nothing
+    # and _inject_npcs falls back to the legacy behaviors chain. The NPC still
+    # moves, just not the way the event said. Worth knowing when debugging
+    # "my event did nothing": the actor driving at a constant speed is the
+    # fallback, not the event.
+    check("an npc whose events all vanish falls back to its behaviors chain",
+          any("ConstantSpeed" in n for n in names), str(names))
+    check("the typo'd event itself contributes nothing",
+          not any("Speed0" in n and "ConstantSpeed" not in n for n in names),
+          str(names))
+
+    unexpected = [e for e in errors if "400 (Bad Request)" not in e]
+    check("no unexpected JS errors during the run", not unexpected, str(unexpected[:3]))
+    browser.close()
+
+sys.exit(check.report())
