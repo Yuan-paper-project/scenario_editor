@@ -1,6 +1,7 @@
 # tests/
 
-Coverage for static props, the event model, and the scenario templates. Most of
+Coverage for static props, the event model, the scenario templates, and the
+actor catalogue. Most of
 it drives a **real browser against a real running editor and a real export**,
 which is the only way to catch the failure modes these features actually have
 (SVG hit-testing, lane-direction maths, and the `.xosc` the backend emits).
@@ -43,9 +44,35 @@ still exports the old — which reads as a test bug but is not one.
 |---|---|---|
 | `test_props_e2e.py` | 54 | catalogue contents, toolbar tabs, sticky placement, Shift lane-snap, selection/properties, prop-type swap, drag without panning, save/load round-trip, `.xosc` export incl. `MiscObject` categories and `yaw_offset`, 400 on unknown/removed ids |
 | `test_prop_yaw_e2e.py` | 23 | per-prop facing rules on a **real two-way road** (Town01 road 8, lanes ±1 at exactly 180°), free-vs-Shift orientation, far-from-lane fallback, manual-override persistence |
-| `test_normalization.py` | 36 | `validate_scenario_params` in isolation: every silent coercion, both trigger rewrites, all clamps, the entity-ref mapping that `scenarioIO.js` duplicates |
+| `test_normalization.py` | 57 | `validate_scenario_params` in isolation: every silent coercion, both trigger rewrites, all clamps, the entity-ref mapping that `scenarioIO.js` duplicates, and the actor-type whitelist |
+| `test_actor_types_e2e.py` | 242 | all 12 actor types — toolbar tile and German label, placement (spawn-snap vs road-facing), map marker shape/colour/footprint, and the entity each one exports: element kind, blueprint id, category, bounding box, `maxSpeed`, controller module; plus `assign_route` survival, the walker-first base-template fork, and the 400 on an unknown type |
 | `test_templates_e2e.py` | 149 | all 11 templates — panel renders them, placement attaches the right chain, `placement` rules apply, and the chain survives export with the right triggers, speeds, dynamics and lane offsets |
 | `test_events_e2e.py` | 37 | the event editor across every action and trigger type, including the ones no template uses; the one-path-event rule; and the cases where an event silently vanishes from the export |
+
+### Why the actor suite reads the XML rather than trusting the export
+
+An actor type is a bare string threaded through eight hand-kept lookup tables
+across two repos, and **every one of them falls back rather than raising**. Miss
+`_VEHICLE_PARAMS` and the actor exports with a car's 69 m/s top speed; miss
+`vehicle_catalog.yaml` and it exports as a Lincoln MKZ; miss `vehicle_category`
+and a firetruck claims `vehicleCategory="car"`. All three produce a file that
+opens cleanly and looks right, so "the export succeeded" proves nothing. The
+`EXPECTED` table is written out literally instead of being read back from the
+catalogue — comparing the exporter against its own configuration would pass no
+matter what either of them said.
+
+Two smaller traps it is built around:
+
+- **`ACTOR_SIZES` and `_VEHICLE_PARAMS` are independent tables**, and for every
+  type predating the suite except `car` they disagree (truck 2.6 vs 2.5 wide,
+  bus 9.0 vs 10.0 long, motorcycle 1.0 vs 0.9, cyclist 2.0x0.8 vs 1.7x0.6).
+  Those four are grandfathered in `FOOTPRINT_DRIFT`; every type added since has
+  to agree.
+- **Spawn-snapping is asserted through yaw, not position.** Playwright clicks on
+  integer pixels, which at map zoom is worth several decimetres, so "did it
+  move" cannot separate a snap from rounding. Yaw can: a spawn-snapped actor
+  inherits the lane's travel direction, a road-facing one turns to look at the
+  lane.
 
 `test_normalization.py` needs neither the browser nor the editor:
 
@@ -85,9 +112,16 @@ after it, reproduces it.
 
 ```bash
 bash run.sh 9090                                    # terminal 1: the editor
-.venv/bin/python3 tests/run_carla_cases.py          # all 10 cases, ~4 min
+.venv/bin/python3 tests/run_carla_cases.py          # all 12 cases, ~5 min
 .venv/bin/python3 tests/run_carla_cases.py tpl-stopping evt-assign-route
 ```
+
+The two `act-*` cases cover the actor catalogue where the `.xosc` cannot: that
+CARLA accepts the blueprint id and that the controller ScenarioRunner picked
+actually drives the thing. They assert `type_id` explicitly, because a missing
+catalogue entry silently emits a Lincoln MKZ that behaves identically to a
+correct one. One vehicle and one walker — the largest new vehicle and the
+smallest new walker.
 
 Needs CARLA on port 3000 (it reuses a running one). It takes the simulator over
 for the duration and runs strictly sequentially, so it is deliberately **not**
@@ -171,6 +205,15 @@ export PYTHONPATH="/home/dellpro2/CC/carla_0.9.15/PythonAPI/carla/dist/carla-0.9
 python tests/probe_carla_mesh_dims.py       # bounding-box extents -> catalogue dims
 python tests/probe_carla_mesh_facing.py     # two axis-aligned views per prop
 ```
+
+`probe_carla_actor_blueprints.py` checks every id in `vehicle_catalog.yaml`
+against the running build and lists each `walker.pedestrian.*` with its `age`
+attribute. Both questions are invisible in the `.xosc` — a blueprint that does
+not exist produces a perfectly valid file and fails at spawn time — and which
+walkers are children is a property of the CARLA build, not of OpenSCENARIO, so
+it moves between versions. The `child` archetype's id comes from this output.
+It spawns nothing, so it is safe against a live session, and exits non-zero
+only when an id is missing.
 
 `probe_carla_mesh_dims.py` is reliable — its extents are what the catalogue's
 measured footprints came from.

@@ -127,6 +127,41 @@ def _normalize_structured_event(event: dict, actor_refs: dict[str, str], default
         }
 
 
+def _normalize_actor_types(params: dict):
+    """Reject NPC types the emitter cannot resolve.
+
+    Same deliberate break from the silent-coercion pattern as
+    _normalize_static_objects, and for the same reason: every lookup in
+    xml_builder falls back to `car`, so a typo'd type exports cleanly and shows
+    up as a Lincoln MKZ in the simulation with nothing pointing at the cause.
+    Actions and triggers keep coercing — those are enumerated in the UI and
+    cannot be mistyped by a user.
+
+    The ego is exempt: the frontend always sends it as 'car'
+    (scenarioIO.js buildScenarioParams), and saved scenarios carry the literal
+    'ego' that _placeActor wrote.
+
+    Puts the sibling repo on the path itself rather than relying on the export
+    entry points having done it, so test_normalization.py can exercise this
+    without a browser or a server. A missing sibling repo still only surfaces
+    when something calls validate_scenario_params, i.e. at export time.
+    """
+    _ensure_llmgen_on_path()
+    from generator.xml_builder import actor_types  # type: ignore
+
+    known = set(actor_types())
+    for idx, npc in enumerate(params.get("npcs") or []):
+        if not isinstance(npc, dict):
+            continue
+        npc_type = str(npc.get("type", "car")).strip()
+        if npc_type not in known:
+            raise ValueError(
+                f"npcs[{idx}]: unknown actor type '{npc_type}' "
+                f"(not in config/vehicle_catalog.yaml)"
+            )
+        npc["type"] = npc_type
+
+
 def _normalize_static_objects(params: dict):
     """Validate the placed CARLA static props.
 
@@ -214,6 +249,8 @@ def validate_scenario_params(params: dict) -> dict:
     for idx, npc in enumerate(params["npcs"]):
         if isinstance(npc, dict) and npc.get("id"):
             actor_refs[str(npc["id"])] = "adversary" if idx == 0 else f"adversary{idx}"
+
+    _normalize_actor_types(params)
 
     for npc in params["npcs"]:
         npc.setdefault("type", "car")

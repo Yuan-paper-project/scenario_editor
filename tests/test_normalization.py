@@ -241,6 +241,39 @@ check("ego without coordinates raises",
           {"map": "Town01", "ego": {"type": "car"}})))
 check("non-dict params raises", raises(lambda: validate_scenario_params([])))
 
+
+# ── Actor types are whitelisted, unlike actions and triggers ─────────────────
+# The asymmetry is deliberate. An action or trigger comes from a fixed grid in
+# the UI and cannot be mistyped, so coercing a bad one is harmless. An actor
+# type reaches the exporter as a free string and every lookup there falls back
+# to `car`, so a typo would export a Lincoln MKZ and only look wrong once
+# someone watched the simulation. Same policy as static props.
+
+def npc_of(actor_type):
+    return lambda: validate_scenario_params({
+        "map": "Town01",
+        "ego": {"id": "obj-1", "type": "car", "x": 0, "y": 0},
+        "npcs": [{"id": "obj-2", "type": actor_type, "x": 1, "y": 1}],
+    })
+
+
+for known in ("car", "van", "truck", "bus", "motorcycle", "scooter",
+              "police", "ambulance", "firetruck",
+              "pedestrian", "child", "cyclist"):
+    check(f"'{known}' is accepted as an actor type", not raises(npc_of(known)))
+
+for alias in ("bike", "bicycle", "lorry", "moped"):
+    check(f"alias '{alias}' is accepted", not raises(npc_of(alias)))
+
+for bad in ("pedestrain", "Car", "nonsense", ""):
+    check(f"unknown actor type {bad!r} raises", raises(npc_of(bad)))
+
+# Surrounding whitespace is trimmed rather than rejected — it is a transport
+# artefact, not a different type. Case is NOT: 'Car' is a typo, and accepting
+# it would mean the exporter and the editor disagree about the key.
+check("surrounding whitespace is trimmed off the type",
+      npc_of(" car ")()["npcs"][0]["type"] == "car")
+
 out = validate_scenario_params({"ego": {"type": "car", "x": 0, "y": 0}})
 check("map defaults to Town01", out["map"] == "Town01")
 check("unknown time-of-day coerces to daytime",

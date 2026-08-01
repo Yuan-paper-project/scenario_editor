@@ -223,6 +223,54 @@ CASES = [
                         "target": {"mode": "absolute", "value": 9.0}}},
         ],
     },
+
+    # ---- actor types --------------------------------------------------------
+    # The .xosc-level suite (test_actor_types_e2e.py) proves the right entity
+    # is emitted. These two prove CARLA accepts it: the blueprint id resolves
+    # to a real mesh, and the controller ScenarioRunner picks for it actually
+    # drives the thing. A wrong blueprint or controller produces a file that
+    # validates perfectly and then does nothing in the simulator.
+    #
+    # One vehicle and one walker, chosen as the extremes of the new set: the
+    # largest vehicle and the smallest walker.
+    {
+        "name": "act-firetruck-stopped",
+        "kind": "events",
+        "npc_type": "firetruck",
+        "spot": SPOT_LANE,
+        "note": "largest new vehicle: blueprint resolves and the vehicle "
+                "controller brings it to a stop",
+        "events": [
+            {"id": "e1", "trigger": {"type": "distance_to_ego", "value": 400.0},
+             "action": {"type": "set_speed",
+                        "dynamics": {"shape": "step", "dimension": "time", "value": 5.0},
+                        "target": {"mode": "absolute", "value": 8.0}}},
+            {"id": "e2", "trigger": {"type": "after_event", "event_id": "e1"},
+             "action": {"type": "set_speed",
+                        "dynamics": {"shape": "linear", "dimension": "time", "value": 4.0},
+                        "target": {"mode": "absolute", "value": 0.0}}},
+        ],
+    },
+    {
+        "name": "act-child-crossing",
+        "kind": "events",
+        "npc_type": "child",
+        "spot": SPOT_WALK,
+        "note": "child walker: <Pedestrian> entity + pedestrian_control, same "
+                "event shape as tpl-pedestrian-crossing. Kerbside so the ego "
+                "drives past rather than through it — a collision ends the run "
+                "and makes the speed trace meaningless.",
+        "events": [
+            {"id": "e1", "trigger": {"type": "distance_to_ego", "value": 50.0},
+             "action": {"type": "set_speed",
+                        "dynamics": {"shape": "step", "dimension": "time", "value": 10.0},
+                        "target": {"mode": "absolute", "value": 1.5}}},
+            {"id": "e2", "trigger": {"type": "after_event", "event_id": "e1"},
+             "action": {"type": "set_speed",
+                        "dynamics": {"shape": "step", "dimension": "time", "value": 5.0},
+                        "target": {"mode": "absolute", "value": 0.0}}},
+        ],
+    },
 ]
 
 CASES_BY_NAME = {c["name"]: c for c in CASES}
@@ -411,6 +459,56 @@ def expect_cyclist_crossing(run, timeline):
     return out
 
 
+def expect_firetruck_stopped(run, timeline):
+    """A new vehicle type spawns as the right mesh and its controller drives it.
+
+    The blueprint assertion is the point: xml_builder falls back to `car` for
+    every lookup it cannot resolve, so a missing catalogue entry emits a
+    Lincoln MKZ that behaves identically. Only type_id tells them apart.
+    """
+    out = []
+    ok, detail = _chain_order(timeline, ["SpeedEvent0", "SpeedEvent1"])
+    out.append(("speed chain runs in order", ok, detail))
+    truck = run.get("adversary")
+    out.append(("firetruck appears in telemetry", truck is not None,
+                f"roles seen: {sorted(run.tracks)}"))
+    if truck is not None:
+        out.append(("resolved to the firetruck blueprint, not the car default",
+                    "firetruck" in truck.type_id, truck.type_id))
+        ok, detail = A.reaches_speed(run, "adversary", 8.0, 0.5, 6.0, tol=1.0)
+        out.append(("firetruck reaches 8 m/s", ok, detail))
+        ok, detail = A.holds_speed(run, "adversary", 0.0, 6.0, 9.0, tol=0.6)
+        out.append(("firetruck comes to a stop", ok, detail))
+    return out
+
+
+def expect_child_crossing(run, timeline):
+    """The child reaches CARLA as a walker and pedestrian_control moves it.
+
+    Mirrors expect_pedestrian_crossing. The extra assertion is the blueprint:
+    _build_npc_pedestrian_entity used to hardcode the adult model, so a child
+    that walks correctly but spawns as walker.pedestrian.0001 would otherwise
+    look like a pass.
+    """
+    out = []
+    ok, detail, t = _fired(timeline, "SpeedEvent0")
+    out.append(("child speed event fires", ok, detail))
+    if t is not None:
+        out.append(("50 m trigger waits for the ego to close in", t > 0.3,
+                    f"fired at t={t:.2f}s"))
+    kid = run.get("adversary")
+    out.append(("child appears in telemetry", kid is not None,
+                f"roles seen: {sorted(run.tracks)}"))
+    if kid is not None:
+        out.append(("child is a walker blueprint",
+                    kid.type_id.startswith("walker."), kid.type_id))
+        out.append(("child is the child model, not the adult default",
+                    kid.type_id != "walker.pedestrian.0001", kid.type_id))
+        ok, detail = A.reaches_speed(run, "adversary", 1.5, 0.0, 14.0, tol=1.0)
+        out.append(("child actually walks at ~1.5 m/s", ok, detail))
+    return out
+
+
 def expect_distance_to_point(run, timeline):
     out = []
     ok, detail, t_fired = _fired(timeline, "SpeedEvent0")
@@ -509,4 +607,6 @@ EXPECTATIONS = {
     "evt-simulation-time": expect_simulation_time,
     "evt-after-event-chain": expect_after_event_chain,
     "evt-assign-route": expect_assign_route,
+    "act-firetruck-stopped": expect_firetruck_stopped,
+    "act-child-crossing": expect_child_crossing,
 }

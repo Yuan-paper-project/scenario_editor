@@ -388,22 +388,39 @@
   const ACTOR_COLORS = {
     ego:         { body: '#4488ff', text: '#fff' },
     car:         { body: '#ff9933', text: '#222' },
+    van:         { body: '#8899aa', text: '#222' },
     truck:       { body: '#cc5522', text: '#fff' },
     bus:         { body: '#ddaa00', text: '#222' },
     motorcycle:  { body: '#ff7755', text: '#fff' },
+    scooter:     { body: '#b8d600', text: '#222' },
+    police:      { body: '#223f9e', text: '#fff' },
+    ambulance:   { body: '#f0f4f8', text: '#222' },
+    firetruck:   { body: '#c62828', text: '#fff' },
     pedestrian:  { body: '#cc66cc', text: '#fff' },
+    child:       { body: '#e69ae6', text: '#222' },
     cyclist:     { body: '#33bb88', text: '#fff' },
   };
 
   const ACTOR_SIZES = {
     ego:        { w: 4.5, h: 2.1 },
     car:        { w: 4.5, h: 2.1 },
+    van:        { w: 5.8, h: 2.2 },
     truck:      { w: 7.0, h: 2.6 },
     bus:        { w: 9.0, h: 2.8 },
     motorcycle: { w: 2.2, h: 1.0 },
+    scooter:    { w: 1.7, h: 0.8 },
+    police:     { w: 5.0, h: 2.1 },
+    ambulance:  { w: 6.0, h: 2.4 },
+    firetruck:  { w: 8.5, h: 2.8 },
     pedestrian: { w: 1.0, h: 1.0 },
+    child:      { w: 0.6, h: 0.6 },
     cyclist:    { w: 2.0, h: 0.8 },
   };
+
+  // Drawn as a circle rather than a rectangle. Mirrors _PEDESTRIAN_TYPES in
+  // ../llm-scenario-gen's xml_builder, which decides the same split for the
+  // exported entity — keep the two in step.
+  const WALKER_TYPES = new Set(['pedestrian', 'child']);
 
   function renderAllActors() {
     while (layerActors.firstChild) layerActors.removeChild(layerActors.firstChild);
@@ -563,8 +580,9 @@
     g.setAttribute('data-id', actor.id);
     g.setAttribute('transform', `translate(${actor.x},${actor.y}) rotate(${actor.yaw || 0})`);
 
-    if (actor.type === 'pedestrian') {
-      // Pedestrian: filled circle
+    if (WALKER_TYPES.has(actor.type)) {
+      // Walker: filled circle. A rectangle plus windshield would read as a
+      // very small car, which is exactly the wrong thing for a child.
       const c = _svgEl('circle', { r: size.w / 2, fill: col.body, class: 'actor-body' });
       g.appendChild(c);
     } else {

@@ -66,7 +66,7 @@
 
   // ── Place actor ──────────────────────────────────────────────────────────────
 
-  const ROAD_FACING_TYPES = new Set(['pedestrian', 'cyclist', 'bicycle']);
+  const ROAD_FACING_TYPES = new Set(['pedestrian', 'child', 'cyclist', 'bicycle']);
 
   function _placeActor(type, wx, wy, shiftKey = false) {
     if (type === 'prop') { _placeProp(wx, wy, shiftKey); return; }

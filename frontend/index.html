@@ -84,6 +84,10 @@
       <svg viewBox="0 0 32 32"><rect x="6" y="11" width="20" height="11" rx="2" fill="#ff9933"/><rect x="9" y="8" width="14" height="7" rx="1" fill="#ffbb66"/><circle cx="10" cy="23" r="3" fill="#222"/><circle cx="22" cy="23" r="3" fill="#222"/></svg>
       <span>Auto</span>
     </button>
+    <button class="tool-btn" data-tool="van" title="NPC-Transporter platzieren">
+      <svg viewBox="0 0 32 32"><rect x="5" y="9" width="21" height="14" rx="2" fill="#8899aa"/><rect x="18" y="11" width="7" height="6" rx="1" fill="#c4d0dc"/><circle cx="10" cy="24" r="3" fill="#222"/><circle cx="22" cy="24" r="3" fill="#222"/></svg>
+      <span>Transporter</span>
+    </button>
     <button class="tool-btn" data-tool="truck" title="NPC-LKW platzieren">
       <svg viewBox="0 0 32 32"><rect x="4" y="10" width="22" height="13" rx="2" fill="#cc5522"/><rect x="4" y="7" width="10" height="8" rx="1" fill="#dd7744"/><circle cx="9" cy="24" r="3" fill="#222"/><circle cx="22" cy="24" r="3" fill="#222"/></svg>
       <span>LKW</span>
@@ -96,6 +100,27 @@
       <svg viewBox="0 0 32 32"><ellipse cx="10" cy="22" rx="4" ry="4" fill="none" stroke="#ff7755" stroke-width="2"/><ellipse cx="22" cy="22" rx="4" ry="4" fill="none" stroke="#ff7755" stroke-width="2"/><line x1="10" y1="22" x2="22" y2="22" stroke="#ff7755" stroke-width="2"/><rect x="13" y="14" width="6" height="8" rx="1" fill="#ff7755"/></svg>
       <span>Moto</span>
     </button>
+    <button class="tool-btn" data-tool="scooter" title="NPC-Motorroller platzieren">
+      <svg viewBox="0 0 32 32"><circle cx="9" cy="23" r="4" fill="none" stroke="#b8d600" stroke-width="2"/><circle cx="23" cy="23" r="4" fill="none" stroke="#b8d600" stroke-width="2"/><path d="M9 23 L15 21 L18 14" fill="none" stroke="#b8d600" stroke-width="2"/><rect x="14" y="17" width="9" height="5" rx="2" fill="#b8d600"/><line x1="18" y1="14" x2="23" y2="13" stroke="#b8d600" stroke-width="2"/></svg>
+      <span>Roller</span>
+    </button>
+
+    </div>
+
+    <div class="toolbar-section-label">EINSATZFAHRZEUGE</div>
+    <div class="tool-grid">
+    <button class="tool-btn" data-tool="police" title="NPC-Polizeifahrzeug platzieren">
+      <svg viewBox="0 0 32 32"><rect x="5" y="11" width="22" height="11" rx="2" fill="#223f9e"/><rect x="9" y="8" width="14" height="7" rx="1" fill="#4b68c4"/><rect x="13" y="5" width="6" height="3" rx="1" fill="#e8443f"/><circle cx="10" cy="23" r="3" fill="#222"/><circle cx="22" cy="23" r="3" fill="#222"/></svg>
+      <span>Polizei</span>
+    </button>
+    <button class="tool-btn" data-tool="ambulance" title="NPC-Rettungswagen platzieren">
+      <svg viewBox="0 0 32 32"><rect x="4" y="9" width="23" height="14" rx="2" fill="#f0f4f8"/><rect x="19" y="11" width="7" height="6" rx="1" fill="#c4d0dc"/><rect x="8" y="14" width="7" height="2.4" fill="#e8443f"/><rect x="10.3" y="11.7" width="2.4" height="7" fill="#e8443f"/><circle cx="10" cy="24" r="3" fill="#222"/><circle cx="22" cy="24" r="3" fill="#222"/></svg>
+      <span>Rettung</span>
+    </button>
+    <button class="tool-btn" data-tool="firetruck" title="NPC-Feuerwehrfahrzeug platzieren">
+      <svg viewBox="0 0 32 32"><rect x="2" y="9" width="27" height="14" rx="2" fill="#c62828"/><rect x="21" y="11" width="7" height="6" rx="1" fill="#f0a3a3"/><rect x="4" y="6" width="16" height="3" rx="1" fill="#8e1a1a"/><circle cx="8" cy="24" r="3" fill="#222"/><circle cx="17" cy="24" r="3" fill="#222"/><circle cx="25" cy="24" r="3" fill="#222"/></svg>
+      <span>Feuerwehr</span>
+    </button>
 
     </div>
 
@@ -104,6 +129,10 @@
     <button class="tool-btn" data-tool="pedestrian" title="Fußgänger platzieren">
       <svg viewBox="0 0 32 32"><circle cx="16" cy="9" r="4" fill="#cc66cc"/><line x1="16" y1="13" x2="16" y2="22" stroke="#cc66cc" stroke-width="2"/><line x1="10" y1="17" x2="22" y2="17" stroke="#cc66cc" stroke-width="2"/><line x1="16" y1="22" x2="11" y2="28" stroke="#cc66cc" stroke-width="2"/><line x1="16" y1="22" x2="21" y2="28" stroke="#cc66cc" stroke-width="2"/></svg>
       <span>Fußgänger</span>
+    </button>
+    <button class="tool-btn" data-tool="child" title="Kind platzieren (kleinere Silhouette als ein Fußgänger)">
+      <svg viewBox="0 0 32 32"><circle cx="16" cy="12" r="3.5" fill="#e69ae6"/><line x1="16" y1="15.5" x2="16" y2="22" stroke="#e69ae6" stroke-width="2"/><line x1="11.5" y1="18.5" x2="20.5" y2="18.5" stroke="#e69ae6" stroke-width="2"/><line x1="16" y1="22" x2="12.5" y2="27" stroke="#e69ae6" stroke-width="2"/><line x1="16" y1="22" x2="19.5" y2="27" stroke="#e69ae6" stroke-width="2"/></svg>
+      <span>Kind</span>
     </button>
     <button class="tool-btn" data-tool="cyclist" title="Radfahrer platzieren">
       <svg viewBox="0 0 32 32"><circle cx="10" cy="22" r="5" fill="none" stroke="#33bb88" stroke-width="1.5"/><circle cx="22" cy="22" r="5" fill="none" stroke="#33bb88" stroke-width="1.5"/><polyline points="10,22 16,14 22,22" fill="none" stroke="#33bb88" stroke-width="1.5"/><line x1="16" y1="14" x2="16" y2="9" stroke="#33bb88" stroke-width="1.5"/><circle cx="16" cy="7" r="2.5" fill="#33bb88"/></svg>
