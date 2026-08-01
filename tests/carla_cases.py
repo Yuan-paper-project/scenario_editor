@@ -1,9 +1,9 @@
-"""The ten CARLA cases: how each scenario is built, and what must happen.
+"""The twelve CARLA cases: how each scenario is built, and what must happen.
 
 Six exercise the scenario templates — the part of the editor with no prior
 CARLA coverage at all. Four exercise event mechanics directly; of those only
 distance_to_point is thin ground (one manual run), the rest turn behaviour that
-was verified by eye into standing assertions.
+was verified by eye into standing assertions. Two cover the newer actor types.
 
 Every case runs on Town01 with the ego at the one pose the toolchain is built
 around. /home/dellpro2/Antonio/run.sh drives the ego with
@@ -83,6 +83,24 @@ SPOT_NEAR = (275.0, -2.0)      # ~25.6 m ahead, for the 20 m pull-out trigger
 SPOT_WALK = (245.0, -6.0)      # ~55.8 m ahead, kerbside, for the 50 m trigger
 SPOT_BIKE = (265.0, -6.0)      # ~36.0 m ahead, kerbside, for the 30 m trigger
 
+# ── Road 1's cross-section at those spots, for the crossing checks ───────────
+#
+# Read off the parsed OpenDRIVE at x=245 and x=265. The road runs due east-west
+# (laneYaw 180), so distance ALONG it is x and distance ACROSS it is y:
+#
+#   lane -3  sidewalk   -8.34 .. -4.33   <- SPOT_WALK / SPOT_BIKE sit here
+#   lane -2  shoulder   -4.34 .. -4.03
+#   lane -1  driving    -4.04 .. -0.03   <- the ego's westbound lane
+#   lane  1  driving    -0.04 ..  3.97      oncoming
+#   lane  2  shoulder    3.96 ..  4.27
+#   lane  3  sidewalk    4.26 ..  8.27
+#
+# _roadFacingYaw at both spots is +90 deg, so a correctly placed crossing actor
+# travels in +y. Clearing the FAR edge of the ego's lane is the bar: it means
+# the actor got the whole way across the ego's path rather than stepping off
+# the kerb onto the shoulder.
+EGO_LANE_FAR_EDGE = -0.03
+
 # For distance_to_point, the point has to sit BETWEEN the ego start and the NPC.
 # The NPC waits, stationary, for this trigger — so putting the point beyond it
 # deadlocks: the ego's Behavior agent stops ~7 m behind the parked NPC, never
@@ -106,6 +124,7 @@ CASES = [
         "kind": "template",
         "template": "vehicle-braking",
         "spot": SPOT_LANE,
+        "npc_yaw": 180.0,        # spawn-point yaw can face back up the road
         "note": "distance_to_ego@400 fires at act start, then after_event",
     },
     {
@@ -113,6 +132,7 @@ CASES = [
         "kind": "template",
         "template": "vehicle-stopping",
         "spot": SPOT_LANE,
+        "npc_yaw": 180.0,
         "note": "3-link chain to a full stop; the step/hold profile probe",
     },
     {
@@ -122,6 +142,7 @@ CASES = [
         "map": "Town03",
         "ego": EGO_T3,
         "spot": SPOT_T3_LANE,
+        "npc_yaw": 180.0,
         "note": "lane_change on Town03 road 67 lane -2, which has a legal left",
     },
     {
@@ -144,14 +165,28 @@ CASES = [
         "kind": "template",
         "template": "pedestrian-crossing",
         "spot": SPOT_WALK,
-        "note": "walker controller + distance_to_ego@50",
+        # NO npc_yaw, deliberately. _roadFacingYaw gives +90 deg here, square
+        # across the carriageway, and that yaw is the whole scenario:
+        # PedestrianControl with no waypoints walks the spawn heading forever.
+        "note": "walker controller + distance_to_ego@50; the editor's "
+                "road-facing yaw is what makes it a crossing",
     },
     {
         "name": "tpl-cyclist-crossing",
         "kind": "template",
         "template": "cyclist-crossing",
         "spot": SPOT_BIKE,
-        "note": "cyclist->bike alias + distance_to_ego@30",
+        # Also no npc_yaw — but unlike the walker, yaw cannot save this one.
+        "note": "EXPECTED TO FAIL the crossing checks — cyclist aliases to "
+                "`bike`, a VEHICLE, so it gets simple_vehicle_control. With "
+                "no waypoints that controller ignores the spawn heading "
+                "entirely and generates its own plan from "
+                "map.get_waypoint(...).next(2.0), i.e. it snaps to the "
+                "nearest lane and rides ALONG it whichever way the bike "
+                "faces. A set_speed-only template can never cross. Fix by "
+                "rebuilding cyclist-crossing on follow_trajectory with "
+                "waypoints across the carriageway (both controllers honour "
+                "explicit waypoints); this case is the marker for that.",
     },
 
     # ---- event mechanics ----------------------------------------------------
@@ -256,6 +291,11 @@ CASES = [
         "kind": "events",
         "npc_type": "child",
         "spot": SPOT_WALK,
+        # Seeded directly, so it has to state the yaw the editor would have
+        # given it: _roadFacingYaw at SPOT_WALK is +90, square across the
+        # carriageway. The events-branch default of 180 is the ego's direction
+        # and would walk the child down the road instead.
+        "npc_yaw": 90.0,
         "note": "child walker: <Pedestrian> entity + pedestrian_control, same "
                 "event shape as tpl-pedestrian-crossing. Kerbside so the ego "
                 "drives past rather than through it — a collision ends the run "
@@ -304,6 +344,42 @@ def _name_of(timeline, substring):
         if substring in name:
             return name
     return None
+
+
+def _crossed_the_road(run, role="adversary", far_edge=EGO_LANE_FAR_EDGE):
+    """Did the actor move ACROSS the carriageway, or just along it?
+
+    This is the check the crossing cases were missing. Asserting only
+    reaches_speed passes just as happily when the walker sets off down the lane
+    parallel to the ego, which is exactly what a wrong spawn heading produces —
+    the event fires, the controller obeys, the speed trace is perfect, and
+    nothing crosses anything.
+
+    Two independent bars, because either alone is satisfiable by the wrong
+    behaviour: an actor walking down the lane covers plenty of ground without
+    ever changing y, and one clipped by a passing car changes y without having
+    crossed anything.
+
+    Note `lateral_offset` is NOT usable here. It projects into the actor's own
+    frame, and a crossing actor faces across the road, so its crossing shows up
+    as LONGITUDINAL travel and reads as ~0 lateral. Road 1 runs due east-west,
+    so world x/y are already the along/across axes.
+    """
+    track = run.get(role)
+    if track is None or len(track) < 2:
+        return [("actor crosses the carriageway", False,
+                 f"no telemetry for '{role}'")]
+    dx = track.x[-1] - track.x[0]
+    dy = track.y[-1] - track.y[0]
+    furthest = max(track.y)
+    return [
+        ("motion is ACROSS the road, not along it", abs(dy) > abs(dx),
+         f"net dx={dx:+.1f} m (along the lane), dy={dy:+.1f} m (across it)"),
+        (f"gets the whole way over the ego's lane (y > {far_edge})",
+         furthest > far_edge,
+         f"start y={track.y[0]:.2f}, furthest y={furthest:.2f}, "
+         f"ego lane spans -4.04..-0.03"),
+    ]
 
 
 def _chain_order(timeline, names):
@@ -437,6 +513,7 @@ def expect_pedestrian_crossing(run, timeline):
                     walker.type_id.startswith("walker."), walker.type_id))
         ok, detail = A.reaches_speed(run, "adversary", 2.0, 0.0, 14.0, tol=1.0)
         out.append(("walker actually walks at ~2 m/s", ok, detail))
+        out.extend(_crossed_the_road(run))
     return out
 
 
@@ -456,6 +533,12 @@ def expect_cyclist_crossing(run, timeline):
                     bike.type_id))
         ok, detail = A.reaches_speed(run, "adversary", 4.0, 0.0, 12.0, tol=1.5)
         out.append(("cyclist rides at ~4 m/s", ok, detail))
+        # EXPECTED TO FAIL — see the case note. simple_vehicle_control
+        # generates its own lane-following plan and never reads the spawn
+        # heading, so the bike rides along the road no matter how it is
+        # placed. These two lines are the marker for that defect; they turn
+        # green only once cyclist-crossing is rebuilt on follow_trajectory.
+        out.extend(_crossed_the_road(run))
     return out
 
 
@@ -506,6 +589,7 @@ def expect_child_crossing(run, timeline):
                     kid.type_id != "walker.pedestrian.0001", kid.type_id))
         ok, detail = A.reaches_speed(run, "adversary", 1.5, 0.0, 14.0, tol=1.0)
         out.append(("child actually walks at ~1.5 m/s", ok, detail))
+        out.extend(_crossed_the_road(run))
     return out
 
 

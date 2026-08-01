@@ -70,13 +70,29 @@ def build_scenarios(cases):
                 # Real template button + real map click, so the template
                 # mechanism itself is under test and not bypassed.
                 actor = H.place_template(page, case["template"], *case["spot"])
-                # Placement snapping decides the yaw, and for a car with no
-                # placement rule that comes from the nearest spawn point, which
-                # can face back up the road. Point it the way the ego is going
-                # so the case measures the event chain rather than a head-on.
-                page.evaluate("({id, yaw}) => AppState.updateById(id, {yaw})",
-                              {"id": actor["id"], "yaw": case.get("npc_yaw", 180)})
+                # Override the yaw ONLY where the case asks for it. For a car
+                # with no placement rule the yaw comes from the nearest spawn
+                # point, which can face back up the road, so those cases pin it
+                # to the ego's direction and the run measures the event chain
+                # rather than a head-on.
+                #
+                # This must never be a blanket default. Pedestrians, children
+                # and cyclists are placed by _roadFacingYaw PERPENDICULAR to
+                # the lane — that yaw IS the crossing, and it is the only thing
+                # that makes a crossing case a crossing. Forcing 180 turns
+                # every one of them into a walk down the carriageway, and does
+                # it silently: PedestrianControl re-reads the spawn heading on
+                # every tick when it has no waypoints, so the scenario still
+                # runs, still reaches its target speed, and still passes any
+                # check that only looks at speed.
+                if "npc_yaw" in case:
+                    page.evaluate("({id, yaw}) => AppState.updateById(id, {yaw})",
+                                  {"id": actor["id"], "yaw": case["npc_yaw"]})
             else:
+                # Seeded directly, so the pose comes entirely from the case.
+                # 180 (the ego's direction) suits the in-lane vehicle cases;
+                # a crossing case has to state its own yaw, as
+                # act-child-crossing does.
                 page.evaluate("""(c) => {
                     const npc = {id:'obj-2', type:c.npc_type,
                                  x:c.spot[0], y:c.spot[1], z:0.2, yaw:c.yaw,

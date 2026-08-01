@@ -226,7 +226,8 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
   margin-bottom: 14px;
 }
 .props-group label { color: var(--text-dim); font-size: 11px; }
-.props-group input[type="number"] {
+.props-group input[type="number"],
+.props-group select {
   background: var(--panel2); color: var(--text);
   border: 1px solid var(--border); border-radius: 4px;
   padding: 4px 6px; width: 100%;

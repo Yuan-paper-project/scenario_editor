@@ -157,7 +157,8 @@
     propYaw.value = actor.yaw != null ? Math.round(actor.yaw) : '0';
     _syncing = false;
 
-    // Prop type picker — props only; lets you swap the blueprint in place
+    // Type pickers — swap an actor's type / a prop's blueprint in place
+    _renderActorTypeRow(actor);
     _renderPropTypeRow(actor);
 
     // NPC + Ego trajectory section (show for all scenario actors)
@@ -358,6 +359,52 @@
 
   [propX, propY, propZ, propYaw].forEach(inp => {
     inp.addEventListener('change', _onPosChange);
+  });
+
+  // ── Actor type ───────────────────────────────────────────────────────────────
+
+  const actorTypeRow    = document.getElementById('actor-type-row');
+  const actorTypeSelect = document.getElementById('actor-type-select');
+
+  function _renderActorTypeRow(actor) {
+    if (!actorTypeRow || !actorTypeSelect) return;
+    const group = actor ? AppState.switchGroupFor(actor.type) : null;
+    actorTypeRow.classList.toggle('hidden', !group);
+    if (!group) return;
+
+    // Rebuilt per render, not once like the prop select: the option set depends
+    // on which group the selected actor is in.
+    actorTypeSelect.innerHTML = '';
+    const sections = AppState.ACTOR_TYPE_GROUPS.find(g => g.id === group).sections;
+    for (const section of sections) {
+      // A single-section group needs no optgroup heading.
+      const parent = sections.length > 1
+        ? actorTypeSelect.appendChild(document.createElement('optgroup'))
+        : actorTypeSelect;
+      if (parent !== actorTypeSelect) parent.label = section.label;
+      for (const { type, label } of section.types) {
+        const opt = document.createElement('option');
+        opt.value = type;
+        opt.textContent = label;
+        parent.appendChild(opt);
+      }
+    }
+    _syncing = true;
+    actorTypeSelect.value = actor.type;
+    _syncing = false;
+  }
+
+  actorTypeSelect?.addEventListener('change', () => {
+    if (_syncing) return;
+    const id = AppState.selectedId;
+    if (!id) return;
+    // switchActorType re-checks the group itself and is a no-op if not allowed.
+    if (!AppState.switchActorType(id, actorTypeSelect.value)) {
+      render();   // resync the select back to the actor's unchanged type
+      return;
+    }
+    MapView.renderAllActors();
+    render();
   });
 
   // ── Prop type ────────────────────────────────────────────────────────────────

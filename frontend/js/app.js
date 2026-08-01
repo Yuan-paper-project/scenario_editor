@@ -8,6 +8,61 @@
 
   let _nextId = 1;
 
+  /**
+   * Actor types that may be swapped for one another on an already-placed actor,
+   * grouped by what a swap is allowed to preserve. Labels mirror the toolbar
+   * buttons in index.html; sections become <optgroup>s in the type picker.
+   *
+   * The split is load-bearing, not cosmetic: every 'vehicle' type is snapped to
+   * a spawn point at placement while every 'vru' type is in ROAD_FACING_TYPES
+   * (objects.js) and placed freely, so a within-group swap can keep the existing
+   * pose untouched. assign_route is likewise vehicle-only downstream
+   * (_ROUTE_ACTION_TYPES in ../llm-scenario-gen/generator/event_builders.py), so
+   * a within-group swap can never orphan a route event. Crossing the boundary
+   * would break both — hence canSwitchType() rather than a UI-only restriction.
+   *
+   * ego and prop appear nowhere here and are therefore never swappable.
+   */
+  const ACTOR_TYPE_GROUPS = [
+    {
+      id: 'vehicle',
+      sections: [
+        {
+          label: 'Fahrzeuge',
+          types: [
+            { type: 'car',        label: 'Auto' },
+            { type: 'van',        label: 'Transporter' },
+            { type: 'truck',      label: 'LKW' },
+            { type: 'bus',        label: 'Bus' },
+            { type: 'motorcycle', label: 'Moto' },
+            { type: 'scooter',    label: 'Roller' },
+          ],
+        },
+        {
+          label: 'Einsatzfahrzeuge',
+          types: [
+            { type: 'police',    label: 'Polizei' },
+            { type: 'ambulance', label: 'Rettung' },
+            { type: 'firetruck', label: 'Feuerwehr' },
+          ],
+        },
+      ],
+    },
+    {
+      id: 'vru',
+      sections: [
+        {
+          label: 'Personen',
+          types: [
+            { type: 'pedestrian', label: 'Fußgänger' },
+            { type: 'child',      label: 'Kind' },
+            { type: 'cyclist',    label: 'Radfahrer' },
+          ],
+        },
+      ],
+    },
+  ];
+
   const AppState = {
     // ── Map ──────────────────────────────────────────────────
     map:      null,       // selected town name string
@@ -145,6 +200,48 @@
         .filter(n => n.type === actor.type)
         .findIndex(n => n.id === actor.id);
       return index >= 0 ? `${type} ${index + 1}` : type;
+    },
+
+    // ── Actor type switching ──────────────────────────────────
+
+    ACTOR_TYPE_GROUPS,
+
+    /** Switch group an actor type belongs to, or null if it cannot be swapped. */
+    switchGroupFor(type) {
+      const group = ACTOR_TYPE_GROUPS.find(g =>
+        g.sections.some(s => s.types.some(t => t.type === type)));
+      return group ? group.id : null;
+    },
+
+    /** All swappable types for a group id, flattened across its sections. */
+    switchTypesFor(groupId) {
+      const group = ACTOR_TYPE_GROUPS.find(g => g.id === groupId);
+      return group ? group.sections.flatMap(s => s.types.map(t => t.type)) : [];
+    },
+
+    /** True if a placed actor of type `from` may be swapped to type `to`. */
+    canSwitchType(from, to) {
+      if (!from || !to || from === to) return false;
+      const group = this.switchGroupFor(from);
+      return group !== null && group === this.switchGroupFor(to);
+    },
+
+    /**
+     * Swap a placed NPC's type in place. Only `type` changes — id, pose, events,
+     * behaviours and trigger settings are left untouched.
+     *
+     * The actor is moved to the end of `npcs` so it takes the next number in its
+     * new type group, exactly as a freshly placed actor does; the type it left
+     * closes its gap for free, because actorLabel() derives the number from
+     * array position rather than storing it. Returns false if the swap is not
+     * allowed (ego, prop, unknown or cross-group type).
+     */
+    switchActorType(id, nextType) {
+      const actor = this.npcs.find(n => n.id === id);
+      if (!actor || !this.canSwitchType(actor.type, nextType)) return false;
+      this.npcs = [...this.npcs.filter(n => n.id !== id), actor];
+      this.updateById(id, { type: nextType });
+      return true;
     },
 
     /** Snapshot editor state as scenario JSON. */

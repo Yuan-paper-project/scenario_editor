@@ -396,6 +396,153 @@ with sync_playwright() as p:
     check("each type gets its own label series",
           labels == [f"{t.upper()} 1" for t in EXPECTED], str(labels))
 
+    # ── Switching a placed actor's type ──────────────────────────────────────
+    # A swap must change the type and NOTHING else, and it must renumber both
+    # the type it left and the type it joined. Numbering is not stored — it is
+    # derived from array position by actorLabel — so the swap works by moving
+    # the actor to the end of AppState.npcs, exactly where _placeActor appends.
+
+    # The groups are asserted against EXPECTED rather than read back from
+    # ACTOR_TYPE_GROUPS alone: comparing the table to itself would pass however
+    # wrong it is, and a type missing from it is placeable but never swappable.
+    groups = page.evaluate(
+        "(types) => Object.fromEntries(types.map(t => [t, AppState.switchGroupFor(t)]))",
+        list(EXPECTED))
+    check("every placeable type belongs to a switch group",
+          all(groups.values()), str({t: g for t, g in groups.items() if not g}))
+    check("vehicles and emergency vehicles share one group",
+          {t for t, g in groups.items() if g == "vehicle"}
+          == set(EXPECTED) - ROAD_FACING, str(groups))
+    check("the VRU group is exactly the road-facing types",
+          {t for t, g in groups.items() if g == "vru"} == ROAD_FACING, str(groups))
+    check("ego and prop are in no group",
+          page.evaluate("AppState.switchGroupFor('ego') === null "
+                        "&& AppState.switchGroupFor('prop') === null"))
+
+    # Cross-group swaps are refused in logic, not merely hidden in the UI: the
+    # groups line up with ROAD_FACING_TYPES and _ROUTE_ACTION_TYPES, so crossing
+    # one would strand an actor off-lane or silently drop its route event.
+    check("a within-group swap is allowed",
+          page.evaluate("AppState.canSwitchType('car', 'bus')"))
+    check("a cross-group swap is refused",
+          not page.evaluate("AppState.canSwitchType('car', 'pedestrian')"))
+    check("a cross-group swap is refused in the other direction",
+          not page.evaluate("AppState.canSwitchType('cyclist', 'truck')"))
+    check("swapping a type for itself is a no-op",
+          not page.evaluate("AppState.canSwitchType('car', 'car')"))
+    check("ego cannot be swapped",
+          not page.evaluate("AppState.canSwitchType('ego', 'car')"))
+    check("an unknown type cannot be swapped",
+          not page.evaluate("AppState.canSwitchType('car', 'pedestrain')"))
+
+    # The renumbering case: car 1, car 2, bus 1 — switch car 1 to a bus and the
+    # remaining car closes the gap while the swapped actor takes the NEXT bus
+    # number rather than displacing the bus already there.
+    seed(page, [npc(0, "car"), npc(1, "car"), npc(2, "bus")])
+    before = page.evaluate(
+        "() => AppState.npcs.map(n => AppState.actorLabel(n))")
+    check("start state is CAR 1, CAR 2, BUS 1",
+          before == ["CAR 1", "CAR 2", "BUS 1"], str(before))
+
+    first_car = page.evaluate("AppState.npcs[0].id")
+    original = page.evaluate("(id) => JSON.parse(JSON.stringify("
+                             "AppState.findById(id)))", first_car)
+
+    # Through the real select, so this covers the panel wiring and not just the
+    # state helper underneath it.
+    page.evaluate("(id) => AppState.select(id)", first_car)
+    check("the type picker is visible for an NPC",
+          page.locator("#actor-type-row").is_visible())
+    options = page.evaluate(
+        "[...document.querySelectorAll('#actor-type-select option')].map(o => o.value)")
+    check("the picker offers only the actor's own group",
+          set(options) == set(EXPECTED) - ROAD_FACING, str(options))
+    check("the picker shows the actor's current type",
+          page.evaluate("document.getElementById('actor-type-select').value") == "car")
+    page.select_option("#actor-type-select", "bus")
+
+    after = page.evaluate("() => AppState.npcs.map(n => AppState.actorLabel(n))")
+    check("the swapped actor is now a bus",
+          page.evaluate("(id) => AppState.findById(id).type", first_car) == "bus")
+    check("the type it left closes its gap",
+          page.evaluate("(id) => AppState.actorLabel(AppState.findById(id))",
+                        page.evaluate("AppState.npcs.find(n => n.type === 'car').id"))
+          == "CAR 1", str(after))
+    check("the swapped actor takes the NEXT number in its new type",
+          page.evaluate("(id) => AppState.actorLabel(AppState.findById(id))",
+                        first_car) == "BUS 2", str(after))
+    check("the bus already placed keeps BUS 1",
+          "BUS 1" in after and after.count("BUS 1") == 1, str(after))
+    check("both type groups are contiguous after the swap",
+          sorted(after) == ["BUS 1", "BUS 2", "CAR 1"], str(after))
+
+    swapped = page.evaluate("(id) => JSON.parse(JSON.stringify("
+                            "AppState.findById(id)))", first_car)
+    changed = [k for k in original
+               if k != "type" and original[k] != swapped.get(k)]
+    check("the swap changes the type and nothing else", changed == [],
+          f"also changed: {changed}")
+    check("the id is unchanged", swapped["id"] == original["id"])
+
+    # Everything the marker derives from type must follow it; renderAllActors
+    # rebuilds from scratch, so a stale marker means the redraw never ran.
+    marker = page.evaluate(
+        """(id) => {
+            const b = document.querySelector(
+                `#layer-actors [data-id="${id}"] .actor-body`);
+            return b && {w: b.getAttribute('width'), fill: b.getAttribute('fill')};
+        }""", first_car)
+    check("the map marker redraws at the new type's footprint",
+          marker is not None and abs(float(marker["w"]) - 9.0) < 0.01,
+          str(marker))   # ACTOR_SIZES bus, which FOOTPRINT_DRIFT exempts from
+                         # matching the exported 10.0 bounding box
+
+    # An event chain must survive intact — the reason to swap in place at all.
+    seed(page, [npc(0, "car", route_events), npc(1, "truck")])
+    target = page.evaluate("AppState.npcs[0].id")
+    page.evaluate("(id) => AppState.select(id)", target)
+    page.select_option("#actor-type-select", "firetruck")
+    events_after = page.evaluate("(id) => AppState.findById(id).events", target)
+    check("events survive a swap untouched", events_after == route_events,
+          str(events_after))
+
+    xml = H.export_xosc(page)
+    # The swap moved it to the end of npcs, so it is adversary1 now, not
+    # adversary — the entity refs are positional.
+    el = entity(xml, "adversary1")
+    check("the swapped actor exports as its new type",
+          el is not None and el.get("name") == EXPECTED["firetruck"]["blueprint"],
+          el.get("name") if el is not None else "no entity")
+    acts = [e["action"]["kind"] for e in H.parse_events(xml, "adversary1")]
+    check("its route event still reaches the .xosc", "assign_route" in acts, str(acts))
+    check("no dangling event references after a swap",
+          H.dangling_event_refs(xml) == [], str(H.dangling_event_refs(xml)))
+
+    # A cross-group swap forced past the UI leaves the actor untouched.
+    seed(page, [npc(0, "car")])
+    forced = page.evaluate(
+        """() => {
+            const id = AppState.npcs[0].id;
+            const ok = AppState.switchActorType(id, 'pedestrian');
+            return {ok, type: AppState.findById(id).type};
+        }""")
+    check("switchActorType refuses a cross-group swap",
+          forced["ok"] is False and forced["type"] == "car", str(forced))
+
+    # Ego and props expose no picker at all.
+    page.evaluate("AppState.select(AppState.ego.id)")
+    check("ego exposes no type picker",
+          page.locator("#actor-type-row").is_hidden())
+    page.evaluate("""() => {
+        AppState.staticObjects = [{id: 'prop-1', type: 'prop',
+            prop: 'static.prop.constructioncone', x: 285, y: -6, z: 0, yaw: 0}];
+        AppState.select('prop-1');
+    }""")
+    check("a prop exposes no actor type picker",
+          page.locator("#actor-type-row").is_hidden())
+    check("a prop still exposes its own blueprint picker",
+          page.locator("#prop-type-row").is_visible())
+
     # ── An unknown type is rejected, not silently exported as a car ──────────
     # The counterpart to the prop check in _normalize_static_objects. Asserted
     # through the API rather than the UI because no toolbar button can produce
