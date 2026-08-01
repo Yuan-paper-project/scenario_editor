@@ -142,10 +142,16 @@ Both are required. An event can go `RUNNING` while the vehicle ignores it
 entirely (wrong entity ref, unreachable lane, controller never applied it), and
 telemetry alone cannot separate a mistimed trigger from a sluggish controller.
 
-Artifacts land in `tests/artifacts/<case>/` (gitignored): `telemetry.csv`,
-`run.log`, the exact `.xosc`, and the NPC's placed pose. Videos are moved to
-`recordings/gui_test_<case>/`, matching the existing `assign_route/`,
+Artifacts land in `tests/artifacts/<case>/` (gitignored): `scenario.json`,
+`telemetry.csv`, `telemetry.log`, `run.log`, and the exact `.xosc`. Videos are
+moved to `recordings/gui_test_<case>/`, matching the existing `assign_route/`,
 `pedestrian/` naming.
+
+`scenario.json` is `AppState.toJSON()` captured in the browser at the moment the
+case was built — the editor's own save format, not a test-only dump. Drop it on
+the editor's **Laden** button to reopen the failing case complete with map, ego,
+NPC and its full event chain, and carry on editing from there. It is captured
+before the export, so it is exactly the state the `.xosc` beside it came from.
 
 ### Traps this runner is built around
 

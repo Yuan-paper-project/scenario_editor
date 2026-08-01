@@ -46,7 +46,11 @@ CARLA_PYTHONPATH = ":".join([
 # ── Scenario construction (browser) ──────────────────────────────────────────
 
 def build_scenarios(cases):
-    """-> {case_name: (xosc_text, npc_pose)}; one browser session for all."""
+    """-> {case_name: (xosc_text, scenario_json)}; one browser session for all.
+
+    `scenario_json` is AppState.toJSON() — the editor's own save format, so the
+    artifact it lands in can be re-opened with the Laden button.
+    """
     from playwright.sync_api import sync_playwright
 
     built = {}
@@ -59,8 +63,16 @@ def build_scenarios(cases):
             # reads the loaded geometry, so a stale map silently snaps actors
             # into the wrong town's lanes.
             H.select_map(page, town)
+            # Spell the weather keys out rather than passing {}: loadJSON copies
+            # the object verbatim, so an empty one makes the captured
+            # scenario.json differ from a hand-saved file. Harmless downstream —
+            # the backend clamps only the keys it is given and compute_weather
+            # reads each with .get(k, 0.0) — but the artifact is meant to be
+            # indistinguishable from a real save.
             page.evaluate("""({town, ego}) => AppState.loadJSON({
-                map:town, weather:{}, time:'daytime',
+                map:town, time:'daytime',
+                weather:{fog:0, rainy:0, cloudy:0, sunny:0,
+                         wet_road:0, snowy:0, dust_storm:0},
                 ego:{id:'obj-1', type:'ego', x:ego.x, y:ego.y, z:0.2,
                      yaw:ego.yaw, trajectory:[], events:[]},
                 npcs:[], staticObjects:[], trafficSignals:[]})""",
@@ -103,8 +115,12 @@ def build_scenarios(cases):
                 }""", {"npc_type": case["npc_type"], "spot": list(case["spot"]),
                        "yaw": case.get("npc_yaw", 180), "events": case["events"]})
 
-            pose = page.evaluate("AppState.npcs[0]")
-            built[case["name"]] = (H.export_xosc(page), pose)
+            # Captured here, not after export: this is the exact state the
+            # .xosc alongside it was built from. toJSON() is the Speichern
+            # button's serialiser, so the artifact loads back with no
+            # conversion.
+            scenario = page.evaluate("AppState.toJSON()")
+            built[case["name"]] = (H.export_xosc(page), scenario)
 
         if errors:
             print(f"[build] JS errors during construction: {errors[:3]}",
@@ -132,7 +148,7 @@ def kill_stragglers():
     time.sleep(1.0)
 
 
-def run_case(case, xosc_text, pose, keep_video=True, timeout=180):
+def run_case(case, xosc_text, scenario, keep_video=True, timeout=180):
     name = case["name"]
     outdir = os.path.join(ARTIFACTS, name)
     os.makedirs(outdir, exist_ok=True)
@@ -142,8 +158,10 @@ def run_case(case, xosc_text, pose, keep_video=True, timeout=180):
     with open(scenario_abs, "w") as fh:
         fh.write(xosc_text)
     shutil.copy(scenario_abs, os.path.join(outdir, f"{name}.xosc"))
-    with open(os.path.join(outdir, "npc_pose.json"), "w") as fh:
-        json.dump(pose, fh, indent=2)
+    # The editor's save format, indent and all — drop it on the Laden button to
+    # reopen the case exactly as the harness built it.
+    with open(os.path.join(outdir, "scenario.json"), "w") as fh:
+        json.dump(scenario, fh, indent=2)
 
     csv_path = os.path.join(outdir, "telemetry.csv")
     log_path = os.path.join(outdir, "run.log")
@@ -159,14 +177,20 @@ def run_case(case, xosc_text, pose, keep_video=True, timeout=180):
 
     started = time.time()
     timed_out = False
+    # The ego's destination. run.sh defaults to the Town01 pose, which is
+    # meaningless anywhere else — a case on another town that omits "goal" would
+    # have set_destination snap that Town01 point to some arbitrary local
+    # waypoint and the ego would drive a route nobody chose.
+    run_env = dict(os.environ, SCENARIO_FILE=scenario_rel)
+    if case.get("goal"):
+        run_env["SCENARIO_GOAL"] = case["goal"]
     # start_new_session so the whole run.sh process group can be killed;
     # subprocess timeouts only reach the direct child, and run.sh's children
     # (scenario_runner, automatic_control, CARLA) are the ones that linger.
     with open(log_path, "w") as log:
         proc = subprocess.Popen(
             ["bash", RUN_SH], cwd=REPO, stdout=log, stderr=subprocess.STDOUT,
-            env=dict(os.environ, SCENARIO_FILE=scenario_rel),
-            start_new_session=True)
+            env=run_env, start_new_session=True)
         try:
             returncode = proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
@@ -304,9 +328,9 @@ def main():
     summary = []
     for i, case in enumerate(selected, 1):
         name = case["name"]
-        xosc_text, pose = built[name]
+        xosc_text, scenario = built[name]
         print(f"\n{'='*72}\n[{i}/{len(selected)}] {name} — {case['note']}\n{'='*72}")
-        result = run_case(case, xosc_text, pose, keep_video=not args.no_video,
+        result = run_case(case, xosc_text, scenario, keep_video=not args.no_video,
                           timeout=args.timeout)
         rows, notes = judge(case, result)
         for note in notes:
@@ -330,7 +354,8 @@ def main():
         for f in fails:
             print(f"             - {f}")
         total_fail += n_fail
-    print(f"\nartifacts: {ARTIFACTS}/<case>/  (telemetry.csv, run.log, *.xosc)")
+    print(f"\nartifacts: {ARTIFACTS}/<case>/  (scenario.json, telemetry.csv, "
+          f"telemetry.log, run.log, *.xosc)")
     return 1 if total_fail else 0
 
 

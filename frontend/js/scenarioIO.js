@@ -65,6 +65,9 @@
       schema_version: '1.0',
       map:     AppState.map || 'Town01',
       weather: { ...AppState.weather },
+      // Drives dateTime + sun azimuth/elevation via compute_weather(). Without
+      // it the backend defaults to 'daytime' and the dropdown does nothing.
+      time:    AppState.time || 'daytime',
       ego: {
         type: ego.type === 'ego' ? 'car' : ego.type,
         x: ego.x, y: ego.y, z: ego.z??0.2, yaw: ego.yaw??0,

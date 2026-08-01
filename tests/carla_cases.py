@@ -5,16 +5,22 @@ CARLA coverage at all. Four exercise event mechanics directly; of those only
 distance_to_point is thin ground (one manual run), the rest turn behaviour that
 was verified by eye into standing assertions. Two cover the newer actor types.
 
-Every case runs on Town01 with the ego at the one pose the toolchain is built
-around. /home/dellpro2/Antonio/run.sh drives the ego with
-`automatic_control_1.py --goal='92,23,0,270'`, hardcoded, so the ego has to
-start where that goal makes sense; 300.631,-2.025 heading west is the pose the
-existing test.xosc uses and the one every recording under recordings/ was made
-with. Moving it means the ego drives somewhere else and every distance trigger
-fires at a different time.
+The .xosc carries no ego manoeuvre — only a spawn pose — so where the ego
+actually drives comes from `automatic_control_1.py --goal`, which
+/home/dellpro2/Antonio/run.sh reads from `$SCENARIO_GOAL`. A case therefore has
+to state BOTH ends: `ego` (the spawn) and `goal` (the destination the Behavior
+agent plans a route to). A case that omits `goal` gets run.sh's Town01 default,
+which is only correct for a Town01 case.
+
+Most cases run on Town01 with the ego at the one pose the toolchain is built
+around: 300.631,-2.025 heading west is the pose the existing test.xosc uses and
+the one every recording under recordings/ was made with. Moving it means the ego
+drives somewhere else and every distance trigger fires at a different time.
 """
 
 EGO = {"x": 300.631, "y": -2.025, "yaw": 180.0}
+# ~208 m west of EGO along road 1, the pose test.xosc has always used.
+GOAL = "92,23,0,270"
 
 # ── Town03, for the lane-change cases ────────────────────────────────────────
 #
@@ -36,6 +42,12 @@ EGO = {"x": 300.631, "y": -2.025, "yaw": 180.0}
 # therefore run on road 67, the only configuration confirmed to work.
 EGO_T3 = {"x": 159.0, "y": 193.0, "yaw": 177.0}
 SPOT_T3_LANE = (135.0, 193.2)   # ~24 m ahead in lane -2, 123 m of straight left
+# Near the far end of that same 144 m straight, kept a few metres inside it so
+# the goal lands on road 67 rather than in the junction beyond. Before this
+# existed both Town03 cases inherited run.sh's Town01 goal, and set_destination
+# snapped (92,23) to whatever Town03 waypoint happened to be nearest — the ego
+# drove a route nobody chose.
+GOAL_T3 = "25,193.4,0,180"
 
 # ── Town03 parking bay, for the pull-out case ────────────────────────────────
 #
@@ -71,6 +83,11 @@ SPOT_T3_LANE = (135.0, 193.2)   # ~24 m ahead in lane -2, 123 m of straight left
 EGO_T3_PARK = {"x": 115.67, "y": 62.53, "yaw": 0.0}
 SPOT_T3_PARK = (185.68, 67.60)
 PARK_LANE_CENTRE_Y = 62.35      # where a successful pull-out has to end up
+# The far end of that 70 m straight — the driving-lane point beside the bay,
+# already verified spawnable above. The ego has to close to within 20 m of the
+# parked car for the template's trigger to fire, so the goal must be at least
+# that far past the ego, i.e. beyond x=165.
+GOAL_T3_PARK = "185.67,62.35,0,0"
 
 # NPC spots on the ego's westward carriageway. Proximity-trigger cases sit
 # slightly beyond their own trigger radius so the trigger genuinely fires on
@@ -141,6 +158,7 @@ CASES = [
         "template": "vehicle-lane-change-left",
         "map": "Town03",
         "ego": EGO_T3,
+        "goal": GOAL_T3,
         "spot": SPOT_T3_LANE,
         "npc_yaw": 180.0,
         "note": "lane_change on Town03 road 67 lane -2, which has a legal left",
@@ -151,6 +169,7 @@ CASES = [
         "template": "vehicle-pull-out",
         "map": "Town03",
         "ego": EGO_T3_PARK,
+        "goal": GOAL_T3_PARK,
         "spot": SPOT_T3_PARK,
         "npc_yaw": 0.0,          # parked aligned with the eastbound carriageway
         "note": "EXPECTED TO FAIL — pull-out from a real parking bay. The "
