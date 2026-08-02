@@ -139,6 +139,52 @@ with sync_playwright() as p:
           ev["trigger"]["triggered_by"] == ["adversary"],
           str(ev["trigger"]["triggered_by"]))
 
+    # ── distance_to_point naming the EGO explicitly ──────────────────────────
+    # The dropdown's default (eventPanel.js _defaultPointTriggerActorId) and the
+    # map click handler both write AppState.ego.id here, so this is the ordinary
+    # path, not an edge case. buildScenarioParams used to remap actions only and
+    # to omit ego.id from the payload, so the ego id fell through BOTH layers and
+    # reached the file as <EntityRef entityRef="obj-1"/> — a reference to nothing.
+    seed(page, [{"id": "e1",
+                 "trigger": {"type": "distance_to_point", "value": 9.7,
+                             "entity_ref": "obj-1",
+                             "point": {"name": "P", "x": 240.0, "y": -2.0, "z": 0.2}},
+                 "action": {"type": "set_speed",
+                            "dynamics": {"shape": "step", "dimension": "time", "value": 2.0},
+                            "target": {"mode": "absolute", "value": 8.0}}}])
+    params = H.export_params(page)
+    # The frontend half: resolveTrigger must have run before the POST.
+    check("BUILDSCENARIOPARAMS RESOLVES A TRIGGER'S EGO REF TO 'hero'",
+          params["npcs"][0]["events"][0]["trigger"]["entity_ref"] == "hero",
+          str(params["npcs"][0]["events"][0]["trigger"].get("entity_ref")))
+    # The backend half: the ego id is sent, so actor_refs can resolve it too.
+    check("the export payload carries the ego id",
+          params["ego"].get("id") == "obj-1", str(params["ego"].get("id")))
+    xml = H.xosc_from_params(page, params)
+    ev = H.parse_events(xml, entity="adversary")[0]
+    check("distance_to_point with an explicit ego ref triggers off hero",
+          ev["trigger"]["triggered_by"] == ["hero"],
+          str(ev["trigger"]["triggered_by"]))
+    check("no internal obj- id survives into the .xosc",
+          "obj-" not in xml)
+    check("no entityRef in the .xosc names an undeclared entity",
+          H.dangling_entity_refs(xml) == [], str(H.dangling_entity_refs(xml)))
+
+    # An entity_ref that resolves to nothing is a hard 400, not a file with a
+    # dangling reference in it — same policy as an unknown actor type or prop id.
+    seed(page, [{"id": "e1",
+                 "trigger": {"type": "distance_to_point", "value": 25.0,
+                             "entity_ref": "obj-999",
+                             "point": {"x": 240.0, "y": -2.0, "z": 0.2}},
+                 "action": {"type": "set_speed",
+                            "dynamics": {"shape": "step", "dimension": "time", "value": 5.0},
+                            "target": {"mode": "absolute", "value": 8.0}}}])
+    params = H.export_params(page)
+    params["npcs"][0]["events"][0]["trigger"]["entity_ref"] = "obj-999"  # bypass the frontend remap
+    status = H.export_status(page, params)
+    check("an unresolvable entity_ref is rejected with a 400",
+          status == 400, str(status))
+
     # ── set_distance ─────────────────────────────────────────────────────────
     for axis, tag in (("longitudinal", "longitudinal"), ("lateral", "lateral")):
         seed(page, [{"id": "e1", "trigger": {"type": "simulation_time", "value": 0},

@@ -182,6 +182,30 @@ Silent behaviours worth knowing when debugging "my event did nothing":
 - An `after_event` trigger pointing at an `assign_route` event is rewritten to `distance_to_ego @ 400` (`backend/scenario_io.py:196-204`).
 - `eventPanel.js` permits at most one path-producing event (`follow_trajectory` or `assign_route`) per actor (`frontend/js/eventPanel.js:39-46`).
 
+### Entity refs are the exception to the coercion rule
+
+Three fields name another actor by the editor's internal `obj-N` id and must be
+remapped to an OSC entity name before export: `trigger.entity_ref`
+(`distance_to_point` only), `action.target.entity_ref` (`set_speed` relative)
+and `action.entity_ref` (`set_distance`). Nothing else does —
+`after_event`'s `event_id` is a *storyboard element* name, and `distance_to_ego`
+and `lane_change` have no field at all because the emitter hardcodes `hero` and
+`npc_name` respectively.
+
+Both the `resolveAction`/`resolveTrigger` pair in `buildScenarioParams`
+(`frontend/js/scenarioIO.js`) and the `actor_refs` map in
+`validate_scenario_params` do the remap; the payload carries `ego.id` purely so
+the backend's copy can resolve the ego too. **An `entity_ref` that resolves to
+neither `hero` nor a real `adversaryN` is a hard 400** (`_entity_ref`,
+`backend/scenario_io.py`), not a coercion — same policy as an unknown prop id or
+actor type. The alternative was proven bad: an unresolved ref used to pass
+through verbatim, ScenarioRunner matched no actor, left `trigger_actor = None`,
+and the condition simply never fired — indistinguishable from a badly-tuned
+radius. `valid_refs` is derived from the **npc count**, not from the ids
+present, so a hand-written or LLM payload naming `adversary1` directly still
+validates. `tests/_harness.py` `dangling_entity_refs()` asserts this over a
+whole `.xosc`.
+
 ## Static props (CARLA `static.prop.*`)
 
 16 curated props — cones, barriers, warning signs, debris, occluders — placeable on the map and

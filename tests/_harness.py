@@ -486,6 +486,25 @@ def dangling_event_refs(xml_text):
     return dangling
 
 
+def dangling_entity_refs(xml_text):
+    """Every `entityRef` attribute that names no declared ScenarioObject.
+
+    Catches an internal editor id (`obj-N`) leaking into the file, which is what
+    happens when a layer forgets to run a value through the id → OSC-ref map.
+    ScenarioRunner resolves entityRef by scanning its actor list and simply
+    finds nothing (openscenario_parser.py, TriggeringEntities), leaving the
+    trigger actor None — so the condition never fires and the scenario looks
+    mis-tuned rather than malformed. Unlike dangling_event_refs, which is about
+    storyboard element names, this is about entities.
+    """
+    root = ET.fromstring(xml_text)
+    names = {o.get("name") for o in root.iter("ScenarioObject")}
+    return sorted({
+        el.get("entityRef") for el in root.iter()
+        if el.get("entityRef") is not None and el.get("entityRef") not in names
+    })
+
+
 def entity_names(xml_text):
     root = ET.fromstring(xml_text)
     return [o.get("name") for o in root.iter("ScenarioObject")]

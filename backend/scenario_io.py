@@ -36,13 +36,44 @@ def _normalize_waypoints(points, include_velocity: bool = False) -> list[dict]:
     return normalized
 
 
-def _entity_ref(raw, actor_refs: dict[str, str], fallback: str = "hero") -> str:
+def _entity_ref(
+    raw,
+    actor_refs: dict[str, str],
+    valid_refs: set[str],
+    where: str,
+    fallback: str = "hero",
+) -> str:
+    """Resolve an internal 'obj-N' id to its OpenSCENARIO entity name.
+
+    Raises rather than coercing, the same deliberate break from the
+    silent-coercion pattern as _normalize_static_objects and
+    _normalize_actor_types. An unresolvable ref used to pass through verbatim,
+    which put '<EntityRef entityRef="obj-10"/>' in the .xosc: ScenarioRunner
+    matches no actor, leaves trigger_actor None, and the condition never fires.
+    That costs a full CARLA run to notice and reads as a tuning problem.
+
+    valid_refs is derived from the npc *count*, not from the ids present, so a
+    hand-written or LLM-generated payload that already names 'adversary1'
+    directly still validates.
+    """
     if raw is None or raw == "":
         return fallback
-    return actor_refs.get(str(raw), str(raw))
+    ref = actor_refs.get(str(raw), str(raw))
+    if ref not in valid_refs:
+        raise ValueError(
+            f"{where}: entity_ref '{raw}' names no entity in this scenario "
+            f"(expected one of {sorted(valid_refs)})"
+        )
+    return ref
 
 
-def _normalize_structured_event(event: dict, actor_refs: dict[str, str], default_entity_ref: str = "hero") -> None:
+def _normalize_structured_event(
+    event: dict,
+    actor_refs: dict[str, str],
+    valid_refs: set[str],
+    where: str,
+    default_entity_ref: str = "hero",
+) -> None:
     trigger = event.get("trigger")
     if not isinstance(trigger, dict):
         trigger = {}
@@ -55,7 +86,9 @@ def _normalize_structured_event(event: dict, actor_refs: dict[str, str], default
     elif trigger_kind == "distance_to_point":
         point = trigger.get("point") if isinstance(trigger.get("point"), dict) else {}
         event["trigger"]["value"] = max(0.0, float(trigger.get("value", 20.0)))
-        event["trigger"]["entity_ref"] = _entity_ref(trigger.get("entity_ref"), actor_refs, default_entity_ref)
+        event["trigger"]["entity_ref"] = _entity_ref(
+            trigger.get("entity_ref"), actor_refs, valid_refs, where, default_entity_ref
+        )
         event["trigger"]["point"] = {
             "name": str(point.get("name", "Point")),
             "x": float(point.get("x", 0.0)),
@@ -91,7 +124,9 @@ def _normalize_structured_event(event: dict, actor_refs: dict[str, str], default
         mode = "relative" if target.get("mode") == "relative" else "absolute"
         speed_target = {"mode": mode}
         if mode == "relative":
-            speed_target["entity_ref"] = _entity_ref(target.get("entity_ref"), actor_refs)
+            speed_target["entity_ref"] = _entity_ref(
+                target.get("entity_ref"), actor_refs, valid_refs, where
+            )
             speed_target["delta"] = max(-100.0, min(100.0, float(target.get("delta", 0.0))))
         else:
             speed_target["value"] = max(0.0, min(100.0, float(target.get("value", 10.0))))
@@ -112,7 +147,7 @@ def _normalize_structured_event(event: dict, actor_refs: dict[str, str], default
         event["action"] = {
             "type": "set_distance",
             "axis": axis,
-            "entity_ref": _entity_ref(action.get("entity_ref"), actor_refs),
+            "entity_ref": _entity_ref(action.get("entity_ref"), actor_refs, valid_refs, where),
             "value": float(action.get("value", 10.0)),
         }
     else:
@@ -249,10 +284,17 @@ def validate_scenario_params(params: dict) -> dict:
     for idx, npc in enumerate(params["npcs"]):
         if isinstance(npc, dict) and npc.get("id"):
             actor_refs[str(npc["id"])] = "adversary" if idx == 0 else f"adversary{idx}"
+    # Every entity name _inject_npcs will actually emit, derived from the npc
+    # count rather than from actor_refs — a payload may omit ids and name its
+    # entities directly. Anything outside this set is a dangling reference.
+    valid_refs = {"hero"} | {
+        "adversary" if idx == 0 else f"adversary{idx}"
+        for idx in range(len(params["npcs"]))
+    }
 
     _normalize_actor_types(params)
 
-    for npc in params["npcs"]:
+    for npc_idx, npc in enumerate(params["npcs"]):
         npc.setdefault("type", "car")
         npc.setdefault("z", 0.2)
         npc.setdefault("yaw", 0.0)
@@ -266,7 +308,9 @@ def validate_scenario_params(params: dict) -> dict:
             if not isinstance(event, dict):
                 npc["events"][idx] = event = {}
             event.setdefault("id", f"event_{idx + 1}")
-            _normalize_structured_event(event, actor_refs)
+            _normalize_structured_event(
+                event, actor_refs, valid_refs, f"npcs[{npc_idx}].events[{idx}]"
+            )
         assign_route_ids = {
             str(event.get("id"))
             for event in npc["events"]

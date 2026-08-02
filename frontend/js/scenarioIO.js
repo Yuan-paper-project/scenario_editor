@@ -58,6 +58,17 @@
       return action;
     };
 
+    // Triggers carry an entity ref too — distance_to_point names the actor whose
+    // proximity to the point is measured, and eventPanel defaults it to the ego
+    // id. Same obj-N → OSC ref remap as actions; without it the .xosc gets a
+    // dangling <EntityRef entityRef="obj-N"/> and the condition never fires.
+    const resolveTrigger = (trigger) => {
+      if (trigger?.type === 'distance_to_point') {
+        return { ...trigger, entity_ref: entityRef(trigger.entity_ref) };
+      }
+      return trigger;
+    };
+
     const ego = AppState.ego;
     const traj = ego.trajectory || [];
 
@@ -69,6 +80,11 @@
       // it the backend defaults to 'daytime' and the dropdown does nothing.
       time:    AppState.time || 'daytime',
       ego: {
+        // The id is not used to emit anything — _inject_ego reads only
+        // type/x/y/z/yaw. It is sent so the backend's own actor_refs map (a
+        // deliberate duplicate of entityRef above) can resolve 'obj-N' → 'hero'
+        // for payloads that were not built by this function.
+        id: ego.id,
         type: ego.type === 'ego' ? 'car' : ego.type,
         x: ego.x, y: ego.y, z: ego.z??0.2, yaw: ego.yaw??0,
       },
@@ -88,7 +104,9 @@
         trigger_distance: n.trigger_distance??400,
         events: (n.events||[]).map(ev => ({
           id: ev.id, name: ev.name,
-          trigger: ev.action?.type === 'assign_route' ? { type: 'simulation_time', value: 0 } : ev.trigger,
+          trigger: ev.action?.type === 'assign_route'
+            ? { type: 'simulation_time', value: 0 }
+            : resolveTrigger(ev.trigger),
           action: resolveAction(ev.action),
         })),
       })),

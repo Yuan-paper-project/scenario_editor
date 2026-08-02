@@ -36,6 +36,14 @@ def norm(events, npcs=None, ego_id="obj-1"):
     return validate_scenario_params(params)
 
 
+def raises(fn):
+    try:
+        fn()
+        return False
+    except ValueError:
+        return True
+
+
 # ── Unknown action / trigger are coerced, not rejected ───────────────────────
 
 out = norm([{"id": "e1", "trigger": {"type": "nonsense"},
@@ -198,11 +206,48 @@ check("ego id maps to 'hero'", refs[0] == "hero", refs[0])
 check("npc[0] maps to 'adversary'", refs[1] == "adversary", refs[1])
 check("npc[2] maps to 'adversary2'", refs[2] == "adversary2", refs[2])
 
+# A trigger's entity_ref goes through the same map as an action's. It used not
+# to: buildScenarioParams remapped actions only and omitted ego.id, so the ego
+# fell through both layers and '<EntityRef entityRef="obj-N"/>' reached the
+# .xosc, where ScenarioRunner matches no actor and the condition never fires.
+out = norm([{"id": "e1",
+             "trigger": {"type": "distance_to_point", "value": 9.7,
+                         "entity_ref": "obj-1", "point": {"x": -142.8, "y": 37.4}},
+             "action": {"type": "set_speed"}}])
+check("distance_to_point maps an explicit ego id to 'hero'",
+      out["npcs"][0]["events"][0]["trigger"]["entity_ref"] == "hero",
+      out["npcs"][0]["events"][0]["trigger"]["entity_ref"])
+
+# An unresolvable ref used to be passed through verbatim, which is exactly how
+# the bug above reached the file. It is a hard error now — same policy as an
+# unknown actor type or prop id, and for the same reason: the value is an opaque
+# string whose only symptom is a scenario that quietly does nothing.
+check("an unresolvable action entity_ref raises",
+      raises(lambda: norm([{"id": "e1", "trigger": {"type": "simulation_time"},
+                            "action": {"type": "set_distance",
+                                       "entity_ref": "obj-does-not-exist"}}])))
+check("an unresolvable trigger entity_ref raises",
+      raises(lambda: norm([{"id": "e1",
+                            "trigger": {"type": "distance_to_point", "value": 25,
+                                        "entity_ref": "obj-999", "point": {"x": 0, "y": 0}},
+                            "action": {"type": "set_speed"}}])))
+
+# Payloads the editor did not build may name entities directly rather than by
+# internal id — valid_refs is derived from the npc count so those still pass.
 out = norm([{"id": "e1", "trigger": {"type": "simulation_time"},
-             "action": {"type": "set_distance", "entity_ref": "obj-does-not-exist"}}])
-check("an unresolvable entity_ref is passed through verbatim",
-      out["npcs"][0]["events"][0]["action"]["entity_ref"] == "obj-does-not-exist",
+             "action": {"type": "set_distance", "entity_ref": "hero"}}])
+check("an already-resolved 'hero' ref survives",
+      out["npcs"][0]["events"][0]["action"]["entity_ref"] == "hero",
       out["npcs"][0]["events"][0]["action"]["entity_ref"])
+out = norm([{"id": "e1", "trigger": {"type": "simulation_time"},
+             "action": {"type": "set_distance", "entity_ref": "adversary"}}])
+check("an already-resolved 'adversary' ref survives",
+      out["npcs"][0]["events"][0]["action"]["entity_ref"] == "adversary",
+      out["npcs"][0]["events"][0]["action"]["entity_ref"])
+check("a ref naming an adversary index that does not exist raises",
+      raises(lambda: norm([{"id": "e1", "trigger": {"type": "simulation_time"},
+                            "action": {"type": "set_distance",
+                                       "entity_ref": "adversary7"}}])))
 
 
 # ── NPC-level defaults ───────────────────────────────────────────────────────
@@ -225,14 +270,6 @@ check("an event with no id is given one",
 
 
 # ── Hard errors (the few things that are NOT coerced) ────────────────────────
-
-def raises(fn):
-    try:
-        fn()
-        return False
-    except ValueError:
-        return True
-
 
 check("missing ego raises",
       raises(lambda: validate_scenario_params({"map": "Town01"})))
