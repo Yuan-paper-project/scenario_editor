@@ -194,10 +194,13 @@ TRIGGER_POINT = (275.0, -2.0)
 # A literal z here would bury actors metres under the deck, the same failure
 # Town03 road 67 produced before elevation was derived.
 EGO_T5_HWY = {"x": 15.0, "y": -204.02, "yaw": 180.0}
-# 110 m west, still road 37 lane -2 (verified: the lane walk reaches (-104.97,
-# -204.09) with junction=False). Far enough that the ego is still driving when
-# the storyboard ends, so no case measures a parked ego.
-GOAL_T5_HWY = "-95,-204,0,180"
+# 155 m west. Past the (-104.97, -204.09) point the lane walk was verified to,
+# so set_destination snaps it onward along the same westbound carriageway rather
+# than landing on a checked waypoint — the extra runway is the point: it keeps
+# the ego closing on a lead long enough for a distance_to_ego trigger to fire.
+# Far enough that the ego is still driving when the storyboard ends, so no case
+# measures a parked ego.
+GOAL_T5_HWY = "-140,-204,0,180"
 HWY_LEAD = (-15.0, -204.0)      # 30 m ahead, ego's own lane
 HWY_STOPPED = (-70.0, -204.0)   # 85 m ahead, ego's own lane — far enough that a
                                 # lead cutting out of the lane clears it first
@@ -541,8 +544,13 @@ BENCH_CASES = [
             # 20 m ahead at 6 m/s the lead stays inside the ego's stopping
             # distance, so its stop is genuinely sudden from the ego's point of
             # view. A faster lead just runs away and the ego never has to react.
+            # The brake is triggered by proximity, not by the chain: it fires
+            # when the ego has closed to 15 m, which is what makes the stop
+            # sudden *from the ego's point of view* regardless of how long the
+            # approach took.
             "events": [_speed("e1", _at_start(), 6.0, 5.0),
-                       _speed("e2", _after("e1"), 0.0, 12.0)],
+                       _speed("e2", {"type": "distance_to_ego", "value": 15.0},
+                              0.0, 12.0)],
         }],
         "note": "DELTA: the 'obstacle' the lead brakes for is not modelled — "
                 "the deceleration is commanded directly, because a prop in "
@@ -1492,6 +1500,38 @@ def _lane_y(run, role, t_rel):
     return None if i is None else track.y[i]
 
 
+def _gap_at(run, t_rel, role="adversary"):
+    """Centre-to-centre ego->actor distance at an act-relative time.
+
+    What a distance_to_ego trigger is nominally measuring, read back out of
+    telemetry so the firing instant can be checked instead of trusted.
+    """
+    hero, track = run.get("hero"), run.get(role)
+    base = run.act_start()
+    if hero is None or track is None or base is None:
+        return None
+    i, j = hero.at(base + t_rel), track.at(base + t_rel)
+    if i is None or j is None:
+        return None
+    return math.hypot(hero.x[i] - track.x[j], hero.y[i] - track.y[j])
+
+
+def _dropped_below(run, role, speed, after=0.0):
+    """First act-relative time `role` fell under `speed` m/s past `after`.
+
+    Telemetry's own answer to "when did the command land", for use when the OSC
+    log's timestamp for an event is too coarse to measure a distance against.
+    """
+    track = run.get(role)
+    base = run.act_start()
+    if track is None or base is None:
+        return None
+    for i, t in enumerate(track.t):
+        if t - base >= after and track.speed[i] < speed:
+            return t - base
+    return None
+
+
 def _ego_took_the_turn(run, want_deg, tol=35.0, t_to=22.0):
     """Did the ego's heading change by ~want_deg? -> [(label, ok, detail)].
 
@@ -1515,13 +1555,38 @@ def expect_bench_hard_brake_lead(run, timeline):
     out.append(("lead's cruise -> brake chain runs in order", ok, detail))
     ok, detail = A.reaches_speed(run, "adversary", 6.0, 0.5, 5.0, tol=1.5)
     out.append(("lead cruises at the commanded 6 m/s", ok, detail))
+    # The brake is on distance_to_ego@15, not on the chain, so WHEN it fires is
+    # measured rather than assumed: the ego closes on a 6 m/s lead at ~1.6 m/s
+    # and takes ~16 s to eat the 30 m gap. Every window below is anchored to the
+    # event's own start for that reason — a hardcoded window silently tested the
+    # cruise phase instead once the trigger moved.
+    brake = timeline.get(_name_of(timeline, "SpeedEvent1"), {}).get("start")
+    if brake is None:
+        out.append(("the brake fires on proximity", False,
+                    "SpeedEvent1 never ran — the ego never closed to 15 m"))
+        return out
+    # Measured at the instant the lead's speed ACTUALLY collapses, not at the
+    # OSC log's timestamp for it. The two clocks share only the act-start
+    # instant, and the log here lags telemetry by ~0.8 s — during which the ego,
+    # still at 7.5 m/s behind a now-stopped lead, eats 6 m of the gap. Reading
+    # the log's time gives 9 m and looks like a broken trigger.
+    fired = _dropped_below(run, "adversary", 1.0, after=6.0)
+    gap = None if fired is None else _gap_at(run, fired)
+    out.append(("THE BRAKE FIRES WHEN THE EGO IS ~15 m BEHIND",
+                gap is not None and 13.0 <= gap <= 17.0,
+                f"gap {gap:.1f} m at the lead's stop (t={fired:.2f}s, "
+                f"OSC log says {brake:.2f}s)" if gap is not None else
+                "the lead never stopped, so the trigger never fired"))
     # The whole description: the deceleration is SUDDEN. A step action means the
     # controller is asked for 0 immediately, so the plateau must be at 0 within
-    # a couple of seconds of the second link starting, not a long coast down.
-    ok, detail = A.holds_speed(run, "adversary", 0.0, 8.0, 15.0, tol=0.6)
+    # a couple of seconds of the trigger, not a long coast down.
+    ok, detail = A.holds_speed(run, "adversary", 0.0, brake + 2.0, brake + 9.0,
+                               tol=0.6)
     out.append(("lead comes to a full stop and stays there", ok, detail))
     # The ego half is not authored — assert the outcome instead of claiming it.
-    ok, detail = A.stopped_within(run, "hero", 3.0, 20.0, threshold=1.0)
+    # It only has to stop AFTER the lead does; before that it is cruising, and a
+    # window opened at act start would pass on the ego's own standing start.
+    ok, detail = A.stopped_within(run, "hero", brake, brake + 9.0, threshold=1.0)
     out.append(("EGO REACTS: brakes to a near-stop behind the lead", ok, detail))
     return out
 
