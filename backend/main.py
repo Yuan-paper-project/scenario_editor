@@ -45,13 +45,25 @@ MAP_CACHE: dict[str, dict] = {}
 async def preload_maps():
     _UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
+    # A map whose elevation range is far off zero is almost certainly using an
+    # absolute geoid datum (maps/Town10 sits at +50..+103 m). Actors placed there
+    # get those heights verbatim — flag it at startup rather than silently
+    # shifting the map, which would put them back under the road.
+    def _elev_note(data: dict) -> str:
+        ev = data.get('elevation') or {}
+        lo, hi = ev.get('min', 0.0), ev.get('max', 0.0)
+        if lo == 0.0 and hi == 0.0:
+            return "flat"
+        note = f"z {lo:+.1f}..{hi:+.1f} m"
+        return note + "  ⚠ absolute datum?" if lo > 5.0 else note
+
     # Pre-load bundled towns
     towns = list_available_towns()
     print(f"[startup] Pre-loading map geometry for {len(towns)} towns …")
     for town in towns:
         try:
             MAP_CACHE[town] = build_map_render_data(town)
-            print(f"  ✓ {town}  ({len(MAP_CACHE[town]['roads'])} roads)")
+            print(f"  ✓ {town}  ({len(MAP_CACHE[town]['roads'])} roads, {_elev_note(MAP_CACHE[town])})")
         except Exception as exc:
             print(f"  ✗ {town}: {exc}")
 
@@ -61,7 +73,8 @@ async def preload_maps():
         if town_name not in MAP_CACHE:
             try:
                 MAP_CACHE[town_name] = build_map_render_data_from_path(xodr_file, town_name)
-                print(f"  ✓ (uploaded) {town_name}  ({len(MAP_CACHE[town_name]['roads'])} roads)")
+                print(f"  ✓ (uploaded) {town_name}  "
+                      f"({len(MAP_CACHE[town_name]['roads'])} roads, {_elev_note(MAP_CACHE[town_name])})")
             except Exception as exc:
                 print(f"  ✗ (uploaded) {town_name}: {exc}")
 

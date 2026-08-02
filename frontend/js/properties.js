@@ -337,7 +337,7 @@
 
   // ── Input → state bindings ───────────────────────────────────────────────────
 
-  function _onPosChange() {
+  function _onPosChange(e) {
     if (_syncing) return;
     const id = AppState.selectedId;
     if (!id) return;
@@ -349,12 +349,20 @@
       const n = parseFloat(raw);
       return Number.isFinite(n) ? n : fallback;
     };
-    AppState.updateById(id, {
+    const patch = {
       x:   num(propX.value,   actor.x ?? 0),
       y:   num(propY.value,   actor.y ?? 0),
       z:   num(propZ.value,   actor.z ?? 0),
       yaw: num(propYaw.value, actor.yaw ?? 0),
-    });
+    };
+    // Typing a new X/Y moves the object, so its height is re-derived exactly as
+    // it would be by a drag. Keyed on which input fired so this never fights a
+    // user typing into the Z box itself — a hand-set z survives until the object
+    // is next moved.
+    if (e?.target === propX || e?.target === propY) {
+      patch.z = ObjectsManager.surfaceZFor(actor.type, patch.x, patch.y, actor.prop);
+    }
+    AppState.updateById(id, patch);
   }
 
   [propX, propY, propZ, propYaw].forEach(inp => {
@@ -444,7 +452,13 @@
     if (!id || !AppState.isProp(id)) return;
     const next = propTypeSelect.value;
     if (!window.PropCatalog?.get(next)) return;
-    AppState.updateById(id, { prop: next, z: PropCatalog.defaultZ(next) });
+    // defaultZ is an offset from the road surface, so the swap re-derives the
+    // absolute height rather than dropping the prop to the catalogue value.
+    const p = AppState.findById(id);
+    AppState.updateById(id, {
+      prop: next,
+      z: ObjectsManager.surfaceZFor('prop', p.x, p.y, next),
+    });
     MapView.renderAllActors();
     render();
   });

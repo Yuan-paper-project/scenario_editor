@@ -4,6 +4,7 @@ map_renderer.py — Parse a CARLA OpenDRIVE (.xodr) file into road polygon data 
 Coordinate convention:
   OpenDRIVE (x, y)  →  CARLA / SVG  (cx = x,  cy = -y)   [Y-axis flip]
   SVG viewBox is set to CARLA bounds directly — no further transform needed.
+  Z is NOT flipped — OpenDRIVE and CARLA are both Z-up.
 """
 
 import math
@@ -91,6 +92,47 @@ def _eval_lane_offset(offsets: list[tuple], s_query: float) -> float:
     for lo in offsets:
         if s_query >= lo[0]:
             active = lo
+        else:
+            break
+    s0, a, b, c, d = active
+    ds = s_query - s0
+    return a + b*ds + c*(ds**2) + d*(ds**3)
+
+# ── Elevation Profile Parser ───────────────────────────────────────────────────
+#
+# Road-surface height, the source of every z the editor writes. Same cubic and
+# the same `ds = s - record.s` convention as laneOffset above — deliberately NOT
+# like <width>, whose sOffset is relative to the laneSection start.
+#
+# z depends only on (road, s): across every bundled map there are no <shape>
+# elements and every <superelevation> has a=0 (CARLA's exporter emits the tag but
+# never banks a road), so the surface height at any lateral offset t equals
+# elev(s) at the reference line. If that ever stops holding, this is where the
+# cross-slope term belongs.
+
+def _get_elevations(road_elem: ET.Element) -> list[tuple]:
+    """Extract all elevation elements as sorted tuples: (s, a, b, c, d)"""
+    profile = road_elem.find('elevationProfile')
+    if profile is None:
+        return []
+    elevations = []
+    for el in profile.findall('elevation'):
+        s = float(el.get('s', 0.0))
+        a = float(el.get('a', 0.0))
+        b = float(el.get('b', 0.0))
+        c = float(el.get('c', 0.0))
+        d = float(el.get('d', 0.0))
+        elevations.append((s, a, b, c, d))
+    return sorted(elevations, key=lambda x: x[0])
+
+def _eval_elevation(elevations: list[tuple], s_query: float) -> float:
+    """Evaluate the active elevation polynomial at s_query."""
+    if not elevations:
+        return 0.0
+    active = elevations[0]
+    for el in elevations:
+        if s_query >= el[0]:
+            active = el
         else:
             break
     s0, a, b, c, d = active
@@ -463,6 +505,7 @@ def _build_spawn_points_from_render_geometry(root: ET.Element) -> list[dict]:
             continue
 
         offsets = _get_lane_offsets(road)
+        elevations = _get_elevations(road)
         boundary_s = [s_start for (s_start, _s_end, _ld) in lane_sections if s_start > 0.0]
         samples = _sample_geometry(road, SPAWN_SAMPLE_INTERVAL_M, extra_s=boundary_s)
         if not samples:
@@ -511,6 +554,7 @@ def _build_spawn_points_from_render_geometry(root: ET.Element) -> list[dict]:
                     spawn_points.append({
                         'x': round(x, 3),
                         'y': round(-y, 3),
+                        'z': round(_eval_elevation(elevations, s), 3),
                         'yaw': _carla_yaw_from_xodr_heading(ph, ld['id']),
                     })
 
@@ -561,6 +605,7 @@ def _process_root_to_render_data(root: ET.Element, town_name: str, xodr_path: Pa
     }
 
     roads_out = []
+    elev_min = elev_max = None
     for road in root.findall('road'):
         length = float(road.get('length', 0))
         if length <= 0.0:
@@ -571,6 +616,7 @@ def _process_root_to_render_data(root: ET.Element, town_name: str, xodr_path: Pa
             continue
 
         offsets = _get_lane_offsets(road)
+        elevations = _get_elevations(road)
         is_junction = road.get('junction', '-1') != '-1'
 
         road_interval = 1.0 if (is_junction or len(offsets) > 0) else interval
@@ -633,7 +679,8 @@ def _process_root_to_render_data(root: ET.Element, town_name: str, xodr_path: Pa
                         lane_perp = ph + sign * math.pi / 2.0
                         cx = round(shifted_x + center_offset * math.cos(lane_perp), 2)
                         cy = round(-(shifted_y + center_offset * math.sin(lane_perp)), 2)
-                        lane_cl.append([cx, cy])
+                        cz = round(_eval_elevation(elevations, s), 2)
+                        lane_cl.append([cx, cy, cz])
                         
                     if ld['side'] == 'L':
                         lane_cl.reverse()
@@ -650,7 +697,10 @@ def _process_root_to_render_data(root: ET.Element, town_name: str, xodr_path: Pa
             ref_perp = ph + math.pi / 2.0
             cx = round(px + offset_shift * math.cos(ref_perp), 2)
             cy = round(-(py + offset_shift * math.sin(ref_perp)), 2)
-            centreline.append([cx, cy])
+            cz = _eval_elevation(elevations, s)
+            elev_min = cz if elev_min is None else min(elev_min, cz)
+            elev_max = cz if elev_max is None else max(elev_max, cz)
+            centreline.append([cx, cy, round(cz, 2)])
 
         roads_out.append({
             'id':         road.get('id'),
@@ -667,6 +717,12 @@ def _process_root_to_render_data(root: ET.Element, town_name: str, xodr_path: Pa
     return {
         'town':          town_name,
         'bounds':        bounds,
+        # Reference-line height range, for the startup log and for spotting a map
+        # whose elevations are an absolute geoid datum rather than metres above
+        # ground (maps/Town10 is +50..+103 m). Reported, never subtracted: if
+        # CARLA builds that map's mesh from this same .xodr the road really is up
+        # there, and shifting it would reintroduce the bug this all fixes.
+        'elevation':     {'min': round(elev_min or 0.0, 2), 'max': round(elev_max or 0.0, 2)},
         'roads':         roads_out,
         'spawnPoints':   spawn_points,
         'intersections': intersections,

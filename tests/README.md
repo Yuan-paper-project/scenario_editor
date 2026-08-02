@@ -1,7 +1,7 @@
 # tests/
 
-Coverage for static props, the event model, the scenario templates, and the
-actor catalogue. Most of
+Coverage for static props, the event model, the scenario templates, the actor
+catalogue, and road-surface elevation. Most of
 it drives a **real browser against a real running editor and a real export**,
 which is the only way to catch the failure modes these features actually have
 (SVG hit-testing, lane-direction maths, and the `.xosc` the backend emits).
@@ -45,9 +45,28 @@ still exports the old — which reads as a test bug but is not one.
 | `test_props_e2e.py` | 54 | catalogue contents, toolbar tabs, sticky placement, Shift lane-snap, selection/properties, prop-type swap, drag without panning, save/load round-trip, `.xosc` export incl. `MiscObject` categories and `yaw_offset`, 400 on unknown/removed ids |
 | `test_prop_yaw_e2e.py` | 23 | per-prop facing rules on a **real two-way road** (Town01 road 8, lanes ±1 at exactly 180°), free-vs-Shift orientation, far-from-lane fallback, manual-override persistence |
 | `test_normalization.py` | 57 | `validate_scenario_params` in isolation: every silent coercion, both trigger rewrites, all clamps, the entity-ref mapping that `scenarioIO.js` duplicates, and the actor-type whitelist |
-| `test_actor_types_e2e.py` | 242 | all 12 actor types — toolbar tile and German label, placement (spawn-snap vs road-facing), map marker shape/colour/footprint, and the entity each one exports: element kind, blueprint id, category, bounding box, `maxSpeed`, controller module; plus `assign_route` survival, the walker-first base-template fork, and the 400 on an unknown type |
+| `test_actor_types_e2e.py` | 272 | all 12 actor types — toolbar tile and German label, placement (spawn-snap vs road-facing), map marker shape/colour/footprint, and the entity each one exports: element kind, blueprint id, category, bounding box, `maxSpeed`, controller module; plus `assign_route` survival, the walker-first base-template fork, and the 400 on an unknown type |
 | `test_templates_e2e.py` | 149 | all 11 templates — panel renders them, placement attaches the right chain, `placement` rules apply, and the chain survives export with the right triggers, speeds, dynamics and lane offsets |
 | `test_events_e2e.py` | 37 | the event editor across every action and trigger type, including the ones no template uses; the one-path-event rule; and the cases where an event silently vanishes from the export |
+| `test_elevation_e2e.py` | 33 | z derived from `<elevationProfile>` — the render payload's point shape, `groundZAt` interpolation, per-category clearance, drag and X/Y-edit recompute, waypoints following a gradient, and the flat-map baseline |
+
+`test_actor_types_e2e.py`'s count grows with the catalogue; the number above is
+what it reported the last time this file was touched, not a target.
+
+### Why the elevation suite runs on two maps
+
+Town01 is genuinely flat — every elevation coefficient in the file is zero — so
+it isolates the clearance constants: a vehicle there must land at *exactly*
+`0.5`, a VRU at exactly `0.6`. It can therefore prove nothing about the
+interpolation. Town03 road 67 supplies that: it climbs to 2.7 m and returns to 0
+within its own 310 m, so the same road gives both a "must be lifted" and a "must
+not be lifted" case, and a drag between the two ends is the only assertion that
+separates a working recompute from a lucky constant.
+
+The suite asserts z against `ObjectsManager.groundZAt()` rather than against
+literals, so it does not have to be rewritten when a lane centreline shifts by a
+few centimetres — but it pins the *differences* (VRU > vehicle, prop gets no
+clearance) with literals, because those are the design decisions.
 
 ### Why the actor suite reads the XML rather than trusting the export
 
@@ -112,9 +131,18 @@ after it, reproduces it.
 
 ```bash
 bash run.sh 9090                                    # terminal 1: the editor
-.venv/bin/python3 tests/run_carla_cases.py          # all 12 cases, ~5 min
+.venv/bin/python3 tests/run_carla_cases.py          # all 28 cases, ~12 min
 .venv/bin/python3 tests/run_carla_cases.py tpl-stopping evt-assign-route
 ```
+
+Four families, by prefix:
+
+| prefix | n | what it is for |
+|---|---:|---|
+| `tpl-*` | 6 | the scenario templates, which have no other CARLA coverage |
+| `evt-*` | 4 | event mechanics — trigger semantics and chain timing, with exact numbers |
+| `act-*` | 2 | the newer actor types: does CARLA accept the blueprint and drive it |
+| `bench-*` | 16 | Loop2Scenic benchmark scenarios — see `tests/bench/COVERAGE.md` |
 
 The two `act-*` cases cover the actor catalogue where the `.xosc` cannot: that
 CARLA accepts the blueprint id and that the controller ScenarioRunner picked
@@ -126,6 +154,31 @@ smallest new walker.
 Needs CARLA on port 3000 (it reuses a running one). It takes the simulator over
 for the duration and runs strictly sequentially, so it is deliberately **not**
 part of `run_tests.sh`.
+
+### The three `kind`s a case can be
+
+- **`template`** — placed through the real template button and a real map click,
+  so the template mechanism itself is under test.
+- **`events`** — one NPC with its events seeded directly into `AppState`. The
+  event editor is covered by `test_events_e2e.py`; here we want exact numbers.
+- **`scene`** — several NPCs and/or props. NPCs are seeded for the `events`
+  reason plus one more: at whole-town zoom a Playwright click is quantised to
+  ~0.4 m and a lane is 3.5 m wide, so a click cannot reliably hit a named lane.
+  Props are **not** seeded — they go through `H.place_prop`, because
+  `_propYawFor`'s per-lane facing rule and `surfaceZFor`'s elevation lookup only
+  run on the placement path, and those are exactly what a prop case is testing.
+  `H.zoom_at` wheels in over the target and back out again afterwards, so one
+  placement does not move the next one's screen coordinates.
+
+A `scene` case's `npcs` array order is load-bearing: `buildScenarioParams` names
+them `adversary`, `adversary1`, … by index, and that is the entity ref the
+expectations read back.
+
+**An NPC with `events: []` does not stay still — it drives off.**
+`build_custom_event_chain()` returns False for an empty list and `xml_builder`
+falls back to `build_behavior_chain()` with the default
+`behaviors: ['constant_speed']`. A "parked" car covered 226 m before this was
+caught. Use `_parked()` (an explicit `set_speed 0`) for anything stationary.
 
 Each case builds its scenario through the real editor, runs it through
 `/home/dellpro2/Antonio/run.sh`, and judges the result against two independent
@@ -198,6 +251,52 @@ before the export, so it is exactly the state the `.xosc` beside it came from.
   frame turned a real 3.5 m lane change into a reported 44 m of "lateral"
   travel. `lateral_offset()` takes its reference heading at `ref_t` (act start
   by default), never at the start of the measurement window.
+- **`|lateral| ~ 3.5 m` is equally true of a lane change that went the wrong
+  way**, and on a three-lane carriageway that puts the actor somewhere the
+  scenario never meant. Pair it with an absolute check on the actor's final `y`
+  against the lane it was supposed to reach — `_merged_into()` in
+  `carla_cases.py`.
+- **A cross-street actor launched at act start clears the junction before the
+  ego gets there.** Measured on Town05 junction 1863: crossing car in at
+  t=1.0 s, ego at t=5.9 s — the paths intersect in space and never in time, and
+  every speed and geometry check still passes. Launch on `distance_to_ego` and
+  assert `closest_approach`.
+- **Distance radii need margin for the corner a turning ego cuts.** A
+  `distance_to_ego@35` on the cross street missed by 0.6 m, because a
+  left-turning ego starts its swing before the junction centre. The condition
+  never fired, the actor waited out the 60 s `TimeFallback` that every
+  `distance_to_ego` trigger carries, and the run limped to 77 s looking like a
+  hang.
+- **Town01's sidewalk is not spawnable.** A vehicle at y=-7 aborts the whole
+  scenario with `Not all actors were spawned / Error: Unable to add actors`
+  before a single tick.
+
+## The benchmark cases
+
+`bench-*` reproduces sixteen scenarios from the Loop2Scenic benchmark. The index
+(all 250 entries), the extractor, the two conflicting tag censuses and the
+coverage report live in [`tests/bench/`](bench/COVERAGE.md).
+
+They are ordinary CARLA cases and are run the same way; what is different is
+that each one carries the benchmark description it reproduces **verbatim** plus
+its named fidelity delta, and that six of its checks are marked
+`EXPECTED TO FAIL` on purpose:
+
+- `bench-lane-blocked-construction` (3) — the props reach CARLA correctly and
+  BehaviorAgent drives straight through them, shoving the barrier 69 m. There is
+  no way to author an ego avoidance.
+- `bench-pedestrian-crossing` (2) — a defect in the shipped
+  `pedestrian-crossing` template: `distance_to_ego@50` at 2 m/s puts the walker
+  off the far kerb ~3.5 s before the ego arrives, on every run.
+- `bench-reversing-vehicle` (1) — there is no reverse action, so the actor
+  turns round and drives forward instead.
+
+Regenerating the index needs nothing but curl:
+
+```bash
+curl -sL -o bench.html https://yuangao-tum.github.io/loop2scenic-bench/
+python3 tests/bench/extract_bench.py bench.html tests/bench
+```
 
 ## CARLA probes (not tests)
 

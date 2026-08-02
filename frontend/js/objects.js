@@ -89,11 +89,14 @@
     let yaw = roadFacing ? _roadFacingYaw(wx, wy) : 0;
     if (templatePlacement?.orientation === 'along-lane') yaw = _roadAlongYaw(wx, wy);
     if (snap) yaw = snap.yaw ?? snap.laneYaw;
+    // A snap already carries the surface height of the exact point it snapped
+    // to; free placement has to look it up at the final position.
+    const z = _roundZ((snap?.z ?? groundZAt(x, y)) + _clearanceFor(type));
 
     let newId;
     if (type === 'ego') {
       const actor = {
-        id: AppState.nextId(), type: 'ego', x, y, z: 0.2, yaw,
+        id: AppState.nextId(), type: 'ego', x, y, z, yaw,
         trajectory: [],
         events: [],
       };
@@ -101,7 +104,7 @@
       newId = actor.id;
     } else {
       const actor = {
-        id: AppState.nextId(), type, x, y, z: 0.2, yaw,
+        id: AppState.nextId(), type, x, y, z, yaw,
         behaviors: ['constant_speed'],
         trigger_distance: 400,
         events: [],
@@ -182,13 +185,16 @@
     // Orientation always applies; Shift only controls POSITION.
     const near = _nearestLaneProjection(wx, wy, null, PROP_YAW_MAX_DIST);
     const snap = shiftKey && near && near.dist <= PROP_SNAP_MAX_DIST ? near : null;
+    const x = snap ? Math.round(snap.x * 10) / 10 : Math.round(wx * 10) / 10;
+    const y = snap ? Math.round(snap.y * 10) / 10 : Math.round(wy * 10) / 10;
     const prop = {
       id: AppState.nextId(),
       type: 'prop',
       prop: blueprint,
-      x: snap ? Math.round(snap.x * 10) / 10 : Math.round(wx * 10) / 10,
-      y: snap ? Math.round(snap.y * 10) / 10 : Math.round(wy * 10) / 10,
-      z: PropCatalog.defaultZ(blueprint),
+      x,
+      y,
+      // Catalogue z is an offset from the road surface, not an absolute height.
+      z: _roundZ(groundZAt(x, y) + PropCatalog.defaultZ(blueprint)),
       yaw: _propYawFor(blueprint, wx, wy, near),
     };
 
@@ -217,8 +223,8 @@
         if (laneTypes?.size && !laneTypes.has(lane.type)) continue;
         const line = lane.directionLine || [];
         for (let i = 1; i < line.length; i++) {
-          const [x0, y0] = line[i - 1];
-          const [x1, y1] = line[i];
+          const [x0, y0, z0 = 0] = line[i - 1];
+          const [x1, y1, z1 = 0] = line[i];
           const dx = x1 - x0;
           const dy = y1 - y0;
           const len2 = dx * dx + dy * dy;
@@ -230,6 +236,10 @@
           if (dist <= maxDistance && (!best || dist < best.dist)) {
             best = {
               x, y, dist,
+              // Road-surface height, lerped along the same segment the position
+              // came from. The `= 0` destructuring defaults keep this working
+              // against 2-element points, i.e. a cached older render payload.
+              z: z0 + t * (z1 - z0),
               laneYaw: Math.atan2(dy, dx) * 180 / Math.PI,
               laneId: lane.laneId, laneType: lane.type,
             };
@@ -238,6 +248,57 @@
       }
     }
     return best;
+  }
+
+  /* Ground height ─────────────────────────────────────────────────────────────
+   *
+   * Every z the editor writes is the OpenDRIVE road surface at (x, y) plus a
+   * per-category clearance. A fixed z (this used to be 0.2 for actors) puts an
+   * object metres under the road on any map with a gradient — Town03 road 67
+   * climbs to 2.7 m and back to 0 within its own length.
+   *
+   * Clearance always errs HIGH. Spawning below the surface fails hard in CARLA
+   * ("collision at spawn position"); spawning above it is free, because actors
+   * spawn with physics and settle within a tick.
+   *
+   * VRUs get more than vehicles because <elevationProfile> is the *reference
+   * line* surface — it models neither kerb height nor sidewalk elevation, and
+   * sidewalk lanes carry no directionLine, so a pedestrian standing on a kerb
+   * takes its z from the carriageway roughly 0.15 m below it. A pedestrian at
+   * z=0.2 clipping geometry and failing to spawn is what this margin is for.
+   *
+   * Props are NOT given clearance: a <MiscObject> has no settle behaviour, and
+   * the catalogue's per-prop z is already a surface-relative offset.
+   */
+  const SPAWN_CLEARANCE = { vehicle: 0.5, vru: 0.6, waypoint: 0.5 };
+  const GROUND_Z_MAX_DIST = 60;   // how far to reach for a lane to take height from
+
+  function _clearanceFor(type) {
+    return ROAD_FACING_TYPES.has(type) ? SPAWN_CLEARANCE.vru : SPAWN_CLEARANCE.vehicle;
+  }
+
+  /** Round to cm — z is derived, so it should not carry float noise into saves. */
+  function _roundZ(z) {
+    return Math.round(z * 100) / 100;
+  }
+
+  /* Road-surface height at (wx, wy), or 0 when nothing is within reach.
+   *
+   * A generous radius is safe here in a way it is not for yaw: z has no side or
+   * direction semantics, so the nearest lane is always a defensible answer. */
+  function groundZAt(wx, wy) {
+    const near = _nearestLaneProjection(wx, wy, null, GROUND_Z_MAX_DIST);
+    return near ? near.z : 0;
+  }
+
+  /* Height for an object of `type` standing at (x, y): road surface plus the
+   * category's clearance, or plus the catalogue offset for a prop. The single
+   * entry point for anything that moves an already-placed object. */
+  function _surfaceZFor(type, x, y, propBlueprint = null) {
+    const base = type === 'prop'
+      ? PropCatalog.defaultZ(propBlueprint)
+      : _clearanceFor(type);
+    return _roundZ(groundZAt(x, y) + base);
   }
 
   // ── Drag actors ───────────────────────────────────────────────────────────────
@@ -315,6 +376,19 @@
 
   window.addEventListener('mouseup', () => {
     if (_dragState) {
+      // Re-derive the height for the position the object was dropped at. This
+      // runs on mouseup rather than on every mousemove deliberately:
+      // _nearestLaneProjection is a linear scan over every lane segment (~59k
+      // points on Town03), so doing it per frame would make dragging stutter —
+      // and z has no visual effect at all in a top-down 2D view.
+      if (_dragState.type === 'actor') {
+        const actor = AppState.findById(_dragState.actorId);
+        if (actor) {
+          AppState.updateById(actor.id, {
+            z: _surfaceZFor(actor.type, actor.x, actor.y, actor.prop),
+          });
+        }
+      }
       _dragState = null;
       setTimeout(() => { _wasDragging = false; }, 50);
     }
@@ -393,9 +467,10 @@
     if (type === 'route' && (!eventId || actor.type === 'ego')) return;
     let path = _eventPath(actor, eventId, type);
     if (!path || path.length === 0) {
+      // Seeded from the actor's own pose, so it inherits the actor's height too.
       path = type === 'trajectory'
-        ? [{ x: actor.x, y: actor.y, velocity: 10.0 }]
-        : [{ x: actor.x, y: actor.y }];
+        ? [{ x: actor.x, y: actor.y, z: actor.z ?? 0, velocity: 10.0 }]
+        : [{ x: actor.x, y: actor.y, z: actor.z ?? 0 }];
       if (eventId && actor.type !== 'ego') _setEventPath(actor, eventId, type, path);
       else if (type === 'trajectory') actor.trajectory = path;
     }
@@ -417,7 +492,11 @@
     if (!actor) return;
     let path = _eventPath(actor, eventId, type);
     if (!path) path = [];
-    const point = { x: Math.round(wx * 10) / 10, y: Math.round(wy * 10) / 10 };
+    const x = Math.round(wx * 10) / 10;
+    const y = Math.round(wy * 10) / 10;
+    // Waypoints used to carry no z at all and picked up a flat 0.2 downstream,
+    // which drags a trajectory across an elevated road straight under it.
+    const point = { x, y, z: _roundZ(groundZAt(x, y) + SPAWN_CLEARANCE.waypoint) };
     if (type === 'trajectory') {
       point.velocity = path.length > 0
         ? path[path.length - 1].velocity
@@ -438,11 +517,13 @@
       const match = String(ev.trigger?.point?.name || '').match(/^Point\s+(\d+)$/);
       return match ? Math.max(max, parseInt(match[1], 10)) : max;
     }, 0) + 1;
+    const px = Math.round(wx * 10) / 10;
+    const py = Math.round(wy * 10) / 10;
     const point = {
       name: currentEvent?.trigger?.point?.name || `Point ${pointIndex}`,
-      x: Math.round(wx * 10) / 10,
-      y: Math.round(wy * 10) / 10,
-      z: 0.2,
+      x: px,
+      y: py,
+      z: _roundZ(groundZAt(px, py) + SPAWN_CLEARANCE.waypoint),
     };
     const patchedEvents = events.map(ev => {
       if (ev.id !== target.eventId) return ev;
@@ -495,5 +576,7 @@
     deletePathPoint,
     setPathPointVelocity,
     clearPath,
+    groundZAt,
+    surfaceZFor: _surfaceZFor,
   };
 })();

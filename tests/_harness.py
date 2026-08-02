@@ -198,6 +198,57 @@ def place_template(page, template_id, wx, wy, tolerance=14.0):
     return actor
 
 
+def zoom_at(page, wx, wy, ticks):
+    """Wheel `ticks` notches with the cursor over world point (wx, wy).
+
+    Positive zooms in, negative out. The wheel handler keeps the world point
+    under the cursor fixed (`mapView.js` `_pan.x = cursor.x - world.x * _zoom`),
+    so zooming in N ticks and back out N ticks at the SAME world point restores
+    the previous view — which is how a caller places one object at street scale
+    without disturbing the next one's screen coordinates.
+
+    Zoom is needed because the map fits a whole town into 1600x900: on Town05
+    that is ~2.5 px/m, so Playwright's integer-pixel click quantises placement
+    to ~0.4 m and a 3.5 m lane is 9 px wide. Actors tolerate that (they snap);
+    a prop placed free-hand does not.
+    """
+    sx, sy = world_to_screen(page, wx, wy)
+    page.mouse.move(sx, sy)
+    for _ in range(abs(ticks)):
+        page.mouse.wheel(0, -240 if ticks > 0 else 240)
+    page.wait_for_timeout(120)
+
+
+def place_prop(page, blueprint, wx, wy, zoom=12, tolerance=1.5):
+    """Arm a prop tile and click at a WORLD point; return the placed prop.
+
+    Goes through the real toolbar tile and a real map click rather than pushing
+    an entry into AppState.staticObjects, because the two things a prop case
+    actually depends on — `_propYawFor`'s per-lane facing rule and
+    `surfaceZFor`'s elevation lookup — only run on the placement path. Seeding
+    the array gives you a prop with whatever yaw and z the test made up.
+
+    The prop tool is sticky (it stays armed for the next click), so Escape is
+    pressed afterwards to disarm it; otherwise the next actor click drops
+    another prop instead.
+    """
+    page.click('[data-toolbar-tab="props"]')
+    page.click(f'.tool-btn[data-prop="{blueprint}"]')
+    zoom_at(page, wx, wy, zoom)
+    sx, sy = assert_on_screen(page, wx, wy)
+    page.mouse.click(sx, sy)
+    page.keyboard.press("Escape")
+    prop = page.evaluate("AppState.staticObjects[AppState.staticObjects.length-1]")
+    zoom_at(page, wx, wy, -zoom)
+    if prop is None:
+        raise AssertionError(f"prop '{blueprint}' placed nothing at ({wx},{wy})")
+    if abs(prop["x"] - wx) > tolerance or abs(prop["y"] - wy) > tolerance:
+        raise AssertionError(
+            f"prop '{blueprint}' landed at ({prop['x']},{prop['y']}), "
+            f"aimed at ({wx},{wy})")
+    return prop
+
+
 def export_xosc(page, timeout=30000):
     """Click Export .xosc and return the emitted .xosc text.
 

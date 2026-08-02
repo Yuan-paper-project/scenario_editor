@@ -69,11 +69,18 @@ def build_scenarios(cases):
             # the backend clamps only the keys it is given and compute_weather
             # reads each with .get(k, 0.0) — but the artifact is meant to be
             # indistinguishable from a real save.
+            # z is seeded, not hardcoded. This used to be a flat 0.2, which is
+            # only ever right on a flat town — on Town03 road 67 it put the ego
+            # 2.4 m under the road it was supposed to drive on. A case may state
+            # its own z (the Town03 poses do, since those numbers are the point);
+            # otherwise it comes from the editor's own derivation, the same call
+            # a map click makes.
             page.evaluate("""({town, ego}) => AppState.loadJSON({
                 map:town, time:'daytime',
                 weather:{fog:0, rainy:0, cloudy:0, sunny:0,
                          wet_road:0, snowy:0, dust_storm:0},
-                ego:{id:'obj-1', type:'ego', x:ego.x, y:ego.y, z:0.2,
+                ego:{id:'obj-1', type:'ego', x:ego.x, y:ego.y,
+                     z:ego.z ?? ObjectsManager.surfaceZFor('ego', ego.x, ego.y),
                      yaw:ego.yaw, trajectory:[], events:[]},
                 npcs:[], staticObjects:[], trafficSignals:[]})""",
                           {"town": town, "ego": ego})
@@ -100,20 +107,78 @@ def build_scenarios(cases):
                 if "npc_yaw" in case:
                     page.evaluate("({id, yaw}) => AppState.updateById(id, {yaw})",
                                   {"id": actor["id"], "yaw": case["npc_yaw"]})
+            elif case["kind"] == "scene":
+                # Several NPCs and/or props in one scenario — the benchmark
+                # cases, where "an adversary cuts in while another brakes ahead"
+                # needs two actors and "the lane is blocked" needs props.
+                #
+                # NPCs are seeded for the same reason the `events` kind seeds
+                # them: the benchmark description pins exact lanes and exact
+                # speeds, and a placement click quantised to whole pixels cannot
+                # hit a 3.5 m lane reliably at whole-town zoom. Props are NOT
+                # seeded — see H.place_prop.
+                #
+                # Array order is load-bearing: buildScenarioParams names npcs
+                # `adversary`, `adversary1`, ... by index, so the case's npc list
+                # order IS the entity-ref order the expectations read back.
+                # Trajectory and route waypoints get their z here too, from the
+                # same call the map-click path uses. A case never writes a
+                # literal z: on a graded corridor a flat 0.2 puts the waypoint
+                # under the road, and ChangeActorWaypoints then plans through
+                # the deck.
+                page.evaluate("""(npcs) => {
+                    const wz = (p) => ({...p,
+                        z: ObjectsManager.surfaceZFor('waypoint', p.x, p.y)});
+                    AppState.npcs = npcs.map((n, i) => ({
+                        id: `obj-${i + 2}`, type: n.type,
+                        x: n.spot[0], y: n.spot[1], yaw: n.yaw,
+                        z: ObjectsManager.surfaceZFor(n.type, n.spot[0], n.spot[1]),
+                        behaviors: ['constant_speed'], trigger_distance: 400,
+                        events: (n.events || []).map(ev => {
+                            const a = ev.action || {};
+                            return {...ev, action: {...a,
+                                ...(a.trajectory ? {trajectory: a.trajectory.map(wz)} : {}),
+                                ...(a.waypoints ? {waypoints: a.waypoints.map(wz)} : {})}};
+                        })}));
+                    AppState.set({});
+                }""", [{"type": n["type"], "spot": list(n["spot"]),
+                        "yaw": n.get("yaw", 180), "events": n.get("events", [])}
+                       for n in case["npcs"]])
             else:
                 # Seeded directly, so the pose comes entirely from the case.
                 # 180 (the ego's direction) suits the in-lane vehicle cases;
                 # a crossing case has to state its own yaw, as
                 # act-child-crossing does.
+                # Same reasoning as the ego's z above. A seeded NPC bypasses the
+                # placement click, so it has to ask for the height explicitly —
+                # a template-placed one already got it from the real click path.
                 page.evaluate("""(c) => {
                     const npc = {id:'obj-2', type:c.npc_type,
-                                 x:c.spot[0], y:c.spot[1], z:0.2, yaw:c.yaw,
+                                 x:c.spot[0], y:c.spot[1], yaw:c.yaw,
+                                 z:ObjectsManager.surfaceZFor(c.npc_type,
+                                                              c.spot[0], c.spot[1]),
                                  behaviors:['constant_speed'],
                                  trigger_distance:400, events:c.events};
                     AppState.npcs = [npc];
                     AppState.set({});
                 }""", {"npc_type": case["npc_type"], "spot": list(case["spot"]),
                        "yaw": case.get("npc_yaw", 180), "events": case["events"]})
+
+            # Props last, and for any kind: the prop tool is sticky and shares
+            # the map with the actor tools, so arming it before an actor click
+            # would drop a cone where the actor should have gone.
+            for prop in case.get("props", []):
+                placed = H.place_prop(page, prop["prop"], *prop["spot"])
+                # The per-lane facing rule already ran at placement. A case only
+                # overrides it when the description pins an orientation the rule
+                # cannot express (see the prop tables in CLAUDE.md).
+                if "yaw" in prop:
+                    page.evaluate(
+                        """({id, yaw}) => { AppState.staticObjects =
+                             AppState.staticObjects.map(p =>
+                               p.id === id ? {...p, yaw} : p);
+                           AppState.set({}); }""",
+                        {"id": placed["id"], "yaw": prop["yaw"]})
 
             # Captured here, not after export: this is the exact state the
             # .xosc alongside it was built from. toJSON() is the Speichern
@@ -169,9 +234,17 @@ def run_case(case, xosc_text, scenario, keep_video=True, timeout=180):
     kill_stragglers()
 
     env = dict(os.environ, PYTHONPATH=CARLA_PYTHONPATH)
+    # --vehicles-only drops everything that is not a vehicle or a walker, which
+    # includes <MiscObject> props. A prop case's central question is whether the
+    # prop reached CARLA at the pose the editor placed it, so those cases record
+    # the whole world instead. Everything else keeps the narrow filter — the map
+    # contributes hundreds of unnamed static meshes per tick.
+    sidecar_cmd = [CARLA_PY, os.path.join(HERE, "carla_telemetry.py"),
+                   "--out", csv_path]
+    if not case.get("props"):
+        sidecar_cmd.append("--vehicles-only")
     sidecar = subprocess.Popen(
-        [CARLA_PY, os.path.join(HERE, "carla_telemetry.py"),
-         "--out", csv_path, "--vehicles-only"],
+        sidecar_cmd,
         env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     time.sleep(1.0)
 
@@ -272,13 +345,19 @@ def judge(case, result):
         unfinished = sorted(n for n, t in timeline.items() if t["end"] is None)
         notes.append(f"RUN HUNG after {result['elapsed']:.0f}s; "
                      f"events still RUNNING at the end: {unfinished or 'none'}")
+    # A scene case names its own entity refs by npc index, the same mapping
+    # buildScenarioParams and validate_scenario_params both apply.
+    n_npcs = len(case.get("npcs", [])) or 1
+    refs = ["adversary" if i == 0 else f"adversary{i}" for i in range(n_npcs)]
+
     rows = [
         ("scenario terminated on its own",
          not result.get("timed_out") and result["returncode"] == 0,
          f"timed out after {result['elapsed']:.0f}s"
          if result.get("timed_out") else f"run.sh exit {result['returncode']}"),
-        ("telemetry captured both actors",
-         "hero" in run and "adversary" in run, f"roles: {sorted(run.tracks)}"),
+        ("telemetry captured every actor",
+         "hero" in run and all(r in run for r in refs),
+         f"want hero + {refs}; roles: {sorted(run.tracks)}"),
         ("the act started (ego moved)", run.act_start() is not None, ""),
     ]
     if run.act_start() is None:
@@ -290,11 +369,16 @@ def judge(case, result):
         rows.append((f"expectations evaluated", False,
                      f"{type(exc).__name__}: {exc}"))
 
-    # A perfect speed trace that ended in a crash is not a pass.
-    dist, when = A.closest_approach(run, "hero", "adversary")
-    if dist is not None:
-        rows.append(("no ego/npc collision", dist > 1.5,
-                     f"closest {dist:.2f} m at t={when:+.1f}s"))
+    # A perfect speed trace that ended in a crash is not a pass. Many benchmark
+    # descriptions ARE collisions; the cases below reproduce the conflict that
+    # leads to one and assert the near miss, because a real impact ends the run
+    # and makes every trace after it meaningless. That substitution is recorded
+    # per case as a fidelity delta, not papered over here.
+    for ref in refs:
+        dist, when = A.closest_approach(run, "hero", ref)
+        if dist is not None:
+            rows.append((f"no ego/{ref} collision", dist > 1.5,
+                         f"closest {dist:.2f} m at t={when:+.1f}s"))
     return rows, notes
 
 

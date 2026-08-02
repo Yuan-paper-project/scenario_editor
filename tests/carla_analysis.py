@@ -277,6 +277,21 @@ def closest_approach(run, role_a, role_b):
     return best, best_t
 
 
+def time_within(run, role, point, radius):
+    """When `role` first came within `radius` of a world point (act-relative)."""
+    track = run.get(role)
+    if track is None:
+        return None
+    base = run.act_start()
+    if base is None:
+        return None
+    px, py = point
+    for i, t in enumerate(track.t):
+        if math.hypot(track.x[i] - px, track.y[i] - py) <= radius:
+            return t - base
+    return None
+
+
 def time_ego_within(run, point, radius):
     """When the ego first came within `radius` of a world point (act-relative).
 
@@ -284,17 +299,86 @@ def time_ego_within(run, point, radius):
     recorded motion instead of a hardcoded timestamp: compute when the trigger
     SHOULD have fired, then compare that to when the event actually did.
     """
-    hero = run.get("hero")
-    if hero is None:
-        return None
-    base = run.act_start()
-    if base is None:
-        return None
-    px, py = point
-    for i, t in enumerate(hero.t):
-        if math.hypot(hero.x[i] - px, hero.y[i] - py) <= radius:
-            return t - base
-    return None
+    return time_within(run, "hero", point, radius)
+
+
+def slows_by(run, role, drop, t_from, t_to):
+    """Did `role` shed at least `drop` m/s from its peak in the window?
+
+    -> (ok, detail). For the ego, which is never scripted: 'it braked' cannot be
+    an absolute threshold, because the plateau BehaviorAgent settles at depends
+    on the town's speed limit. What is stable is the shape — cruise, then a real
+    loss of speed — so this measures the peak and the deepest trough AFTER it.
+    Comparing whole-window min to whole-window max would score a standing start
+    as a brake.
+    """
+    track = run.get(role)
+    if track is None:
+        return False, f"no telemetry for '{role}'"
+    a, b = _abs_t(run, t_from), _abs_t(run, t_to)
+    if a is None:
+        return False, "ego never moved, so the act never started"
+    ts, speeds = track.window(a, b)
+    if not speeds:
+        return False, f"no samples in [{t_from:.1f},{t_to:.1f}]s after act start"
+    i_peak = max(range(len(speeds)), key=lambda i: speeds[i])
+    after = speeds[i_peak:]
+    shed = speeds[i_peak] - min(after)
+    return shed >= drop, (
+        f"peaked {speeds[i_peak]:.2f} m/s at t={ts[i_peak] - _abs_t(run, 0.0):+.1f}s "
+        f"then fell to {min(after):.2f} — shed {shed:.2f} m/s (wanted {drop:.1f})")
+
+
+def heading_change(run, role, t_from, t_to):
+    """Signed yaw change over a window, wrapped to (-180,180]. -> (deg, detail).
+
+    This is how an EGO MANOEUVRE gets asserted at all. The .xosc gives the ego a
+    spawn pose and nothing else — every turn is chosen by `--goal` and planned by
+    BehaviorAgent, so there is no storyboard event to read off the OSC log. What
+    can be checked is whether the ego actually ended up pointing down the arm the
+    goal was on: a left turn out of a 4-way junction is ~-90 deg in CARLA's
+    left-handed frame, a right turn ~+90, straight ~0.
+
+    Wrapping is per-sample, not endpoint-to-endpoint: a 180 deg turn read from
+    two samples is ambiguous in sign, and accumulating the small per-tick deltas
+    is not.
+    """
+    track = run.get(role)
+    if track is None:
+        return None, f"no telemetry for '{role}'"
+    a, b = _abs_t(run, t_from), _abs_t(run, t_to)
+    if a is None:
+        return None, "ego never moved, so the act never started"
+    i, j = track.at(a), track.at(b)
+    if i is None or j is None or j <= i:
+        return None, "no samples"
+    total = 0.0
+    for k in range(i + 1, j + 1):
+        total += (track.yaw[k] - track.yaw[k - 1] + 180) % 360 - 180
+    return total, (f"yaw {track.yaw[i]:.1f} -> {track.yaw[j]:.1f} deg, "
+                   f"net {total:+.1f} deg over [{t_from:.1f},{t_to:.1f}]s")
+
+
+def stopped_within(run, role, t_from, t_to, threshold=0.5):
+    """Did `role` drop below `threshold` m/s inside the window? -> (ok, detail).
+
+    For the cases whose whole point is that the EGO had to give way — a lead
+    that brakes to a halt, a blocked junction, a pedestrian in the road. The ego
+    is not scripted, so 'it slowed down' is the only observable that separates
+    'the scene had an effect' from 'the ego drove past regardless'.
+    """
+    track = run.get(role)
+    if track is None:
+        return False, f"no telemetry for '{role}'"
+    a, b = _abs_t(run, t_from), _abs_t(run, t_to)
+    if a is None:
+        return False, "ego never moved, so the act never started"
+    _, speeds = track.window(a, b)
+    if not speeds:
+        return False, f"no samples in [{t_from:.1f},{t_to:.1f}]s after act start"
+    return min(speeds) <= threshold, (
+        f"min {min(speeds):.2f} m/s (max {max(speeds):.2f}) "
+        f"over [{t_from:.1f},{t_to:.1f}]s")
 
 
 def speed_profile(run, role, boundaries, tol=1.5):
