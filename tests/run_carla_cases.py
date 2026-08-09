@@ -45,6 +45,32 @@ CARLA_PYTHONPATH = ":".join([
 
 # ── Scenario construction (browser) ──────────────────────────────────────────
 
+# Every piece of geometry a case's events state — route waypoints, trajectory
+# vertices, and a distance_to_point's point — gets its z from the editor's own
+# derivation, exactly as the map-click path would. A case never writes a
+# literal z (see the module docstring and CLAUDE.md); this is where that
+# promise is kept for events, as the ego/NPC poses keep it for actors.
+#
+# For a TRIGGER POINT the stake is higher than for a waypoint. ScenarioRunner
+# evaluates DistanceCondition as a 3-D distance (calculate_distance ->
+# location.distance(other)), so a point left at the 0.2 default on a graded
+# corridor is not merely imprecise: on Town04's ramp, where the carriageway is
+# 7.7-9.8 m up, the whole 5.5 m radius sits below the road and the condition
+# can never become true. The symptom is an event that never fires, which reads
+# as a broken entity_ref rather than a wrong height.
+SEED_EVENTS_JS = """window.__seedEvents = (events) => {
+    const wz = (p) => ({...p, z: ObjectsManager.surfaceZFor('waypoint', p.x, p.y)});
+    return (events || []).map(ev => {
+        const a = ev.action || {}, t = ev.trigger || {};
+        return {...ev,
+            trigger: t.point ? {...t, point: wz(t.point)} : t,
+            action: {...a,
+                ...(a.trajectory ? {trajectory: a.trajectory.map(wz)} : {}),
+                ...(a.waypoints ? {waypoints: a.waypoints.map(wz)} : {})}};
+    });
+}"""
+
+
 def build_scenarios(cases):
     """-> {case_name: (xosc_text, scenario_json)}; one browser session for all.
 
@@ -56,6 +82,9 @@ def build_scenarios(cases):
     built = {}
     with sync_playwright() as p:
         browser, page, errors = H.open_editor(p, "Town01")
+        # Attached once — open_editor navigates once, and nothing below reloads
+        # the page, so the helper survives every map change.
+        page.evaluate(SEED_EVENTS_JS)
         for case in cases:
             town = case.get("map", "Town01")
             ego = case.get("ego", C.EGO)
@@ -120,26 +149,17 @@ def build_scenarios(cases):
                 #
                 # Array order is load-bearing: buildScenarioParams names npcs
                 # `adversary`, `adversary1`, ... by index, so the case's npc list
-                # order IS the entity-ref order the expectations read back.
-                # Trajectory and route waypoints get their z here too, from the
-                # same call the map-click path uses. A case never writes a
-                # literal z: on a graded corridor a flat 0.2 puts the waypoint
-                # under the road, and ChangeActorWaypoints then plans through
-                # the deck.
+                # order IS the entity-ref order the expectations read back — and
+                # the ids seeded here (ego obj-1, npcs[i] obj-(i+2)) are what a
+                # case's own entity_ref fields have to name. C.EGO_REF /
+                # C.npc_ref() spell them; changing them here changes them there.
                 page.evaluate("""(npcs) => {
-                    const wz = (p) => ({...p,
-                        z: ObjectsManager.surfaceZFor('waypoint', p.x, p.y)});
                     AppState.npcs = npcs.map((n, i) => ({
                         id: `obj-${i + 2}`, type: n.type,
                         x: n.spot[0], y: n.spot[1], yaw: n.yaw,
                         z: ObjectsManager.surfaceZFor(n.type, n.spot[0], n.spot[1]),
                         behaviors: ['constant_speed'], trigger_distance: 400,
-                        events: (n.events || []).map(ev => {
-                            const a = ev.action || {};
-                            return {...ev, action: {...a,
-                                ...(a.trajectory ? {trajectory: a.trajectory.map(wz)} : {}),
-                                ...(a.waypoints ? {waypoints: a.waypoints.map(wz)} : {})}};
-                        })}));
+                        events: window.__seedEvents(n.events)}));
                     AppState.set({});
                 }""", [{"type": n["type"], "spot": list(n["spot"]),
                         "yaw": n.get("yaw", 180), "events": n.get("events", [])}
@@ -158,7 +178,8 @@ def build_scenarios(cases):
                                  z:ObjectsManager.surfaceZFor(c.npc_type,
                                                               c.spot[0], c.spot[1]),
                                  behaviors:['constant_speed'],
-                                 trigger_distance:400, events:c.events};
+                                 trigger_distance:400,
+                                 events:window.__seedEvents(c.events)};
                     AppState.npcs = [npc];
                     AppState.set({});
                 }""", {"npc_type": case["npc_type"], "spot": list(case["spot"]),
@@ -250,13 +271,18 @@ def run_case(case, xosc_text, scenario, keep_video=True, timeout=180):
 
     started = time.time()
     timed_out = False
-    # The ego's destination. run.sh defaults to the Town01 pose, which is
-    # meaningless anywhere else — a case on another town that omits "goal" would
-    # have set_destination snap that Town01 point to some arbitrary local
-    # waypoint and the ego would drive a route nobody chose.
-    run_env = dict(os.environ, SCENARIO_FILE=scenario_rel)
-    if case.get("goal"):
-        run_env["SCENARIO_GOAL"] = case["goal"]
+    # The ego's destination — ALWAYS set explicitly, never inherited.
+    #
+    # A goal is only meaningful on the town it was read off: set_destination
+    # silently snaps whatever it is given to the nearest waypoint in the loaded
+    # map, so a stale one does not error, it just drives the ego somewhere
+    # nobody chose. run.sh's own default is a moving target (it is outside this
+    # repo and gets retargeted by hand while debugging a scenario), so a case
+    # that omitted "goal" used to inherit whatever that happened to be. Falling
+    # back to C.GOAL — the Town01 pose every Town01 case is built around —
+    # keeps the harness self-contained.
+    run_env = dict(os.environ, SCENARIO_FILE=scenario_rel,
+                   SCENARIO_GOAL=case.get("goal") or C.GOAL)
     # start_new_session so the whole run.sh process group can be killed;
     # subprocess timeouts only reach the direct child, and run.sh's children
     # (scenario_runner, automatic_control, CARLA) are the ones that linger.

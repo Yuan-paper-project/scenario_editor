@@ -257,6 +257,64 @@ JCT_AHEAD_LEFT = (-145.0, 91.40)  # lane +1 alongside it
 # The junction's own centre, for asking whether an actor actually got into it.
 JCT_CENTRE = (-117.0, 95.0)
 
+# ── Corridor C: Town04 eastbound motorway and its loop on-ramp ───────────────
+#
+# The only corridor in the bundled maps with a REAL on-ramp, which is what
+# CARLA_Leaderboard_8 — "a vehicle merging into its lane from a highway
+# on-ramp" — actually asks for. Corridor A can only fake it with a lane change
+# out of the adjacent lane. Read off the parsed OpenDRIVE the same way:
+#
+#   road 40        x -357 .. -121   four eastbound Driving lanes, ids 3..6
+#   junction 1176  x -121 ..  -68   road 1185 carries road 40 straight through;
+#                                   road 1194 lane 2 is the RAMP's connector
+#   road 39        x  -68 ..  +66   the same four lanes, continuing east
+#
+#   lane 6  y = 37.28 -> 37.85   the RIGHTMOST lane (heading 0 => right is +y)
+#   lane 5  y = 33.8    lane 4  y = 30.3    lane 3  y = 26.8
+#
+# The ramp is road 44, a descending loop from (-33.9, 133.1, z=0) round to
+# (-112.6, 55.9, z=8.7); connector 1194 lane 2 runs from there to (-69.7, 37.4)
+# — i.e. it feeds lane 6, THE EGO'S LANE, at x ~ -68. From the spawn below the
+# merging car has 22.8 m of ramp plus 48.3 m of connector, 71 m in all, to
+# reach the carriageway the ego is already driving down.
+#
+# NOT flat: z climbs 4.95 (ego spawn) -> 7.5 (ramp spawn) -> 9.84 (merge) ->
+# 10.6 (goal). Nothing here states a z, actor or route waypoint — they all come
+# from ObjectsManager.surfaceZFor, the same path a map click uses.
+EGO_T4_HWY = {"x": -195.847, "y": 37.184, "yaw": 0.1}
+# The lane-6 point ~172 m east, past the merge. It is what makes the ego drive
+# THROUGH the junction the ramp feeds instead of stopping short of it.
+GOAL_T4_HWY = "-24,38,11,0"
+T4_RAMP = (-123.4, 75.7)          # on the ramp, 71 m of it left to run
+T4_RAMP_YAW = 286.3               # the ramp lane's own heading at that point
+T4_RAMP_WP = (-123.352, 75.715)   # same point snapped to the lane centre
+T4_MERGE_WP = (-58.2, 37.2)       # first carriageway waypoint, past the merge
+T4_ROUTE_END = (-24.5, 37.3)      # where the route ends, beside the ego's goal
+# The two distance_to_point cues. THE EGO reaches the first (53 m into its
+# drive, and 43 m before the 9.7 m radius bites) and that is what releases the
+# ramp car; THE RAMP CAR ITSELF reaches the second, which sits 0.1 m from where
+# connector 1194 hands over to road 39, so it fires as the merge completes.
+T4_CUE_POINT = (-142.8, 37.4)
+T4_MERGE_POINT = (-67.5, 37.4)
+T4_LANE_Y = 37.4                  # lane 6's centre through the merge and east
+
+
+# ── Entity refs a case writes into its own events ────────────────────────────
+#
+# Three event fields name ANOTHER actor by the editor's internal obj-N id:
+# distance_to_point's trigger.entity_ref, a relative set_speed's
+# target.entity_ref, and set_distance's action.entity_ref. buildScenarioParams
+# resolves them against AppState at export (-> hero / adversary / adversaryN),
+# so a seeded case has to spell the ids run_carla_cases.py seeds — and those
+# are fixed: the ego is obj-1, npcs[i] is obj-(i+2). An id that resolves to
+# neither hero nor a real adversaryN is a hard 400 from _entity_ref in
+# backend/scenario_io.py, so a wrong one fails at build time, not in CARLA.
+EGO_REF = "obj-1"
+
+
+def npc_ref(index=0):
+    return f"obj-{index + 2}"
+
 
 # ── Case definitions ─────────────────────────────────────────────────────────
 #
@@ -352,9 +410,14 @@ CASES = [
         "note": "entity_ref unset must mean the EGO reaching the point",
         "events": [{
             "id": "e1",
+            # No z on the point: the harness derives it, the same way the
+            # editor's own trigger-point click does. DistanceCondition is a 3-D
+            # distance in ScenarioRunner, so on a graded map a literal z eats
+            # the radius (see SEED_EVENTS_JS in run_carla_cases.py). Flat here,
+            # which is exactly why it went unnoticed until Town04.
             "trigger": {"type": "distance_to_point", "value": 20.0,
                         "point": {"name": "P", "x": TRIGGER_POINT[0],
-                                  "y": TRIGGER_POINT[1], "z": 0.2}},
+                                  "y": TRIGGER_POINT[1]}},
             "action": {"type": "set_speed",
                        "dynamics": {"shape": "step", "dimension": "time", "value": 10.0},
                        "target": {"mode": "absolute", "value": 8.0}},
@@ -568,24 +631,76 @@ BENCH_CASES = [
         "description": "The ego-vehicle encounters a vehicle merging into its "
                        "lane from a highway on-ramp. The ego-vehicle must "
                        "decelerate, brake or change lane to avoid a collision.",
-        "map": "Town05",
-        "ego": EGO_T5_HWY,
-        "goal": GOAL_T5_HWY,
+        "map": "Town04",
+        "ego": EGO_T4_HWY,
+        "goal": GOAL_T4_HWY,
         "npcs": [{
-            "type": "car", "spot": HWY_RIGHT, "yaw": 180.0,
-            # Runs level with the ego in lane -3, then merges LEFT into lane -2.
-            # 'left' is the merge direction because heading 180 makes +y (and so
-            # the lower-magnitude lane id) the actor's left.
-            "events": [_speed("e1", _at_start(), 8.0, 4.0),
-                       _lane_change("e2", _after("e1"), "left", 20.0),
-                       _speed("e3", _after("e2"), 8.0, 10.0)],
+            # On the ramp itself (road 44), not in a neighbour lane, and facing
+            # down it. The merge is therefore the ramp's own geometry — the
+            # route follows the connector into lane 6 — rather than a
+            # LaneChangeAction standing in for one.
+            "type": "car", "spot": T4_RAMP, "yaw": T4_RAMP_YAW,
+            "events": [
+                # 1. The path down the ramp and onto the carriageway. Forced to
+                #    simulation_time@0 by the editor either way (see
+                #    scenario_io.py), so it is stated that way here.
+                #
+                #    A route on its own does NOT move the car: AssignRouteAction
+                #    becomes ChangeActorWaypoints, which sets waypoints and
+                #    nothing else, and BasicControl._target_speed stays 0 until
+                #    a speed action lands. That is what lets the ramp car WAIT
+                #    for the ego instead of being released at act start — the
+                #    trap bench-perpendicular-crossing hit, where an actor
+                #    launched at act start cleared the conflict point before the
+                #    ego ever arrived.
+                {"id": "r1", "trigger": {"type": "simulation_time", "value": 0},
+                 "action": {"type": "assign_route", "route_strategy": "fastest",
+                            "waypoints": [{"x": T4_RAMP_WP[0], "y": T4_RAMP_WP[1]},
+                                          {"x": T4_MERGE_WP[0], "y": T4_MERGE_WP[1]},
+                                          {"x": T4_ROUTE_END[0], "y": T4_ROUTE_END[1]}]}},
+                # 2. Released when THE EGO reaches the cue point 53 m into its
+                #    drive — distance_to_point with an entity_ref, the field
+                #    that has to survive the obj-N -> hero remap. It takes the
+                #    ego's own speed (relative, delta 0), so the two arrive at
+                #    the merge together: 71 m of ramp against the ego's 85 m of
+                #    carriageway puts the ramp car in front by ~14 m.
+                {"id": "m1",
+                 "trigger": {"type": "distance_to_point", "value": 9.7,
+                             "entity_ref": EGO_REF,
+                             "point": {"name": "Merge cue", "x": T4_CUE_POINT[0],
+                                       "y": T4_CUE_POINT[1]}},
+                 "action": {"type": "set_speed",
+                            "dynamics": {"shape": "step", "dimension": "time",
+                                         "value": 2},
+                            "target": {"mode": "relative", "entity_ref": EGO_REF,
+                                       "delta": 0}}},
+                # 3. The same trigger type pointed at ITSELF: once the ramp car
+                #    is on the carriageway it accelerates away, which is what
+                #    turns the merge into a cut-in the ego has to absorb rather
+                #    than a car that simply appears alongside.
+                {"id": "m2",
+                 "trigger": {"type": "distance_to_point", "value": 5.5,
+                             "entity_ref": npc_ref(0),
+                             "point": {"name": "Merge complete",
+                                       "x": T4_MERGE_POINT[0],
+                                       "y": T4_MERGE_POINT[1]}},
+                 "action": {"type": "set_speed",
+                            "dynamics": {"shape": "step", "dimension": "time",
+                                         "value": 5},
+                            "target": {"mode": "absolute", "value": 10}}},
+            ],
         }],
-        "note": "DELTA: Town05's carriageway has no physical on-ramp, so the "
-                "merging vehicle starts in the adjacent lane rather than on a "
-                "ramp; the merge itself — a real LaneChangeAction into the "
-                "ego's occupied lane — is faithful. Town04/Town06 have true "
-                "on-ramps and would close this delta at the cost of a second "
-                "corridor to characterise.",
+        "note": "Built on Town04's real on-ramp (road 44 -> connector 1194 -> "
+                "lane 6 of road 39), so the description's 'from a highway "
+                "on-ramp' is geometry rather than a stand-in: the merging car "
+                "spawns on the ramp and joins the ego's lane where the ramp "
+                "actually meets it. The ego's half of the description happens "
+                "too: it brakes from 7.16 m/s to 0.13 m/s as the ramp car "
+                "converges to 10.7 m. DELTAS: (a) that brake is "
+                "BehaviorAgent's, so it is asserted from telemetry rather than "
+                "scripted, and 'or change lane' remains unauthorable either "
+                "way; (b) the collision the description ends in is replaced by "
+                "the near miss, see the header.",
     },
 
     # ---- corridor A: the obstacle case, and the ego-avoidance gap -------------
@@ -1516,6 +1631,21 @@ def _gap_at(run, t_rel, role="adversary"):
     return math.hypot(hero.x[i] - track.x[j], hero.y[i] - track.y[j])
 
 
+def _speed_at(run, role, t_rel):
+    """`role`'s speed at an act-relative time.
+
+    What a RelativeTargetSpeed action resolves against: it is emitted with
+    continuous='false', so the actor takes the reference entity's speed AT THE
+    INSTANT THE ACTION LANDS and holds that number. Asserting such an action
+    therefore means reading the reference's own trace, not a constant.
+    """
+    track = run.get(role)
+    base = run.act_start()
+    if track is None or base is None:
+        return None
+    return track.speed_at(base + t_rel)
+
+
 def _dropped_below(run, role, speed, after=0.0):
     """First act-relative time `role` fell under `speed` m/s past `after`.
 
@@ -1592,33 +1722,134 @@ def expect_bench_hard_brake_lead(run, timeline):
 
 
 def expect_bench_highway_cut_in(run, timeline):
+    """Wait on the ramp -> released by the ego -> merge -> accelerate away.
+
+    Each of the three events is a different mechanism under test:
+
+      AssignRouteEvent0    the ramp path itself, and the fact that a route ALONE
+                           does not move the car (ChangeActorWaypoints leaves
+                           _target_speed at 0)
+      RelativeSpeedEvent1  distance_to_point pointed at the EGO — the merging
+                           car is released by the ego's own progress — plus a
+                           relative speed target, so it merges at the ego's speed
+      SpeedEvent2          the same trigger type pointed at ITSELF, firing where
+                           the ramp hands over to the carriageway
+
+    So a failure here says which of the three broke, and the position checks say
+    whether the car physically did what the events asked.
+    """
     out = []
-    ok, detail = _chain_order(timeline,
-                              ["SpeedEvent0", "LaneChangeEvent1", "SpeedEvent2"])
-    out.append(("accelerate -> merge -> resume runs in order", ok, detail))
-    ok, detail = A.reaches_speed(run, "adversary", 8.0, 0.5, 5.0, tol=1.5)
-    out.append(("merging car reaches 8 m/s first", ok, detail))
-    ended = timeline.get(_name_of(timeline, "LaneChangeEvent1"), {}).get("end")
-    out.append(("the merge action completes", ended is not None,
-                f"LaneChangeEvent1 END at t={ended}s" if ended is not None else
-                "went RUNNING but never reached END — the target lane is "
-                "unreachable and the storyboard cannot finish"))
-    # Positive lateral = the actor's own left; from lane -3 that is lane -2, the
-    # ego's lane. Bracket the whole manoeuvre, not just the turn.
-    lateral, detail = A.lateral_offset(run, "adversary", 2.0, 12.0)
-    if lateral is None:
-        out.append(("merging car changes lane", False, detail))
-    else:
-        out.append(("merge displaces it ~one lane width to its left",
-                    2.0 <= lateral <= 6.0, detail))
-    # Absolute confirmation, independent of the projection: it has to END UP in
-    # the ego's lane. A merge that goes the wrong way still shows |lateral|~3.5.
-    y_end = _lane_y(run, "adversary", 12.0)
-    if y_end is not None:
-        out.append((f"IT ENDS UP IN THE EGO'S LANE (y ~ {HWY_LANE_Y['mid']})",
-                    abs(y_end - HWY_LANE_Y["mid"]) <= 1.5,
-                    f"y={y_end:.2f}; started in lane -3 at "
-                    f"{HWY_LANE_Y['right']:.2f}, ego lane {HWY_LANE_Y['mid']:.2f}"))
+    ok, detail = _chain_order(
+        timeline, ["AssignRouteEvent0", "RelativeSpeedEvent1", "SpeedEvent2"])
+    out.append(("route -> release -> accelerate runs in order", ok, detail))
+
+    release = timeline.get(_name_of(timeline, "RelativeSpeedEvent1"), {}).get("start")
+    if release is None:
+        out.append(("THE EGO RELEASES THE RAMP CAR", False,
+                    "RelativeSpeedEvent1 never ran — the ego never came within "
+                    "9.7 m of the cue point, or its entity_ref did not resolve "
+                    f"(saw {sorted(timeline)})"))
+        return out
+
+    # 1. WHEN it was released, measured against the ego's own recorded motion
+    #    rather than a hardcoded time. This is the whole distance_to_point
+    #    contract: an entity_ref that failed to resolve leaves trigger_actor
+    #    None and the condition simply never fires, which is indistinguishable
+    #    from a badly-tuned radius unless the two times are compared.
+    want = A.time_ego_within(run, T4_CUE_POINT, 9.7)
+    out.append(("THE EGO'S OWN PROXIMITY TO THE CUE POINT IS WHAT FIRES IT",
+                want is not None and abs(release - want) <= 2.0,
+                f"event at t={release:.2f}s, ego reached "
+                f"{T4_CUE_POINT} +/-9.7 m at t={want:.2f}s"
+                if want is not None else
+                f"event at t={release:.2f}s but the ego never came within "
+                f"9.7 m of {T4_CUE_POINT} at all"))
+
+    # 2. Until then it WAITS on the ramp. A route is waypoints only — nothing
+    #    sets a target speed — so a car that creeps here means something else
+    #    (a stray behaviour chain, a fallback) is driving it.
+    ok, detail = A.holds_speed(run, "adversary", 0.0, 0.5,
+                               max(1.0, release - 1.0), tol=0.5)
+    out.append(("it waits on the ramp until the ego releases it", ok, detail))
+
+    # 3. Relative target, delta 0: it takes THE EGO'S speed at that instant,
+    #    which is what keeps the two converging on the merge together instead of
+    #    one clearing it first.
+    ego_v = _speed_at(run, "hero", release)
+    if ego_v is not None:
+        ok, detail = A.reaches_speed(run, "adversary", ego_v,
+                                     release + 0.5, release + 6.0, tol=1.5)
+        out.append((f"it sets off at THE EGO'S speed ({ego_v:.2f} m/s)", ok, detail))
+
+    # 4. It came down the ramp: 38 m of y, which no vehicle on the carriageway
+    #    can produce — every lane there is within 11 m of the next.
+    npc = run.get("adversary")
+    if npc is not None:
+        dy = npc.y[0] - min(npc.y)
+        out.append(("IT DESCENDS THE RAMP RATHER THAN STARTING ON THE ROAD",
+                    npc.y[0] > 60.0 and dy > 30.0,
+                    f"spawned at y={npc.y[0]:.2f} (ramp), came down to "
+                    f"y={min(npc.y):.2f} — {dy:.1f} m of lateral travel"))
+
+    # 5. The merge itself: it has to END UP in lane 6, the ego's lane. Measured
+    #    at the merge cue rather than at the last sample, because the route ends
+    #    at x=-24.5 and the controller then plans its own continuation.
+    merge = timeline.get(_name_of(timeline, "SpeedEvent2"), {}).get("start")
+    y_merged = None if merge is None else _lane_y(run, "adversary", merge + 3.0)
+    if y_merged is not None:
+        out.append((f"IT ENDS UP IN THE EGO'S LANE (y ~ {T4_LANE_Y})",
+                    abs(y_merged - T4_LANE_Y) <= 1.5,
+                    f"y={y_merged:.2f} at t={merge + 3.0:.2f}s; spawned on the "
+                    f"ramp at y={T4_RAMP[1]}, lane 6 centre {T4_LANE_Y}"))
+
+    # 6. The second distance_to_point, this one measuring the ACTOR, not the
+    #    ego. Same comparison as check 1, against the actor's own track.
+    if merge is not None:
+        want = A.time_within(run, "adversary", T4_MERGE_POINT, 5.5)
+        out.append(("its OWN proximity to the merge point fires the accelerate",
+                    want is not None and abs(merge - want) <= 2.0,
+                    f"event at t={merge:.2f}s, the car reached "
+                    f"{T4_MERGE_POINT} +/-5.5 m at t={want:.2f}s"
+                    if want is not None else
+                    f"event at t={merge:.2f}s but the car never came within "
+                    f"5.5 m of {T4_MERGE_POINT}"))
+        ok, detail = A.reaches_speed(run, "adversary", 10.0,
+                                     merge + 0.5, merge + 8.0, tol=1.5)
+        out.append(("it accelerates to 10 m/s once on the carriageway", ok, detail))
+
+        # 7. IN FRONT OF THE EGO, not behind it. A merge that lands behind is
+        #    still a merge and still passes every check above, but it is not the
+        #    scenario: the description has the ego meeting the merging car.
+        hero, gap = run.get("hero"), _gap_at(run, merge)
+        base = run.act_start()
+        if hero is not None and npc is not None and base is not None:
+            i, j = hero.at(base + merge), npc.at(base + merge)
+            ahead = npc.x[j] - hero.x[i]   # corridor runs east, so +x is ahead
+            out.append(("IT MERGES IN FRONT OF THE EGO", ahead > 0,
+                        f"the merging car is {ahead:+.1f} m along the corridor "
+                        f"from the ego as it joins"
+                        + (f", {gap:.1f} m away" if gap is not None else "")))
+
+        # 8. THE EGO'S HALF OF THE DESCRIPTION — "must decelerate, brake or
+        #    change lane to avoid a collision". Not authored and not authorable:
+        #    this is BehaviorAgent reacting to a car converging on its lane, so
+        #    it is measured, not claimed. Measured: cruising at 7.16 m/s with
+        #    the ramp car 10.7 m off, it went to 0.13 m/s inside half a second —
+        #    an emergency stop, not a lift-off. The window is the approach
+        #    itself; opening it later catches the recovery instead, which peaks
+        #    ABOVE the cruise (12.6 m/s) and reads as no brake at all.
+        ok, detail = A.slows_by(run, "hero", 2.0, release, merge)
+        out.append(("EGO REACTS: it sheds speed as the ramp car converges",
+                    ok, detail))
+
+    # 9. The conflict is real: a merge 100 m clear of the ego is not a cut-in.
+    #    Measured 10.68 m, at t=+14.2s — while the ramp still converges, before
+    #    the merge completes. The no-collision floor is added by the judge for
+    #    every case.
+    dist, when = A.closest_approach(run, "hero", "adversary")
+    if dist is not None:
+        out.append(("the merge happens in the ego's immediate path", dist <= 25.0,
+                    f"closest approach {dist:.2f} m at t={when:+.1f}s"))
     return out
 
 

@@ -86,7 +86,7 @@ express; and deliberately include cases the editor **cannot** fully express.
 | bench id | split | tags | editor mechanism | fidelity |
 |---|---|---|---|---|
 | `CARLA_Leaderboard_18` | text-only | HardBrake | lead car, `set_speed` 6 → step 0 in the ego's lane | **full** |
-| `CARLA_Leaderboard_8` | text-only | HighwayCutIn | `lane_change` left from lane -3 into the ego's lane | **partial** — no physical on-ramp; the merging car starts in the adjacent lane |
+| `CARLA_Leaderboard_8` | text-only | HighwayCutIn | `assign_route` down Town04's loop on-ramp into the ego's lane, released by a `distance_to_point` on the ego | **full** (ego's brake is BehaviorAgent's, asserted) |
 | `CARLA_Leaderboard_12` | text-only | ParkedObstacle, Construction, Accident | 5 `static.prop.*` across the lane + traffic in the neighbour lane | **gap** — the ego's "must perform a lane change to avoid it" has no expression |
 | `NHTSA_PreCrash_12` | text-only | ReversingManeuver | `follow_trajectory` with waypoints laid behind the actor | **gap** — no reverse action exists |
 | `r7_town05_ins_ss` | text-image | PerpendicularCrossingConflict | cross-street car on `distance_to_ego@45`; ego straight via goal | **full** (ego straight is goal-induced, asserted) |
@@ -111,7 +111,7 @@ From `tests/run_carla_cases.py <all sixteen>`. Artifacts (reloadable
 | case | checks | what it asserted beyond "the event ran" | fidelity gap |
 |---|---|---|---|
 | `bench-hard-brake-lead` | **8/8** | lead holds 6 m/s then plateaus at 0 within 0.6 m/s; ego brakes to a stop behind it | the obstacle the lead brakes *for* is not modelled |
-| `bench-highway-cut-in` | **9/9** | merge reaches END; +3.53 m lateral; ends at y=-204.11, i.e. **in the ego's lane** | no on-ramp geometry |
+| `bench-highway-cut-in` | **15/15** | waits on the ramp at 0 m/s until the **ego's own** proximity to the cue point releases it (event t=7.35 s vs the ego arriving t=6.55 s); sets off at the ego's 7.53 m/s; descends 38.5 m of ramp into lane 6 (y=37.44); its **own** proximity to the merge point fires the 10 m/s pull-away; merges 20.9 m in front; ego brakes 7.60 → 0.00 m/s at a 10.3 m closest approach | ego's brake is planner-chosen |
 | `bench-lane-blocked-construction` | 15/18 | all 5 props spawn within 1.5 m of where they were placed, at z 0.72–2.71 up the gradient | **3 EXPECTED TO FAIL** — see below |
 | `bench-perpendicular-crossing` | **11/11** | crossing car's path is perpendicular (dy −98 m vs dx −0.8 m); ego net heading +0.1°; closest approach 21 m | ego's straight-through is planner-chosen |
 | `bench-double-cut-in` | **11/11** | both lane changes start at t=3.12 s; both end in the ego's lane; ego sheds 5.67 m/s | night/low-visibility dropped |
@@ -182,24 +182,30 @@ mass rather than tag count; card totals (315) shown alongside.
 
 | bucket | §4 mass | card mass | types |
 |---|---|---|---|
-| **covered** — a `bench-*` case demonstrates it end to end in CARLA | 67 (22.3%) | 92 (29.2%) | 8 |
-| **partial** — the scene is expressible, one named clause is not | 94 (31.2%) | 98 (31.1%) | 15 |
+| **covered** — a `bench-*` case demonstrates it end to end in CARLA | 71 (23.6%) | 97 (30.8%) | 9 |
+| **partial** — the scene is expressible, one named clause is not | 90 (29.9%) | 93 (29.5%) | 14 |
 | **expressible, not built** — the mechanism is proven by a sibling case | 78 (25.9%) | 89 (28.3%) | 18 |
 | **not expressible** — a capability is missing | 62 (20.6%) | 36 (11.4%) | 11 |
 
-**Covered** (8): HardBrake, StaticCutIn, PerpendicularCrossingConflict,
-ParallelLaneTraffic, InvadingTurn, HeavyVehicle, BlockedIntersection,
-ParkingCrossingPedestrian.
+**Covered** (9): HardBrake, StaticCutIn, HighwayCutIn,
+PerpendicularCrossingConflict, ParallelLaneTraffic, InvadingTurn, HeavyVehicle,
+BlockedIntersection, ParkingCrossingPedestrian.
 
-**Partial** (15): LaneChange, HighwayCutIn, MergerIntoSlowTrafficV2,
-MergerIntoSlowTraffic, ParkedObstacle, Construction, Accident, and the three
-`*TwoWays` variants, SignalizedJunctionLeftTurn, NonSignalizedJunctionLeftTurn,
-OppositeVehicleRunningRedLight, DynamicObjectCrossing, PedestrianCrossing. Three
+**Partial** (14): LaneChange, MergerIntoSlowTrafficV2, MergerIntoSlowTraffic,
+ParkedObstacle, Construction, Accident, and the three `*TwoWays` variants,
+SignalizedJunctionLeftTurn, NonSignalizedJunctionLeftTurn,
+OppositeVehicleRunningRedLight, DynamicObjectCrossing, PedestrianCrossing. Two
 recurring deltas account for all of them:
 
-- *the ego manoeuvre is planner-chosen, never authored* — every junction turn;
-- *the obstacle scene builds but the avoidance does not* — every obstacle tag;
-- *no on-ramp corridor characterised* — the two merge tags.
+- *the ego manoeuvre is planner-chosen, never authored* — every junction turn,
+  and the `MD_Highway_On-Ramp_Merge*` cards, where it is the EGO that comes up
+  the ramp and yields;
+- *the obstacle scene builds but the avoidance does not* — every obstacle tag.
+
+The third delta this table used to carry — *no on-ramp corridor characterised* —
+is closed: `bench-highway-cut-in` runs on Town04 road 44 → connector 1194 →
+road 39 lane 6, a real loop ramp feeding the ego's own lane, and the NPC half of
+`r45_town06_hw_merge` is the same shape one lead car away.
 
 **Expressible but not built** (18): AdversaryCutOut, HazardAvoidanceCutIn,
 JunctionEntryCutIn, TJunction, ParallelEntryCrossingPaths,

@@ -228,11 +228,28 @@ before the export, so it is exactly the state the `.xosc` beside it came from.
   that keeps counting across runs and starts in the hundreds. The OSC log counts
   from scenario start. They are reconciled through the ego's first motion, since
   every generated Act starts on `hero traveled 0.1 m`.
-- **The ego pose is not free.** `run.sh` hardcodes
-  `automatic_control_1.py --goal='92,23,0,270'`. `set_destination` projects that
-  to the nearest waypoint, so it still yields a route on any town — but the
-  Town01 cases depend on the ego starting at `300.631,-2.025` heading west.
-  Move it and every distance trigger fires at a different time.
+- **The ego pose is not free, and the goal is never inherited.** `run_case`
+  always exports `SCENARIO_GOAL`, falling back to `C.GOAL` (`92,23,0,270`)
+  rather than letting run.sh's own default through — that default lives outside
+  this repo and gets retargeted by hand while debugging. `set_destination`
+  projects whatever it is given to the nearest waypoint, so a wrong goal never
+  errors, it just drives the ego somewhere nobody chose. The Town01 cases also
+  depend on the ego starting at `300.631,-2.025` heading west; move it and every
+  distance trigger fires at a different time.
+- **A `distance_to_point` radius is a 3-D radius.** ScenarioRunner evaluates
+  `DistanceCondition` through `location.distance(other)`, so the point's `z`
+  counts against it. On Town04's ramp, where the deck is 7.7–9.8 m up, a point
+  left at the `0.2` default puts the entire 5.5 m radius below the road and the
+  condition can never become true — which looks exactly like an `entity_ref`
+  that failed to resolve. `SEED_EVENTS_JS` in `run_carla_cases.py` derives the z
+  of every trigger point, route waypoint and trajectory vertex from
+  `ObjectsManager.surfaceZFor`, the same call the editor's own click makes. **A
+  case never writes a literal z.**
+- **A route on its own does not move an actor.** `AssignRouteAction` becomes
+  `ChangeActorWaypoints`, which sets waypoints and nothing else, leaving
+  `BasicControl._target_speed` at 0 until a speed action lands. Useful rather
+  than merely surprising: it is how `bench-highway-cut-in` parks a car on the
+  on-ramp with its route already assigned and releases it on the ego's approach.
 - **A lane change needs a same-direction neighbour lane, and Town01 has none.**
   `ChangeActorLateralMotion` only reports success once the actor has driven
   `distance_other_lane` (hardcoded to 10 in `openscenario_parser.py`) *in the
@@ -246,6 +263,12 @@ before the export, so it is exactly the state the `.xosc` beside it came from.
   a *single* driving lane (`lane_change=NONE`, no same-direction neighbour), so
   a lane change out of a parking spot dead-ends exactly like Town01. Both
   lane-change cases share road 67 instead.
+- **A merge does not have to be a lane change.** `bench-highway-cut-in` uses
+  Town04's real loop on-ramp — road 44 → connector 1194 → road 39 lane 6, which
+  feeds the ego's own lane at x ≈ -68 — and gets the merge from an
+  `assign_route` down the ramp. No `lane_change`, no same-direction-neighbour
+  requirement, and the on-ramp in the description is geometry rather than a
+  stand-in.
 - **Measure lateral displacement against a straight-line heading.** Mid-turn the
   actor is yawed 45-125 deg off the road; projecting displacement onto that
   frame turned a real 3.5 m lane change into a reported 44 m of "lateral"
