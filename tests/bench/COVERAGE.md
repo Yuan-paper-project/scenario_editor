@@ -1,5 +1,17 @@
 # Loop2Scenic coverage
 
+**Stale as of the ego-controller change, not yet re-derived.** This report's
+entire premise for **ego-manoeuvre authoring** — *"the `.xosc` gives the ego a
+spawn pose only"*, cited below as the reason 36 taxonomy-tag assignments
+(9 of 11 unreachable tags, per the rollup in §4) are unreachable — no longer
+holds. The ego now takes `follow_trajectory`/`assign_route`/`set_speed`/
+`lane_change` events exactly like an NPC, and gets its own `heroBehavior` Act in
+the export. Every row below tagged with that capability, the §4 rollup
+percentages, and the `bench-*` CARLA cases themselves (deliberately deferred,
+separate work) need re-checking against what can actually be authored now
+before this file's conclusions can be trusted. `LaneOffsetAction` (the other
+named gap) is unaffected and remains genuinely missing.
+
 What this editor can and cannot build, measured against the
 [Loop2Scenic benchmark](https://yuangao-tum.github.io/loop2scenic-bench/) — 250
 scenario descriptions across five query modalities, tagged with a 50-type

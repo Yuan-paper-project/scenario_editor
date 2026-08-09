@@ -131,19 +131,16 @@
 
   function _getActorTimeline(actor) {
     if (!actor) return null;
-    if (actor.type !== 'ego') {
-      for (const ev of actor.events || []) {
-        const action = ev.action || {};
-        if (action.type === 'assign_route' && (action.waypoints || []).length >= 2) {
-          return _buildRouteTimeline(action.waypoints, 10);
-        }
-        if (action.type === 'follow_trajectory' && (action.trajectory || []).length >= 2) {
-          return _buildTimeline(action.trajectory);
-        }
+    for (const ev of actor.events || []) {
+      const action = ev.action || {};
+      if (action.type === 'assign_route' && (action.waypoints || []).length >= 2) {
+        return _buildRouteTimeline(action.waypoints, 10);
       }
-      return null;
+      if (action.type === 'follow_trajectory' && (action.trajectory || []).length >= 2) {
+        return _buildTimeline(action.trajectory);
+      }
     }
-    return _buildTimeline(actor.trajectory);
+    return null;
   }
 
   /**

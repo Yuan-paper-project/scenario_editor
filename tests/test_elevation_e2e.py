@@ -185,7 +185,10 @@ with sync_playwright() as p:
           abs(cone["z"] - surf) < 0.02, f"z={cone['z']} surface={surf}")
 
     # ── Waypoints and trigger points ─────────────────────────────────────────
-    page.evaluate(f"ObjectsManager.startPathMode('{ego['id']}', 'trajectory')")
+    # The ego's path now lives inside a follow_trajectory event, exactly like
+    # an NPC's — drive the same "Follow trajectory" button an NPC's would use.
+    # Ego is still selected from the manual-Z edit above.
+    page.click('#event-action-grid .event-action-button:has-text("Follow trajectory")')
     page.evaluate(f"""() => {{
         const svg = document.getElementById('map-svg');
         const m = document.getElementById('world').getScreenCTM();
@@ -196,7 +199,7 @@ with sync_playwright() as p:
                 {{clientX: s.x, clientY: s.y, bubbles: true}}));
         }}
     }}""")
-    traj = page.evaluate("AppState.ego.trajectory")
+    traj = page.evaluate("AppState.ego.events[0].action.trajectory")
     check("trajectory points were added", len(traj) >= 3, str(len(traj)))
     check("every trajectory point carries a z",
           all(isinstance(w.get("z"), (int, float)) for w in traj), str(traj))

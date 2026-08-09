@@ -20,7 +20,8 @@ import _harness as H  # noqa: E402
 check = H.Checks()
 
 EGO = {"id": "obj-1", "type": "ego", "x": 300.631, "y": -2.025,
-       "z": 0.2, "yaw": 180, "trajectory": [], "events": []}
+       "z": 0.2, "yaw": 180, "behaviors": ["constant_speed"],
+       "trigger_distance": 400, "events": []}
 
 
 def seed(page, events, npc_type="car", extra_npcs=None):

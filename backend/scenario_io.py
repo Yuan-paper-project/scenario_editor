@@ -42,6 +42,8 @@ def _entity_ref(
     valid_refs: set[str],
     where: str,
     fallback: str = "hero",
+    *,
+    forbid: str | None = None,
 ) -> str:
     """Resolve an internal 'obj-N' id to its OpenSCENARIO entity name.
 
@@ -55,14 +57,28 @@ def _entity_ref(
     valid_refs is derived from the npc *count*, not from the ids present, so a
     hand-written or LLM-generated payload that already names 'adversary1'
     directly still validates.
+
+    `forbid`, when given, additionally rejects a ref equal to the acting
+    entity itself — used only for set_distance, where KeepLongitudinalGap
+    against yourself computes a gap of 0 and succeeds on the first tick. It
+    also catches an omitted entity_ref, which would otherwise silently fall
+    back to `fallback` ("hero") and become the same self-reference for a
+    hero-owned event.
     """
     if raw is None or raw == "":
-        return fallback
-    ref = actor_refs.get(str(raw), str(raw))
+        ref = fallback
+    else:
+        ref = actor_refs.get(str(raw), str(raw))
     if ref not in valid_refs:
         raise ValueError(
             f"{where}: entity_ref '{raw}' names no entity in this scenario "
             f"(expected one of {sorted(valid_refs)})"
+        )
+    if forbid is not None and ref == forbid:
+        raise ValueError(
+            f"{where}: entity_ref '{raw}' resolves to '{forbid}', the acting "
+            f"entity itself — a distance to oneself is always 0, making the "
+            f"action a silent no-op"
         )
     return ref
 
@@ -73,6 +89,8 @@ def _normalize_structured_event(
     valid_refs: set[str],
     where: str,
     default_entity_ref: str = "hero",
+    *,
+    self_ref: str | None = None,
 ) -> None:
     trigger = event.get("trigger")
     if not isinstance(trigger, dict):
@@ -147,7 +165,9 @@ def _normalize_structured_event(
         event["action"] = {
             "type": "set_distance",
             "axis": axis,
-            "entity_ref": _entity_ref(action.get("entity_ref"), actor_refs, valid_refs, where),
+            "entity_ref": _entity_ref(
+                action.get("entity_ref"), actor_refs, valid_refs, where, forbid=self_ref
+            ),
             "value": float(action.get("value", 10.0)),
         }
     else:
@@ -160,6 +180,56 @@ def _normalize_structured_event(
                 "value": max(0.0, float(dynamics.get("value", 12.0))),
             },
         }
+
+
+def _normalize_actor(
+    actor: dict,
+    entity_name: str,
+    actor_refs: dict[str, str],
+    valid_refs: set[str],
+    where: str,
+) -> None:
+    """Defaults + event normalisation for one scenario actor.
+
+    Shared by the ego and every NPC — the ego is a scenario actor with the
+    entity name 'hero', not a special case. `entity_name` is the actor's own
+    OpenSCENARIO name, used only to reject/rewrite a self-reference.
+    """
+    actor.setdefault("z", 0.2)
+    actor.setdefault("yaw", 0.0)
+    actor.setdefault("behaviors", ["constant_speed"])
+    actor.setdefault("events", [])
+    if not isinstance(actor["events"], list):
+        actor["events"] = []
+    actor.setdefault("trigger_distance", 400)
+    actor["trigger_distance"] = max(5.0, min(1000.0, float(actor["trigger_distance"])))
+
+    for idx, event in enumerate(actor["events"]):
+        if not isinstance(event, dict):
+            actor["events"][idx] = event = {}
+        event.setdefault("id", f"event_{idx + 1}")
+        _normalize_structured_event(
+            event, actor_refs, valid_refs, f"{where}.events[{idx}]", self_ref=entity_name
+        )
+
+    assign_route_ids = {
+        str(event.get("id"))
+        for event in actor["events"]
+        if isinstance(event, dict) and event.get("action", {}).get("type") == "assign_route"
+    }
+    for event in actor["events"]:
+        trigger = event.get("trigger", {})
+        if trigger.get("type") == "after_event" and str(trigger.get("event_id")) in assign_route_ids:
+            event["trigger"] = {"type": "distance_to_ego", "value": 400.0}
+
+    # Must run LAST, after the after_event rewrite above: the ego cannot gate
+    # on its own distance to itself (always 0, fires on tick 1), so any
+    # distance_to_ego trigger it ends up with — direct or rewritten — becomes
+    # a plain simulation_time start instead.
+    if entity_name == "hero":
+        for event in actor["events"]:
+            if event.get("trigger", {}).get("type") == "distance_to_ego":
+                event["trigger"] = {"type": "simulation_time", "value": 0.0}
 
 
 def _normalize_actor_types(params: dict):
@@ -294,32 +364,12 @@ def validate_scenario_params(params: dict) -> dict:
 
     _normalize_actor_types(params)
 
+    _normalize_actor(ego, "hero", actor_refs, valid_refs, "ego")
+
     for npc_idx, npc in enumerate(params["npcs"]):
         npc.setdefault("type", "car")
-        npc.setdefault("z", 0.2)
-        npc.setdefault("yaw", 0.0)
-        npc.setdefault("behaviors", ["constant_speed"])
-        npc.setdefault("events", [])
-        if not isinstance(npc["events"], list):
-            npc["events"] = []
-        npc.setdefault("trigger_distance", 400)
-        npc["trigger_distance"] = max(5.0, min(1000.0, float(npc["trigger_distance"])))
-        for idx, event in enumerate(npc["events"]):
-            if not isinstance(event, dict):
-                npc["events"][idx] = event = {}
-            event.setdefault("id", f"event_{idx + 1}")
-            _normalize_structured_event(
-                event, actor_refs, valid_refs, f"npcs[{npc_idx}].events[{idx}]"
-            )
-        assign_route_ids = {
-            str(event.get("id"))
-            for event in npc["events"]
-            if isinstance(event, dict) and event.get("action", {}).get("type") == "assign_route"
-        }
-        for event in npc["events"]:
-            trigger = event.get("trigger", {})
-            if trigger.get("type") == "after_event" and str(trigger.get("event_id")) in assign_route_ids:
-                event["trigger"] = {"type": "distance_to_ego", "value": 400.0}
+        npc_name = "adversary" if npc_idx == 0 else f"adversary{npc_idx}"
+        _normalize_actor(npc, npc_name, actor_refs, valid_refs, f"npcs[{npc_idx}]")
 
     # Static props
     _normalize_static_objects(params)
@@ -336,10 +386,51 @@ def validate_scenario_params(params: dict) -> dict:
     if params.get("time") not in valid_times:
         params["time"] = "daytime"
 
-    # Route waypoints
-    params.setdefault("route_waypoints", [])
+    # Route waypoints — normally sent by scenarioIO.js's buildScenarioParams()
+    # (derived client-side from the ego's path event). Derive them here too,
+    # from the now-normalized ego.events, so a hand-written or reloaded
+    # payload posted straight to /api/export-route doesn't silently fall back
+    # to route_builder's single-waypoint spawn fallback.
+    if not params.get("route_waypoints"):
+        params["route_waypoints"] = _ego_route_waypoints(ego)
 
     return params
+
+
+def _ego_route_waypoints(ego: dict) -> list[dict]:
+    """The ego's follow_trajectory/assign_route path event, as route.xml
+    waypoints with per-segment yaw — mirrors scenarioIO.js buildScenarioParams.
+    """
+    points = []
+    for event in ego.get("events") or []:
+        if not isinstance(event, dict):
+            continue
+        action = event.get("action") or {}
+        if action.get("type") == "follow_trajectory" and len(action.get("trajectory") or []) > 0:
+            points = action["trajectory"]
+            break
+        if action.get("type") == "assign_route" and len(action.get("waypoints") or []) > 0:
+            points = action["waypoints"]
+            break
+    if not points:
+        return []
+
+    import math as _math
+    ego_yaw = float(ego.get("yaw", 0.0))
+    waypoints = []
+    for i, wp in enumerate(points):
+        yaw = ego_yaw
+        nxt = points[i + 1] if i + 1 < len(points) else None
+        prv = points[i - 1] if i > 0 else None
+        if nxt:
+            yaw = _math.degrees(_math.atan2(nxt["y"] - wp["y"], nxt["x"] - wp["x"]))
+        elif prv:
+            yaw = _math.degrees(_math.atan2(wp["y"] - prv["y"], wp["x"] - prv["x"]))
+        waypoints.append({
+            "x": wp["x"], "y": wp["y"], "z": wp.get("z", 0.2),
+            "yaw": round(yaw, 2),
+        })
+    return waypoints
 
 
 def export_route_xml(params: dict) -> str:

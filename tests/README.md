@@ -1,7 +1,7 @@
 # tests/
 
-Coverage for static props, the event model, the scenario templates, the actor
-catalogue, and road-surface elevation. Most of
+Coverage for static props, the event model (ego and NPC alike), the scenario
+templates, the actor catalogue, and road-surface elevation. Most of
 it drives a **real browser against a real running editor and a real export**,
 which is the only way to catch the failure modes these features actually have
 (SVG hit-testing, lane-direction maths, and the `.xosc` the backend emits).
@@ -44,14 +44,20 @@ still exports the old — which reads as a test bug but is not one.
 |---|---|---|
 | `test_props_e2e.py` | 54 | catalogue contents, toolbar tabs, sticky placement, Shift lane-snap, selection/properties, prop-type swap, drag without panning, save/load round-trip, `.xosc` export incl. `MiscObject` categories and `yaw_offset`, 400 on unknown/removed ids |
 | `test_prop_yaw_e2e.py` | 23 | per-prop facing rules on a **real two-way road** (Town01 road 8, lanes ±1 at exactly 180°), free-vs-Shift orientation, far-from-lane fallback, manual-override persistence |
-| `test_normalization.py` | 57 | `validate_scenario_params` in isolation: every silent coercion, both trigger rewrites, all clamps, the entity-ref mapping that `scenarioIO.js` duplicates, and the actor-type whitelist |
+| `test_normalization.py` | 81 | `validate_scenario_params` in isolation: every silent coercion, both trigger rewrites, all clamps, the entity-ref mapping that `scenarioIO.js` duplicates, the actor-type whitelist, and the ego's shared `_normalize_actor` path (self-reference rejection, the `distance_to_ego`→`simulation_time` coercion, derived `route_waypoints`) |
 | `test_actor_types_e2e.py` | 272 | all 12 actor types — toolbar tile and German label, placement (spawn-snap vs road-facing), map marker shape/colour/footprint, and the entity each one exports: element kind, blueprint id, category, bounding box, `maxSpeed`, controller module; plus `assign_route` survival, the walker-first base-template fork, and the 400 on an unknown type |
 | `test_templates_e2e.py` | 149 | all 11 templates — panel renders them, placement attaches the right chain, `placement` rules apply, and the chain survives export with the right triggers, speeds, dynamics and lane offsets |
-| `test_events_e2e.py` | 37 | the event editor across every action and trigger type, including the ones no template uses; the one-path-event rule; and the cases where an event silently vanishes from the export |
+| `test_events_e2e.py` | 43 | the event editor across every action and trigger type, including the ones no template uses; the one-path-event rule; and the cases where an event silently vanishes from the export |
+| `test_ego_events_e2e.py` | 45 | the ego as a fully controllable actor: panel parity with an NPC (minus the ego-only-hidden `distance_to_ego` trigger), `simple_vehicle_control` (not `external_control`) in the export, the ego's own `heroBehavior` Act gated on `simulation_time` rather than `hero traveled 0.1m`, the shared `constant_speed` fallback, the `set_distance` self-reference 400, and legacy `ego.trajectory` migration into a `follow_trajectory` event — both synthetic and against the real `example/Town01_scenario2.json` |
 | `test_elevation_e2e.py` | 33 | z derived from `<elevationProfile>` — the render payload's point shape, `groundZAt` interpolation, per-category clearance, drag and X/Y-edit recompute, waypoints following a gradient, and the flat-map baseline |
 
 `test_actor_types_e2e.py`'s count grows with the catalogue; the number above is
 what it reported the last time this file was touched, not a target.
+
+`test_ego_events_e2e.py` is kept separate from `test_events_e2e.py` rather than
+folded in: the older suite's `EGO` fixture and every one of its assertions
+assume an inert ego (no `behaviors`, no `events`) — true before the ego became
+a controllable actor, and the entire premise the newer suite tests against.
 
 ### Why the elevation suite runs on two maps
 
@@ -129,6 +135,19 @@ after it, reproduces it.
 
 ## CARLA behavioural cases
 
+**Stale — deliberately deferred, not yet re-baselined.** Everything below
+describes `run_carla_cases.py`/`carla_cases.py` as they exist today, unchanged
+by the ego-controller work: the hero's `.xosc` controller went from
+`external_control` to `simple_vehicle_control`, and the ego now takes the same
+authored events an NPC does. Every case's ego is `events: []` today (never a
+literal here — it is what `AppState` defaults to), and `events: []` now drives
+off on the shared `constant_speed` fallback for the ego too, so **every case's
+ego moves on its own regardless of `SCENARIO_GOAL`** — which, separately, is
+already dead against the current `run.sh` (it runs `run_selfref_video_test.py`,
+which takes no `--goal` and launches no external agent). All 28 cases need
+re-running and their assertions re-checked before any claim below about ego
+motion, timing, or turning can be trusted again.
+
 ```bash
 bash run.sh 9090                                    # terminal 1: the editor
 .venv/bin/python3 tests/run_carla_cases.py          # all 28 cases, ~12 min
@@ -174,9 +193,9 @@ A `scene` case's `npcs` array order is load-bearing: `buildScenarioParams` names
 them `adversary`, `adversary1`, … by index, and that is the entity ref the
 expectations read back.
 
-**An NPC with `events: []` does not stay still — it drives off.**
-`build_custom_event_chain()` returns False for an empty list and `xml_builder`
-falls back to `build_behavior_chain()` with the default
+**Any actor with `events: []` does not stay still — it drives off, the ego
+included.** `build_custom_event_chain()` returns False for an empty list and
+`xml_builder` falls back to `build_behavior_chain()` with the default
 `behaviors: ['constant_speed']`. A "parked" car covered 226 m before this was
 caught. Use `_parked()` (an explicit `set_speed 0`) for anything stationary.
 
@@ -227,7 +246,9 @@ before the export, so it is exactly the state the `.xosc` beside it came from.
 - **Two clocks.** Telemetry carries CARLA's `elapsed_seconds`, a world clock
   that keeps counting across runs and starts in the hundreds. The OSC log counts
   from scenario start. They are reconciled through the ego's first motion, since
-  every generated Act starts on `hero traveled 0.1 m`.
+  every **NPC** Act starts on `hero traveled 0.1 m` — the hero's own Act
+  (`heroBehavior`) does not carry that gate, since the ego cannot wait for
+  itself to move before it is allowed to.
 - **The ego pose is not free, and the goal is never inherited.** `run_case`
   always exports `SCENARIO_GOAL`, falling back to `C.GOAL` (`92,23,0,270`)
   rather than letting run.sh's own default through — that default lives outside

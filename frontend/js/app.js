@@ -69,8 +69,8 @@
     mapData:  null,       // road render JSON from /api/maps/{town}/render
 
     // ── Scenario ─────────────────────────────────────────────
-    ego: null,            // {id, type:'ego', x, y, z, yaw, trajectory} or null
-    npcs: [],             // [{id, type, x, y, z, yaw, events}]
+    ego: null,            // {id, type:'ego', x, y, z, yaw, behaviors, trigger_distance, events} or null
+    npcs: [],             // [{id, type, x, y, z, yaw, behaviors, trigger_distance, events}]
     staticObjects: [],    // [{id, type:'prop', prop:'static.prop.*', x, y, z, yaw}]
     trafficSignals: [],   // configured traffic-light events from the map
 
@@ -104,6 +104,28 @@
     isProp(actorOrId) {
       const actor = typeof actorOrId === 'string' ? this.findById(actorOrId) : actorOrId;
       return actor?.type === 'prop';
+    },
+
+    /**
+     * The actor's single path-producing event (follow_trajectory or
+     * assign_route with points), or null. eventPanel.js enforces at most one
+     * such event per actor, so "the" path event is unambiguous — this is the
+     * one place ego and NPCs share the same path storage: on the actor's
+     * events, never on the actor itself.
+     */
+    pathEventOf(actor) {
+      return (actor?.events || []).find(ev => {
+        const a = ev.action || {};
+        return (a.type === 'follow_trajectory' && (a.trajectory || []).length > 0)
+            || (a.type === 'assign_route'      && (a.waypoints  || []).length > 0);
+      }) || null;
+    },
+
+    /** The path event's points ([] when the actor has no path event yet). */
+    pathPointsOf(actor) {
+      const ev = this.pathEventOf(actor);
+      if (!ev) return [];
+      return ev.action.type === 'assign_route' ? (ev.action.waypoints || []) : (ev.action.trajectory || []);
     },
 
     on(event, fn) {
@@ -244,6 +266,15 @@
       return true;
     },
 
+    /** Deep-copy one scenario actor (ego or NPC) for toJSON(). */
+    _dumpActor(a) {
+      return {
+        ...a,
+        events: (a.events || []).map(ev => ({ ...ev })),
+        behaviors: [...(a.behaviors || [])],
+      };
+    },
+
     /** Snapshot editor state as scenario JSON. */
     toJSON() {
       return {
@@ -252,15 +283,8 @@
         weather: { ...this.weather },
         time: this.time,
         // Nullable: a scenario may hold only props before an ego is placed.
-        ego: this.ego ? {
-          ...this.ego,
-          trajectory: (this.ego.trajectory || []).map(p => ({ ...p })),
-        } : null,
-        npcs: this.npcs.map(n => ({
-          ...n,
-          events: n.events.map(ev => ({ ...ev })),
-          behaviors: [...n.behaviors],
-        })),
+        ego: this.ego ? this._dumpActor(this.ego) : null,
+        npcs: this.npcs.map(n => this._dumpActor(n)),
         staticObjects: this.staticObjects.map(o => ({ ...o })),
         trafficSignals: this.trafficSignals.map(sig => ({
           ...sig,
@@ -269,17 +293,47 @@
       };
     },
 
+    /** Fill an actor's shared defaults on load (ego and NPCs alike). */
+    _hydrateActor(a) {
+      return {
+        ...a,
+        events: a.events || [],
+        behaviors: a.behaviors && a.behaviors.length ? a.behaviors : ['constant_speed'],
+        trigger_distance: a.trigger_distance ?? 400,
+      };
+    },
+
+    /**
+     * Legacy saves put the ego's path on the actor itself as `trajectory`
+     * (from before the ego had events at all). Convert it into a
+     * follow_trajectory event, exactly like an NPC's path, so old files —
+     * example/Town01_scenario2.json, every tests/artifacts case's scenario.json
+     * — still open. Idempotent: a no-op once migrated. Nothing downstream
+     * reads ego.trajectory any more.
+     */
+    _migrateEgoTrajectory(ego) {
+      const legacy = ego.trajectory || [];
+      delete ego.trajectory;
+      if (legacy.length === 0) return ego;
+      const hasPathEvent = ego.events.some(ev =>
+        ['follow_trajectory', 'assign_route'].includes(ev.action?.type));
+      if (hasPathEvent) return ego;
+      ego.events = [{
+        id: 'evt-legacy-path',
+        // Not distance_to_ego: that is a self-distance for the hero.
+        trigger: { type: 'simulation_time', value: 0 },
+        action: { type: 'follow_trajectory', trajectory: legacy.map(p => ({ ...p })) },
+      }, ...ego.events];
+      return ego;
+    },
+
     /** Restore editor state from scenario JSON. */
     loadJSON(data) {
       this.map             = data.map || null;
       this.weather         = data.weather ? { ...data.weather } : { ...this.weather };
       this.time            = data.time || 'daytime';
-      this.ego             = data.ego ? { ...data.ego, trajectory: data.ego.trajectory || [] } : null;
-      this.npcs            = (data.npcs || []).map(n => ({
-        ...n,
-        events: n.events || [],
-        behaviors: n.behaviors || [],
-      }));
+      this.ego             = data.ego ? this._migrateEgoTrajectory(this._hydrateActor(data.ego)) : null;
+      this.npcs            = (data.npcs || []).map(n => this._hydrateActor(n));
       this.staticObjects   = data.staticObjects || [];
       this.trafficSignals = (data.trafficSignals || []).map(sig => ({ ...sig, events: sig.events || [] }));
 

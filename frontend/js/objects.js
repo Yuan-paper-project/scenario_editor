@@ -93,27 +93,24 @@
     // to; free placement has to look it up at the final position.
     const z = _roundZ((snap?.z ?? groundZAt(x, y)) + _clearanceFor(type));
 
-    let newId;
+    // Ego and NPCs share the same actor shape — behaviors/trigger_distance/
+    // events all mean the same thing for both. Only the storage differs.
+    const actor = {
+      id: AppState.nextId(), type, x, y, z, yaw,
+      behaviors: ['constant_speed'],
+      trigger_distance: 400,
+      events: [],
+    };
+    // No template targets 'ego' (ScenarioTemplates.eventsForActor requires
+    // actor.type === template.actorType), so this is a no-op [] for the ego.
+    actor.events = ScenarioTemplates.eventsForActor(actor, pendingTemplate);
     if (type === 'ego') {
-      const actor = {
-        id: AppState.nextId(), type: 'ego', x, y, z, yaw,
-        trajectory: [],
-        events: [],
-      };
       AppState.set({ ego: actor });
-      newId = actor.id;
     } else {
-      const actor = {
-        id: AppState.nextId(), type, x, y, z, yaw,
-        behaviors: ['constant_speed'],
-        trigger_distance: 400,
-        events: [],
-      };
-      actor.events = ScenarioTemplates.eventsForActor(actor, pendingTemplate);
       AppState.npcs = [...AppState.npcs, actor];
       AppState.set({});
-      newId = actor.id;
     }
+    const newId = actor.id;
 
     // Deactivate tool after placing so user can immediately drag/select
     AppState.set({ activeTool: null, pendingTemplate: null, pendingProp: null });
@@ -423,8 +420,7 @@
     const actor = _findActor(id);
     const path = actor ? _eventPath(actor, eventId, type) : null;
     if (!path?.length) return;
-    if (eventId && actor.type !== 'ego') _setEventPath(actor, eventId, type, path.slice(0, -1));
-    else if (type === 'trajectory') actor.trajectory = path.slice(0, -1);
+    _setEventPath(actor, eventId, type, path.slice(0, -1));
     AppState.emit('actorUpdated', id);
   });
 
@@ -439,9 +435,7 @@
   }
 
   function _eventPath(actor, eventId, type) {
-    if (!eventId || actor.type === 'ego') {
-      return type === 'trajectory' ? actor.trajectory : null;
-    }
+    if (!eventId) return null;
     const ev = (actor.events || []).find(item => item.id === eventId);
     const action = ev?.action;
     if (!action) return null;
@@ -463,16 +457,14 @@
 
   function startPathMode(actorId, type, eventId = null) {
     const actor = _findActor(actorId);
-    if (!actor) return;
-    if (type === 'route' && (!eventId || actor.type === 'ego')) return;
+    if (!actor || !eventId) return;
     let path = _eventPath(actor, eventId, type);
     if (!path || path.length === 0) {
       // Seeded from the actor's own pose, so it inherits the actor's height too.
       path = type === 'trajectory'
         ? [{ x: actor.x, y: actor.y, z: actor.z ?? 0, velocity: 10.0 }]
         : [{ x: actor.x, y: actor.y, z: actor.z ?? 0 }];
-      if (eventId && actor.type !== 'ego') _setEventPath(actor, eventId, type, path);
-      else if (type === 'trajectory') actor.trajectory = path;
+      _setEventPath(actor, eventId, type, path);
     }
     AppState.set({
       activeTool: null,
@@ -503,8 +495,7 @@
         : 10.0;
     }
     path.push(point);
-    if (eventId && actor.type !== 'ego') _setEventPath(actor, eventId, type, path);
-    else if (type === 'trajectory') actor.trajectory = path;
+    _setEventPath(actor, eventId, type, path);
     AppState.emit('actorUpdated', actorId);
   }
 
@@ -546,8 +537,7 @@
     const path = actor ? _eventPath(actor, eventId, type) : null;
     if (!actor || !path) return;
     path.splice(idx, 1);
-    if (eventId && actor.type !== 'ego') _setEventPath(actor, eventId, type, path);
-    else if (type === 'trajectory') actor.trajectory = path;
+    _setEventPath(actor, eventId, type, path);
     AppState.emit('actorUpdated', actorId);
   }
 
@@ -557,16 +547,14 @@
     const path = actor ? _eventPath(actor, eventId, type) : null;
     if (!actor || !path?.[idx]) return;
     path[idx].velocity = parseFloat(velocity) || 10.0;
-    if (eventId && actor.type !== 'ego') _setEventPath(actor, eventId, type, path);
-    else actor.trajectory = path;
+    _setEventPath(actor, eventId, type, path);
     AppState.emit('actorUpdated', actorId);
   }
 
   function clearPath(actorId, type, eventId = null) {
     const actor = _findActor(actorId);
-    if (!actor) return;
-    if (eventId && actor.type !== 'ego') _setEventPath(actor, eventId, type, []);
-    else if (type === 'trajectory') actor.trajectory = [];
+    if (!actor || !eventId) return;
+    _setEventPath(actor, eventId, type, []);
     AppState.emit('actorUpdated', actorId);
   }
 

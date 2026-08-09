@@ -438,7 +438,7 @@
     if (AppState.ego) _renderActor(AppState.ego);
     for (const npc of AppState.npcs) _renderActor(npc);
 
-    // Paths: ego path is actor-level; NPC paths live inside event actions.
+    // Paths live inside event actions for every scenario actor, ego included.
     const allActors = AppState.ego ? [AppState.ego, ...AppState.npcs] : [...AppState.npcs];
     const withTraj  = allActors.flatMap(a => _pathItems(a, 'trajectory')).filter(item => _shouldRenderPath(item));
     const withRoute = allActors.flatMap(a => _pathItems(a, 'route')).filter(item => _shouldRenderPath(item));
@@ -466,7 +466,9 @@
 
   function _renderTriggerPoints() {
     if (!layerTriggerPoints) return;
-    const actor = AppState.npcs.find(n => n.id === AppState.selectedId);
+    // findById also matches props, but a prop has no .events, so the forEach
+    // below is a no-op for one — no extra guard needed.
+    const actor = AppState.findById(AppState.selectedId);
     if (!actor) return;
     (actor.events || []).forEach(ev => {
       const point = ev.trigger?.point;
@@ -528,7 +530,7 @@
   }
 
   function _updateTriggerRadiusDrag(e) {
-    const actor = AppState.npcs.find(n => n.id === _triggerRadiusDrag.actorId);
+    const actor = AppState.findById(_triggerRadiusDrag.actorId);
     if (!actor) return;
     const world = svgToWorld(e);
     const p = _triggerRadiusDrag.point;
@@ -552,10 +554,6 @@
   }
 
   function _pathItems(actor, pathType) {
-    if (actor.type === 'ego') {
-      const points = pathType === 'trajectory' ? (actor.trajectory || []) : [];
-      return points.length >= 2 ? [{ actor, eventId: null, pathType, points }] : [];
-    }
     return (actor.events || []).flatMap(ev => {
       const action = ev.action || {};
       const points = pathType === 'route'

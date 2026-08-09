@@ -260,14 +260,14 @@
         </div>
       </div>
 
-      <!-- NPC-Bereich (auch Trajektorie für Ego) -->
+      <!-- Verhalten + Events: gemeinsam für Ego und NPCs -->
       <div id="props-npc-section" class="hidden">
         <div id="behavior-panel" class="collapsible-section">
           <button class="collapsible-header" type="button" data-collapse-target="behavior-panel-body">
             <span>Verhalten</span><span class="collapse-indicator">-</span>
           </button>
           <div id="behavior-panel-body" class="collapsible-body">
-            <div class="section-note">Wenn kein Event-Pfad aktiv ist</div>
+            <div class="section-note">Wenn keine Events definiert sind</div>
             <div id="behavior-checkboxes" class="behavior-list">
               <label><input type="checkbox" name="behavior" value="constant_speed" checked> Konstante Geschwindigkeit</label>
               <label><input type="checkbox" name="behavior" value="accelerate"> Beschleunigen</label>
@@ -287,15 +287,7 @@
           </div>
         </div>
 
-        <div id="path-section-label" class="props-group-label hidden">Trajektorienpfad</div>
-        <div id="ego-route-hint" class="trigger-hint hidden">Ego-Routen-Wegpunkte für Autoware/CARLA-Planer</div>
-        <div class="traj-controls">
-          <button id="btn-draw-path"   class="btn btn-secondary btn-small">Zeichnen</button>
-          <button id="btn-toggle-path" class="btn btn-secondary btn-small" title="Ein-/ausblenden">Ausblenden</button>
-          <button id="btn-clear-path"  class="btn btn-danger    btn-small">Löschen</button>
-        </div>
-        <div id="waypoint-list" class="waypoint-list"></div>
-        <div id="event-section" class="collapsible-section event-section hidden">
+        <div id="event-section" class="collapsible-section event-section">
           <button class="collapsible-header event-section-header" type="button" data-collapse-target="event-section-body">
             <span>Events</span><span class="collapse-indicator">-</span>
           </button>

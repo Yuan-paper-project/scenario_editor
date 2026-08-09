@@ -1,5 +1,8 @@
 /**
- * eventPanel.js — NPC event action/trigger editor for the properties panel.
+ * eventPanel.js — event action/trigger editor for the properties panel.
+ * Shared by the ego and every NPC; the ego has no distance_to_ego trigger
+ * option (see EVENT_TRIGGERS) since a distance from hero to itself is always
+ * 0, but is otherwise editable exactly like an NPC.
  */
 (function () {
   'use strict';
@@ -14,6 +17,16 @@
     ['set_speed', 'Set speed'],
     ['set_distance', 'Set distance'],
     ['lane_change', 'Lane change'],
+  ];
+
+  // distance_to_ego is omitted for the ego itself — a distance from hero to
+  // hero is always 0, so the condition would fire on tick 1 regardless of
+  // the configured value. See _defaultFirstTrigger.
+  const EVENT_TRIGGERS = [
+    ['simulation_time', 'Simulation time'],
+    ['distance_to_ego', 'Distance to ego vehicle'],
+    ['distance_to_point', 'Distance to a point'],
+    ['after_event', 'After other event ends'],
   ];
 
   let _refresh = () => {};
@@ -324,12 +337,9 @@
 
   function _appendEventTriggerControls(card, actor, ev, events) {
     const trigger = _eventTrigger(ev);
-    const triggerSelect = _select([
-      ['simulation_time', 'Simulation time'],
-      ['distance_to_ego', 'Distance to ego vehicle'],
-      ['distance_to_point', 'Distance to a point'],
-      ['after_event', 'After other event ends'],
-    ], trigger.type || 'simulation_time');
+    const triggerOptions = EVENT_TRIGGERS.filter(([value]) =>
+      !(value === 'distance_to_ego' && actor.type === 'ego'));
+    const triggerSelect = _select(triggerOptions, trigger.type || 'simulation_time');
     triggerSelect.addEventListener('change', e => {
       if (e.target.value === 'after_event') {
         const ref = events.find(other => other.id !== ev.id && _eventAction(other).type !== 'assign_route');
@@ -612,15 +622,11 @@
       : (action.trajectory || []);
   }
 
-  /**
-   * Render a waypoint list into `target`.
-   * `ev` is the owning event for NPC paths; pass null for the ego's own
-   * trajectory, which lives on the actor rather than inside an event.
-   */
+  /** Render one path event's waypoint list into `target`. */
   function _renderPathList(actor, type, target, ev) {
     target.innerHTML = '';
-    const points  = ev ? _eventPathPoints(ev) : (actor.trajectory || []);
-    const eventId = ev?.id ?? null;
+    const points  = _eventPathPoints(ev);
+    const eventId = ev.id;
     const isRoute = type === 'route';
 
     if (points.length === 0) {
@@ -727,6 +733,19 @@
 
   // ── Event State ─────────────────────────────────────────────────────────────
 
+  /**
+   * The default trigger for an actor's first event (or any event that just
+   * lost its predecessor — see _deleteEvent). distance_to_ego is meaningless
+   * for the ego itself (a distance from hero to hero is always 0, so the
+   * condition fires on tick 1) — the backend coerces this anyway
+   * (_normalize_actor in backend/scenario_io.py), but defaulting it correctly
+   * here means the UI never shows a trigger it is about to rewrite.
+   */
+  function _defaultFirstTrigger(actor, previousValue = null) {
+    if (actor?.type === 'ego') return { type: 'simulation_time', value: 0 };
+    return { type: 'distance_to_ego', value: previousValue ?? 400 };
+  }
+
   function _defaultEvent(actor, actionType = 'set_speed', forceFirst = false) {
     const events = actor.events || [];
     const idx = UIUtils.nextIndexedId(events, 'evt');
@@ -736,7 +755,7 @@
       ? { type: 'simulation_time', value: 0 }
       : events.length > 0 && !forceFirst && previousActionType !== 'assign_route'
         ? { type: 'after_event', event_id: previous.id }
-        : { type: 'distance_to_ego', value: 400 };
+        : _defaultFirstTrigger(actor);
     return {
       id: `evt-${idx}`,
       trigger,
@@ -820,10 +839,10 @@
     const previousEvent = currentEvents[deletedIndex - 1] || null;
     const firstEventTriggerPatch = ev => ({
       ...ev,
-      trigger: {
-        type: 'distance_to_ego',
-        value: _eventTrigger(ev).type === 'distance_to_ego' ? (_eventTrigger(ev).value ?? 400) : 400,
-      },
+      trigger: _defaultFirstTrigger(
+        currentActor,
+        _eventTrigger(ev).type === 'distance_to_ego' ? _eventTrigger(ev).value : null
+      ),
     });
     const events = currentEvents
       .filter(ev => ev.id !== eventId)
@@ -854,6 +873,5 @@
   window.EventPanel = {
     render,
     setRefreshHandler,
-    renderPathList: _renderPathList,
   };
 })();

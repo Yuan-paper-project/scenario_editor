@@ -70,7 +70,26 @@
     };
 
     const ego = AppState.ego;
-    const traj = ego.trajectory || [];
+    const routePts = AppState.pathPointsOf(ego);
+
+    // Shared shape for the ego and every NPC — the ego is a scenario actor
+    // with events/behaviors/trigger_distance exactly like an NPC, not a
+    // special case. `typeOverride` exists only because the ego's internal
+    // type ('ego') is coerced to 'car' at export; the backend and emitter
+    // never see the literal 'ego'.
+    const dumpActor = (actor, typeOverride) => ({
+      id: actor.id, type: typeOverride || actor.type,
+      x: actor.x, y: actor.y, z: actor.z??0.2, yaw: actor.yaw??0,
+      behaviors:        actor.behaviors||['constant_speed'],
+      trigger_distance: actor.trigger_distance??400,
+      events: (actor.events||[]).map(ev => ({
+        id: ev.id, name: ev.name,
+        trigger: ev.action?.type === 'assign_route'
+          ? { type: 'simulation_time', value: 0 }
+          : resolveTrigger(ev.trigger),
+        action: resolveAction(ev.action),
+      })),
+    });
 
     return {
       schema_version: '1.0',
@@ -79,15 +98,7 @@
       // Drives dateTime + sun azimuth/elevation via compute_weather(). Without
       // it the backend defaults to 'daytime' and the dropdown does nothing.
       time:    AppState.time || 'daytime',
-      ego: {
-        // The id is not used to emit anything — _inject_ego reads only
-        // type/x/y/z/yaw. It is sent so the backend's own actor_refs map (a
-        // deliberate duplicate of entityRef above) can resolve 'obj-N' → 'hero'
-        // for payloads that were not built by this function.
-        id: ego.id,
-        type: ego.type === 'ego' ? 'car' : ego.type,
-        x: ego.x, y: ego.y, z: ego.z??0.2, yaw: ego.yaw??0,
-      },
+      ego: dumpActor(ego, ego.type === 'ego' ? 'car' : ego.type),
       trafficSignals: (AppState.trafficSignals||[])
         .filter(sig => (sig.events||[]).length > 0)
         .map(sig => ({ id: sig.id, x: sig.x, y: sig.y, events: sig.events })),
@@ -97,21 +108,11 @@
       staticObjects: (AppState.staticObjects||[]).map(p => ({
         prop: p.prop, x: p.x, y: p.y, z: p.z??0, yaw: p.yaw??0,
       })),
-      npcs: AppState.npcs.map(n => ({
-        id: n.id, type: n.type,
-        x: n.x, y: n.y, z: n.z??0.2, yaw: n.yaw??0,
-        behaviors:        n.behaviors||['constant_speed'],
-        trigger_distance: n.trigger_distance??400,
-        events: (n.events||[]).map(ev => ({
-          id: ev.id, name: ev.name,
-          trigger: ev.action?.type === 'assign_route'
-            ? { type: 'simulation_time', value: 0 }
-            : resolveTrigger(ev.trigger),
-          action: resolveAction(ev.action),
-        })),
-      })),
-      // Ego route waypoints with per-segment yaw (used by route XML export)
-      route_waypoints: traj.map((wp, i, arr) => {
+      npcs: AppState.npcs.map(n => dumpActor(n)),
+      // Ego route waypoints with per-segment yaw (used by route XML export),
+      // derived from the ego's own follow_trajectory/assign_route event —
+      // there is no actor-level ego.trajectory any more.
+      route_waypoints: routePts.map((wp, i, arr) => {
         let yaw = ego.yaw??0;
         const next = arr[i+1], prev = arr[i-1];
         if (next)      yaw = Math.atan2(next.y-wp.y, next.x-wp.x)*180/Math.PI;
@@ -191,9 +192,8 @@
       Toast.error('Bitte zuerst ein Ego-Fahrzeug platzieren.');
       return;
     }
-    const egoTraj = AppState.ego.trajectory || [];
-    if (egoTraj.length === 0) {
-      Toast.warn('Keine Ego-Route gezeichnet. Zuerst einen Pfad für das Ego-Fahrzeug zeichnen.');
+    if (AppState.pathPointsOf(AppState.ego).length === 0) {
+      Toast.warn('Keine Ego-Route vorhanden. Zuerst ein Follow-trajectory- oder Assign-route-Event für das Ego-Fahrzeug anlegen.');
       return;
     }
 

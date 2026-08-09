@@ -510,6 +510,56 @@ def entity_names(xml_text):
     return [o.get("name") for o in root.iter("ScenarioObject")]
 
 
+def controller_of(xml_text, entity):
+    """The `module` Property value of `entity`'s Init AssignControllerAction.
+
+    Reads the emitted <Controller><Properties><Property name="module"> under
+    the Init <Private entityRef=entity>. Returns None if no controller was
+    assigned (e.g. a static prop, which deliberately gets none).
+    """
+    root = ET.fromstring(xml_text)
+    for private in root.iter("Private"):
+        if private.get("entityRef") != entity:
+            continue
+        prop = private.find(
+            ".//AssignControllerAction/Controller/Properties/Property[@name='module']")
+        return None if prop is None else prop.get("value")
+    return None
+
+
+def acts(xml_text):
+    """Every <Act> in the storyboard, summarised.
+
+    {name, groups: [[entityRef, ...], ...], hero_distance_gate: bool,
+     act_start_sim_time: float|None}
+
+    `hero_distance_gate` is the `hero traveled 0.1 m` StartTrigger condition
+    every NPC Act carries (xml_builder._add_act_start_stop_triggers,
+    wait_for_hero=True) — the hero's OWN Act must NOT carry it, or the ego
+    would be waiting for itself to move before it is allowed to move.
+    """
+    root = ET.fromstring(xml_text)
+    out = []
+    for act in root.iter("Act"):
+        groups = [
+            [e.get("entityRef") for e in mg.findall("./Actors/EntityRef")]
+            for mg in act.findall("ManeuverGroup")
+        ]
+        start = act.find("StartTrigger")
+        hero_gate = start is not None and start.find(".//TraveledDistanceCondition") is not None
+        sim_time = None
+        if start is not None:
+            for cond in start.iter("SimulationTimeCondition"):
+                sim_time = float(cond.get("value"))
+        out.append({
+            "name": act.get("name"),
+            "groups": groups,
+            "hero_distance_gate": hero_gate,
+            "act_start_sim_time": sim_time,
+        })
+    return out
+
+
 def teleport_of(xml_text, entity):
     """The Init TeleportAction pose for `entity`, as (x, y, z, h)."""
     root = ET.fromstring(xml_text)

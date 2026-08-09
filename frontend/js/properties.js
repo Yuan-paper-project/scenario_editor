@@ -3,9 +3,12 @@
  *
  * Handles:
  *   - x/y/z/yaw numeric inputs
- *   - NPC behavior checkboxes
- *   - Ego trajectory "Draw Path" button + waypoint list with velocity inputs
+ *   - Behavior checkboxes + activation-distance trigger (NPCs only)
  *   - Delete button
+ *
+ * Behaviours and events are otherwise identical for ego and NPCs — rendering
+ * the event section itself (path drawing, action/trigger cards) is
+ * eventPanel.js's job, called uniformly via EventPanel.render(actor).
  */
 (function () {
   'use strict';
@@ -25,17 +28,9 @@
   const propYaw = document.getElementById('prop-yaw');
 
   const npcSection     = document.getElementById('props-npc-section');
-  const behaviorPanel  = document.getElementById('behavior-panel');
   const behaviorBoxes  = document.querySelectorAll('#behavior-checkboxes input[type="checkbox"]');
   const triggerSection  = document.getElementById('trigger-section');
   const propTriggerDist = document.getElementById('prop-trigger-dist');
-  const egoRouteHint   = document.getElementById('ego-route-hint');
-  const pathSectionLabel = document.getElementById('path-section-label');
-  const btnDrawPath    = document.getElementById('btn-draw-path');
-  const btnClearPath   = document.getElementById('btn-clear-path');
-  const btnTogglePath  = document.getElementById('btn-toggle-path');
-  const waypointList   = document.getElementById('waypoint-list');
-  const eventSection   = document.getElementById('event-section');
 
   // Track whether we're syncing to avoid loops
   let _syncing = false;
@@ -68,10 +63,9 @@
     const hasEgo = !!AppState.ego;
     const npcCount = AppState.npcs.length;
     const mapName = AppState.map || 'None';
-    const withTraj = AppState.npcs.filter(n => (n.events || []).some(ev => {
-      const action = ev.action || {};
-      return (action.trajectory || action.waypoints || []).length >= 2;
-    })).length;
+    const withTraj = [AppState.ego, ...AppState.npcs]
+      .filter(Boolean)
+      .filter(a => AppState.pathPointsOf(a).length >= 2).length;
 
     const npcBreakdown = {};
     AppState.npcs.forEach(n => { npcBreakdown[n.type] = (npcBreakdown[n.type] || 0) + 1; });
@@ -81,13 +75,13 @@
     html += `<div class="summary-row"><span class="label">Karte</span><span class="value">${mapName}</span></div>`;
     html += `<div class="summary-row"><span class="label">Ego-Fahrzeug</span><span class="value">${hasEgo ? 'Platziert' : 'Nicht platziert'}</span></div>`;
     html += `<div class="summary-row"><span class="label">NPCs</span><span class="value">${npcCount}</span></div>`;
+    html += `<div class="summary-row"><span class="label">Akteure mit Pfad</span><span class="value">${withTraj}</span></div>`;
 
     if (npcCount > 0) {
       html += '<div class="summary-section">NPC-Aufschlüsselung</div>';
       for (const [type, count] of Object.entries(npcBreakdown)) {
         html += `<div class="summary-row"><span class="label">${type}</span><span class="value">${count}</span></div>`;
       }
-      html += `<div class="summary-row"><span class="label">Mit Trajektorie</span><span class="value">${withTraj}</span></div>`;
     }
 
     const props = AppState.staticObjects || [];
@@ -161,56 +155,26 @@
     _renderActorTypeRow(actor);
     _renderPropTypeRow(actor);
 
-    // NPC + Ego trajectory section (show for all scenario actors)
+    // Behaviours + events: identical for ego and NPCs — the ego is a
+    // scenario actor with the entity name 'hero', not a special case.
+    // The one remaining difference is the activation-distance trigger: it
+    // means "start when the ego is this close", which the ego cannot ask of
+    // itself, so it stays NPC-only.
     const isScenarioActor = !AppState.isProp(actor);
     const isNpc = isScenarioActor && actor.type !== 'ego';
     npcSection.classList.toggle('hidden', !isScenarioActor);
 
     if (isScenarioActor) {
-      // Behavior checkboxes — only for NPCs (hide for ego)
-      const behaviorSection = document.getElementById('behavior-checkboxes');
-      if (behaviorSection) behaviorSection.style.display = isNpc ? '' : 'none';
-      if (behaviorPanel) behaviorPanel.classList.toggle('hidden', !isNpc);
-
-      // Trigger distance — only for NPCs
       triggerSection.style.display = isNpc ? '' : 'none';
-      eventSection.classList.toggle('hidden', !isNpc);
 
-      pathSectionLabel.classList.toggle('hidden', isNpc);
-      btnDrawPath.textContent = 'Zeichnen';
-      btnClearPath.textContent = 'Löschen';
-      btnDrawPath.parentElement.classList.toggle('hidden', isNpc);
-      waypointList.classList.toggle('hidden', isNpc);
-      const hasEgoPath = !isNpc && (actor.trajectory || []).length > 0;
-      btnTogglePath.classList.toggle('hidden', !hasEgoPath);
-      btnClearPath.classList.toggle('hidden', !hasEgoPath);
+      _syncing = true;
+      behaviorBoxes.forEach(cb => {
+        cb.checked = (actor.behaviors || []).includes(cb.value);
+      });
+      propTriggerDist.value = actor.trigger_distance ?? 400;
+      _syncing = false;
 
-      // Ego keeps the original trajectory-only route hint.
-      egoRouteHint.classList.toggle('hidden', actor.type !== 'ego');
-
-      if (isNpc) {
-        _syncing = true;
-        behaviorBoxes.forEach(cb => {
-          cb.checked = (actor.behaviors || []).includes(cb.value);
-        });
-        propTriggerDist.value = actor.trigger_distance ?? 400;
-        _syncing = false;
-      }
-
-      // Toggle path visibility button state
-      const pathVisible = MapView.isTrajectoryVisible(actor.id);
-      btnTogglePath.textContent = pathVisible ? 'Ausblenden' : 'Einblenden';
-
-      // Waypoint list: ego uses the original global editor; NPCs edit paths inside events.
-      if (!isNpc) {
-        EventPanel.renderPathList(actor, 'trajectory', waypointList, null);
-      } else {
-        waypointList.innerHTML = '';
-      }
-
-      if (isNpc) {
-        EventPanel.render(actor);
-      }
+      EventPanel.render(actor);
     }
   }
 
@@ -493,29 +457,6 @@
     if (!signal) return;
     const events = [...(signal.events || []), _defaultTrafficSignalEvent(signal)];
     TrafficSignals.update(id, { events });
-  });
-
-  // ── Ego path buttons ─────────────────────────────────────────────────────────
-
-  btnDrawPath.addEventListener('click', () => {
-    const id = AppState.selectedId;
-    if (!id) return;
-    ObjectsManager.startPathMode(id, 'trajectory');
-  });
-
-  btnClearPath.addEventListener('click', () => {
-    const id = AppState.selectedId;
-    if (!id) return;
-    ObjectsManager.clearPath(id, 'trajectory');
-    render();
-  });
-
-  btnTogglePath.addEventListener('click', () => {
-    const id = AppState.selectedId;
-    if (!id) return;
-    MapView.toggleTrajectoryVisibility(id);
-    const visible = MapView.isTrajectoryVisible(id);
-    btnTogglePath.textContent = visible ? 'Ausblenden' : 'Einblenden';
   });
 
   // ── Delete ──────────────────────────────────────────────────────────────────

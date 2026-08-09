@@ -36,6 +36,25 @@ def norm(events, npcs=None, ego_id="obj-1"):
     return validate_scenario_params(params)
 
 
+def norm_ego(events, ego_extra=None, npcs=None):
+    """Run validate_scenario_params over the ego's events; return the params back.
+
+    Mirrors norm() but targets the ego — the ego is a scenario actor with the
+    entity name 'hero', not a special case, so it goes through the identical
+    _normalize_actor() path as an NPC. The one place it differs is
+    distance_to_ego, which is meaningless for the ego itself (see below).
+    """
+    ego = {"id": "obj-1", "type": "car", "x": 1.0, "y": 2.0, "events": events}
+    if ego_extra:
+        ego.update(ego_extra)
+    params = {
+        "map": "Town01",
+        "ego": ego,
+        "npcs": npcs if npcs is not None else [],
+    }
+    return validate_scenario_params(params)
+
+
 def raises(fn):
     try:
         fn()
@@ -194,17 +213,17 @@ params = {
              "action": {"type": "set_distance", "entity_ref": "obj-1"}}]},
         {"id": "obj-3", "type": "car", "x": 2, "y": 2, "events": [
             {"id": "e", "trigger": {"type": "simulation_time"},
-             "action": {"type": "set_distance", "entity_ref": "obj-2"}}]},
+             "action": {"type": "set_distance", "entity_ref": "obj-4"}}]},
         {"id": "obj-4", "type": "car", "x": 3, "y": 3, "events": [
             {"id": "e", "trigger": {"type": "simulation_time"},
-             "action": {"type": "set_distance", "entity_ref": "obj-4"}}]},
+             "action": {"type": "set_distance", "entity_ref": "obj-2"}}]},
     ],
 }
 out = validate_scenario_params(params)
 refs = [n["events"][0]["action"]["entity_ref"] for n in out["npcs"]]
 check("ego id maps to 'hero'", refs[0] == "hero", refs[0])
-check("npc[0] maps to 'adversary'", refs[1] == "adversary", refs[1])
-check("npc[2] maps to 'adversary2'", refs[2] == "adversary2", refs[2])
+check("npc id obj-4 maps to 'adversary2'", refs[1] == "adversary2", refs[1])
+check("npc id obj-2 maps to 'adversary'", refs[2] == "adversary", refs[2])
 
 # A trigger's entity_ref goes through the same map as an action's. It used not
 # to: buildScenarioParams remapped actions only and omitted ego.id, so the ego
@@ -239,11 +258,15 @@ out = norm([{"id": "e1", "trigger": {"type": "simulation_time"},
 check("an already-resolved 'hero' ref survives",
       out["npcs"][0]["events"][0]["action"]["entity_ref"] == "hero",
       out["npcs"][0]["events"][0]["action"]["entity_ref"])
-out = norm([{"id": "e1", "trigger": {"type": "simulation_time"},
-             "action": {"type": "set_distance", "entity_ref": "adversary"}}])
+out = norm([], npcs=[
+    {"id": "obj-2", "type": "car", "x": 1, "y": 1},
+    {"id": "obj-3", "type": "car", "x": 2, "y": 1, "events": [
+        {"id": "e1", "trigger": {"type": "simulation_time"},
+         "action": {"type": "set_distance", "entity_ref": "adversary"}}]},
+])
 check("an already-resolved 'adversary' ref survives",
-      out["npcs"][0]["events"][0]["action"]["entity_ref"] == "adversary",
-      out["npcs"][0]["events"][0]["action"]["entity_ref"])
+      out["npcs"][1]["events"][0]["action"]["entity_ref"] == "adversary",
+      out["npcs"][1]["events"][0]["action"]["entity_ref"])
 check("a ref naming an adversary index that does not exist raises",
       raises(lambda: norm([{"id": "e1", "trigger": {"type": "simulation_time"},
                             "action": {"type": "set_distance",
@@ -267,6 +290,110 @@ out = norm([{"trigger": {"type": "simulation_time"}, "action": {"type": "set_spe
 check("an event with no id is given one",
       out["npcs"][0]["events"][0]["id"] == "event_1",
       out["npcs"][0]["events"][0].get("id"))
+
+
+# ── Ego events go through the same normalization NPCs get ───────────────────
+# The ego is a scenario actor with the entity name 'hero', not a special case
+# — _normalize_actor() is shared. The one real difference: a distance_to_ego
+# trigger measures the ego's distance to itself (always 0, fires on tick 1),
+# so it is coerced to simulation_time@0 rather than left alone.
+
+out = norm_ego([{"id": "e1", "trigger": {"type": "nonsense"},
+                 "action": {"type": "also_nonsense"}}])
+ev = out["ego"]["events"][0]
+check("ego: unknown action coerces to follow_trajectory",
+      ev["action"]["type"] == "follow_trajectory", ev["action"]["type"])
+check("ego: unknown trigger coerces to simulation_time",
+      ev["trigger"]["type"] == "simulation_time", ev["trigger"]["type"])
+
+out = norm_ego([{"id": "e1", "trigger": {"type": "distance_to_ego", "value": 400},
+                 "action": {"type": "set_speed"}}])
+check("ego: distance_to_ego is coerced to simulation_time@0 (self-distance is always 0)",
+      out["ego"]["events"][0]["trigger"] == {"type": "simulation_time", "value": 0.0},
+      str(out["ego"]["events"][0]["trigger"]))
+
+out = norm([{"id": "e1", "trigger": {"type": "distance_to_ego", "value": 123},
+             "action": {"type": "set_speed"}}])
+check("npc: distance_to_ego is left alone (npc-to-ego is a real distance)",
+      out["npcs"][0]["events"][0]["trigger"] == {"type": "distance_to_ego", "value": 123.0},
+      str(out["npcs"][0]["events"][0]["trigger"]))
+
+# The distance_to_ego -> simulation_time coercion must also catch a trigger
+# that becomes distance_to_ego via the after_event/assign_route rewrite —
+# ordering regression: _normalize_actor runs the hero coercion AFTER that
+# rewrite, not before, or this would slip through.
+out = norm_ego([
+    {"id": "route", "trigger": {"type": "simulation_time", "value": 0},
+     "action": {"type": "assign_route",
+                "waypoints": [{"x": 1, "y": 2}, {"x": 3, "y": 4}]}},
+    {"id": "after", "trigger": {"type": "after_event", "event_id": "route"},
+     "action": {"type": "set_speed"}},
+])
+trig = out["ego"]["events"][1]["trigger"]
+check("ego: after_event onto assign_route still lands on simulation_time@0, not distance_to_ego",
+      trig == {"type": "simulation_time", "value": 0.0}, str(trig))
+
+# set_distance targeting the acting entity itself is a hard error for BOTH the
+# ego and an NPC — KeepLongitudinalGap against yourself computes a gap of 0
+# and succeeds on the first tick, a silent no-op.
+check("ego: set_distance naming itself raises",
+      raises(lambda: norm_ego([{"id": "e1", "trigger": {"type": "simulation_time"},
+                                "action": {"type": "set_distance", "entity_ref": "obj-1"}}])))
+check("ego: set_distance with entity_ref omitted raises (falls back to 'hero' = self)",
+      raises(lambda: norm_ego([{"id": "e1", "trigger": {"type": "simulation_time"},
+                                "action": {"type": "set_distance"}}])))
+check("npc: set_distance naming itself raises",
+      raises(lambda: norm([{"id": "e1", "trigger": {"type": "simulation_time"},
+                            "action": {"type": "set_distance", "entity_ref": "obj-2"}}])))
+check("ego: set_distance naming a real npc passes",
+      not raises(lambda: norm_ego(
+          [{"id": "e1", "trigger": {"type": "simulation_time"},
+            "action": {"type": "set_distance", "entity_ref": "obj-2"}}],
+          npcs=[{"id": "obj-2", "type": "car", "x": 5, "y": 5}])))
+
+# Relative set_speed naming the acting entity itself is legal — "my current
+# speed plus a delta" is a well-defined one-shot action, unlike set_distance.
+out = norm_ego([{"id": "e1", "trigger": {"type": "simulation_time"},
+                 "action": {"type": "set_speed",
+                            "target": {"mode": "relative", "entity_ref": "obj-1", "delta": 5}}}])
+check("ego: relative set_speed naming itself is allowed",
+      out["ego"]["events"][0]["action"]["target"]["entity_ref"] == "hero",
+      str(out["ego"]["events"][0]["action"]["target"]))
+
+# distance_to_point naming the ego on an ego event is legitimate ("when I
+# reach this spot") and must not be coerced or rejected.
+out = norm_ego([{"id": "e1",
+                 "trigger": {"type": "distance_to_point", "value": 10,
+                             "entity_ref": "obj-1", "point": {"x": 5, "y": 5}},
+                 "action": {"type": "set_speed"}}])
+check("ego: distance_to_point naming itself is allowed",
+      out["ego"]["events"][0]["trigger"]["entity_ref"] == "hero",
+      out["ego"]["events"][0]["trigger"].get("entity_ref"))
+
+# Ego-level defaults mirror the NPC ones exactly.
+out = norm_ego([])
+check("ego defaults behaviors to constant_speed", out["ego"]["behaviors"] == ["constant_speed"])
+check("ego defaults trigger_distance to 400", out["ego"]["trigger_distance"] == 400.0)
+check("ego defaults events to []", out["ego"]["events"] == [])
+
+out = norm_ego([], ego_extra={"trigger_distance": 2})
+check("ego trigger_distance clamps up to 5", out["ego"]["trigger_distance"] == 5.0)
+out = norm_ego([], ego_extra={"trigger_distance": 9999})
+check("ego trigger_distance clamps down to 1000", out["ego"]["trigger_distance"] == 1000.0)
+
+# route_waypoints, when omitted, is derived from the ego's own path event.
+out = norm_ego([{"id": "e1", "trigger": {"type": "simulation_time", "value": 0},
+                 "action": {"type": "follow_trajectory",
+                            "trajectory": [{"x": 0, "y": 0}, {"x": 10, "y": 0}, {"x": 20, "y": 0}]}}])
+check("route_waypoints derives from the ego's follow_trajectory event",
+      [(w["x"], w["y"]) for w in out["route_waypoints"]] == [(0.0, 0.0), (10.0, 0.0), (20.0, 0.0)],
+      str(out["route_waypoints"]))
+check("derived route_waypoints carry a per-segment yaw",
+      out["route_waypoints"][0]["yaw"] == 0.0, str(out["route_waypoints"][0]))
+
+out = norm_ego([])
+check("route_waypoints is empty when the ego has no path event",
+      out["route_waypoints"] == [], str(out["route_waypoints"]))
 
 
 # ── Hard errors (the few things that are NOT coerced) ────────────────────────
