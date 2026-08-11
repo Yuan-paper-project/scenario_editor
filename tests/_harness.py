@@ -533,10 +533,12 @@ def acts(xml_text):
     {name, groups: [[entityRef, ...], ...], hero_distance_gate: bool,
      act_start_sim_time: float|None}
 
-    `hero_distance_gate` is the `hero traveled 0.1 m` StartTrigger condition
-    every NPC Act carries (xml_builder._add_act_start_stop_triggers,
-    wait_for_hero=True) — the hero's OWN Act must NOT carry it, or the ego
-    would be waiting for itself to move before it is allowed to move.
+    `hero_distance_gate` used to be True for every NPC Act's StartTrigger — a
+    `hero traveled 0.1 m` condition from the external_control era, when NPCs
+    had to wait for evidence an outside agent had taken the ego over. Every
+    actor is authored and controlled inside the .xosc now, so
+    xml_builder._add_act_start_stop_triggers no longer emits that condition
+    for any Act, and this must be False everywhere.
     """
     root = ET.fromstring(xml_text)
     out = []

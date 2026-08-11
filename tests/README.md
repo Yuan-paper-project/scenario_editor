@@ -372,3 +372,23 @@ several props 180° wrong by mistaking a mesh's back for its front. Determine
 rotation by running the scenario and looking at it; use the probe only to narrow
 down which axis is involved. Both destroy every actor they spawn in a `finally`
 block, so they are safe to run against a live session.
+
+`probe_carla_lane_graph.py` is different in kind from the two above: it does not
+measure a mesh, it caches CARLA's own routing/topology graph per bundled town so
+`frontend/js/simulate.js` can route `assign_route`/`lane_change`/path-less
+driving exactly instead of approximating — see CLAUDE.md's "cached CARLA lane
+graph" section for the full picture. It targets `localhost:2010` by default (the
+`run.sh` instance, not the port-3000 convention above), and it **does** mutate
+the live world — it calls `client.load_world(...)` once per town, restoring the
+original map in a `finally` block:
+
+```bash
+source /home/dellpro2/Antonio/carla-venv/bin/activate
+export PYTHONPATH="/home/dellpro2/CC/carla_0.9.15/PythonAPI/carla/dist/carla-0.9.15-cp310-cp310-linux_x86_64.egg:/home/dellpro2/CC/carla_0.9.15/PythonAPI/carla:/home/dellpro2/CC/carla_0.9.15/PythonAPI"
+python tests/probe_carla_lane_graph.py              # every bundled town with a CARLA counterpart (~30s total)
+python tests/probe_carla_lane_graph.py Town03 Town05 # just these
+```
+
+Re-run it whenever a bundled `.xodr` changes or the CARLA build is upgraded —
+there is no staleness check, the backend just loads whatever
+`maps/<Town>/lane_graph.json` happens to be on disk at startup.

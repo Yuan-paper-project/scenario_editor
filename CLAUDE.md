@@ -64,7 +64,8 @@ Every z the editor writes is `elev(s)` at the placement point plus a per-categor
 
 - `_get_elevations` / `_eval_elevation` (`backend/map_renderer.py`) mirror `_get_lane_offsets` / `_eval_lane_offset` — same cubic, same `ds = s − record.s`. Do **not** model a new one on `_eval_lane_width`, whose `sOffset` is relative to the laneSection start instead.
 - **z depends only on `(road, s)`**, not on lateral position: no bundled map has a `<shape>` element and every `<superelevation>` has `a=0`, so the surface at any lateral offset equals the reference-line height. If that ever stops holding, the cross-slope term belongs in `_eval_elevation`.
-- **Render JSON point shape is `[x, y, z]`** for `directionLine` and `centerline`, and `spawnPoints` carry a `z`. Every consumer destructures positionally (`const [x0, y0] = …`), so the third element is backward-compatible — but a new consumer must not assume length 2. Costs ~11% payload; paid once at startup.
+- **Render JSON point shape is `[x, y, z, s]`** for `directionLine` and `centerline` (`s` added for the phase-2 lane graph, same backward-compatible trick as `z` before it), and `spawnPoints` carry a `z`. Every consumer destructures positionally (`const [x0, y0] = …`), so trailing elements are backward-compatible — but a new consumer must not assume length 2 or 3. Costs ~11% payload per element; paid once at startup.
+- **Every `roads[].lanes[]` entry also carries `sectionId`, `sStart`, `sEnd`** (`backend/map_renderer.py`, `_get_lane_sections`'s 0-based index in document/`s` order) and, for lane types with a `directionLine`, a parallel `widths` array (one value per point, already-computed lane width, previously derived and discarded). `sectionId` disambiguates a `laneId` that recurs across a multi-section road — `road.lanes` is otherwise flattened with no section marker. This numbering is *assumed* to match CARLA's own `waypoint.section_id`; `tests/probe_carla_lane_graph.py` cross-checked this empirically against live CARLA (Town03 road 1772) before anything was built on it — see "The cached CARLA lane graph" below. Each `roads[]` entry also carries `link: {predecessor, successor}` (`<road><link>`, `{elementType, elementId, contactPoint}` or `null` per side) — unused by rendering itself (only a crosswalk heuristic reads it), but `backend/lane_graph_builder.py` re-derives its own copy (`_parse_road_links`) to resolve a lane's successor across a road boundary, so it is no longer true that nothing consumes it.
 - The frontend entry points are `ObjectsManager.groundZAt(x, y)` (bare surface, 60 m search radius, `0` beyond that) and `ObjectsManager.surfaceZFor(type, x, y, prop)` (surface + the right clearance). **Anything that moves an object must call `surfaceZFor`** — placement, the drag `mouseup`, the X/Y fields, the prop-type swap.
 - `SPAWN_CLEARANCE` (`frontend/js/objects.js`): vehicles `0.5`, VRUs `0.6`, waypoints `0.5`, props none. **Always err high** — spawning below the surface fails hard in CARLA (`"collision at spawn position"`), while spawning above it is free because actors settle under physics within a tick. VRUs get more because the profile models the *reference line* and not kerbs or sidewalk height, and sidewalk lanes carry no `directionLine`, so a pedestrian on a kerb takes its z from the carriageway ~0.15 m below. A prop is a `<MiscObject>` with no settle behaviour, and its catalogue `z` is already a surface-relative offset.
 - **z recomputes on `mouseup`, not on `mousemove`** (`frontend/js/objects.js`). `_nearestLaneProjection` is a linear scan over every lane segment (~59k points on Town03), so per-frame recompute would stutter — and z has no visual effect in a top-down 2D view. A hand-typed z therefore survives until the object is next moved.
@@ -323,7 +324,7 @@ out; props carry a separate invisible hit circle, so clickability is not the blo
 
 ## Frontend conventions
 
-**No build step, no bundler, no npm.** Each `frontend/js/*.js` is an IIFE attaching one global: `AppState`, `Api`, `MapView`, `ObjectsManager`, `EventPanel`, `Simulator`, `TrafficSignals`, `ScenarioTemplates`, `PropCatalog`, plus `Toast` / `Confirm` / `UndoStack` from `app.js`. Several files (`toolbar.js`, `properties.js`, `weather.js`, `scenarioIO.js`, `mapImport.js`, `welcome.js`) export nothing and simply bind DOM listeners on load.
+**No build step, no bundler, no npm.** Each `frontend/js/*.js` is an IIFE attaching one global: `AppState`, `Api`, `MapView`, `ObjectsManager`, `EventPanel`, `TrafficSignals`, `ScenarioTemplates`, `PropCatalog`, `LaneGraph`, plus `Toast` / `Confirm` / `UndoStack` from `app.js`. `simulate.js` binds its play/pause/stop UI at load and exports only `Simulate.routeForTesting`, a hook `tests/test_route_fidelity_e2e.py` uses to assert on a computed route without running the animation — no UI code calls it. Several files (`toolbar.js`, `properties.js`, `weather.js`, `scenarioIO.js`, `mapImport.js`, `welcome.js`) export nothing and simply bind DOM listeners on load.
 
 - **Script order in `frontend/index.html` (the `<script>` block near the end) is load-bearing** — `app.js` first, dependents after; `propCatalog.js` must precede `toolbar.js`, which renders the prop tiles from it. A new module must be added there or it never runs.
 - Cross-module communication goes through `AppState`. `set()` / `updateById()` / `removeById()` / `select()` emit `change`, `actorUpdated`, `actorRemoved`, `selectionChanged`, `stateLoaded`, `trafficSignalSelected`, `trafficSignalUpdated`. Subscribe via `AppState.on(...)`; never reach into another module's DOM.
@@ -338,6 +339,161 @@ out; props carry a separate invisible hit circle, so clickability is not the blo
 - Bundled towns live in `maps/<Town>/<Town>.xodr` (plus optional `.jpg` thumbnail and `_summary.json`), auto-discovered by `_scan_xodr_paths` at import time.
 - Uploaded maps persist to `maps/_uploaded/*.xodr` and are re-parsed into `MAP_CACHE` on every startup (`backend/main.py:44-68`); a bad file logs a failure for that town without taking down the server.
 - `maps/` is **not** gitignored — uploads land in the working tree.
+
+## The in-editor preview (`frontend/js/simulate.js`) and the cached CARLA lane graph
+
+The Play/Pause/Stop preview is a per-tick kinematic re-implementation of the real controllers
+(`SimpleVehicleControl` / `PedestrianControl`), not an idealisation of the authored events — it
+evaluates all 4 real triggers (including the `distance_to_ego` 60 s OR-fallback and the
+`assign_route`/`after_event` trigger rewrites `backend/scenario_io.py` applies at export), and
+mirrors real termination semantics (an instant speed step that persists past its duration, a
+4 m/1 m waypoint-acceptance radius, a dead stop on `_reached_goal`). `set_distance` is
+deliberately not simulated (badge only) — see the plan below for why.
+
+The one thing a lightweight preview cannot compute from the `.xodr` alone is **fork order** —
+which successor `waypoint.next()` returns first when a lane genuinely has more than one. That is
+a fixed property of a given map + CARLA build, so for the 8 bundled towns it is probed once
+against live CARLA and cached rather than guessed. Predecessor/successor/left-right topology
+*itself* — everything short of ranking a genuine fork — turns out to be fully derivable from the
+`.xodr`'s own `<link>`/`<junction>` elements without CARLA at all; `backend/lane_graph_builder.py`
+does exactly that for every town that has no CARLA probe (see below), which is most of what makes
+`assign_route`/`lane_change` work at real lane-following fidelity on an uploaded map.
+
+- **`tests/probe_carla_lane_graph.py`** connects to a running CARLA (`localhost:2010` by
+  default — the `run.sh` instance, not the port-3000 one the older mesh/prop probes use) and,
+  per bundled town, constructs the real `agents.navigation.global_route_planner.GlobalRoutePlanner`
+  — the **same class** `atomic_behaviors.py` builds for `AssignRouteAction` and
+  `KeepLongitudinalGap` — then dumps its private `_graph`/`_id_map`/`_road_id_to_edge` straight
+  to JSON, so the frontend never has to reimplement topology extraction, only A* search and path
+  reconstruction. It also samples a per-lane-section table (left/right neighbour, `lane_change`
+  permission, ordered `next()` successors) via `generate_waypoints()` + `get_left_lane()`/
+  `get_right_lane()`. Needs the `carla-venv` environment (see `tests/README.md`'s CARLA-probes
+  section for the exact `PYTHONPATH`) — this repo's own `.venv` has no `carla` package.
+  **Town10 has no CARLA counterpart** (`client.get_available_maps()` only has `Town10HD`; Town10
+  is a custom georeferenced map with no CARLA content asset) and is skipped.
+- Output is committed as `maps/<Town>/lane_graph.json`. `backend/main.py`'s `LANE_GRAPH_CACHE` is
+  populated from one of **two sources per town**, decided once at startup (and once more, per
+  town, at upload time): a committed probed file if one exists on disk, otherwise
+  **`backend/lane_graph_builder.py`'s `build_lane_graph_from_xodr`**, which derives the identical
+  JSON shape straight from the `.xodr` — no live CARLA needed. This covers Town10 and every
+  uploaded map, which previously had no lane graph at all. Served from
+  `GET /api/maps/{town}/lane_graph` (404 only if the .xodr itself failed to parse or the builder
+  threw). `GET /api/maps` lists every town with one (`laneGraphs`) — nearly all of them now, so
+  the frontend (`toolbar.js`'s `_fetchLaneGraph`) just always attempts the fetch rather than
+  gating on a town list, which would otherwise go stale the moment a map is uploaded mid-session.
+  The one field that tells the two sources apart is **`source`**: `"xodr"` on a derived graph,
+  absent (frontend reads this as `"carla"`) on a committed probed file — `simulate.js`'s badges
+  say "aus Kartendatei" vs "CARLA-Kartendaten" accordingly, and `_preferredSuccessor` (below)
+  branches on it.
+- **`tests/compare_xodr_lane_graph.py`** validates the from-`.xodr` builder against all 8
+  committed probed files with no CARLA connection needed — run it after touching
+  `lane_graph_builder.py`. Two things it deliberately does *not* treat as a mismatch, confirmed by
+  hand-tracing real examples before the check was written this way: a probed file's
+  self-referencing `successors` entry (its own dead-end marker — `_walk_to_fork` gave up after
+  `max_hops`) is filtered out the same way `LaneGraph.realSuccessors()` filters it on the
+  frontend; and the probe's `successors` field is the result of CARLA silently walking through a
+  chain of single-choice lanes until the next *real* fork (confirmed: a 0.11 m junction-approach
+  stub, Town05 road 31, never appears as its own hop in any committed file), whereas this
+  builder's `successors` is deliberately one physical hop at a time — so a "mismatch" only counts
+  as a bug if the probed successor isn't reachable by chasing this builder's own hops forward a
+  bounded number of steps. Left/right and reachability currently check out at 100% across all 8
+  towns; exact 1-hop `successors` equality does not, and is not expected to.
+- **The join key everywhere is `(roadId, sectionId, laneId)`** — CARLA's own identity triple,
+  matched against the render JSON's `sectionId`/`sStart`/`sEnd` additions above. This was
+  cross-checked empirically (Town03 road 1772) before anything was built on it; if a future
+  `.xodr` re-bundle or CARLA upgrade breaks the assumption, lookups fail closed (return `null`)
+  rather than silently misattributing a lane — see `frontend/js/laneGraph.js`'s `laneRecord`.
+- **`frontend/js/laneGraph.js`** is the frontend half: a plain-array A* (`_astar`) over the
+  cached graph, `route(graph, from, to)` (ports `GlobalRoutePlanner.trace_route`'s waypoint
+  reconstruction, not its `RoadOption` turn-decision metadata — nothing here needs it, the
+  controller only drives through waypoint *locations*), and `laneRecord`/`realSuccessors` for
+  the per-lane table. Everything degrades to `null` when `AppState.laneGraph` is absent; nothing
+  in this file guesses.
+- `simulate.js` uses the graph for exactly three things, each with a phase-1 geometric fallback
+  when it is absent or a specific lookup misses:
+  - **`assign_route`** — a real multi-segment A* route through every authored waypoint (one
+    `LaneGraph.route` call per consecutive pair), replacing the raw clicked polyline, followed
+    by the runtime's own filter (see "Two halves" below). Leg 0's start is **not** the actor's
+    own position: real `AssignRouteAction` seeds from
+    `map.get_waypoint(actor_location).next(1)[0]`. **`.next(1.0)` means "1 m further along the
+    road"** — it stays in the current lane and crosses into a successor only if the lane
+    actually ends within that metre, which is what `_seedAssignRouteStart` reproduces by
+    walking `_walkDirLine` 1 m and consulting `_preferredSuccessor()` only when it `ranOut`.
+    Reading the cached `successors` list from an arbitrary mid-lane position instead means "what
+    follows this lane's *entire remaining length*", which puts leg 0 on the wrong lane
+    entirely. That mistake shipped once and looked like a normal one-way detour until the seed
+    point was checked.
+  - **`lane_change`** — `_buildLaneChangePlan` (`simulate.js`) ports
+    `generate_target_waypoint_list_multilane` (`scenario_helper.py`) literally: 3 same-lane
+    waypoints every 2 m, **one** waypoint `dynamics.value` m ahead projected onto the
+    `get_left_lane()`/`get_right_lane()` neighbour (the entire lateral move is this single hop —
+    CARLA does not interpolate a curve here either, so `dynamicsShape` is dead: ScenarioRunner's
+    parser never reads it), then 5 target-lane waypoints every 2 m. The plan is driven through the
+    ordinary `_advanceWaypoints` path like any other waypoint list, not a bespoke phase machine —
+    which is also why its 4 m acceptance radius and leading-waypoint drop apply here for free.
+    Each of the three legs walks via `_walkLaneChained`, which chains across a lane-section
+    boundary using the same cached-graph successor lookup `_continueLaneFollowAtFork` uses for
+    plain lane-following (`_nextLaneCursor`, shared by both) — a short lane section mid-maneuver
+    used to freeze the actor with "Zielspur endet zu früh" because the old per-phase walker never
+    consulted successors at all. The neighbour lookup (`_laneNeighbor`) happens once, at the
+    single point in the maneuver the real code calls `get_left_lane()`/`get_right_lane()`: on the
+    waypoint `dynamics.value` m past the same-lane leg, not at the lane-change event's trigger
+    point or at the actor's pre-maneuver position. **If the graph confidently reports no
+    neighbour on a side, that is trusted outright** over the geometric guess —
+    `get_left_lane()`/`get_right_lane()` are relative to the lane's own OpenDRIVE numbering
+    convention, not screen-left/right, and a real map has been observed where a
+    `laneChange="Both"`-marked lane's `get_left_lane()` still returns nothing on one side. Trust
+    the API CARLA's own atomics trust, not a geometric intuition about which way looks like
+    "left". A `_buildLaneChangePlan` returning `null` (no graph, a genuine dead end, or no
+    Driving neighbour) freezes the actor exactly as `generate_target_waypoint_list_multilane`
+    returning `(None, None)` makes `ChangeActorLateralMotion.update` report `FAILURE`.
+  - **Path-less driving** (an actor with speed but no waypoints) — on reaching the end of known
+    `directionLine` geometry, `_continueLaneFollowAtFork` calls `_nextLaneCursor`, which asks
+    `_preferredSuccessor` for the one successor to advance onto. On a CARLA-probed graph any
+    non-empty `successors` list is usable — index 0 is `next()`'s own real fork choice, exactly
+    mirroring `SimpleVehicleControl`'s own `map_wp.next(2.0)[0]`. On an **xodr-derived** graph
+    (`graph.source === 'xodr'`) there is no such ranking to trust — a bare `.xodr` doesn't order a
+    fork's `<connection>` candidates — so `_preferredSuccessor` refuses to guess and returns
+    `null` whenever a lane has more than one successor, freezing the actor with the same badge a
+    genuine dead end gets, rather than picking an arbitrary branch. An `assign_route` waypoint
+    past the fork is unaffected either way: `LaneGraph.route()`'s A* already holds every candidate
+    as a real edge and finds whichever branch reaches the target, without consulting
+    `successors[0]` at all. A successor that names its own lane back (`_walk_to_fork`'s bounded
+    search giving up at a genuine dead end, CARLA-probed graphs only) is treated as no successor,
+    not an infinite loop — `LaneGraph.realSuccessors()` filters it before `_preferredSuccessor`
+    ever sees it.
+- **Risk accepted on purpose:** a committed probed file is pinned to this CARLA/ScenarioRunner
+  build and this exact `.xodr`; a re-probe needs re-running `probe_carla_lane_graph.py` and a
+  server restart, same caveat as `MAP_CACHE`. An xodr-derived graph carries no such pin — it's
+  regenerated from whatever `.xodr` is on disk every time it's (re)built — but inherits the
+  fork-order gap above, permanently: there is no live CARLA behind it to resolve one.
+
+**Two halves: routing a route is not enough.** `GlobalRoutePlanner.trace_route` genuinely emits
+points that double back, and the runtime throws them away before the actor ever sees them. Both
+halves must be ported or the preview shows a turn-around CARLA never performs:
+
+- `LaneGraph.route` (the router) carries a running `current` across **every** edge and trims each
+  lane-follow edge to start at the point nearest it; emits a lane-change edge as exactly **two**
+  points (a bare ~12 m chord, `closest_index + 5` into the target lane, no interpolation); and
+  honours both destination break conditions so a leg stops near its goal instead of running to
+  its final edge's exit. Trimming only the first edge, or treating a lane-change edge as a
+  lane-follow one, makes every later edge restart at its own beginning — behind the actor.
+- `_exactRoute` (the atomic) then applies `ChangeActorWaypoints`' filter to the **concatenated**
+  route: a `> 1.0 m` dedup, and a heading test that accepts a point only when
+  `|new − last| < 2.0` **or** `> 4.3` rad. That difference is deliberately **not** wrapped to
+  [0, π] — the `> 4.3` arm is what catches wrap-around — so port the arithmetic literally rather
+  than "fixing" it. The reference heading is `route[-1] − route[-2]`, unless that vector is
+  `< 0.5 m` (accept unconditionally) or the route has ≤ 1 point, where it is the **lane tangent
+  at the seed**, not a router chord.
+
+`tests/test_route_fidelity_e2e.py` pins this. It asserts on the computed route itself, not only
+on sampled motion, because the 4 m waypoint-acceptance radius can swallow a short backtrack —
+with the heading filter disabled the route assertion goes red while the animation check still
+passes.
+
+See the "In-editor preview fidelity" plan (project plan history) for the full per-action/
+per-trigger analysis this was built from — phase 1 (the correctness pass above the fold) and
+phase 2 (this section) are both implemented; `set_distance` remains out of scope by decision.
 
 ## Repo notes
 
@@ -362,7 +518,9 @@ For props, also open **Requisiten**, place a few cones (the tool stays armed), p
 SCENARIO_FILE=/abs/path/scenario.xosc bash /home/dellpro2/Antonio/run.sh
 ```
 
-**The ego drives itself now — there is no `SCENARIO_GOAL` and no external agent.** `run.sh` starts CARLA on port **2010** (if not already up) and runs `/home/dellpro2/yungloon/llm-scenario-gen-xosc/scripts/run_selfref_video_test.py`, which drives `scenario_runner_xosc.py` from a separate `scenario_runner-0.9.15` install and records FPV/THD/BEV video. It takes only `SCENARIO_FILE` — no `--goal` flag exists in this script, and it never launches `automatic_control_1.py` or any other external agent. Every ego manoeuvre — where it goes, when it speeds up, whether it turns at a junction — is now **authored in the editor as an event on the ego**, exactly like an NPC's, and reaches the file as the ego's own `heroBehavior` Act. Without a `follow_trajectory`/`assign_route` event the ego has no plan and drives its spawn lane via `SimpleVehicleControl`'s own `map.get_waypoint(...).next(2.0)` walk, which will not turn at a junction — that is expected, not a bug, and it is why junction/turn scenarios need a path event.
+**The ego drives itself now — there is no `SCENARIO_GOAL` and no external agent.** `run.sh` starts CARLA on port **2010** (if not already up) and runs `/home/dellpro2/yungloon/llm-scenario-gen-xosc/scripts/run_selfref_video_test.py`, which drives `scenario_runner_xosc.py` from a separate `scenario_runner-0.9.15` install and records FPV/THD/BEV video.
+
+**There are two ScenarioRunner installs and they do not agree — check which one you are editing.** `run.sh` executes **`/home/dellpro2/yungloon/scenario_runner-0.9.15`**; `/home/dellpro2/Antonio/scenario_runner` contributes only the cwd that resolves `$SCENARIO_FILE`, and **none of its Python is imported**. Their `atomic_behaviors.py` differ by ~1985 lines. The yungloon copy is also **locally patched** (`CHANGES_LOCAL.md` there records it): `ChangeActorWaypoints.initialise` filters the router's output — a `> 1.0 m` dedup plus a heading band that drops reversals — which is exactly what stops an `assign_route` actor from visibly driving backwards. `tests/run_carla_cases.py` runs the **other**, unpatched install, so routing behaviour there still differs; the in-editor preview is matched to `run.sh`, not to that harness. Editing `Antonio/scenario_runner` has no effect on `run.sh`. Both resolve `agents.navigation.global_route_planner` to `/home/dellpro2/yungloon/carla-0.9.15/PythonAPI/carla/agents/navigation/`, and the GRP is the `CarlaDataProvider` singleton at sampling resolution **2.0** — the value `probe_carla_lane_graph.py` matches. It takes only `SCENARIO_FILE` — no `--goal` flag exists in this script, and it never launches `automatic_control_1.py` or any other external agent. Every ego manoeuvre — where it goes, when it speeds up, whether it turns at a junction — is now **authored in the editor as an event on the ego**, exactly like an NPC's, and reaches the file as the ego's own `heroBehavior` Act. Without a `follow_trajectory`/`assign_route` event the ego has no plan and drives its spawn lane via `SimpleVehicleControl`'s own `map.get_waypoint(...).next(2.0)` walk, which will not turn at a junction — that is expected, not a bug, and it is why junction/turn scenarios need a path event.
 
 This `scenario_runner_xosc.py` install does **strict OpenSCENARIO XSD validation** that the primary `/home/dellpro2/Antonio/scenario_runner` (used by `tests/run_carla_cases.py`, whose own XSD check is commented out) does not. Two things this catches that the test suite currently cannot: an emitted `<Vertex>` carries `relativeTime`, but the strict schema wants `time` — any `follow_trajectory` action fails this validator today, ego or NPC, a pre-existing mismatch in `event_builders.py`. Before burning a CARLA run on a trajectory-bearing scenario, expect this failure under `run.sh`'s current toolchain; it is unrelated to whether the ego or an NPC owns the event.
 
@@ -375,7 +533,7 @@ bash run.sh 9090                 # terminal 1
 bash tests/run_tests.sh          # terminal 2 (EDITOR_URL overrides the target)
 ```
 
-That runs `test_normalization.py` (81 checks, no browser or server needed), then the seven Playwright suites: props (54), prop yaw (23), templates (149), events (43, one of them a `KNOWN` open defect — see below), ego events (45), actor types (272, grows with the catalogue), elevation (33). All but the first drive a real browser against a real server and a real export. **Restart the editor first if you changed `../llm-scenario-gen`** — otherwise the frontend shows new catalogue data while the backend exports the old, which looks like a test bug and is not one.
+That runs `test_normalization.py` (81 checks, no browser or server needed), then `compare_xodr_lane_graph.py` (also no browser/server/CARLA — validates `backend/lane_graph_builder.py` against the 8 committed probed graphs), then the eight Playwright suites: props (54), prop yaw (23), templates (149), events (43, one of them a `KNOWN` open defect — see below), ego events (45), actor types (272, grows with the catalogue), elevation (33), route fidelity (9). All but the first two drive a real browser against a real server and a real export. **Restart the editor first if you changed `../llm-scenario-gen`** — otherwise the frontend shows new catalogue data while the backend exports the old, which looks like a test bug and is not one.
 
 `test_ego_events_e2e.py` is kept separate from `test_events_e2e.py` rather than folded in: the older suite's `EGO` fixture and every one of its assertions assume an inert ego (no behaviors, no events), which was true before the ego became a controllable actor and is the entire premise the new suite tests against.
 
@@ -383,7 +541,7 @@ That runs `test_normalization.py` (81 checks, no browser or server needed), then
 
 ### CARLA behavioural tests
 
-**This section, and `tests/run_carla_cases.py`/`tests/carla_cases.py` themselves, describe the pre-ego-authoring world and have not been re-baselined yet** — deliberately deferred, a separate piece of work. Two things changed underneath them: `SCENARIO_GOAL` is dead in the current `run.sh` (it runs `run_selfref_video_test.py`, which has no `--goal` and launches no external agent — dead independently of anything below), and the ego now drives via its own authored events rather than a planner. Every case's ego is currently `events: []` (an editor default, never a literal in the harness), which — now that `events: []` triggers the shared `constant_speed` fallback for the ego too — means **every case's ego drives off in a straight line down its spawn lane, planner or no planner**, rather than sitting still. All 28 cases need re-running and their assertions re-checked before this section can be trusted again; treat every specific claim below about ego motion as describing the old, planner-driven behaviour until that happens.
+**This section, and `tests/run_carla_cases.py`/`tests/carla_cases.py` themselves, describe the pre-ego-authoring world and have not been re-baselined yet** — deliberately deferred, a separate piece of work. Two things changed underneath them: `SCENARIO_GOAL` is dead in the current `run.sh` (it runs `run_selfref_video_test.py`, which has no `--goal` and launches no external agent — dead independently of anything below), and the ego now drives via its own authored events rather than a planner. Every case's ego is currently `events: []` (an editor default, never a literal in the harness), which — now that `events: []` triggers the shared `constant_speed` fallback for the ego too — means **every case's ego drives off in a straight line down its spawn lane, planner or no planner**, rather than sitting still. All 28 cases need re-running and their assertions re-checked before this section can be trusted again; treat every specific claim below about ego motion as describing the old, planner-driven behaviour until that happens. A second, independent change adds to the same debt: NPC Acts no longer wait for `hero traveled 0.1 m` before starting (see the two-clocks paragraph below), so timings measured relative to that gate have shifted too.
 
 `tests/carla_telemetry.py` is a **passive** sidecar: it attaches to the running CARLA, subscribes with `world.on_tick`, and writes one CSV row per actor per tick. It **must never call `world.tick()`** — ScenarioRunner owns the clock in synchronous mode. Names must be captured while actors are alive (a background poller does this); resolving them after the run returns blanks, because teardown has already destroyed everything.
 
@@ -394,7 +552,7 @@ That runs `test_normalization.py` (81 checks, no browser or server needed), then
 
 Both are needed: an event can go `RUNNING` while the vehicle ignores it entirely.
 
-The two clocks differ. Telemetry carries CARLA's `elapsed_seconds` (a world clock that keeps counting across runs and starts in the hundreds); the OSC log counts from scenario start. They are reconciled through the ego's first motion, because **every NPC Act** starts on `hero traveled 0.1 m` (`_add_act_start_stop_triggers`, `wait_for_hero=True`). The hero's *own* Act (`heroBehavior`) does not carry this gate — it starts on `SimulationTime > 0` alone, because the ego cannot wait for itself to move before it is allowed to move. `act_start()` (`tests/carla_analysis.py`) still works as the shared time origin either way, since the ego still has to move eventually for any of this to be worth measuring.
+The two clocks differ. Telemetry carries CARLA's `elapsed_seconds` (a world clock that keeps counting across runs and starts in the hundreds); the OSC log counts from scenario start. They used to be reconciled through the ego's first motion, because every NPC Act started on `hero traveled 0.1 m` — a leftover from the `external_control` era, when NPCs had to wait for evidence an external agent had taken the ego over. **That gate is gone**: every actor is authored and controlled inside the `.xosc` now, so every Act — hero's included — starts on `SimulationTime > 0` alone (`_add_act_start_stop_triggers`, `../llm-scenario-gen`). `act_start()` (`tests/carla_analysis.py`) still measures the ego's first 0.1 m of telemetry motion and still gives a usable time origin, but it is no longer the exact instant NPC Acts begin — they now start essentially at scenario start, not when the ego moves. This folds into the CARLA behavioural tests' existing re-baselining debt below, not a new one: every `expect_*` assertion measured from `act_start` needs re-checking against the new timing.
 
 A case states **both ends of the ego's drive**: `ego` (the spawn, placed in the editor) and `goal` (passed through as `SCENARIO_GOAL`). `run_case` always sets `SCENARIO_GOAL`, falling back to `C.GOAL` (the Town01 pose) rather than letting run.sh's own default through — so **any case on another town must state one** — see `GOAL_T3` / `GOAL_T3_PARK` / `GOAL_T4_HWY` / `GOAL_T5_HWY` / `GOAL_T5_JCT_LEFT` / `GOAL_T5_JCT_STRAIGHT` in `tests/carla_cases.py`. The junction goals are real exit waypoints read off CARLA's junction API, not points guessed off a map, and they are the **only** thing that makes the ego turn: `expect_*` proves the turn happened by measuring the ego's net heading change (`A.heading_change`), because there is no storyboard event to read off the OSC log.
 

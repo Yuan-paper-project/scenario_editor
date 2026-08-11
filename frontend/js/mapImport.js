@@ -47,7 +47,13 @@
     mapStatus.textContent = `Lade ${town} …`;
     try {
       const mapData = await Api.getMapRender(town);
-      AppState.set({ map: town, mapData });
+      // An uploaded map is never probed against CARLA (tests/probe_carla_lane_graph.py
+      // only covers bundled towns), but the upload endpoint derives a lane
+      // graph straight from the .xodr (backend/lane_graph_builder.py) — same
+      // fetch toolbar.js uses for the normal map-select path. A build
+      // failure server-side degrades to null here, same as any other miss.
+      const laneGraph = await Api.getLaneGraph(town).catch(() => null);
+      AppState.set({ map: town, mapData, laneGraph });
       MapView.renderMap(mapData);
       MapView.renderAllActors();
       mapStatus.textContent = `${town} (${mapData.roads.length} Straßen)`;

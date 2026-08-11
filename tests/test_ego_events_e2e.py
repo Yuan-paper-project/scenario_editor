@@ -173,13 +173,15 @@ with sync_playwright() as p:
     hero_act = next((a for a in all_acts if a["name"] == "heroBehavior"), None)
     npc_act = next((a for a in all_acts if a["name"] != "heroBehavior"), None)
     check("a heroBehavior Act exists", hero_act is not None, str(all_acts))
-    check("the hero's own Act carries NO 'hero traveled 0.1m' start gate "
-          "(the ego cannot wait for itself to move)",
-          hero_act is not None and hero_act["hero_distance_gate"] is False, str(hero_act))
+    check("no Act carries a 'hero traveled 0.1m' start gate any more "
+          "(every actor is authored in the .xosc, not just the ego)",
+          hero_act is not None and hero_act["hero_distance_gate"] is False
+          and npc_act is not None and npc_act["hero_distance_gate"] is False,
+          str((hero_act, npc_act)))
     check("the hero's Act starts on simulation_time > 0",
           hero_act is not None and hero_act["act_start_sim_time"] == 0.0, str(hero_act))
-    check("the NPC's Act still carries the 'hero traveled 0.1m' start gate",
-          npc_act is not None and npc_act["hero_distance_gate"] is True, str(npc_act))
+    check("the NPC's Act also starts on simulation_time > 0",
+          npc_act is not None and npc_act["act_start_sim_time"] == 0.0, str(npc_act))
 
     hero_events = H.parse_events(xml, entity="hero")
     hero_path_events = [e for e in hero_events if e["name"].startswith("hero_")]

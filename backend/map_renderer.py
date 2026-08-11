@@ -263,6 +263,33 @@ def _eval_lane_width(polys: list[dict], sec_s_query: float) -> float:
     return max(0.0, active['a'] + active['b']*ds + active['c']*(ds**2) + active['d']*(ds**3))
 
 
+def _get_road_link(road_elem: ET.Element) -> dict:
+    """<road><link><predecessor/successor elementType elementId contactPoint>.
+
+    Road-level connectivity — which road (or junction) this one continues
+    into at s=0 and s=length. Needed by the frontend lane graph (phase 2) to
+    tell a genuine fork from a road that simply continues; map_renderer never
+    read <link> before this (the crosswalk heuristic looks at it and discards
+    it again). contactPoint is absent for a junction link — junctions don't
+    have a notion of start/end, only member roads and lanes do.
+    """
+    link_elem = road_elem.find('link')
+    if link_elem is None:
+        return {'predecessor': None, 'successor': None}
+
+    def _side(tag):
+        el = link_elem.find(tag)
+        if el is None:
+            return None
+        return {
+            'elementType': el.get('elementType', 'road'),
+            'elementId': el.get('elementId'),
+            'contactPoint': el.get('contactPoint'),
+        }
+
+    return {'predecessor': _side('predecessor'), 'successor': _side('successor')}
+
+
 def _get_lane_sections(road_elem: ET.Element) -> list[tuple]:
     lanes_elem = road_elem.find('lanes')
     if lanes_elem is None:
@@ -632,7 +659,7 @@ def _process_root_to_render_data(root: ET.Element, town_name: str, xodr_path: Pa
             continue
 
         lanes_out = []
-        for s_start, s_end, lane_defs in lane_sections:
+        for section_id, (s_start, s_end, lane_defs) in enumerate(lane_sections):
             if not lane_defs:
                 continue
 
@@ -652,13 +679,22 @@ def _process_root_to_render_data(root: ET.Element, town_name: str, xodr_path: Pa
                     'type':   ld['type'],
                     'color':  color,
                     'polygon': poly,
+                    # Disambiguates a laneId that recurs across lane sections
+                    # of the same road (road.lanes is otherwise flattened with
+                    # no section marker) — assumes CARLA's waypoint.section_id
+                    # numbers sections the same way, 0-based in s-order, which
+                    # tests/probe_carla_lane_graph.py cross-checks.
+                    'sectionId': section_id,
+                    'sStart': round(s_start, 2),
+                    'sEnd': round(s_end, 2),
                 }
 
                 if ld['type'] in ('driving', 'bidirectional', 'parking', 'shoulder'):
                     sign = +1.0 if ld['side'] == 'L' else -1.0
                     lane_cl = []
+                    lane_widths = []
                     side_lanes = [l for l in lane_defs if l['side'] == ld['side']]
-                    
+
                     for (px, py, ph, s) in sec_samples:
                         sec_s = s - s_start
                         offset_shift = _eval_lane_offset(offsets, s)
@@ -680,11 +716,17 @@ def _process_root_to_render_data(root: ET.Element, town_name: str, xodr_path: Pa
                         cx = round(shifted_x + center_offset * math.cos(lane_perp), 2)
                         cy = round(-(shifted_y + center_offset * math.sin(lane_perp)), 2)
                         cz = round(_eval_elevation(elevations, s), 2)
-                        lane_cl.append([cx, cy, cz])
-                        
+                        # 4th element is s, the same backward-compatible trick
+                        # already used for z — existing 3-element consumers
+                        # destructure positionally and never see it.
+                        lane_cl.append([cx, cy, cz, round(s, 2)])
+                        lane_widths.append(round(this_w, 2))
+
                     if ld['side'] == 'L':
                         lane_cl.reverse()
+                        lane_widths.reverse()
                     lane_entry['directionLine'] = lane_cl
+                    lane_entry['widths'] = lane_widths
 
                 lanes_out.append(lane_entry)
 
@@ -700,7 +742,7 @@ def _process_root_to_render_data(root: ET.Element, town_name: str, xodr_path: Pa
             cz = _eval_elevation(elevations, s)
             elev_min = cz if elev_min is None else min(elev_min, cz)
             elev_max = cz if elev_max is None else max(elev_max, cz)
-            centreline.append([cx, cy, round(cz, 2)])
+            centreline.append([cx, cy, round(cz, 2), round(s, 2)])
 
         roads_out.append({
             'id':         road.get('id'),
@@ -708,6 +750,7 @@ def _process_root_to_render_data(root: ET.Element, town_name: str, xodr_path: Pa
             'length':     round(length, 1),
             'lanes':      lanes_out,
             'centerline': centreline,
+            'link':       _get_road_link(road),
         })
 
     spawn_points, intersections = _load_spawn_points(str(xodr_path))

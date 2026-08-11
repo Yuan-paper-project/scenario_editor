@@ -6,10 +6,12 @@ Endpoints:
   GET  /static/{path}              → serve frontend static files
   GET  /api/maps                   → list available towns
   GET  /api/maps/{town}/render     → road polygon + spawn point JSON (MAP_CACHE)
+  GET  /api/maps/{town}/lane_graph → cached CARLA routing graph, if probed (LANE_GRAPH_CACHE)
   GET  /api/maps/{town}/preview    → serve town thumbnail image
   POST /api/export                 → generate .xosc and return as download
 """
 
+import json
 import os
 from pathlib import Path
 
@@ -22,8 +24,10 @@ from backend.map_renderer import (
     build_map_render_data,
     build_map_render_data_from_path,
     list_available_towns,
+    XODR_PATHS,
     THUMBNAIL_PATHS,
 )
+from backend.lane_graph_builder import build_lane_graph_from_xodr
 from backend.scenario_io import export_to_xosc, export_route_xml
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
@@ -39,6 +43,27 @@ app = FastAPI(title="OpenSCENARIO Editor", version="1.0.0")
 # ── MAP_CACHE: pre-load all town render data at startup ────────────────────────
 
 MAP_CACHE: dict[str, dict] = {}
+
+# LANE_GRAPH_CACHE: routing topology per town, from one of two sources —
+# tests/probe_carla_lane_graph.py's live-CARLA output (maps/<Town>/
+# lane_graph.json on disk, source-less in the JSON, treated by the frontend
+# as "carla") when it exists, or backend/lane_graph_builder.py's from-.xodr
+# derivation (source: "xodr") for every town that has no such file: Town10
+# (no CARLA counterpart to probe) and every uploaded map. A from-.xodr graph
+# makes no attempt to rank a fork the way live CARLA next() does — see
+# lane_graph_builder.py's module docstring — frontend/js/simulate.js knows
+# to refuse to guess there rather than pick an arbitrary branch. Loaded once
+# at startup (or once at upload time for a freshly uploaded map); a re-probe
+# needs a restart, same caveat as everything else in this dict's family.
+LANE_GRAPH_CACHE: dict[str, dict] = {}
+
+
+def _build_lane_graph_safely(town: str, xodr_path: Path) -> dict | None:
+    try:
+        return build_lane_graph_from_xodr(xodr_path, MAP_CACHE[town]['roads'], town)
+    except Exception as exc:
+        print(f"  ✗ xodr-derived lane graph for {town}: {exc}")
+        return None
 
 
 @app.on_event("startup")
@@ -80,6 +105,28 @@ async def preload_maps():
 
     print(f"[startup] Map cache ready. {len(MAP_CACHE)} towns loaded.")
 
+    for town in MAP_CACHE:
+        graph_path = _HERE.parent / "maps" / town / "lane_graph.json"
+        if graph_path.exists():
+            try:
+                LANE_GRAPH_CACHE[town] = json.loads(graph_path.read_text())
+                continue
+            except Exception as exc:
+                print(f"  ✗ lane_graph for {town}: {exc}")
+                continue
+        # No probed file — derive one from the .xodr directly (Town10, or any
+        # uploaded map re-discovered above) rather than leaving this town
+        # without routing.
+        xodr_path = XODR_PATHS.get(town) or (_UPLOADS_DIR / f"{town}.xodr")
+        if xodr_path.exists():
+            graph = _build_lane_graph_safely(town, xodr_path)
+            if graph:
+                LANE_GRAPH_CACHE[town] = graph
+    carla_count = sum(1 for g in LANE_GRAPH_CACHE.values() if g.get('source') != 'xodr')
+    xodr_count = len(LANE_GRAPH_CACHE) - carla_count
+    print(f"[startup] Lane graph cache ready. {len(LANE_GRAPH_CACHE)}/{len(MAP_CACHE)} towns have one "
+          f"({carla_count} CARLA-probed, {xodr_count} xodr-derived).")
+
 
 # ── Static file serving ────────────────────────────────────────────────────────
 
@@ -95,7 +142,10 @@ async def index():
 
 @app.get("/api/maps")
 async def get_maps():
-    return {"maps": list(MAP_CACHE.keys())}
+    # laneGraphs lets the frontend skip the /lane_graph request (and its
+    # console-logged 404) for a town it already knows has no cache, rather
+    # than discovering that by asking.
+    return {"maps": list(MAP_CACHE.keys()), "laneGraphs": list(LANE_GRAPH_CACHE.keys())}
 
 
 @app.get("/api/maps/{town}/render")
@@ -103,6 +153,20 @@ async def get_map_render(town: str):
     if town not in MAP_CACHE:
         raise HTTPException(status_code=404, detail=f"Town '{town}' not found")
     return JSONResponse(content=MAP_CACHE[town])
+
+
+@app.get("/api/maps/{town}/lane_graph")
+async def get_lane_graph(town: str):
+    if town not in LANE_GRAPH_CACHE:
+        # A town in MAP_CACHE always gets an attempt at a lane graph (a probed
+        # file, or an xodr-derived one built at startup/upload) — reaching
+        # this branch means that attempt itself failed (see the startup/
+        # upload logs), not simply "never probed".
+        detail = (f"Town '{town}' not found" if town not in MAP_CACHE
+                  else f"No lane graph available for '{town}' — building one from "
+                       f"its .xodr failed (see server logs)")
+        raise HTTPException(status_code=404, detail=detail)
+    return JSONResponse(content=LANE_GRAPH_CACHE[town])
 
 
 @app.get("/api/maps/{town}/preview")
@@ -143,8 +207,15 @@ async def upload_map(file: UploadFile = File(...)):
         dest_path.unlink(missing_ok=True)
         raise HTTPException(status_code=422, detail=f"Failed to parse .xodr: {exc}")
 
+    # Best-effort — a failure here degrades to "no lane graph" (the existing
+    # null-safe frontend path) rather than failing the upload itself.
+    graph = _build_lane_graph_safely(town_name, dest_path)
+    if graph:
+        LANE_GRAPH_CACHE[town_name] = graph
+
     road_count = len(MAP_CACHE[town_name]["roads"])
-    print(f"[upload] Imported '{town_name}' ({road_count} roads)")
+    print(f"[upload] Imported '{town_name}' ({road_count} roads, "
+          f"lane graph: {'yes' if graph else 'no'})")
     return {"town": town_name, "roads": road_count}
 
 

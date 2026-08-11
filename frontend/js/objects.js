@@ -239,6 +239,7 @@
               z: z0 + t * (z1 - z0),
               laneYaw: Math.atan2(dy, dx) * 180 / Math.PI,
               laneId: lane.laneId, laneType: lane.type,
+              road, lane, segIndex: i,
             };
           }
         }
@@ -566,5 +567,14 @@
     clearPath,
     groundZAt,
     surfaceZFor: _surfaceZFor,
+    // Exposed for simulate.js's lane-follow preview: same projection used for
+    // placement/yaw, now also needed to snap an actor onto its spawn lane and
+    // to test for a same-direction neighbour lane (lane_change feasibility).
+    // Returns {x, y, dist, z, laneYaw, laneId, laneType, road, lane} or null;
+    // `road`/`lane` are the actual render-JSON objects, by reference — the
+    // caller can walk `lane.directionLine` directly rather than re-querying,
+    // which sidesteps the fact that road.lanes is flattened across lane
+    // sections with no section marker (see CLAUDE.md).
+    nearestLaneProjection: _nearestLaneProjection,
   };
 })();

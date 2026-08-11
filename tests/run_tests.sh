@@ -43,10 +43,15 @@ echo "════ tests/test_normalization.py"
 "$PY" tests/test_normalization.py || status=1
 echo
 
+echo "════ tests/compare_xodr_lane_graph.py"
+"$PY" tests/compare_xodr_lane_graph.py || status=1
+echo
+
 for t in tests/test_props_e2e.py tests/test_prop_yaw_e2e.py \
          tests/test_templates_e2e.py tests/test_events_e2e.py \
          tests/test_ego_events_e2e.py \
-         tests/test_actor_types_e2e.py tests/test_elevation_e2e.py; do
+         tests/test_actor_types_e2e.py tests/test_elevation_e2e.py \
+         tests/test_route_fidelity_e2e.py; do
     echo "════ $t"
     EDITOR_URL="$URL" "$PY" "$t" || status=1
     echo

@@ -17,6 +17,16 @@
       return res.json();
     },
 
+    // A 404 here is a normal, common outcome (no CARLA counterpart to probe,
+    // or an uploaded map) — not an error, so it resolves to null rather than
+    // throwing. Callers should treat null exactly like "no cache available".
+    async getLaneGraph(town) {
+      const res = await fetch(`/api/maps/${encodeURIComponent(town)}/lane_graph`);
+      if (res.status === 404) return null;
+      if (!res.ok) throw new Error(`getLaneGraph(${town}) failed: ${res.status}`);
+      return res.json();
+    },
+
     async exportScenario(params) {
       const res = await fetch('/api/export', {
         method:  'POST',

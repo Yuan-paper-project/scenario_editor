@@ -81,7 +81,7 @@ with sync_playwright() as p:
                 for (const pt of (l.directionLine || [])) lens.add(pt.length);
         return [...lens];
     }""")
-    check("every directionLine point is [x,y,z]", dims == [3], str(dims))
+    check("every directionLine point is [x,y,z,s]", dims == [4], str(dims))
 
     cl = page.evaluate("""() => {
         const lens = new Set();
@@ -89,7 +89,7 @@ with sync_playwright() as p:
             for (const pt of r.centerline) lens.add(pt.length);
         return [...lens];
     }""")
-    check("every centerline point is [x,y,z]", cl == [3], str(cl))
+    check("every centerline point is [x,y,z,s]", cl == [4], str(cl))
 
     check("spawn points carry z",
           page.evaluate("AppState.mapData.spawnPoints.every(s => typeof s.z === 'number')"))

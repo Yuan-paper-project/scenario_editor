@@ -67,6 +67,7 @@
     // ── Map ──────────────────────────────────────────────────
     map:      null,       // selected town name string
     mapData:  null,       // road render JSON from /api/maps/{town}/render
+    laneGraph: null,      // cached CARLA routing graph from /api/maps/{town}/lane_graph, or null if unprobed
 
     // ── Scenario ─────────────────────────────────────────────
     ego: null,            // {id, type:'ego', x, y, z, yaw, behaviors, trigger_distance, events} or null

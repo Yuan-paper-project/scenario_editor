@@ -1272,6 +1272,12 @@
     isRouteVisible(actorId, eventId = null) {
       return !_hiddenRoutes.has(_pathKey(actorId, eventId, 'route'));
     },
+    // Exposed so simulate.js's badge overlay can match actor colours/sizes
+    // without duplicating these tables (which would drift from the real
+    // renderer over time).
+    actorColor(type) { return ACTOR_COLORS[type] || ACTOR_COLORS.car; },
+    actorSize(type) { return ACTOR_SIZES[type] || ACTOR_SIZES.car; },
+    isWalkerType(type) { return WALKER_TYPES.has(type); },
   };
 
   window.MapView = MapView;

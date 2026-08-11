@@ -145,16 +145,22 @@ class Run:
         return self.tracks.get(role)
 
     def act_start(self, threshold=0.1):
-        """Telemetry time at which the NPC Acts begin.
+        """Telemetry time at which the ego's own Act begins moving it.
 
-        Every generated Act starts on `hero traveled 0.1 m`
-        (xml_builder._add_act_start_stop_triggers), so the ego's first motion is
-        the zero every event time has to be measured from.
-
-        This is also the bridge between the two time bases: the telemetry CSV
+        Used as the bridge between the two time bases: the telemetry CSV
         carries CARLA's world clock (elapsed_seconds, which keeps counting
         across runs and starts in the hundreds), while the OSC log counts from
         scenario start. They share this instant and nothing else.
+
+        NPC Acts no longer wait for `hero traveled 0.1 m` before starting
+        (xml_builder._add_act_start_stop_triggers dropped that gate — every
+        actor is authored in the .xosc now, not just the ego, so NPCs no
+        longer need evidence an external agent took the ego over). Every Act,
+        hero's included, now starts on SimulationTime > 0. This still gives a
+        usable time origin, but it is no longer the exact instant NPC Acts
+        begin — CLAUDE.md already flags that every expect_* assertion in
+        tests/run_carla_cases.py needs re-baselining post-ego-authoring, and
+        this is part of that same deferred work, not a new gap.
         """
         hero = self.tracks.get("hero")
         if hero is None or not hero.t:

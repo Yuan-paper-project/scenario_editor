@@ -9,6 +9,17 @@
   const mapStatus = document.getElementById('map-status');
   const toolbar   = document.getElementById('toolbar');
 
+  // Almost every town has a lane graph now — a probed one, or (Town10, any
+  // uploaded map) one backend/lane_graph_builder.py derives from the .xodr
+  // directly at startup/upload — so this always attempts the fetch rather
+  // than gating on a town list snapshotted once at page load, which would
+  // otherwise go stale the moment a map is uploaded mid-session. A genuine
+  // miss (the builder itself failed for that town) still degrades cleanly:
+  // Api.getLaneGraph resolves a 404 to null rather than throwing.
+  async function _fetchLaneGraph(town) {
+    return Api.getLaneGraph(town).catch(() => null);
+  }
+
   // ── Tabs: Akteure | Requisiten ───────────────────────────────────────────────
   // Pure UI state, kept module-local like properties.js `_overviewPanelTab`.
 
@@ -95,7 +106,8 @@
     mapStatus.textContent = `Lade ${town}…`;
     try {
       const mapData = await Api.getMapRender(town);
-      AppState.set({ map: town, mapData });
+      const laneGraph = await _fetchLaneGraph(town);
+      AppState.set({ map: town, mapData, laneGraph });
       MapView.renderMap(mapData);
       MapView.renderAllActors();
       mapStatus.textContent = `${town} (${mapData.roads.length} Straßen)`;
@@ -113,7 +125,8 @@
         mapStatus.textContent = `Lade ${data.map}…`;
         try {
           const mapData = await Api.getMapRender(data.map);
-          AppState.set({ mapData });
+          const laneGraph = await _fetchLaneGraph(data.map);
+          AppState.set({ mapData, laneGraph });
           MapView.renderMap(mapData);
           MapView.renderAllActors();
           mapStatus.textContent = `${data.map} geladen`;
