@@ -328,6 +328,45 @@ with sync_playwright() as p:
           not any("Speed0" in n and "ConstantSpeed" not in n for n in names),
           str(names))
 
+    # ── Initial speed on an NPC ──────────────────────────────────────────────
+    # seed() omits initial_speed, so this is also the regression guard that a
+    # pre-feature payload keeps exporting exactly as it did.
+    seed(page, [])
+    xml = H.export_xosc(page)
+    check("an npc payload without initial_speed emits no Init SpeedAction",
+          H.init_speed_of(xml, "adversary") is None,
+          str(H.init_speed_of(xml, "adversary")))
+
+    seed(page, [])
+    page.evaluate("AppState.updateById('obj-2', {initial_speed: 6.5})")
+    xml = H.export_xosc(page)
+    check("an npc's initial speed reaches its Init <Private>",
+          H.init_speed_of(xml, "adversary") == 6.5,
+          str(H.init_speed_of(xml, "adversary")))
+    check("an npc's Init speed does not leak onto the hero",
+          H.init_speed_of(xml, "hero") is None, str(H.init_speed_of(xml, "hero")))
+
+    # Walkers get the same treatment: ScenarioRunner's
+    # _extract_pedestrian_information calls the same _get_actor_speed, and
+    # PedestrianControl.run_step assigns control.speed from _target_speed.
+    seed(page, [], npc_type="pedestrian")
+    page.evaluate("AppState.updateById('obj-2', {initial_speed: 1.4})")
+    xml = H.export_xosc(page)
+    check("a pedestrian's initial speed reaches its Init <Private> too",
+          H.init_speed_of(xml, "adversary") == 1.4,
+          str(H.init_speed_of(xml, "adversary")))
+    check("the pedestrian really is emitted as <Pedestrian>",
+          "<Pedestrian" in xml)
+
+    # The backend floors a negative rather than letting it through:
+    # openscenario_configuration._get_actor_speed raises on a negative value.
+    seed(page, [])
+    page.evaluate("AppState.updateById('obj-2', {initial_speed: -9})")
+    xml = H.export_xosc(page)
+    check("a negative npc initial speed is clamped to 0 and emits nothing",
+          H.init_speed_of(xml, "adversary") is None,
+          str(H.init_speed_of(xml, "adversary")))
+
     unexpected = [e for e in errors if "400 (Bad Request)" not in e]
     check("no unexpected JS errors during the run", not unexpected, str(unexpected[:3]))
     browser.close()
