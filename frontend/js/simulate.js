@@ -641,7 +641,14 @@
       isWalker: MapView.isWalkerType(actor.type),
       x: actor.x, y: actor.y, z: actor.z ?? 0, yaw: actor.yaw || 0,
       spawnYaw: actor.yaw || 0,
-      speed: 0,
+      // The Init <SpeedAction>: ChangeActorTargetSpeed(..., init_speed=True)
+      // runs in InitialActorSettings on tick 1, before any Act's
+      // SimulationTime>0 start trigger, so the actor already has this speed
+      // when the story begins. Nothing else is needed to model "unless a later
+      // speed action replaces it" — set_speed, follow_trajectory and the
+      // constant_speed fallback all assign sim.speed when they fire, exactly as
+      // BasicControl.update_target_speed() overwrites _target_speed.
+      speed: Math.max(0, actor.initial_speed || 0),
       events,
       fired: new Map(),           // eventId → {firedAt, completedAt|null}
       activeSpeedEventId: null,
@@ -706,12 +713,13 @@
       sim.pathKind = action.type;
 
       if (isRoute) {
-        // AssignRouteAction only sets waypoints — BasicControl's target speed
-        // defaults to 0, so the actor does not move at all until some
-        // set_speed event gives it a nonzero speed. That is a real gap in
-        // the emitted scenario, not a preview limitation, so it gets no
-        // badge: the actor visibly sitting still already says it, exactly
-        // like the real run would show nothing else either.
+        // AssignRouteAction only sets waypoints, never a speed — so the actor
+        // keeps whatever speed it already has. With an Init speed that means it
+        // drives the route immediately; with none (initial_speed 0) it does not
+        // move at all until some set_speed event gives it a nonzero speed.
+        // The stationary case is a real gap in the emitted scenario, not a
+        // preview limitation, so it gets no badge: the actor visibly sitting
+        // still already says it, exactly like the real run would.
         const exact = _exactRoute(sim, rawPoints);
         if (exact) {
           sim.waypoints = exact;

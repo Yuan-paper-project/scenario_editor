@@ -574,5 +574,28 @@ def teleport_of(xml_text, entity):
     return None
 
 
+def init_speed_of(xml_text, entity):
+    """The Init SpeedAction target speed for `entity`, or None if it has none.
+
+    Mirrors ScenarioRunner's own openscenario_configuration._get_actor_speed:
+    it scans the entity's Init <Private> for any AbsoluteTargetSpeed and does
+    not care where inside the <Private> it sits. None (rather than 0.0) is the
+    honest answer for "no element emitted" — the emitter deliberately omits the
+    action at speed 0, and open_scenario._create_init_behavior skips a zero
+    anyway, so the two are equivalent at runtime but distinguishable here.
+
+    parse_events()/_action_of() only inspect Story events, so this is the only
+    way to see an Init-level speed.
+    """
+    root = ET.fromstring(xml_text)
+    for private in root.iter("Private"):
+        if private.get("entityRef") != entity:
+            continue
+        target = private.find(
+            ".//LongitudinalAction/SpeedAction/SpeedActionTarget/AbsoluteTargetSpeed")
+        return None if target is None else float(target.get("value"))
+    return None
+
+
 def approx(a, b, tol=1e-6):
     return a is not None and b is not None and math.isclose(a, b, abs_tol=tol)

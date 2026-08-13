@@ -26,6 +26,8 @@
   const propY = document.getElementById('prop-y');
   const propZ = document.getElementById('prop-z');
   const propYaw = document.getElementById('prop-yaw');
+  const propInitSpeed      = document.getElementById('prop-init-speed');
+  const propInitSpeedLabel = document.getElementById('prop-init-speed-label');
 
   const npcSection     = document.getElementById('props-npc-section');
   const behaviorBoxes  = document.querySelectorAll('#behavior-checkboxes input[type="checkbox"]');
@@ -143,24 +145,32 @@
     // Title
     propsTitle.textContent = AppState.actorLabel(actor, { ego: 'Ego-Fahrzeug' });
 
-    // Position / yaw
+    // The ego is a scenario actor with the entity name 'hero', not a special
+    // case; a prop is a <MiscObject> and has no speed or behaviour at all.
+    const isScenarioActor = !AppState.isProp(actor);
+
+    // Position / yaw / start speed
     _syncing = true;
     propX.value   = actor.x   != null ? actor.x.toFixed(2)   : '';
     propY.value   = actor.y   != null ? actor.y.toFixed(2)    : '';
     propZ.value   = actor.z   != null ? actor.z.toFixed(2)    : '0.20';
     propYaw.value = actor.yaw != null ? Math.round(actor.yaw) : '0';
+    propInitSpeed.value = (actor.initial_speed ?? 0).toFixed(1);
     _syncing = false;
+
+    // .props-group is a bare 2-column grid with no per-row wrapper, so the
+    // label and the input have to be hidden individually.
+    propInitSpeed.classList.toggle('hidden', !isScenarioActor);
+    propInitSpeedLabel.classList.toggle('hidden', !isScenarioActor);
 
     // Type pickers — swap an actor's type / a prop's blueprint in place
     _renderActorTypeRow(actor);
     _renderPropTypeRow(actor);
 
-    // Behaviours + events: identical for ego and NPCs — the ego is a
-    // scenario actor with the entity name 'hero', not a special case.
-    // The one remaining difference is the activation-distance trigger: it
-    // means "start when the ego is this close", which the ego cannot ask of
-    // itself, so it stays NPC-only.
-    const isScenarioActor = !AppState.isProp(actor);
+    // Behaviours + events: identical for ego and NPCs. The one remaining
+    // difference is the activation-distance trigger: it means "start when the
+    // ego is this close", which the ego cannot ask of itself, so it stays
+    // NPC-only.
     const isNpc = isScenarioActor && actor.type !== 'ego';
     npcSection.classList.toggle('hidden', !isScenarioActor);
 
@@ -448,6 +458,24 @@
     const val = Math.max(5, Math.min(1000, parseFloat(propTriggerDist.value) || 400));
     propTriggerDist.value = val;
     AppState.updateById(id, { trigger_distance: val });
+  });
+
+  // ── Start speed ──────────────────────────────────────────────────────────────
+
+  // Emitted as a SpeedAction in the Storyboard Init, so it is the actor's speed
+  // on tick 1 — before any Act's SimulationTime>0 start trigger. The first
+  // set_speed / follow_trajectory event to fire overwrites it. 0 means "no init
+  // speed" and emits nothing, not "parked": an actor with events: [] still
+  // drives off on the shared constant_speed fallback.
+  propInitSpeed.addEventListener('change', () => {
+    if (_syncing) return;
+    const id = AppState.selectedId;
+    if (!id) return;
+    // Floor at 0 rather than allowing a negative: ScenarioRunner's
+    // _get_actor_speed raises on a negative AbsoluteTargetSpeed in Init.
+    const val = Math.max(0, Math.min(100, parseFloat(propInitSpeed.value) || 0));
+    propInitSpeed.value = val.toFixed(1);
+    AppState.updateById(id, { initial_speed: val });
   });
 
   btnAddTrafficEvent.addEventListener('click', () => {

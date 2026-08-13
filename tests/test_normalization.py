@@ -286,6 +286,23 @@ check("trigger_distance clamps up to 5", out["npcs"][0]["trigger_distance"] == 5
 out = norm([], npcs=[{"id": "obj-2", "type": "car", "x": 1, "y": 1, "trigger_distance": 9999}])
 check("trigger_distance clamps down to 1000", out["npcs"][0]["trigger_distance"] == 1000.0)
 
+# initial_speed — the Init SpeedAction. The default is 0 and NOT the editor's
+# placement default of 10: this function also normalises hand-written payloads,
+# LLM output and every tests/carla_cases.py case, none of which mention the
+# field, and defaulting those to 10 would put every previously stationary actor
+# into motion at t=0.
+check("npc defaults initial_speed to 0", npc["initial_speed"] == 0.0,
+      str(npc.get("initial_speed")))
+
+out = norm([], npcs=[{"id": "obj-2", "type": "car", "x": 1, "y": 1, "initial_speed": 12.5}])
+check("initial_speed passes through intact", out["npcs"][0]["initial_speed"] == 12.5)
+# ScenarioRunner's _get_actor_speed *raises* on a negative AbsoluteTargetSpeed
+# in Init, so the floor is a real guard rather than tidiness.
+out = norm([], npcs=[{"id": "obj-2", "type": "car", "x": 1, "y": 1, "initial_speed": -5}])
+check("initial_speed clamps up to 0", out["npcs"][0]["initial_speed"] == 0.0)
+out = norm([], npcs=[{"id": "obj-2", "type": "car", "x": 1, "y": 1, "initial_speed": 9999}])
+check("initial_speed clamps down to 100", out["npcs"][0]["initial_speed"] == 100.0)
+
 out = norm([{"trigger": {"type": "simulation_time"}, "action": {"type": "set_speed"}}])
 check("an event with no id is given one",
       out["npcs"][0]["events"][0]["id"] == "event_1",
@@ -376,10 +393,18 @@ check("ego defaults behaviors to constant_speed", out["ego"]["behaviors"] == ["c
 check("ego defaults trigger_distance to 400", out["ego"]["trigger_distance"] == 400.0)
 check("ego defaults events to []", out["ego"]["events"] == [])
 
+check("ego defaults initial_speed to 0", out["ego"]["initial_speed"] == 0.0,
+      str(out["ego"].get("initial_speed")))
+
 out = norm_ego([], ego_extra={"trigger_distance": 2})
 check("ego trigger_distance clamps up to 5", out["ego"]["trigger_distance"] == 5.0)
 out = norm_ego([], ego_extra={"trigger_distance": 9999})
 check("ego trigger_distance clamps down to 1000", out["ego"]["trigger_distance"] == 1000.0)
+
+out = norm_ego([], ego_extra={"initial_speed": -3})
+check("ego initial_speed clamps up to 0", out["ego"]["initial_speed"] == 0.0)
+out = norm_ego([], ego_extra={"initial_speed": 9999})
+check("ego initial_speed clamps down to 100", out["ego"]["initial_speed"] == 100.0)
 
 # route_waypoints, when omitted, is derived from the ego's own path event.
 out = norm_ego([{"id": "e1", "trigger": {"type": "simulation_time", "value": 0},

@@ -82,6 +82,7 @@
       x: actor.x, y: actor.y, z: actor.z??0.2, yaw: actor.yaw??0,
       behaviors:        actor.behaviors||['constant_speed'],
       trigger_distance: actor.trigger_distance??400,
+      initial_speed:    actor.initial_speed??0,
       events: (actor.events||[]).map(ev => ({
         id: ev.id, name: ev.name,
         trigger: ev.action?.type === 'assign_route'

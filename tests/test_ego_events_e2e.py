@@ -232,6 +232,69 @@ with sync_playwright() as p:
           hero_ev["trigger"] == {"kind": "simulation_time", "value": 0.0},
           str(hero_ev["trigger"]))
 
+    # ── Initial speed: the Storyboard Init SpeedAction ───────────────────────
+    # Split default by design. Placing an actor in the editor gives it 10 m/s
+    # (ObjectsManager.DEFAULT_INIT_SPEED); a payload that simply omits the field
+    # — a legacy save, an LLM payload, every tests/carla_cases.py case — gets 0
+    # and exports exactly as it did before the feature existed.
+    # Clear first: the seeds above left an NPC on the spawn point this places on.
+    page.evaluate("""() => AppState.loadJSON({
+        map: 'Town01', weather: {}, time: 'daytime',
+        ego: null, npcs: [], staticObjects: [], trafficSignals: [],
+    })""")
+    ego = H.place_actor(page, "ego", 300.631, -2.025)
+    check("a placed ego defaults to 10 m/s initial speed",
+          ego.get("initial_speed") == 10.0, str(ego.get("initial_speed")))
+    npc = H.place_actor(page, "car", 265.364, 1.967)
+    check("a placed NPC defaults to 10 m/s initial speed",
+          npc.get("initial_speed") == 10.0, str(npc.get("initial_speed")))
+
+    xml = H.export_xosc(page)
+    check("a placed ego's default speed reaches the Init <Private>",
+          H.init_speed_of(xml, "hero") == 10.0, str(H.init_speed_of(xml, "hero")))
+    check("a placed NPC's default speed reaches the Init <Private>",
+          H.init_speed_of(xml, "adversary") == 10.0,
+          str(H.init_speed_of(xml, "adversary")))
+
+    # The Spawnpunkt field writes through to the actor and to the export.
+    page.evaluate("AppState.select(AppState.ego.id)")
+    page.fill("#prop-init-speed", "8.5")
+    page.dispatch_event("#prop-init-speed", "change")
+    check("the Start (m/s) field writes initial_speed onto the ego",
+          page.evaluate("AppState.ego.initial_speed") == 8.5,
+          str(page.evaluate("AppState.ego.initial_speed")))
+    xml = H.export_xosc(page)
+    check("an edited ego initial speed reaches the Init <Private>",
+          H.init_speed_of(xml, "hero") == 8.5, str(H.init_speed_of(xml, "hero")))
+    check("the Init SpeedAction is a step over 0s",
+          '<SpeedActionDynamics dynamicsShape="step" value="0" dynamicsDimension="time" />'
+          in xml or 'dynamicsShape="step"' in xml)
+
+    # 0 means "no init speed", not "parked": nothing is emitted, and
+    # open_scenario._create_init_behavior skips a zero anyway.
+    page.fill("#prop-init-speed", "0")
+    page.dispatch_event("#prop-init-speed", "change")
+    xml = H.export_xosc(page)
+    check("initial speed 0 emits no Init SpeedAction at all",
+          H.init_speed_of(xml, "hero") is None, str(H.init_speed_of(xml, "hero")))
+
+    # Negative is floored in the UI before it can reach the backend —
+    # ScenarioRunner's _get_actor_speed raises on a negative Init speed.
+    page.fill("#prop-init-speed", "-4")
+    page.dispatch_event("#prop-init-speed", "change")
+    check("a negative Start value is floored at 0 in the UI",
+          page.evaluate("AppState.ego.initial_speed") == 0.0,
+          str(page.evaluate("AppState.ego.initial_speed")))
+
+    # A seeded payload omitting the field keeps the pre-feature behaviour.
+    seed(page, [], with_npc=False)
+    check("a seeded ego without the field hydrates to 0",
+          page.evaluate("AppState.ego.initial_speed") == 0,
+          str(page.evaluate("AppState.ego.initial_speed")))
+    xml = H.export_xosc(page)
+    check("a payload omitting initial_speed exports no Init SpeedAction",
+          H.init_speed_of(xml, "hero") is None, str(H.init_speed_of(xml, "hero")))
+
     # ── Legacy migration: a synthetic actor-level ego.trajectory ─────────────
     page.evaluate("""() => {
         AppState.loadJSON({

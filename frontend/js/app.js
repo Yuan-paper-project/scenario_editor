@@ -70,8 +70,8 @@
     laneGraph: null,      // cached CARLA routing graph from /api/maps/{town}/lane_graph, or null if unprobed
 
     // ── Scenario ─────────────────────────────────────────────
-    ego: null,            // {id, type:'ego', x, y, z, yaw, behaviors, trigger_distance, events} or null
-    npcs: [],             // [{id, type, x, y, z, yaw, behaviors, trigger_distance, events}]
+    ego: null,            // {id, type:'ego', x, y, z, yaw, behaviors, trigger_distance, initial_speed, events} or null
+    npcs: [],             // [{id, type, x, y, z, yaw, behaviors, trigger_distance, initial_speed, events}]
     staticObjects: [],    // [{id, type:'prop', prop:'static.prop.*', x, y, z, yaw}]
     trafficSignals: [],   // configured traffic-light events from the map
 
@@ -301,6 +301,10 @@
         events: a.events || [],
         behaviors: a.behaviors && a.behaviors.length ? a.behaviors : ['constant_speed'],
         trigger_distance: a.trigger_distance ?? 400,
+        // 0, not ObjectsManager's placement default of 10: this runs on
+        // loadJSON, and a save file predating the field must keep its actors
+        // exactly as stationary as they were when it was written.
+        initial_speed: a.initial_speed ?? 0,
       };
     },
 

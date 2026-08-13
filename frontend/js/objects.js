@@ -19,6 +19,17 @@
   const trajDoneBtn    = document.getElementById('traj-done-btn');
   const trajUndoBtn    = document.getElementById('traj-undo-btn');
 
+  // Speed a newly placed actor starts with, emitted as a SpeedAction in the
+  // Storyboard Init. Deliberately the same 10.0 as simulate.js's FALLBACK_SPEED
+  // and build_start_event's own absolute_speed, so a freshly placed actor moves
+  // the same way whether or not it has events.
+  //
+  // This is the *placement* default only. An actor loaded from a save file or
+  // seeded straight into AppState without the field defaults to 0 instead
+  // (AppState._hydrateActor, backend _normalize_actor) — a legacy scenario must
+  // not have its stationary actors quietly set in motion.
+  const DEFAULT_INIT_SPEED = 10.0;
+
   // ── Drag state ───────────────────────────────────────────────────────────────
   let _dragState = null;   // { type: 'actor'|'yaw', actorId, startWorld, startActorPos, startYaw }
 
@@ -99,6 +110,7 @@
       id: AppState.nextId(), type, x, y, z, yaw,
       behaviors: ['constant_speed'],
       trigger_distance: 400,
+      initial_speed: DEFAULT_INIT_SPEED,
       events: [],
     };
     // No template targets 'ego' (ScenarioTemplates.eventsForActor requires

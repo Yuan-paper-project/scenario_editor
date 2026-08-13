@@ -204,6 +204,18 @@ def _normalize_actor(
     actor.setdefault("trigger_distance", 400)
     actor["trigger_distance"] = max(5.0, min(1000.0, float(actor["trigger_distance"])))
 
+    # Speed the actor has on the first tick, emitted as a SpeedAction in the
+    # Storyboard Init. The floor at 0 is not cosmetic: ScenarioRunner's
+    # openscenario_configuration._get_actor_speed *raises* on a negative
+    # AbsoluteTargetSpeed in Init, killing the run.
+    #
+    # Defaults to 0, NOT to the editor's placement default of 10. This function
+    # also normalises hand-written and LLM-generated payloads and every
+    # tests/carla_cases.py case, none of which mention the field — defaulting
+    # those to 10 would put every previously stationary actor into motion.
+    actor.setdefault("initial_speed", 0.0)
+    actor["initial_speed"] = max(0.0, min(100.0, float(actor["initial_speed"])))
+
     for idx, event in enumerate(actor["events"]):
         if not isinstance(event, dict):
             actor["events"][idx] = event = {}
