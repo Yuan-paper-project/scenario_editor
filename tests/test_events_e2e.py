@@ -218,6 +218,36 @@ with sync_playwright() as p:
     check("relative speed events are named RelativeSpeed",
           "RelativeSpeed" in ev["name"], ev["name"])
 
+    # ── the rate dimension ───────────────────────────────────────────────────
+    # ChangeActorTargetSpeed ramps at this rate instead of stepping, and ends
+    # when it ARRIVES rather than on a clock. Note this needs the locally
+    # patched ScenarioRunner: stock 0.9.15 has no 'rate' branch and silently
+    # reads the value as a duration in seconds.
+    seed(page, [{"id": "e1", "trigger": {"type": "simulation_time", "value": 0},
+                 "action": {"type": "set_speed",
+                            "dynamics": {"shape": "step", "dimension": "rate", "value": 2.5},
+                            "target": {"mode": "absolute", "value": 20.0}}}])
+    xml = H.export_xosc(page)
+    ev = H.parse_events(xml, entity="adversary")[0]
+    check("rate dimension survives export",
+          ev["action"]["dimension"] == "rate", str(ev["action"]["dimension"]))
+    check("rate keeps its m/s2 value",
+          ev["action"]["dynamics_value"] == 2.5, str(ev["action"]["dynamics_value"]))
+    # 'step' went in; a ramp cannot be a step, so the normalizer overrides it.
+    check("rate forces a linear shape even when step was authored",
+          ev["action"]["shape"] == "linear", str(ev["action"]["shape"]))
+
+    seed(page, [{"id": "e1", "trigger": {"type": "simulation_time", "value": 0},
+                 "action": {"type": "set_speed",
+                            "dynamics": {"shape": "linear", "dimension": "rate", "value": 0},
+                            "target": {"mode": "absolute", "value": 20.0}}}])
+    xml = H.export_xosc(page)
+    ev = H.parse_events(xml, entity="adversary")[0]
+    # A rate of 0 never reaches the target, so the atomic never reports SUCCESS
+    # and the run hangs with an orphaned scenario_runner. The floor is the guard.
+    check("a rate of 0 is floored before export",
+          ev["action"]["dynamics_value"] == 0.1, str(ev["action"]["dynamics_value"]))
+
     # ── follow_trajectory ────────────────────────────────────────────────────
     traj = [{"x": 265.0, "y": 1.9, "z": 0.2, "velocity": 8.0},
             {"x": 240.0, "y": 1.9, "z": 0.2, "velocity": 8.0},

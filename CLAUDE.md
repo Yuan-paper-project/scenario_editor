@@ -201,6 +201,41 @@ Silent behaviours worth knowing when debugging "my event did nothing":
 - `eventPanel.js` permits at most one path-producing event (`follow_trajectory` or `assign_route`) per actor (`frontend/js/eventPanel.js`), the ego included — this is also what `route_waypoints` (for route XML export) is derived from now that there is no actor-level `ego.trajectory`.
 - **An actor with `events: []` is not stationary — it drives off.** `build_custom_event_chain` returns `False` for an empty list and `xml_builder` falls back to `build_behavior_chain` with the default `behaviors: ['constant_speed']`. This applies to the ego exactly as it does to an NPC: an ego placed with no events gets its own `heroBehavior` Act built from the fallback chain, not a motionless spawn.
 
+### `set_speed`'s dynamics dimension: a hold (`time`) or a ramp (`rate`)
+
+A `set_speed` action's `dynamics.value` means a different physical quantity per
+`dimension`, chosen in the event card's **Dynamik** toggle (`Zeit` | `Rate`,
+`_speedDimensionToggle` in `eventPanel.js`, modelled on the `Modus` toggle above it).
+The second field's label and unit swap with it — `Für … s` vs `Rate … m/s²` — and so
+does the card summary (`für Ns` vs `mit N m/s²`).
+
+| dimension | value | speed profile | when the event **ends** |
+|---|---|---|---|
+| `time` (default) | seconds | instant step to the target, then hold | after `value` seconds |
+| `rate` | m/s² | linear ramp from the actor's speed at trigger time | **on reaching the target** |
+
+`distance` (metres driven) is a third dimension the runtime honours and the whitelists
+accept, but the toggle does not offer it — a payload carrying it renders as `Zeit` and
+is rewritten to `time` the moment the value field is touched, exactly as the field did
+unconditionally before the toggle existed.
+
+Things that only make sense once you have read `ChangeActorTargetSpeed`:
+
+- **`rate` supersedes `duration`/`distance`** — they are an `if`/`elif` in the atomic, so
+  a rate event's completion time is `|Δv| / rate`, not anything authored. Anything chained
+  onto it with `after_event` fires on arrival.
+- **A `rate` of `0` never terminates.** `commanded = start_speed ± 0·elapsed` never reaches
+  the target, so the atomic never reports SUCCESS, the storyboard never completes, and
+  `run.sh` blocks forever in `wait` — leaving an orphan that ticks CARLA underneath the
+  *next* case (see the CARLA-tests section). Hence the **`0.1` floor**, applied in
+  `_normalize_actor` *and* in the emitter's own copy, not merely as an input `min`.
+- **`shape` is forced to `linear` for `rate`.** `step` + `rate` is self-contradictory. This
+  runtime never reads `dynamicsShape` at all (`grep -rn dynamicsShape --include=*.py` on
+  `scenario_runner` → 0 hits), so this is honesty rather than behaviour — but it is what
+  keeps `test_templates_e2e.py`'s "`step` is what makes the duration a hold" assertion
+  coherent. Templates and every `tests/carla_cases.py` case stay on `time`.
+- **`rate` is a local ScenarioRunner patch, not upstream.** See the Verification section.
+
 ### Initial speed (`initial_speed`) — the one thing that happens *before* the storyboard
 
 Every scenario actor also carries `initial_speed` (m/s), edited in the properties
@@ -427,6 +462,17 @@ seconds. Three consequences the preview reproduces exactly:
 
 A negative `ref.speed + delta` is deliberately left unclamped, matching the atomic.
 
+**All of that is the `time` dimension. `rate` is a different atomic branch, and it
+cancels the continuous tracking above.** `initialise()` commands `_start_speed` rather
+than the target (so there is no step at all) and snapshots `_target_speed` once; `update()`
+still re-samples the reference every tick, but the rate branch **overwrites that write** with
+`start_speed ± rate·elapsed` clamped at the snapshot, then reports SUCCESS on arrival. So a
+relative `set_speed` with a rate is a one-shot ramp to *(reference speed at trigger time +
+delta)* and never follows anything. The preview reproduces this by clearing
+`sim.speedRelativeRef` when the dimension is `rate` — that is the real semantics, not a
+simplification. `speedRampFrom`/`speedRampTarget` hold the snapshot, and
+`_supersedeSpeedEvent` clears them so a later longitudinal command stops the ramp.
+
 `_makeSimActor` seeds `sim.speed` from the actor's `initial_speed` rather than from 0,
 which is the whole of the Init-`<SpeedAction>` mirror: every existing overwrite path
 (`set_speed`, `_avgTrajectorySpeed` on a trajectory, the `constant_speed` fallback gate)
@@ -610,6 +656,12 @@ SCENARIO_FILE=/abs/path/scenario.xosc bash /home/dellpro2/Antonio/run.sh
 
 **There are two ScenarioRunner checkouts on this box and they do not agree — check which one you are editing.** `/home/dellpro2/Antonio/run.sh` executes **`/home/dellpro2/Antonio/scenario_runner`**: it `cd`s there and runs that repo's own `scripts/run_selfref_video_test.py`, which hardcodes `SCENARIO_RUNNER_ROOT` to the same path and `Popen`s its `scenario_runner.py`. `tests/run_carla_cases.py` drives the *same* `run.sh`, so both paths now exercise one install and **`/home/dellpro2/yungloon/scenario_runner-0.9.15` is imported by neither** — only the CARLA server binary and the `agents.navigation.*` package come from yungloon (`CARLA_ROOT=/home/dellpro2/yungloon/carla-0.9.15`). Their `atomic_behaviors.py` differ by ~1985 lines, and the yungloon copy is the **locally patched** one (`CHANGES_LOCAL.md` there records it): its `ChangeActorWaypoints.initialise` filters the router's output with a `> 1.0 m` dedup **plus a heading band that drops reversals**. The install `run.sh` actually runs applies only the dedup — so **`simulate.js`'s `_exactRoute` heading filter (`ROUTE_HEADING_ACCEPT_LO`/`HI`) currently models an install nothing here executes**, and an `assign_route` actor under `run.sh` can still visibly drive backwards where the preview says it will not. Both resolve `agents.navigation.global_route_planner` to `/home/dellpro2/yungloon/carla-0.9.15/PythonAPI/carla/agents/navigation/`, and the GRP is the `CarlaDataProvider` singleton at sampling resolution **2.0** — the value `probe_carla_lane_graph.py` matches. It takes only `SCENARIO_FILE` — no `--goal` flag exists in this script, and it never launches `automatic_control_1.py` or any other external agent. Every ego manoeuvre — where it goes, when it speeds up, whether it turns at a junction — is now **authored in the editor as an event on the ego**, exactly like an NPC's, and reaches the file as the ego's own `heroBehavior` Act. Without a `follow_trajectory`/`assign_route` event the ego has no plan and drives its spawn lane via `SimpleVehicleControl`'s own `map.get_waypoint(...).next(2.0)` walk, which will not turn at a junction — that is expected, not a bug, and it is why junction/turn scenarios need a path event.
 
+**`set_speed`'s `rate` dimension only works because of a local patch to those two checkouts.** A third checkout, `/home/dellpro2/Antonio/scenario_runner_github`, is **stock 0.9.15** and is executed by nothing here — it is useful precisely as the reference for what is and is not upstream. Both `/home/dellpro2/Antonio/scenario_runner` (what `run.sh` runs) and the yungloon copy carry a `rate` branch in `openscenario_parser.py`'s `SpeedAction` block plus a `rate=` parameter and ramp in `ChangeActorTargetSpeed`; stock has neither. **On stock, `dynamicsDimension="rate"` falls into the `else` and the value is read as a duration in seconds** — a clean file that silently does the wrong thing, not an error. If an export is ever run against an unpatched ScenarioRunner, that is where a "the ramp did nothing" report comes from. Verify with:
+
+```bash
+grep -n 'dimension == "rate"' /home/dellpro2/Antonio/scenario_runner/srunner/tools/openscenario_parser.py
+```
+
 **Nothing on `run.sh`'s path validates the `.xosc` against the OpenSCENARIO XSD any more.** The `scenario_runner_xosc.py` install that did is no longer what `run.sh` invokes (see above), and `/home/dellpro2/Antonio/scenario_runner` has no XSD check. The mismatch that validator caught is still in the emitter: `event_builders.py` writes `<Vertex relativeTime=...>` where the strict schema wants `time`. Its parser reads `relativeTime` (`openscenario_parser.py:1404`), so a `follow_trajectory` scenario now runs where it used to be rejected outright — do not read a clean CARLA run as evidence the file is schema-valid.
 
 You can still validate by hand — the schema is on this box and `xmllint` is installed, and current exports do pass:
@@ -629,7 +681,7 @@ bash run.sh 9090                 # terminal 1
 bash tests/run_tests.sh          # terminal 2 (EDITOR_URL overrides the target)
 ```
 
-That runs `test_normalization.py` (88 checks, no browser or server needed), then `compare_xodr_lane_graph.py` (also no browser/server/CARLA — validates `backend/lane_graph_builder.py` against the 8 committed probed graphs), then the eight Playwright suites: props (54), prop yaw (23), templates (149), events (49, one of them a `KNOWN` open defect — see below), ego events (56), actor types (272, grows with the catalogue), elevation (33), route fidelity (9). All but the first two drive a real browser against a real server and a real export. **Restart the editor first if you changed `../llm-scenario-gen`** — otherwise the frontend shows new catalogue data while the backend exports the old, which looks like a test bug and is not one.
+That runs `test_normalization.py` (93 checks, no browser or server needed), then `compare_xodr_lane_graph.py` (also no browser/server/CARLA — validates `backend/lane_graph_builder.py` against the 8 committed probed graphs), then the eight Playwright suites: props (54), prop yaw (23), templates (149), events (53, one of them a `KNOWN` open defect — see below), ego events (56), actor types (272, grows with the catalogue), elevation (33), route fidelity (9). All but the first two drive a real browser against a real server and a real export. **Restart the editor first if you changed `../llm-scenario-gen`** — otherwise the frontend shows new catalogue data while the backend exports the old, which looks like a test bug and is not one.
 
 `test_ego_events_e2e.py` is kept separate from `test_events_e2e.py` rather than folded in: the older suite's `EGO` fixture and every one of its assertions assume an inert ego (no behaviors, no events), which was true before the ego became a controllable actor and is the entire premise the new suite tests against.
 

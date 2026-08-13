@@ -149,14 +149,27 @@ def _normalize_structured_event(
         else:
             speed_target["value"] = max(0.0, min(100.0, float(target.get("value", 10.0))))
         dimension = dynamics.get("dimension", "time")
-        if dimension not in {"distance", "time"}:
+        if dimension not in {"distance", "time", "rate"}:
             dimension = "time"
+        if dimension == "rate":
+            # ChangeActorTargetSpeed's rate branch ends the atomic when the
+            # ramped speed *reaches* the target, never on a clock. A rate of 0
+            # therefore never terminates: the storyboard stays RUNNING, run.sh
+            # blocks forever in `wait`, and the orphan keeps ticking CARLA under
+            # the next scenario. The floor is that guard, not tidiness.
+            dyn_value = max(0.1, float(dynamics.get("value", 2.5)))
+            # 'step' + 'rate' is self-contradictory. This runtime never reads
+            # dynamicsShape, but the file should still say what it means.
+            shape = "linear"
+        else:
+            dyn_value = max(0.0, float(dynamics.get("value", 5.0)))
+            shape = dynamics.get("shape", "step")
         event["action"] = {
             "type": "set_speed",
             "dynamics": {
-                "shape": dynamics.get("shape", "step"),
+                "shape": shape,
                 "dimension": dimension,
-                "value": max(0.0, float(dynamics.get("value", 5.0))),
+                "value": dyn_value,
             },
             "target": speed_target,
         }

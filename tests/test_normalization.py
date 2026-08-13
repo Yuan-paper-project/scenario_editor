@@ -190,6 +190,34 @@ check("unknown dynamics dimension coerces to time",
       out["npcs"][0]["events"][0]["action"]["dynamics"]["dimension"] == "time")
 
 out = norm([{"id": "e1", "trigger": {"type": "simulation_time"},
+             "action": {"type": "set_speed",
+                        "dynamics": {"shape": "step", "dimension": "rate", "value": 2.5}}}])
+dyn = out["npcs"][0]["events"][0]["action"]["dynamics"]
+check("rate dynamics dimension survives the whitelist",
+      dyn["dimension"] == "rate", str(dyn))
+# 'step' + 'rate' is self-contradictory; this runtime never reads dynamicsShape
+# but the file should still say what it means.
+check("rate dynamics forces a linear shape", dyn["shape"] == "linear", str(dyn))
+check("rate dynamics keeps its value", dyn["value"] == 2.5, str(dyn))
+
+# A rate of 0 makes ChangeActorTargetSpeed's ramp never reach its target, so the
+# atomic never reports SUCCESS, the storyboard never completes and run.sh blocks
+# forever in `wait`. The floor is that guard.
+out = norm([{"id": "e1", "trigger": {"type": "simulation_time"},
+             "action": {"type": "set_speed",
+                        "dynamics": {"shape": "linear", "dimension": "rate", "value": 0}}}])
+check("a rate of 0 floors to 0.1",
+      out["npcs"][0]["events"][0]["action"]["dynamics"]["value"] == 0.1,
+      str(out["npcs"][0]["events"][0]["action"]["dynamics"]))
+
+out = norm([{"id": "e1", "trigger": {"type": "simulation_time"},
+             "action": {"type": "set_speed",
+                        "dynamics": {"shape": "linear", "dimension": "time", "value": 0}}}])
+dyn = out["npcs"][0]["events"][0]["action"]["dynamics"]
+check("the time dimension keeps its 0.0 floor and its shape",
+      dyn["value"] == 0.0 and dyn["shape"] == "linear", str(dyn))
+
+out = norm([{"id": "e1", "trigger": {"type": "simulation_time"},
              "action": {"type": "lane_change", "direction": "sideways"}}])
 check("unknown lane_change direction coerces to left",
       out["npcs"][0]["events"][0]["action"]["direction"] == "left")

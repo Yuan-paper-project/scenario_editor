@@ -29,6 +29,16 @@
     ['after_event', 'After other event ends'],
   ];
 
+  // set_speed's dynamics value means a different physical quantity per
+  // dimension, so switching re-defaults it — 5 is a nonsense rate and 2.5 a
+  // nonsense duration. 2.5 m/s² is ≈0.25 g, everyday accel/brake.
+  const SPEED_DIMENSIONS = [
+    ['time', 'Zeit'],
+    ['rate', 'Rate'],
+  ];
+  const DEFAULT_SPEED_TIME = 5.0;
+  const DEFAULT_SPEED_RATE = 2.5;
+
   let _refresh = () => {};
 
   // ── Public API ──────────────────────────────────────────────────────────────
@@ -189,6 +199,7 @@
       });
       card.appendChild(_row('Relativ zu', targetSelect));
     }
+    card.appendChild(_row('Dynamik', _speedDimensionToggle(actor, ev)));
 
     const speedInput = document.createElement('input');
     speedInput.type = 'number';
@@ -206,22 +217,24 @@
     });
     if (!isRelativeSpeed) speedInput.min = '0';
 
+    const isRate = _speedDimension(ev) === 'rate';
+    const dynFloor = isRate ? 0.1 : 0; // a rate of 0 never reaches its target
     const timeInput = document.createElement('input');
     timeInput.type = 'number';
-    timeInput.min = '0';
+    timeInput.min = String(dynFloor);
     timeInput.step = '0.1';
-    timeInput.value = speedDynamics.value ?? 5.0;
+    timeInput.value = speedDynamics.value ?? (isRate ? DEFAULT_SPEED_RATE : DEFAULT_SPEED_TIME);
     timeInput.addEventListener('change', e => {
       _patchEventAction(actor, ev, {
         dynamics: {
           ...speedDynamics,
-          shape: speedDynamics.shape || 'step',
-          dimension: 'time',
-          value: Math.max(0, parseFloat(e.target.value) || 0),
+          shape: isRate ? 'linear' : (speedDynamics.shape || 'step'),
+          dimension: isRate ? 'rate' : 'time',
+          value: Math.max(dynFloor, parseFloat(e.target.value) || 0),
         },
       });
     });
-    card.appendChild(_speedTimingRow(speedInput, timeInput));
+    card.appendChild(_speedTimingRow(speedInput, timeInput, isRate));
   }
 
   function _appendDistanceActionControls(card, actor, ev, action) {
@@ -311,6 +324,12 @@
     const target = action.target || {};
     const dynamics = action.dynamics || {};
     const speedMode = _speedMode(ev);
+    // 'für Ns' is a hold; 'mit N m/s²' is a ramp that ends on arrival, not on a
+    // clock — the wording has to distinguish them or the card lies about when
+    // an after_event chained onto it will fire.
+    const speedDynamicsSummary = _speedDimension(ev) === 'rate'
+      ? `mit ${dynamics.value ?? DEFAULT_SPEED_RATE} m/s²`
+      : `für ${dynamics.value ?? DEFAULT_SPEED_TIME}s`;
     const relativeSpeedTarget = target.entity_ref || _defaultRelativeActorId(actor);
     const distanceTarget = action.entity_ref || _defaultRelativeActorId(actor);
     const hasTrajectory = (action.trajectory || []).length > 0;
@@ -325,8 +344,8 @@
         ? `Route gezeichnet${routeVisible ? '' : ', ausgeblendet'}`
         : 'Route nicht gezeichnet',
       set_speed: speedMode === 'relative'
-        ? `${target.delta ?? 10} m/s relativ zu ${_eventActorLabel(relativeSpeedTarget)} für ${dynamics.value ?? 5}s`
-        : `${target.value ?? 10} m/s für ${dynamics.value ?? 5}s`,
+        ? `${target.delta ?? 10} m/s relativ zu ${_eventActorLabel(relativeSpeedTarget)} ${speedDynamicsSummary}`
+        : `${target.value ?? 10} m/s ${speedDynamicsSummary}`,
       set_distance: `${action.axis === 'lateral' ? 'Lateral' : 'Longitudinal'} ${action.value ?? 10} m relativ zu ${_eventActorLabel(distanceTarget)}`,
       lane_change: `${action.direction === 'right' ? 'Rechts' : 'Links'} innerhalb ${dynamics.value ?? 12} m`,
     };
@@ -454,6 +473,14 @@
     return target.mode === 'relative' ? 'relative' : 'absolute';
   }
 
+  /** Only the two dimensions the panel offers. A hand-written or LLM payload
+   * carrying 'distance' renders (and, once edited, saves) as 'time' — the same
+   * coercion the field did unconditionally before the toggle existed. */
+  function _speedDimension(ev) {
+    const dynamics = _eventAction(ev).dynamics || {};
+    return dynamics.dimension === 'rate' ? 'rate' : 'time';
+  }
+
   function _defaultRelativeActorId(actor) {
     if (AppState.ego && AppState.ego.id !== actor?.id) return AppState.ego.id;
     const fallback = AppState.npcs.find(n => n.id !== actor?.id);
@@ -558,6 +585,38 @@
     return wrap;
   }
 
+  /** Zeit (s) vs Rate (m/s²) for the SpeedActionDynamics value. The two are not
+   * interchangeable numbers, so a real change re-defaults the value; clicking
+   * the already-active button leaves a hand-tuned one alone. */
+  function _speedDimensionToggle(actor, ev) {
+    const current = _speedDimension(ev);
+    const dynamics = _eventAction(ev).dynamics || {};
+    const wrap = document.createElement('div');
+    wrap.className = 'event-toggle';
+
+    SPEED_DIMENSIONS.forEach(([value, label]) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = label;
+      btn.className = value === current ? 'active' : '';
+      btn.addEventListener('click', () => {
+        if (value === current) return;
+        _patchEventAction(actor, ev, {
+          dynamics: {
+            ...dynamics,
+            dimension: value,
+            // 'step' + 'rate' is self-contradictory; the backend forces this
+            // too, but keeping state honest keeps the export a no-op change.
+            shape: value === 'rate' ? 'linear' : 'step',
+            value: value === 'rate' ? DEFAULT_SPEED_RATE : DEFAULT_SPEED_TIME,
+          },
+        });
+      });
+      wrap.appendChild(btn);
+    });
+    return wrap;
+  }
+
   // ── DOM Helpers ─────────────────────────────────────────────────────────────
 
   function _row(labelText, control) {
@@ -573,7 +632,7 @@
     return row;
   }
 
-  function _speedTimingRow(speedInput, timeInput) {
+  function _speedTimingRow(speedInput, timeInput, isRate) {
     const row = document.createElement('div');
     row.className = 'event-speed-row';
 
@@ -583,9 +642,9 @@
     speedUnit.textContent = 'm/s';
 
     const timeLabel = document.createElement('label');
-    timeLabel.textContent = 'Für';
+    timeLabel.textContent = isRate ? 'Rate' : 'Für';
     const timeUnit = document.createElement('span');
-    timeUnit.textContent = 's';
+    timeUnit.textContent = isRate ? 'm/s²' : 's';
 
     row.appendChild(speedLabel);
     row.appendChild(speedInput);

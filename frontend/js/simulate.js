@@ -663,8 +663,10 @@
       events,
       fired: new Map(),           // eventId → {firedAt, completedAt|null}
       activeSpeedEventId: null,
-      speedEventDuration: 0,
+      speedEventDuration: 0,       // dynamics.value: seconds, or m/s² when the dimension is 'rate'
       speedEventDimension: 'time',
+      speedRampFrom: 0,            // ChangeActorTargetSpeed._start_speed, 'rate' only
+      speedRampTarget: 0,          // ._target_speed as snapshotted in initialise()
       speedRelativeRef: null,      // entity id to keep tracking; null ⇒ absolute target
       speedRelativeDelta: 0,
       activePathEventId: null,
@@ -711,6 +713,8 @@
     sim.activeSpeedEventId = null;
     sim.speedRelativeRef = null;
     sim.speedRelativeDelta = 0;
+    sim.speedRampFrom = 0;
+    sim.speedRampTarget = 0;
   }
 
   function _applyEventAction(sim, ev, simTime) {
@@ -726,12 +730,26 @@
       const isRelative = target.mode === 'relative';
       sim.speedRelativeRef = isRelative ? (target.entity_ref || _egoId) : null;
       sim.speedRelativeDelta = isRelative ? (target.delta ?? 0) : 0;
-      sim.speed = isRelative
-        ? _refSpeed(sim.speedRelativeRef) + sim.speedRelativeDelta
-        : Math.max(0, target.value ?? 10);
       sim.activeSpeedEventId = ev.id;
       sim.speedEventDuration = (action.dynamics && action.dynamics.value) ?? 5.0;
       sim.speedEventDimension = (action.dynamics && action.dynamics.dimension) || 'time';
+
+      const resolvedTarget = isRelative
+        ? _refSpeed(sim.speedRelativeRef) + sim.speedRelativeDelta
+        : Math.max(0, target.value ?? 10);
+
+      if (sim.speedEventDimension === 'rate') {
+        // The rate branch does NOT step: initialise() commands _start_speed and
+        // update() ramps from there. It also snapshots _target_speed once and
+        // then overwrites its own per-tick relative re-sample with the ramp, so
+        // a relative target stops tracking the moment a rate is used — that is
+        // the atomic's real behaviour, not a shortcut taken here.
+        sim.speedRampFrom = sim.speed;
+        sim.speedRampTarget = resolvedTarget;
+        sim.speedRelativeRef = null;
+      } else {
+        sim.speed = resolvedTarget;
+      }
 
     } else if (action.type === 'follow_trajectory' || action.type === 'assign_route') {
       const isRoute = action.type === 'assign_route';
@@ -976,17 +994,31 @@
       // last tracked value forever. `continuous` governs only whether duration
       // is allowed to end the atomic at all, and the editor always exports
       // continuous='false' — so this is a bounded follow, not a permanent one.
-      // The distance dimension isn't produced by the UI (eventPanel.js
-      // hardcodes 'time'), so a legacy/hand-edited file with it never
+      // The distance dimension isn't produced by the UI (the Dynamik toggle
+      // offers Zeit and Rate only), so a legacy/hand-edited file with it never
       // completes via duration here and simply tracks until overwritten —
       // closer to the real atomic than the old frozen initial sample was.
+      // 'rate' is the one branch that is NOT a hold: it ramps and ends on
+      // arrival, so duration/distance never get a look-in (if/elif upstream).
       if (sim.activeSpeedEventId) {
         const rec = sim.fired.get(sim.activeSpeedEventId);
         if (rec && rec.completedAt == null) {
           if (sim.speedRelativeRef && !sim.goalStopped) {
             sim.speed = _refSpeed(sim.speedRelativeRef) + sim.speedRelativeDelta;
           }
-          if (sim.speedEventDimension === 'time' &&
+          if (sim.speedEventDimension === 'rate') {
+            // commanded = start ± rate·elapsed, clamped at the target. Not
+            // clamped to ≥0 — the target already bounds it, and a negative
+            // relative target is deliberately left unclamped (as in the atomic).
+            const elapsed = simTime - rec.firedAt;
+            const sign = sim.speedRampTarget >= sim.speedRampFrom ? 1 : -1;
+            const ramped = sim.speedRampFrom + sign * sim.speedEventDuration * elapsed;
+            const commanded = sign > 0
+              ? Math.min(ramped, sim.speedRampTarget)
+              : Math.max(ramped, sim.speedRampTarget);
+            if (!sim.goalStopped) sim.speed = commanded;
+            if (commanded === sim.speedRampTarget) rec.completedAt = simTime;
+          } else if (sim.speedEventDimension === 'time' &&
               simTime - rec.firedAt >= sim.speedEventDuration) {
             rec.completedAt = simTime;
           }
@@ -1005,7 +1037,11 @@
     for (const sim of _simActors.values()) {
       for (const ev of sim.events) {
         if (ev.trigger.type === 'simulation_time') maxDur = Math.max(maxDur, ev.trigger.value || 0);
-        if (ev.action.type === 'set_speed' && ev.action.dynamics) {
+        // A 'rate' dynamics.value is m/s², not seconds — how long the ramp
+        // actually takes depends on the actor's speed when it fires, which is
+        // not knowable here. Skip it rather than add an acceleration to a clock.
+        if (ev.action.type === 'set_speed' && ev.action.dynamics &&
+            ev.action.dynamics.dimension !== 'rate') {
           maxDur = Math.max(maxDur, (ev.trigger.value || 0) + (ev.action.dynamics.value || 0));
         }
       }
