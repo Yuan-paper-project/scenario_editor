@@ -46,6 +46,7 @@
   let _egoId      = null;
   let _originals  = new Map();  // actorId → {x, y, z, yaw}, to restore on stop
   let _simActors  = new Map();  // actorId → sim actor record (see _makeSimActor)
+  let _tickSpeeds = new Map();  // actorId → speed, snapshotted once per tick
   let _layerSimBadges = null;   // our own SVG layer, appended into #world
 
   // ── Tunables mirroring the real controllers ─────────────────────────────────
@@ -226,6 +227,16 @@
 
   function _resolveSimRef(id) {
     return id ? _simActors.get(id) || null : null;
+  }
+
+  /** The reference actor's speed as ChangeActorTargetSpeed sees it.
+   * CarlaDataProvider.get_velocity reads a velocity map refilled once per world
+   * tick, so every atomic in one tick reads the same value whatever the
+   * behaviour-tree order — hence the snapshot rather than sim.speed live — and
+   * an actor missing from it yields 0.0 (a printed warning, never a raise). */
+  function _refSpeed(id) {
+    const ref = id || _egoId;  // an omitted entity_ref exports as `hero`
+    return _tickSpeeds.has(ref) ? _tickSpeeds.get(ref) : 0;
   }
 
   /** True the first tick the trigger's condition holds. Level-sensitive, like
@@ -654,6 +665,8 @@
       activeSpeedEventId: null,
       speedEventDuration: 0,
       speedEventDimension: 'time',
+      speedRelativeRef: null,      // entity id to keep tracking; null ⇒ absolute target
+      speedRelativeDelta: 0,
       activePathEventId: null,
       pathKind: null,              // 'follow_trajectory' | 'assign_route'
       waypoints: null,
@@ -663,6 +676,7 @@
       badge: null,
       traveled: 0,
       frozen: false,
+      goalStopped: false,          // SimpleVehicleControl._reached_goal — sticky
       usesFallbackChain: events.length === 0,
       fallbackFired: false,
       triggerDistance: actor.trigger_distance || 400,
@@ -687,20 +701,34 @@
     return totalTime > 0 ? totalDist / totalTime : 10;
   }
 
+  /** A new longitudinal command lands: ChangeActorTargetSpeed.update() sees
+   * get_last_longitudinal_command() != its own start_time and reports SUCCESS,
+   * so the old atomic stops writing — including any relative tracking. */
+  function _supersedeSpeedEvent(sim, simTime) {
+    if (!sim.activeSpeedEventId) return;
+    const prev = sim.fired.get(sim.activeSpeedEventId);
+    if (prev && prev.completedAt == null) prev.completedAt = simTime;
+    sim.activeSpeedEventId = null;
+    sim.speedRelativeRef = null;
+    sim.speedRelativeDelta = 0;
+  }
+
   function _applyEventAction(sim, ev, simTime) {
     sim.fired.set(ev.id, { firedAt: simTime, completedAt: null });
     const action = ev.action;
 
     if (action.type === 'set_speed') {
-      if (sim.activeSpeedEventId) {
-        const prev = sim.fired.get(sim.activeSpeedEventId);
-        if (prev && prev.completedAt == null) prev.completedAt = simTime; // overwritten
-      }
+      _supersedeSpeedEvent(sim, simTime);
+      // ChangeActorTargetSpeed.initialise(): a relative target samples the
+      // reference ONCE here, but the atomic goes on re-sampling it every tick
+      // for the whole duration (see _stepActor), so the parameters are kept.
       const target = action.target || {};
-      const value = target.mode === 'relative'
-        ? (_resolveSimRef(target.entity_ref)?.speed ?? 0) + (target.delta ?? 0)
+      const isRelative = target.mode === 'relative';
+      sim.speedRelativeRef = isRelative ? (target.entity_ref || _egoId) : null;
+      sim.speedRelativeDelta = isRelative ? (target.delta ?? 0) : 0;
+      sim.speed = isRelative
+        ? _refSpeed(sim.speedRelativeRef) + sim.speedRelativeDelta
         : Math.max(0, target.value ?? 10);
-      sim.speed = value;
       sim.activeSpeedEventId = ev.id;
       sim.speedEventDuration = (action.dynamics && action.dynamics.value) ?? 5.0;
       sim.speedEventDimension = (action.dynamics && action.dynamics.dimension) || 'time';
@@ -729,6 +757,12 @@
           sim.badge = { icon: '≈', text: 'Route ist ungefähr — kein CARLA-Kartengraph für diese Karte/Punkte' };
         }
       } else {
+        // FollowTrajectoryAction parses into a Sequence whose first child is
+        // ChangeActorTargetSpeed with its own start_time — a LONGITUDINAL
+        // command, so it cancels any running relative-speed tracker. Neither
+        // assign_route nor lane_change does (both issue waypoint commands
+        // only, stamped on a separate _last_waypoint_command).
+        _supersedeSpeedEvent(sim, simTime);
         sim.waypoints = rawPoints.map(p => ({ x: p.x, y: p.y, z: p.z ?? 0.2 }));
         sim.speed = _avgTrajectorySpeed(rawPoints);
         sim.badge = null;
@@ -822,6 +856,10 @@
             _completeLaneChange(sim);
           } else {
             sim.speed = 0; // dead stop on _reached_goal, not a coast
+            // _reached_goal is sticky: run_step returns zero velocity from
+            // here on whatever target speed the atomics keep writing, so a
+            // relative tracker must not drive this actor off again.
+            sim.goalStopped = true;
             if (sim.pathKind === 'follow_trajectory') sim.badge = null;
           }
           return;
@@ -932,14 +970,26 @@
           _applyEventAction(sim, ev, simTime);
         }
       }
-      // Duration-based completion for the active speed event (distance
-      // dimension isn't produced by the UI — eventPanel.js hardcodes 'time' —
-      // so a legacy/hand-edited file with it simply never completes via
-      // duration here, only via being overwritten).
-      if (sim.activeSpeedEventId && sim.speedEventDimension === 'time') {
+      // ChangeActorTargetSpeed.update(), replayed: a RELATIVE target is
+      // re-sampled on EVERY tick and BEFORE the duration test, so the final
+      // tick of the window still tracks and the controller then holds that
+      // last tracked value forever. `continuous` governs only whether duration
+      // is allowed to end the atomic at all, and the editor always exports
+      // continuous='false' — so this is a bounded follow, not a permanent one.
+      // The distance dimension isn't produced by the UI (eventPanel.js
+      // hardcodes 'time'), so a legacy/hand-edited file with it never
+      // completes via duration here and simply tracks until overwritten —
+      // closer to the real atomic than the old frozen initial sample was.
+      if (sim.activeSpeedEventId) {
         const rec = sim.fired.get(sim.activeSpeedEventId);
-        if (rec && rec.completedAt == null && simTime - rec.firedAt >= sim.speedEventDuration) {
-          rec.completedAt = simTime;
+        if (rec && rec.completedAt == null) {
+          if (sim.speedRelativeRef && !sim.goalStopped) {
+            sim.speed = _refSpeed(sim.speedRelativeRef) + sim.speedRelativeDelta;
+          }
+          if (sim.speedEventDimension === 'time' &&
+              simTime - rec.firedAt >= sim.speedEventDuration) {
+            rec.completedAt = simTime;
+          }
         }
       }
     }
@@ -991,9 +1041,15 @@
     }
   }
 
+  function _snapshotSpeeds() {
+    _tickSpeeds.clear();
+    for (const sim of _simActors.values()) _tickSpeeds.set(sim.id, sim.speed);
+  }
+
   function _prepareSimulation() {
     _originals.clear();
     _simActors.clear();
+    _tickSpeeds.clear();
     _scenarioEnded = false;
     _egoId = null;
 
@@ -1010,6 +1066,8 @@
       _originals.set(actor.id, { x: actor.x, y: actor.y, z: actor.z, yaw: actor.yaw });
       _simActors.set(actor.id, _makeSimActor(actor, actor.id === _egoId));
     }
+    _snapshotSpeeds(); // so an event firing on the very first tick reads real
+                       // init speeds rather than an empty map
     _ensureBadgeLayer();
     _horizon = _estimatedHorizon();
     return true;
@@ -1079,9 +1137,12 @@
     _simTime += dt;
 
     // Every actor reads the SAME pre-tick ego position, so trigger checks
-    // don't depend on iteration order within this tick.
+    // don't depend on iteration order within this tick. Reference speeds are
+    // snapshotted for the same reason — CarlaDataProvider's velocity map is
+    // refilled once per world tick, not read live off the other actor.
     const egoSim = _egoId ? _simActors.get(_egoId) : null;
     const egoPrevPos = egoSim ? { x: egoSim.x, y: egoSim.y, z: egoSim.z } : null;
+    _snapshotSpeeds();
 
     for (const sim of _simActors.values()) {
       _stepActor(sim, dt, egoPrevPos, _simTime);

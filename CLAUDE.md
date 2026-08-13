@@ -279,10 +279,13 @@ tick — a silent no-op that looks identical to a working action until someone
 watches the simulation. The same `forbid` guard also catches an *omitted*
 `entity_ref`, which falls back to `"hero"` and would otherwise silently become
 this exact self-reference on an ego-owned event. Relative `set_speed` naming
-the acting entity itself is **not** rejected — `"my current speed plus a
-delta"` is a well-defined one-shot action (`ChangeActorTargetSpeed` with
-`relative_actor == actor`), and the UI cannot produce it by accident since
-`_relativeActorOptions` already excludes the actor from its own dropdown.
+the acting entity itself is **not** rejected — `ChangeActorTargetSpeed` with
+`relative_actor == actor` is well defined, and the UI cannot produce it by
+accident since `_relativeActorOptions` already excludes the actor from its own
+dropdown. It is **not** a one-shot `"current speed plus a delta"` though: the
+atomic re-samples the reference every tick for the action's whole duration (see
+the preview section below), so a self-reference *compounds* — it adds `delta`
+per tick until the duration expires, not once.
 
 ## Static props (CARLA `static.prop.*`)
 
@@ -397,6 +400,32 @@ evaluates all 4 real triggers (including the `distance_to_ego` 60 s OR-fallback 
 mirrors real termination semantics (an instant speed step that persists past its duration, a
 4 m/1 m waypoint-acceptance radius, a dead stop on `_reached_goal`). `set_distance` is
 deliberately not simulated (badge only) — see the plan below for why.
+
+**A relative `set_speed` tracks its reference continuously, it does not sample once.**
+`ChangeActorTargetSpeed.update()` re-reads `get_velocity(relative_actor)` and rewrites the
+controller's target on **every** tick, and does so **before** the duration test — so the
+final tick of the window still tracks and the controller then holds that last tracked value
+forever. `continuous` governs only whether duration/distance may *end* the atomic, and the
+editor always exports `continuous='false'`, so the follow is bounded by `dynamics.value`
+seconds. Three consequences the preview reproduces exactly:
+
+- Reference speeds are snapshotted once per tick (`_snapshotSpeeds` / `_refSpeed`), the same
+  trick as `egoPrevPos` and for the same reason — `CarlaDataProvider`'s velocity map is
+  refilled once per world tick, so no atomic reads another actor's *live* mid-tick speed and
+  actor iteration order cannot matter. An unresolvable ref is a silent `0`, matching
+  `get_velocity`'s own fallback; an omitted one falls back to the ego, matching the `"hero"`
+  default `_entity_ref` applies at export.
+- Only a **longitudinal** command cancels a running tracker (`get_last_longitudinal_command()`).
+  Another `set_speed` does, and so does `follow_trajectory` — its parser branch builds its own
+  `ChangeActorTargetSpeed` in a Sequence. `assign_route` and `lane_change` do **not**: they
+  issue waypoint commands only, stamped on a separate `_last_waypoint_command`, so a tracker
+  keeps running right across them. `_supersedeSpeedEvent` is the single place this is applied.
+- `SimpleVehicleControl._reached_goal` is sticky — `run_step` returns zero velocity from then
+  on whatever target the atomics keep writing. `sim.goalStopped` mirrors it so a tracker cannot
+  drive a route-finished actor off again. (Still divergent, and pre-existing: a *later*
+  `set_speed` event does move a goal-stopped actor in the preview, where CARLA would not.)
+
+A negative `ref.speed + delta` is deliberately left unclamped, matching the atomic.
 
 `_makeSimActor` seeds `sim.speed` from the actor's `initial_speed` rather than from 0,
 which is the whole of the Init-`<SpeedAction>` mirror: every existing overwrite path
