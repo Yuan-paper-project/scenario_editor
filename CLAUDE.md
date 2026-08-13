@@ -192,13 +192,20 @@ Adding or changing one means editing all three layers:
 | Validation | `backend/scenario_io.py` | `_normalize_structured_event` (per-event) / `_normalize_actor` (per-actor) — whitelists, clamps, defaults |
 | Emission | `../llm-scenario-gen/generator/event_builders.py` | the actual OpenSCENARIO XML |
 
+The `EVENT_ACTIONS` / `EVENT_TRIGGERS` **labels are German while the keys stay the
+snake_case OpenSCENARIO-side names** — only the keys travel to the other two layers.
+Renaming a label is not cosmetic-only: `test_events_e2e.py`, `test_ego_events_e2e.py`
+and `test_elevation_e2e.py` all click action buttons via
+`.event-action-button:has-text("<label>")`, so a rename breaks three suites at once.
+
 Silent behaviours worth knowing when debugging "my event did nothing":
 
 - Unknown action/trigger strings are **silently coerced** to `follow_trajectory` / `simulation_time` rather than raising — a typo in a new action name looks like a no-op.
 - An `assign_route` action forces its own trigger to `simulation_time @ 0` (`backend/scenario_io.py`, mirrored in `frontend/js/scenarioIO.js`).
 - An `after_event` trigger pointing at an `assign_route` event is rewritten to `distance_to_ego @ 400`.
 - A `distance_to_ego` trigger on an **ego-owned** event is rewritten to `simulation_time @ 0` — a distance from hero to itself is always 0, so the condition would fire on tick 1 regardless of the configured value. This coercion runs in `_normalize_actor` **after** the `after_event`→`assign_route` rewrite above, so a rewritten trigger on an ego event is caught too. `eventPanel.js` additionally omits the option from the trigger dropdown when the actor is the ego, and `event_builders.py`'s `build_start_event` / `_add_custom_event_start_trigger` fall back to `simulation_time` for `entity_name == 'hero'` as a third, defensive layer.
-- `eventPanel.js` permits at most one path-producing event (`follow_trajectory` or `assign_route`) per actor (`frontend/js/eventPanel.js`), the ego included — this is also what `route_waypoints` (for route XML export) is derived from now that there is no actor-level `ego.trajectory`.
+- `eventPanel.js` permits at most one path-producing event (`follow_trajectory` or `assign_route`) per actor (`frontend/js/eventPanel.js`), the ego included — this is also what `route_waypoints` (for route XML export) is derived from now that there is no actor-level `ego.trajectory`. The two path buttons stay in the action grid once one exists and go **`disabled` with a title**, rather than being removed: hiding them reflowed the grid with nothing to explain where they went.
+- An `assign_route` card shows the fixed chip **`startet sofort (fest)`** where every other card shows its trigger summary, because a route's trigger is discarded at export (see above) and the card offers no trigger controls for it. Do not "fix" this by printing the stored trigger — it would state a start condition the file does not contain.
 - **An actor with `events: []` is not stationary — it drives off.** `build_custom_event_chain` returns `False` for an empty list and `xml_builder` falls back to `build_behavior_chain` with the default `behaviors: ['constant_speed']`. This applies to the ego exactly as it does to an NPC: an ego placed with no events gets its own `heroBehavior` Act built from the fallback chain, not a motionless spawn.
 
 ### `set_speed`'s dynamics dimension: a hold (`time`) or a ramp (`rate`)
@@ -419,6 +426,8 @@ out; props carry a separate invisible hit circle, so clickability is not the blo
 - Props reuse the `.actor-group` class (plus `.prop-group`), which gives them selection, body-drag and the `mapView.js` pan-exclusion list for free. If you add a new draggable map object, do the same rather than adding a class to three separate `closest()` checks.
 - Use `Toast.success/error/warn/info` for feedback (there are no `alert()` calls) and `await Confirm.show(msg)` for destructive actions.
 - **UI-facing strings are German; code, comments, and identifiers are English.** Match this when adding UI.
+- `UIUtils` (`app.js`) holds the two helpers `properties.js` and `eventPanel.js` share: `paramRow(label, control, unit)` and `fmt(value, decimals = 1)`. **`fmt`'s convention is that display precision follows the input's `step`** — a `0.1`/`0.5`-step field reads 1 dp, a whole-number one reads 0 dp — and the *same* call formats the card summary above the field, so the two can never disagree (`10` next to `10.0`).
+- The properties panel is `--props-w` wide (360px) and its content text bottoms out at **11px**; only the bold, letter-spaced uppercase section eyebrows go smaller (10px). Several event-card rows are 5–6 column grids that only fit at that width — `.event-speed-row`, `.event-point-distance-row`, and the `70px` label column shared by `.event-row` / `.event-param-row` (which is why a param label longer than ~"Sollabstand" gets shortened and the long form moved to the input's `title`).
 
 ## Maps
 
@@ -681,7 +690,7 @@ bash run.sh 9090                 # terminal 1
 bash tests/run_tests.sh          # terminal 2 (EDITOR_URL overrides the target)
 ```
 
-That runs `test_normalization.py` (93 checks, no browser or server needed), then `compare_xodr_lane_graph.py` (also no browser/server/CARLA — validates `backend/lane_graph_builder.py` against the 8 committed probed graphs), then the eight Playwright suites: props (54), prop yaw (23), templates (149), events (53, one of them a `KNOWN` open defect — see below), ego events (56), actor types (272, grows with the catalogue), elevation (33), route fidelity (9). All but the first two drive a real browser against a real server and a real export. **Restart the editor first if you changed `../llm-scenario-gen`** — otherwise the frontend shows new catalogue data while the backend exports the old, which looks like a test bug and is not one.
+That runs `test_normalization.py` (93 checks, no browser or server needed), then `compare_xodr_lane_graph.py` (also no browser/server/CARLA — validates `backend/lane_graph_builder.py` against the 8 committed probed graphs), then the eight Playwright suites: props (54), prop yaw (23), templates (149), events (54, one of them a `KNOWN` open defect — see below), ego events (56), actor types (272, grows with the catalogue), elevation (33), route fidelity (9). All but the first two drive a real browser against a real server and a real export. **Restart the editor first if you changed `../llm-scenario-gen`** — otherwise the frontend shows new catalogue data while the backend exports the old, which looks like a test bug and is not one.
 
 `test_ego_events_e2e.py` is kept separate from `test_events_e2e.py` rather than folded in: the older suite's `EGO` fixture and every one of its assertions assume an inert ego (no behaviors, no events), which was true before the ego became a controllable actor and is the entire premise the new suite tests against.
 

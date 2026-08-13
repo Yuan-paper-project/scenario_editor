@@ -77,8 +77,8 @@ with sync_playwright() as p:
         "[...document.querySelectorAll('#event-action-grid .event-action-button')]"
         ".map(b => b.textContent)")
     check("ego event panel offers the same 5 actions as an NPC",
-          ego_labels == ["Follow trajectory", "Assign route", "Set speed",
-                         "Set distance", "Lane change"], str(ego_labels))
+          ego_labels == ["Trajektorie folgen", "Route zuweisen", "Geschw. setzen",
+                         "Abstand halten", "Spurwechsel"], str(ego_labels))
     check("ego's event section is visible",
           not page.evaluate("document.getElementById('event-section').classList.contains('hidden')"))
     check("ego's behavior panel is visible",
@@ -101,7 +101,7 @@ with sync_playwright() as p:
     # ── Adding an event through the real UI ──────────────────────────────────
     seed(page, [])
     page.evaluate("AppState.select('obj-1')")
-    page.click('#event-action-grid .event-action-button:has-text("Set speed")')
+    page.click('#event-action-grid .event-action-button:has-text("Geschw. setzen")')
     evs = page.evaluate("AppState.ego.events")
     check("Set speed adds one event to the ego", len(evs) == 1, str(len(evs)))
     check("the ego's first event defaults to a simulation_time trigger "
@@ -136,7 +136,7 @@ with sync_playwright() as p:
     # ── Drawing an ego path through the real click path ──────────────────────
     seed(page, [])
     page.evaluate("AppState.select('obj-1')")
-    page.click('#event-action-grid .event-action-button:has-text("Follow trajectory")')
+    page.click('#event-action-grid .event-action-button:has-text("Trajektorie folgen")')
     check("clicking Follow trajectory arms trajectory mode on the ego",
           page.evaluate("AppState.trajectoryMode && AppState.activeTrajectoryId === AppState.ego.id"))
     ev_id = page.evaluate("AppState.ego.events[0].id")

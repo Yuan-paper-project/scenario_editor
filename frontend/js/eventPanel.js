@@ -11,22 +11,27 @@
   const eventActionGrid = document.getElementById('event-action-grid');
   const eventList = document.getElementById('event-list');
 
+  // UI-facing strings are German throughout (see CLAUDE.md); the internal
+  // action/trigger keys stay the OpenSCENARIO-side snake_case names and are
+  // what every other layer matches on.
   const EVENT_ACTIONS = [
-    ['follow_trajectory', 'Follow trajectory'],
-    ['assign_route', 'Assign route'],
-    ['set_speed', 'Set speed'],
-    ['set_distance', 'Set distance'],
-    ['lane_change', 'Lane change'],
+    ['follow_trajectory', 'Trajektorie folgen'],
+    ['assign_route', 'Route zuweisen'],
+    // Abbreviated to match the in-card 'Geschw.' field label and to keep the
+    // longest card title ('Geschw. setzen 2') on one header line.
+    ['set_speed', 'Geschw. setzen'],
+    ['set_distance', 'Abstand halten'],
+    ['lane_change', 'Spurwechsel'],
   ];
 
   // distance_to_ego is omitted for the ego itself — a distance from hero to
   // hero is always 0, so the condition would fire on tick 1 regardless of
   // the configured value. See _defaultFirstTrigger.
   const EVENT_TRIGGERS = [
-    ['simulation_time', 'Simulation time'],
-    ['distance_to_ego', 'Distance to ego vehicle'],
-    ['distance_to_point', 'Distance to a point'],
-    ['after_event', 'After other event ends'],
+    ['simulation_time', 'Simulationszeit'],
+    ['distance_to_ego', 'Abstand zum Ego'],
+    ['distance_to_point', 'Abstand zu einem Punkt'],
+    ['after_event', 'Nach anderem Event'],
   ];
 
   // set_speed's dynamics value means a different physical quantity per
@@ -66,12 +71,20 @@
 
     EVENT_ACTIONS.forEach(([actionType, label]) => {
       const isPathAction = actionType === 'follow_trajectory' || actionType === 'assign_route';
-      if (isPathAction && hasPathEvent) return;
 
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'event-action-button';
       btn.textContent = label;
+      // The two path actions used to be *removed* once a path event existed,
+      // reflowing the grid with nothing to explain where they went. Keeping
+      // them disabled states the rule instead of hiding its consequence.
+      if (isPathAction && hasPathEvent) {
+        btn.disabled = true;
+        btn.title = 'Pro Akteur ist nur ein Pfad-Event erlaubt';
+        eventActionGrid.appendChild(btn);
+        return;
+      }
       btn.addEventListener('click', () => {
         eventSection.classList.remove('collapsed');
         const indicator = eventSection.querySelector('.event-section-header .collapse-indicator');
@@ -130,7 +143,10 @@
       const triggerText = document.createElement('div');
       triggerText.className = 'event-trigger-summary';
       triggerText.textContent = triggerSummary;
-      triggerText.title = triggerSummary;
+      triggerText.title = actionType === 'assign_route'
+        ? 'Eine Route startet immer sofort (Simulationszeit 0) — der Auslöser ist nicht einstellbar.'
+        : triggerSummary;
+      if (actionType === 'assign_route') triggerText.classList.add('fixed');
 
       const deleteBtn = document.createElement('button');
       deleteBtn.className = 'event-delete';
@@ -190,7 +206,7 @@
     if (isRelativeSpeed) {
       const targetOptions = _relativeActorOptions(actor);
       const selectedTarget = speedTarget.entity_ref || _defaultRelativeActorId(actor);
-      const targetSelect = _select(targetOptions.length ? targetOptions : [['', 'Kein Actor']], selectedTarget);
+      const targetSelect = _select(targetOptions.length ? targetOptions : [['', 'Kein Akteur']], selectedTarget);
       targetSelect.disabled = targetOptions.length === 0;
       targetSelect.addEventListener('change', e => {
         _patchEventAction(actor, ev, {
@@ -205,7 +221,7 @@
     speedInput.type = 'number';
     speedInput.max = '100';
     speedInput.step = '0.5';
-    speedInput.value = isRelativeSpeed ? (speedTarget.delta ?? 10.0) : (speedTarget.value ?? 10.0);
+    speedInput.value = UIUtils.fmt(isRelativeSpeed ? (speedTarget.delta ?? 10.0) : (speedTarget.value ?? 10.0));
     speedInput.addEventListener('change', e => {
       const parsed = parseFloat(e.target.value);
       const value = Number.isFinite(parsed) ? parsed : 0;
@@ -223,7 +239,7 @@
     timeInput.type = 'number';
     timeInput.min = String(dynFloor);
     timeInput.step = '0.1';
-    timeInput.value = speedDynamics.value ?? (isRate ? DEFAULT_SPEED_RATE : DEFAULT_SPEED_TIME);
+    timeInput.value = UIUtils.fmt(speedDynamics.value ?? (isRate ? DEFAULT_SPEED_RATE : DEFAULT_SPEED_TIME));
     timeInput.addEventListener('change', e => {
       _patchEventAction(actor, ev, {
         dynamics: {
@@ -242,7 +258,7 @@
 
     const targetOptions = _relativeActorOptions(actor);
     const selectedTarget = action.entity_ref || _defaultRelativeActorId(actor);
-    const targetSelect = _select(targetOptions.length ? targetOptions : [['', 'Kein Actor']], selectedTarget);
+    const targetSelect = _select(targetOptions.length ? targetOptions : [['', 'Kein Akteur']], selectedTarget);
     targetSelect.disabled = targetOptions.length === 0;
     targetSelect.addEventListener('change', e => {
       _patchEventAction(actor, ev, { entity_ref: e.target.value });
@@ -252,12 +268,14 @@
     const distanceInput = document.createElement('input');
     distanceInput.type = 'number';
     distanceInput.step = '0.1';
-    distanceInput.value = action.value ?? 10.0;
+    distanceInput.value = UIUtils.fmt(action.value ?? 10.0);
     distanceInput.addEventListener('change', e => {
       const parsed = parseFloat(e.target.value);
       _patchEventAction(actor, ev, { value: Number.isFinite(parsed) ? parsed : 0 });
     });
-    card.appendChild(UIUtils.paramRow('Distanz', distanceInput, 'm'));
+    // 'Sollabstand', not 'Distanz': lane_change's dynamics value is a distance
+    // too, and the two meant different things under one label.
+    card.appendChild(UIUtils.paramRow('Sollabstand', distanceInput, 'm'));
   }
 
   function _appendLaneChangeControls(card, actor, ev, action) {
@@ -275,7 +293,7 @@
     durationInput.type = 'number';
     durationInput.min = '0';
     durationInput.step = '0.1';
-    durationInput.value = laneDynamics.value ?? 12.0;
+    durationInput.value = UIUtils.fmt(laneDynamics.value ?? 12.0);
     durationInput.addEventListener('change', e => {
       _patchEventAction(actor, ev, {
         dynamics: {
@@ -285,7 +303,11 @@
         },
       });
     });
-    card.appendChild(UIUtils.paramRow('Distanz', durationInput, 'm'));
+    // The lateral move happens over this distance — see _buildLaneChangePlan.
+    // Kept short so it fits the shared 70px label column; the title carries
+    // the long form.
+    durationInput.title = 'Strecke, über die der Spurwechsel ausgeführt wird';
+    card.appendChild(UIUtils.paramRow('Strecke', durationInput, 'm'));
   }
 
   // ── Summaries And Labels ────────────────────────────────────────────────────
@@ -299,6 +321,11 @@
   }
 
   function _eventTriggerSummary(ev, events, actor) {
+    // An assign_route's own trigger is discarded at export — buildScenarioParams
+    // and the backend both force simulation_time @ 0 — and the card offers no
+    // trigger controls for it either. Advertising whatever a loaded file
+    // happens to carry would be a straight lie about when the route starts.
+    if (_eventAction(ev).type === 'assign_route') return 'startet sofort (fest)';
     const trigger = _eventTrigger(ev);
     if (trigger.type === 'after_event') {
       const refIndex = events.findIndex(other => other.id === trigger.event_id);
@@ -306,9 +333,9 @@
     }
     const pointTarget = trigger.entity_ref || _defaultPointTriggerActorId(actor);
     const triggerLabels = {
-      simulation_time: `Nach ${trigger.value ?? 0}s`,
-      distance_to_ego: `Ego-Abstand ${trigger.value ?? 0}m`,
-      distance_to_point: `${trigger.point?.name || 'Point'} ${trigger.value ?? 20}m zu ${_eventActorLabel(pointTarget)}`,
+      simulation_time: `Nach ${UIUtils.fmt(trigger.value ?? 0)}s`,
+      distance_to_ego: `Ego-Abstand ${UIUtils.fmt(trigger.value ?? 0, 0)}m`,
+      distance_to_point: `${trigger.point?.name || 'Punkt'} ${UIUtils.fmt(trigger.value ?? 20, 0)}m zu ${_eventActorLabel(pointTarget)}`,
     };
     return triggerLabels[trigger.type];
   }
@@ -328,8 +355,8 @@
     // clock — the wording has to distinguish them or the card lies about when
     // an after_event chained onto it will fire.
     const speedDynamicsSummary = _speedDimension(ev) === 'rate'
-      ? `mit ${dynamics.value ?? DEFAULT_SPEED_RATE} m/s²`
-      : `für ${dynamics.value ?? DEFAULT_SPEED_TIME}s`;
+      ? `mit ${UIUtils.fmt(dynamics.value ?? DEFAULT_SPEED_RATE)} m/s²`
+      : `für ${UIUtils.fmt(dynamics.value ?? DEFAULT_SPEED_TIME)}s`;
     const relativeSpeedTarget = target.entity_ref || _defaultRelativeActorId(actor);
     const distanceTarget = action.entity_ref || _defaultRelativeActorId(actor);
     const hasTrajectory = (action.trajectory || []).length > 0;
@@ -344,10 +371,10 @@
         ? `Route gezeichnet${routeVisible ? '' : ', ausgeblendet'}`
         : 'Route nicht gezeichnet',
       set_speed: speedMode === 'relative'
-        ? `${target.delta ?? 10} m/s relativ zu ${_eventActorLabel(relativeSpeedTarget)} ${speedDynamicsSummary}`
-        : `${target.value ?? 10} m/s ${speedDynamicsSummary}`,
-      set_distance: `${action.axis === 'lateral' ? 'Lateral' : 'Longitudinal'} ${action.value ?? 10} m relativ zu ${_eventActorLabel(distanceTarget)}`,
-      lane_change: `${action.direction === 'right' ? 'Rechts' : 'Links'} innerhalb ${dynamics.value ?? 12} m`,
+        ? `${UIUtils.fmt(target.delta ?? 10)} m/s relativ zu ${_eventActorLabel(relativeSpeedTarget)} ${speedDynamicsSummary}`
+        : `${UIUtils.fmt(target.value ?? 10)} m/s ${speedDynamicsSummary}`,
+      set_distance: `${action.axis === 'lateral' ? 'Lateral' : 'Longitudinal'} ${UIUtils.fmt(action.value ?? 10)} m relativ zu ${_eventActorLabel(distanceTarget)}`,
+      lane_change: `${action.direction === 'right' ? 'Rechts' : 'Links'} innerhalb ${UIUtils.fmt(dynamics.value ?? 12)} m`,
     };
     return actionLabels[action.type];
   }
@@ -382,7 +409,7 @@
         });
       }
     });
-    card.appendChild(_row('Trigger', triggerSelect));
+    card.appendChild(_row('Auslöser', triggerSelect, { primary: true }));
 
     if ((trigger.type || 'simulation_time') === 'after_event') {
       const refs = events
@@ -415,7 +442,7 @@
       distanceInput.type = 'number';
       distanceInput.min = '0';
       distanceInput.step = '1';
-      distanceInput.value = trigger.value ?? 20;
+      distanceInput.value = UIUtils.fmt(trigger.value ?? 20, 0);
       distanceInput.addEventListener('change', e => {
         _patchEventTrigger(actor, ev, {
           type: 'distance_to_point',
@@ -436,19 +463,22 @@
       });
       card.appendChild(_pointDistanceRow(pickBtn, distanceInput, targetSelect));
     } else {
+      const isEgoDistance = (trigger.type || 'simulation_time') === 'distance_to_ego';
       const valueInput = document.createElement('input');
       valueInput.type = 'number';
       valueInput.min = '0';
-      valueInput.step = (trigger.type || 'simulation_time') === 'distance_to_ego' ? '1' : '0.1';
-      valueInput.value = trigger.value ?? 0;
+      valueInput.step = isEgoDistance ? '1' : '0.1';
+      valueInput.value = UIUtils.fmt(trigger.value ?? 0, isEgoDistance ? 0 : 1);
       valueInput.addEventListener('change', e => {
         _patchEventTrigger(actor, ev, {
           type: trigger.type || 'simulation_time',
           value: Math.max(0, parseFloat(e.target.value) || 0),
         });
       });
-      const unit = (trigger.type || 'simulation_time') === 'distance_to_ego' ? 'm' : 's';
-      card.appendChild(UIUtils.paramRow('Wert', valueInput, unit));
+      // 'Wert' said nothing about which quantity; the two triggers left here
+      // measure different things in different units.
+      card.appendChild(UIUtils.paramRow(
+        isEgoDistance ? 'Abstand' : 'Zeit', valueInput, isEgoDistance ? 'm' : 's'));
     }
   }
 
@@ -558,8 +588,8 @@
     wrap.className = 'event-toggle';
 
     [
-      ['absolute', 'Absolute'],
-      ['relative', 'Relative'],
+      ['absolute', 'Absolut'],
+      ['relative', 'Relativ'],
     ].forEach(([value, label]) => {
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -619,10 +649,10 @@
 
   // ── DOM Helpers ─────────────────────────────────────────────────────────────
 
-  function _row(labelText, control) {
+  function _row(labelText, control, { primary = false } = {}) {
     const row = document.createElement('div');
     row.className = 'event-row';
-    if (labelText === 'Trigger') {
+    if (primary) {
       row.classList.add('event-primary-row');
     }
     const label = document.createElement('label');
@@ -637,7 +667,7 @@
     row.className = 'event-speed-row';
 
     const speedLabel = document.createElement('label');
-    speedLabel.textContent = 'Speed';
+    speedLabel.textContent = 'Geschw.';
     const speedUnit = document.createElement('span');
     speedUnit.textContent = 'm/s';
 
@@ -660,7 +690,7 @@
     row.className = 'event-point-distance-row';
 
     const distanceLabel = document.createElement('label');
-    distanceLabel.textContent = 'Distanz';
+    distanceLabel.textContent = 'Abstand';
     const unit = document.createElement('span');
     unit.textContent = 'm zu';
 
@@ -724,7 +754,7 @@
         velInput.min = '0';
         velInput.max = '50';
         velInput.step = '0.5';
-        velInput.value = (wp.velocity || 10).toFixed(1);
+        velInput.value = UIUtils.fmt(wp.velocity || 10);
         velInput.title = 'Geschwindigkeit (m/s)';
         velInput.dataset.idx = i;
         velInput.addEventListener('change', e => {
@@ -732,7 +762,7 @@
         });
 
         const msSuffix = document.createElement('span');
-        msSuffix.style.cssText = 'color:var(--text-dim);font-size:10px;';
+        msSuffix.style.cssText = 'color:var(--text-dim);font-size:11px;';
         msSuffix.textContent = 'm/s';
 
         item.appendChild(velInput);
@@ -766,7 +796,9 @@
 
     const clearBtn = document.createElement('button');
     clearBtn.type = 'button';
-    clearBtn.className = 'danger';
+    // Quiet, not filled red: this used to be the strongest-looking button in
+    // the card, louder than 'Zeichnen', which is the one people actually want.
+    clearBtn.className = 'quiet-danger';
     clearBtn.textContent = 'Löschen';
     clearBtn.addEventListener('click', () => {
       ObjectsManager.clearPath(actor.id, pathMode, ev.id);

@@ -188,7 +188,7 @@ with sync_playwright() as p:
     # The ego's path now lives inside a follow_trajectory event, exactly like
     # an NPC's — drive the same "Follow trajectory" button an NPC's would use.
     # Ego is still selected from the manual-Z edit above.
-    page.click('#event-action-grid .event-action-button:has-text("Follow trajectory")')
+    page.click('#event-action-grid .event-action-button:has-text("Trajektorie folgen")')
     page.evaluate(f"""() => {{
         const svg = document.getElementById('map-svg');
         const m = document.getElementById('world').getScreenCTM();

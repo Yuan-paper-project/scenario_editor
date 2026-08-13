@@ -16,7 +16,7 @@
   --text-dim:    #6b7590;
   --header-h:    48px;
   --toolbar-w:   136px;   /* two 64px tool tiles per row */
-  --props-w:     320px;
+  --props-w:     360px;   /* event cards get 6-column rows; 320 forced 9px type */
   --footer-h:    68px;
 }
 
@@ -219,9 +219,20 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
   margin-bottom: 12px;
 }
 #props-title { font-weight: 700; font-size: 14px; }
+.icon-btn-danger {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; flex-shrink: 0;
+  background: transparent; border: 1px solid transparent; border-radius: 5px;
+  color: var(--text-dim); cursor: pointer; transition: all .15s;
+}
+.icon-btn-danger svg { width: 16px; height: 16px; }
+.icon-btn-danger:hover {
+  color: var(--danger); border-color: var(--danger);
+  background: rgba(192, 57, 43, .08);
+}
 
 .props-group {
-  display: grid; grid-template-columns: 60px 1fr;
+  display: grid; grid-template-columns: 72px 1fr;   /* 60 wrapped "Abstand (m)" */
   row-gap: 6px; column-gap: 8px; align-items: center;
   margin-bottom: 14px;
 }
@@ -249,7 +260,9 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
 .collapsible-section.collapsed .collapsible-body { display: none; }
 .collapsible-section.collapsed .collapse-indicator::before { content: '+'; font-size: 12px; }
 .collapsible-section.collapsed .collapse-indicator { font-size: 0; }
-.section-note { color: var(--text-dim); font-size: 10px; margin-bottom: 6px; }
+/* 11px is the floor for panel content text. Uppercase section eyebrows stay at
+   10px — bold and letter-spaced, they read fine and act as structure, not copy. */
+.section-note { color: var(--text-dim); font-size: 11px; margin-bottom: 6px; }
 
 .props-group-label {
   font-size: 10px; font-weight: 700; letter-spacing: .8px;
@@ -273,7 +286,7 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
 
 /* Trigger hint */
 .trigger-hint {
-  font-size: 10px; color: var(--text-dim); margin-bottom: 8px;
+  font-size: 11px; color: var(--text-dim); margin-bottom: 8px;
   padding: 4px 0; font-style: italic;
 }
 
@@ -289,7 +302,7 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
   font-size: 11px; border: 1px solid var(--border);
 }
 .waypoint-item .wp-num { color: var(--text-dim); width: 18px; flex-shrink: 0; }
-.waypoint-item .wp-coords { flex: 1; color: var(--text-dim); font-size: 10px; }
+.waypoint-item .wp-coords { flex: 1; color: var(--text-dim); font-size: 11px; }
 .waypoint-item input[type="number"] {
   width: 52px; background: var(--bg); color: var(--text);
   border: 1px solid var(--border); border-radius: 3px; padding: 2px 4px; font-size: 11px;
@@ -319,34 +332,48 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
 }
 .event-action-button {
   background: var(--bg); color: var(--text); border: 1px solid var(--border);
-  border-radius: 4px; padding: 4px 6px; font-size: 10px; line-height: 1.15;
-  min-height: 24px; cursor: pointer; text-align: center;
+  border-radius: 4px; padding: 4px 6px; font-size: 11px; line-height: 1.15;
+  min-height: 26px; cursor: pointer; text-align: center;
 }
 .event-action-button:hover {
   border-color: var(--accent); color: var(--accent);
+}
+/* The two path actions stay in the grid once a path event exists — disabled
+   with a title, rather than removed with no explanation. */
+.event-action-button:disabled {
+  opacity: .45; cursor: not-allowed;
+}
+.event-action-button:disabled:hover {
+  border-color: var(--border); color: var(--text);
 }
 .event-list { display: flex; flex-direction: column; gap: 4px; margin-top: 5px; }
 .event-card {
   background: var(--panel2); border: 1px solid var(--border); border-radius: 5px;
   padding: 5px; display: flex; flex-direction: column; gap: 4px;
 }
-.event-card-header { display: grid; grid-template-columns: 18px minmax(0, 1fr) minmax(0, 110px) 18px; gap: 5px; align-items: center; }
+/* The summary track is sized to its own content (capped below), so a short
+   trigger like "Nach 12.0s" hands the leftover width back to the event title
+   instead of a fixed column ellipsising every title regardless. */
+.event-card-header { display: grid; grid-template-columns: 18px minmax(0, 1fr) minmax(0, max-content) 18px; gap: 5px; align-items: center; }
 .event-title-text {
   color: var(--text); font-size: 11px; font-weight: 700; line-height: 1.2;
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .event-trigger-summary {
-  color: var(--text-dim); font-size: 9px; line-height: 1.2;
+  color: var(--text-dim); font-size: 11px; line-height: 1.2;
   text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  min-width: 0;
+  min-width: 0; max-width: 140px;
 }
+/* An assign_route's start is not editable and not exported — mark it as a
+   stated fact rather than a summary of a setting. */
+.event-trigger-summary.fixed { font-style: italic; }
 .event-card input,
 .event-card select {
   background: var(--bg); color: var(--text); border: 1px solid var(--border);
-  border-radius: 3px; padding: 2px 5px; font-size: 10px; min-width: 0;
-  min-height: 22px;
+  border-radius: 3px; padding: 2px 5px; font-size: 11px; min-width: 0;
+  min-height: 24px;
 }
-.event-card label { color: var(--text-dim); font-size: 9px; }
+.event-card label { color: var(--text-dim); font-size: 11px; }
 .event-row { display: grid; grid-template-columns: 70px 1fr; gap: 5px; align-items: center; }
 .event-param-row { display: grid; grid-template-columns: 70px 1fr auto; gap: 5px; align-items: center; }
 .event-toggle {
@@ -354,7 +381,7 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
 }
 .event-toggle button {
   background: var(--bg); color: var(--text-dim); border: 1px solid var(--border);
-  border-radius: 3px; padding: 3px 5px; font-size: 10px; cursor: pointer;
+  border-radius: 3px; padding: 4px 5px; font-size: 11px; cursor: pointer;
 }
 .event-toggle button:hover {
   border-color: var(--accent); color: var(--accent);
@@ -362,8 +389,11 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
 .event-toggle button.active {
   background: #2563eb; border-color: #2563eb; color: #fff; font-weight: 700;
 }
-.event-toggle button.danger {
-  background: var(--danger); border-color: var(--danger); color: #fff;
+.event-toggle button.quiet-danger {
+  background: transparent; border-color: var(--border); color: var(--danger);
+}
+.event-toggle button.quiet-danger:hover {
+  background: rgba(192, 57, 43, .08); border-color: var(--danger); color: var(--danger);
 }
 .traffic-signal-divider {
   border-top: 1px solid var(--border);
@@ -392,7 +422,7 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
 }
 .event-speed-row label,
 .event-speed-row span {
-  color: var(--text-dim); font-size: 9px; white-space: nowrap;
+  color: var(--text-dim); font-size: 11px; white-space: nowrap;
 }
 .event-point-distance-row {
   display: grid; grid-template-columns: minmax(58px, .8fr) auto minmax(48px, 64px) auto minmax(0, 1fr);
@@ -400,7 +430,7 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
 }
 .event-point-distance-row label,
 .event-point-distance-row span {
-  color: var(--text-dim); font-size: 9px; white-space: nowrap;
+  color: var(--text-dim); font-size: 11px; white-space: nowrap;
 }
 .event-primary-row label {
   color: var(--accent); font-weight: 800; letter-spacing: .5px; text-transform: uppercase;
@@ -413,13 +443,13 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
 }
 .event-collapse { color: var(--text-dim); }
 .event-delete { color: var(--danger); }
-.event-summary { color: var(--text-dim); font-size: 9px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.event-summary { color: var(--text-dim); font-size: 11px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .event-path-controls { grid-template-columns: 1fr; }
 .event-path-controls.has-path { grid-template-columns: repeat(3, 1fr); }
 .event-waypoint-list { max-height: 160px; }
 .event-empty { color: var(--text-dim); font-size: 11px; padding: 3px 0; }
 .event-point-info {
-  color: var(--text-dim); font-size: 10px; line-height: 1.2;
+  color: var(--text-dim); font-size: 11px; line-height: 1.2;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 

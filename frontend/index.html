@@ -218,7 +218,16 @@
     <div id="props-content" class="hidden">
       <div class="props-header">
         <span id="props-title">Objekt</span>
-        <button id="props-delete" class="btn btn-danger btn-small">Löschen</button>
+        <!-- Icon, not a filled red button: it used to be the loudest element in
+             the panel. Confirm.show() still guards the actual delete. -->
+        <button id="props-delete" class="icon-btn-danger" type="button"
+                title="Objekt löschen (Entf)" aria-label="Objekt löschen">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M6.5 2h3M2.5 4.5h11M4.5 4.5l.7 8.2a1 1 0 0 0 1 .8h3.6a1 1 0 0 0 1-.8l.7-8.2M6.7 7v4M9.3 7v4"
+                  fill="none" stroke="currentColor" stroke-width="1.3"
+                  stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
       </div>
 
       <div id="traffic-signal-panel" class="hidden">

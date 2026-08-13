@@ -67,30 +67,38 @@ with sync_playwright() as p:
         ".map(b => b.textContent)")
     check("event panel offers 5 actions", len(labels) == 5, str(labels))
     check("action grid lists the documented actions",
-          labels == ["Follow trajectory", "Assign route", "Set speed",
-                     "Set distance", "Lane change"], str(labels))
+          labels == ["Trajektorie folgen", "Route zuweisen", "Geschw. setzen",
+                     "Abstand halten", "Spurwechsel"], str(labels))
 
     # One path-producing event per actor: once a trajectory or route exists,
-    # both path buttons must disappear (eventPanel.js _renderEventActionGrid).
+    # both path buttons stay in the grid but go disabled — hiding them reflowed
+    # the grid with nothing to explain the rule (eventPanel.js
+    # _renderEventActionGrid).
     seed(page, [{"id": "e1", "trigger": {"type": "simulation_time", "value": 0},
                  "action": {"type": "follow_trajectory", "trajectory": []}}])
     page.evaluate("AppState.select('obj-2')")
     labels = page.evaluate(
         "[...document.querySelectorAll('#event-action-grid .event-action-button')]"
         ".map(b => b.textContent)")
-    check("path actions are hidden once one path event exists",
-          labels == ["Set speed", "Set distance", "Lane change"], str(labels))
+    check("all 5 actions stay listed once one path event exists",
+          labels == ["Trajektorie folgen", "Route zuweisen", "Geschw. setzen",
+                     "Abstand halten", "Spurwechsel"], str(labels))
+    disabled = page.evaluate(
+        "[...document.querySelectorAll('#event-action-grid .event-action-button')]"
+        ".filter(b => b.disabled).map(b => b.textContent)")
+    check("path actions are disabled once one path event exists",
+          disabled == ["Trajektorie folgen", "Route zuweisen"], str(disabled))
 
     # Clicking an action button appends a new event of that kind.
     seed(page, [])
     page.evaluate("AppState.select('obj-2')")
-    page.click('#event-action-grid .event-action-button:has-text("Set speed")')
+    page.click('#event-action-grid .event-action-button:has-text("Geschw. setzen")')
     evs = page.evaluate("AppState.findById('obj-2').events")
     check("Set speed adds one event", len(evs) == 1, str(len(evs)))
     check("new set_speed event has the right action type",
           evs and evs[0]["action"]["type"] == "set_speed",
           str(evs[0]["action"]["type"] if evs else None))
-    page.click('#event-action-grid .event-action-button:has-text("Lane change")')
+    page.click('#event-action-grid .event-action-button:has-text("Spurwechsel")')
     evs = page.evaluate("AppState.findById('obj-2').events")
     check("Lane change appends a second event",
           len(evs) == 2 and evs[1]["action"]["type"] == "lane_change",

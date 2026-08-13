@@ -448,12 +448,23 @@
       const label = document.createElement('label');
       label.textContent = labelText;
       const unit = document.createElement('span');
-      unit.style.cssText = 'color:var(--text-dim);font-size:10px;';
+      unit.style.cssText = 'color:var(--text-dim);font-size:11px;';
       unit.textContent = unitText;
       row.appendChild(label);
       row.appendChild(control);
       row.appendChild(unit);
       return row;
+    },
+
+    /**
+     * Display precision for a numeric field, chosen to match the input's own
+     * `step`: a 0.1/0.5-step field reads 1 dp, a whole-number one reads as an
+     * integer. Both the input value and the card summary above it go through
+     * this, so they can never disagree (`10` next to `10.0`).
+     */
+    fmt(value, decimals = 1) {
+      const n = Number(value);
+      return Number.isFinite(n) ? n.toFixed(decimals) : '';
     },
 
     /** Next free numeric suffix for `${prefix}-${n}` ids within `events`. */
