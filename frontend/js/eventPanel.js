@@ -10,6 +10,7 @@
   const eventSection = document.getElementById('event-section');
   const eventActionGrid = document.getElementById('event-action-grid');
   const eventList = document.getElementById('event-list');
+  const eventCount = document.getElementById('event-count');
 
   // UI-facing strings are German throughout (see CLAUDE.md); the internal
   // action/trigger keys stay the OpenSCENARIO-side snake_case names and are
@@ -43,6 +44,9 @@
   ];
   const DEFAULT_SPEED_TIME = 5.0;
   const DEFAULT_SPEED_RATE = 2.5;
+
+  const FIXED_ROUTE_START_HINT =
+    'Eine Route startet immer sofort (Simulationszeit 0) — der Auslöser ist nicht einstellbar.';
 
   let _refresh = () => {};
 
@@ -87,8 +91,10 @@
       }
       btn.addEventListener('click', () => {
         eventSection.classList.remove('collapsed');
-        const indicator = eventSection.querySelector('.event-section-header .collapse-indicator');
+        const sectionHeader = eventSection.querySelector('.event-section-header');
+        const indicator = sectionHeader?.querySelector('.collapse-indicator');
         if (indicator) indicator.textContent = '-';
+        sectionHeader?.setAttribute('aria-expanded', 'true');
         const currentEvents = actor.events || [];
         const newEvent = _defaultEvent(actor, actionType, isPathAction);
         const events = isPathAction ? [newEvent, ...currentEvents] : [...currentEvents, newEvent];
@@ -105,6 +111,7 @@
     if (!eventList) return;
     eventList.innerHTML = '';
     const events = actor.events || [];
+    if (eventCount) eventCount.textContent = String(events.length);
 
     if (events.length === 0) {
       const empty = document.createElement('div');
@@ -114,6 +121,16 @@
       return;
     }
 
+    if (events.length > 1) eventList.appendChild(_bulkCollapseBar(actor, events));
+
+    // Which card the map clicks currently belong to — a path being drawn or a
+    // trigger point being picked. Event ids are only unique within an actor
+    // (every actor's first event is `evt-1`), so both arms check the owner.
+    const pathOwnerId = AppState.activeTrajectoryId || AppState.activeRouteId;
+    const drawingEventId =
+      (pathOwnerId === actor.id ? AppState.activePathEventId : null) ||
+      (AppState.triggerPointMode?.actorId === actor.id ? AppState.triggerPointMode.eventId : null);
+
     events.forEach((ev, i) => {
       const action = _eventAction(ev);
       const actionType = action.type || 'follow_trajectory';
@@ -121,7 +138,8 @@
       const triggerSummary = _eventTriggerSummary(ev, events, actor);
       const card = document.createElement('div');
       const isCollapsed = !!ev.collapsed;
-      card.className = `event-card${isCollapsed ? ' collapsed' : ''}`;
+      const isDrawing = drawingEventId === ev.id;
+      card.className = `event-card${isCollapsed ? ' collapsed' : ''}${isDrawing ? ' active-draw' : ''}`;
 
       const header = document.createElement('div');
       header.className = 'event-card-header';
@@ -131,6 +149,8 @@
       collapseBtn.type = 'button';
       collapseBtn.textContent = isCollapsed ? '+' : '-';
       collapseBtn.title = isCollapsed ? 'Event ausklappen' : 'Event einklappen';
+      collapseBtn.setAttribute('aria-label', collapseBtn.title);
+      collapseBtn.setAttribute('aria-expanded', String(!isCollapsed));
       collapseBtn.addEventListener('click', () => {
         _updateEvent(actor, ev.id, { collapsed: !isCollapsed });
       });
@@ -140,36 +160,36 @@
       nameText.textContent = displayName;
       nameText.title = displayName;
 
-      const triggerText = document.createElement('div');
-      triggerText.className = 'event-trigger-summary';
-      triggerText.textContent = triggerSummary;
-      triggerText.title = actionType === 'assign_route'
-        ? 'Eine Route startet immer sofort (Simulationszeit 0) — der Auslöser ist nicht einstellbar.'
-        : triggerSummary;
-      if (actionType === 'assign_route') triggerText.classList.add('fixed');
-
       const deleteBtn = document.createElement('button');
       deleteBtn.className = 'event-delete';
       deleteBtn.type = 'button';
       deleteBtn.textContent = '×';
       deleteBtn.title = 'Event löschen';
+      deleteBtn.setAttribute('aria-label', deleteBtn.title);
       deleteBtn.addEventListener('click', () => _deleteEvent(actor, ev.id));
 
       header.appendChild(collapseBtn);
       header.appendChild(nameText);
-      header.appendChild(triggerText);
       header.appendChild(deleteBtn);
       card.appendChild(header);
 
-      const summary = document.createElement('div');
-      summary.className = 'event-summary';
-      summary.textContent = _eventActionSummary(ev, actor);
-      card.appendChild(summary);
-
+      // The summary is the *collapsed* reading of the card — action and trigger
+      // in one line. An expanded card shows both in editable form directly
+      // below, so repeating them there was two rows of pure duplication.
       if (isCollapsed) {
+        card.appendChild(_summaryLine(ev, actor, actionType, triggerSummary));
         eventList.appendChild(card);
         return;
       }
+
+      // WENN before DANN: the trigger goes first, the action controls below it.
+      // An assign_route has no trigger *controls* — its start is discarded and
+      // forced to simulation_time 0 at export — but it still gets the block, as
+      // a stated fact. Dropping it entirely would leave the only card in the
+      // panel whose start condition is stated nowhere.
+      card.appendChild(actionType === 'assign_route'
+        ? _fixedTriggerBlock()
+        : _triggerBlock(actor, ev, events));
 
       if (actionType === 'set_speed') {
         _appendSpeedActionControls(card, actor, ev, action);
@@ -185,15 +205,81 @@
         card.appendChild(pathList);
       }
 
-      if (actionType !== 'assign_route') {
-        const divider = document.createElement('div');
-        divider.className = 'event-compact-divider';
-        card.appendChild(divider);
-        _appendEventTriggerControls(card, actor, ev, events);
-      }
-
       eventList.appendChild(card);
     });
+  }
+
+  /**
+   * `<action> • <trigger>` — the whole event in one line, for a collapsed card.
+   * The trigger used to sit in the header opposite the title, where it was
+   * capped at 120px and ellipsised while the summary below it had a full line
+   * to itself; the two belong together and read as one sentence.
+   */
+  function _summaryLine(ev, actor, actionType, triggerSummary) {
+    const line = document.createElement('div');
+    line.className = 'event-summary';
+
+    const actionText = document.createElement('span');
+    actionText.textContent = _eventActionSummary(ev, actor);
+    line.appendChild(actionText);
+
+    const separator = document.createElement('span');
+    separator.className = 'event-summary-sep';
+    separator.setAttribute('aria-hidden', 'true');
+    separator.textContent = '•';
+    line.appendChild(separator);
+
+    const triggerText = document.createElement('span');
+    triggerText.className = 'event-summary-trigger';
+    triggerText.textContent = triggerSummary;
+    if (actionType === 'assign_route') {
+      triggerText.classList.add('fixed');
+      triggerText.title = FIXED_ROUTE_START_HINT;
+    }
+    line.appendChild(triggerText);
+    return line;
+  }
+
+  function _triggerBlock(actor, ev, events) {
+    const block = document.createElement('div');
+    block.className = 'event-trigger-block';
+    _appendEventTriggerControls(block, actor, ev, events);
+    return block;
+  }
+
+  /** The WENN half of an assign_route card: a fact, not a control. */
+  function _fixedTriggerBlock() {
+    const block = document.createElement('div');
+    block.className = 'event-trigger-block fixed';
+    const label = document.createElement('span');
+    label.className = 'event-fixed-trigger-label';
+    label.textContent = 'Auslöser';
+    const text = document.createElement('span');
+    text.className = 'event-fixed-trigger-text';
+    text.textContent = 'startet sofort (fest)';
+    text.title = FIXED_ROUTE_START_HINT;
+    block.appendChild(label);
+    block.appendChild(text);
+    return block;
+  }
+
+  /** Collapse/expand every card of this actor at once. */
+  function _bulkCollapseBar(actor, events) {
+    const bar = document.createElement('div');
+    bar.className = 'event-list-toolbar';
+    const allCollapsed = events.every(ev => !!ev.collapsed);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'event-bulk-toggle';
+    btn.textContent = allCollapsed ? 'Alle ausklappen' : 'Alle einklappen';
+    btn.addEventListener('click', () => {
+      const current = AppState.findById(actor.id) || actor;
+      AppState.updateById(actor.id, {
+        events: (current.events || []).map(ev => ({ ...ev, collapsed: !allCollapsed })),
+      });
+    });
+    bar.appendChild(btn);
+    return bar;
   }
 
   // ── Action Controls ─────────────────────────────────────────────────────────
@@ -381,7 +467,9 @@
 
   // ── Trigger Controls ────────────────────────────────────────────────────────
 
-  function _appendEventTriggerControls(card, actor, ev, events) {
+  /** Fills the card's `.event-trigger-block` — the WENN half, rendered above
+   *  the action controls (see _renderEventList). */
+  function _appendEventTriggerControls(block, actor, ev, events) {
     const trigger = _eventTrigger(ev);
     const triggerOptions = EVENT_TRIGGERS.filter(([value]) =>
       !(value === 'distance_to_ego' && actor.type === 'ego'));
@@ -409,7 +497,7 @@
         });
       }
     });
-    card.appendChild(_row('Auslöser', triggerSelect, { primary: true }));
+    block.appendChild(_row('Auslöser', triggerSelect, { primary: true }));
 
     if ((trigger.type || 'simulation_time') === 'after_event') {
       const refs = events
@@ -421,7 +509,7 @@
       refSelect.addEventListener('change', e => {
         _updateEvent(actor, ev.id, { trigger: { type: 'after_event', event_id: e.target.value } });
       });
-      card.appendChild(_row('Nach Event', refSelect));
+      block.appendChild(_row('Nach Event', refSelect));
     } else if ((trigger.type || 'simulation_time') === 'distance_to_point') {
       const point = trigger.point;
       const selectedTarget = trigger.entity_ref || _defaultPointTriggerActorId(actor);
@@ -430,7 +518,7 @@
       pointInfo.textContent = point
         ? `${point.name}: (${Number(point.x).toFixed(1)}, ${Number(point.y).toFixed(1)})`
         : 'Kein Punkt gesetzt';
-      card.appendChild(pointInfo);
+      block.appendChild(pointInfo);
 
       const pickBtn = document.createElement('button');
       pickBtn.type = 'button';
@@ -461,7 +549,7 @@
           point: trigger.point || null,
         });
       });
-      card.appendChild(_pointDistanceRow(pickBtn, distanceInput, targetSelect));
+      block.appendChild(_pointDistanceRow(pickBtn, distanceInput, targetSelect));
     } else {
       const isEgoDistance = (trigger.type || 'simulation_time') === 'distance_to_ego';
       const valueInput = document.createElement('input');
@@ -477,7 +565,7 @@
       });
       // 'Wert' said nothing about which quantity; the two triggers left here
       // measure different things in different units.
-      card.appendChild(UIUtils.paramRow(
+      block.appendChild(UIUtils.paramRow(
         isEgoDistance ? 'Abstand' : 'Zeit', valueInput, isEgoDistance ? 'm' : 's'));
     }
   }
@@ -657,6 +745,7 @@
     }
     const label = document.createElement('label');
     label.textContent = labelText;
+    UIUtils.bindLabel(label, control);
     row.appendChild(label);
     row.appendChild(control);
     return row;
@@ -668,11 +757,13 @@
 
     const speedLabel = document.createElement('label');
     speedLabel.textContent = 'Geschw.';
+    UIUtils.bindLabel(speedLabel, speedInput);
     const speedUnit = document.createElement('span');
     speedUnit.textContent = 'm/s';
 
     const timeLabel = document.createElement('label');
     timeLabel.textContent = isRate ? 'Rate' : 'Für';
+    UIUtils.bindLabel(timeLabel, timeInput);
     const timeUnit = document.createElement('span');
     timeUnit.textContent = isRate ? 'm/s²' : 's';
 
@@ -691,8 +782,10 @@
 
     const distanceLabel = document.createElement('label');
     distanceLabel.textContent = 'Abstand';
+    UIUtils.bindLabel(distanceLabel, distanceInput);
     const unit = document.createElement('span');
     unit.textContent = 'm zu';
+    targetSelect.setAttribute('aria-label', 'Bezugsakteur für den Abstand');
 
     row.appendChild(pointButton);
     row.appendChild(distanceLabel);
@@ -740,8 +833,10 @@
 
       const delBtn = document.createElement('button');
       delBtn.className = 'wp-delete';
+      delBtn.type = 'button';
       delBtn.textContent = '×';
       delBtn.title = 'Wegpunkt entfernen';
+      delBtn.setAttribute('aria-label', `Wegpunkt ${i + 1} entfernen`);
       delBtn.addEventListener('click', () => {
         ObjectsManager.deletePathPoint(actor.id, type, i, eventId);
       });
@@ -756,6 +851,7 @@
         velInput.step = '0.5';
         velInput.value = UIUtils.fmt(wp.velocity || 10);
         velInput.title = 'Geschwindigkeit (m/s)';
+        velInput.setAttribute('aria-label', `Geschwindigkeit an Wegpunkt ${i + 1} (m/s)`);
         velInput.dataset.idx = i;
         velInput.addEventListener('change', e => {
           ObjectsManager.setPathPointVelocity(actor.id, type, i, e.target.value, eventId);

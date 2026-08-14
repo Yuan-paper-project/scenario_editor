@@ -25,6 +25,7 @@
   const propY = document.getElementById('prop-y');
   const propZ = document.getElementById('prop-z');
   const propYaw = document.getElementById('prop-yaw');
+  const propZAuto = document.getElementById('prop-z-auto');
   const propInitSpeed      = document.getElementById('prop-init-speed');
   const propInitSpeedLabel = document.getElementById('prop-init-speed-label');
 
@@ -286,8 +287,10 @@
         const section = target ? target.closest('.collapsible-section') : null;
         if (!section) return;
         section.classList.toggle('collapsed');
+        const collapsed = section.classList.contains('collapsed');
         const indicator = header.querySelector('.collapse-indicator');
-        if (indicator) indicator.textContent = section.classList.contains('collapsed') ? '+' : '-';
+        if (indicator) indicator.textContent = collapsed ? '+' : '-';
+        header.setAttribute('aria-expanded', String(!collapsed));
       });
     });
   }
@@ -324,6 +327,22 @@
 
   [propX, propY, propZ, propYaw].forEach(inp => {
     inp.addEventListener('change', _onPosChange);
+  });
+
+  // z is normally derived from the elevation profile on every move, so a
+  // hand-typed value is sticky until the object is next moved — with no way
+  // back to the surface height short of nudging it. This is that way back.
+  // It is a button rather than an always-on indicator on purpose: the derived
+  // value comes from _nearestLaneProjection, a linear scan over every lane
+  // segment, and a drag re-renders this panel on every mousemove.
+  propZAuto?.addEventListener('click', () => {
+    const id = AppState.selectedId;
+    if (!id) return;
+    const actor = AppState.findById(id);
+    if (!actor) return;
+    AppState.updateById(id, {
+      z: ObjectsManager.surfaceZFor(actor.type, actor.x, actor.y, actor.prop),
+    });
   });
 
   // ── Actor type ───────────────────────────────────────────────────────────────
@@ -479,6 +498,11 @@
   AppState.on('stateLoaded',      () => render());
   AppState.on('change',           patch => {
     if (!AppState.selectedId && ('weather' in patch || 'time' in patch)) _renderOverviewPanel();
+    // Entering or leaving a draw mode changes which event card is marked as the
+    // one the map clicks belong to (eventPanel.js `active-draw`).
+    if (AppState.selectedId && ('activePathEventId' in patch || 'triggerPointMode' in patch)) {
+      render();
+    }
     if ('triggerPointMode' in patch) {
       const drawing = AppState.triggerPointMode ||
         (AppState.trajectoryMode && AppState.activeTrajectoryId) ||

@@ -252,31 +252,46 @@
       </div>
 
       <div id="spawn-panel" class="collapsible-section">
-        <button class="collapsible-header" type="button" data-collapse-target="spawn-panel-body">
-          <span>Spawnpunkt</span><span class="collapse-indicator">-</span>
+        <button class="collapsible-header" type="button" data-collapse-target="spawn-panel-body"
+                aria-expanded="true" aria-controls="spawn-panel-body">
+          <span>Spawnpunkt</span><span class="collapse-indicator" aria-hidden="true">-</span>
         </button>
         <div id="spawn-panel-body" class="collapsible-body">
-          <div class="props-group">
-            <label>X (m)</label>
+          <!-- Paired 4-column grid (label/input × 2): X|Y and Z|Gier share a row.
+               Five full-width rows was half the panel's height for five short
+               numbers. Start keeps its own row and spans both input columns. -->
+          <div class="props-group spawn-grid">
+            <label for="prop-x">X (m)</label>
             <input type="number" id="prop-x" step="0.1">
-            <label>Y (m)</label>
+            <label for="prop-y">Y (m)</label>
             <input type="number" id="prop-y" step="0.1">
-            <label>Z (m)</label>
-            <input type="number" id="prop-z" step="0.1" value="0.2">
-            <label>Gier (°)</label>
+            <label for="prop-z">Z (m)</label>
+            <div class="spawn-z-cell">
+              <input type="number" id="prop-z" step="0.1" value="0.2">
+              <!-- z is derived from the OpenDRIVE elevation profile on every
+                   move, so a hand-typed value has no way back without this. -->
+              <button id="prop-z-auto" class="icon-btn-quiet" type="button"
+                      title="Z neu aus der Fahrbahnhöhe berechnen"
+                      aria-label="Z neu aus der Fahrbahnhöhe berechnen">&#8635;</button>
+            </div>
+            <label for="prop-yaw">Gier (°)</label>
             <input type="number" id="prop-yaw" step="1" min="-180" max="360">
-            <label id="prop-init-speed-label" title="Startgeschwindigkeit">Start (m/s)</label>
+            <label id="prop-init-speed-label" for="prop-init-speed"
+                   title="Startgeschwindigkeit">Start (m/s)</label>
             <input type="number" id="prop-init-speed" step="0.5" min="0" max="100" value="10"
                    title="Startgeschwindigkeit — als SpeedAction im Storyboard-Init">
           </div>
+          <div class="props-hint">Z folgt der Fahrbahnhöhe und wird bei jeder Bewegung neu berechnet.</div>
         </div>
       </div>
 
       <!-- Events: gemeinsam für Ego und NPCs -->
       <div id="props-npc-section" class="hidden">
         <div id="event-section" class="collapsible-section event-section">
-          <button class="collapsible-header event-section-header" type="button" data-collapse-target="event-section-body">
-            <span>Events</span><span class="collapse-indicator">-</span>
+          <button class="collapsible-header event-section-header" type="button" data-collapse-target="event-section-body"
+                  aria-expanded="true" aria-controls="event-section-body">
+            <span class="collapsible-title">Events<span id="event-count" class="event-count">0</span></span>
+            <span class="collapse-indicator" aria-hidden="true">-</span>
           </button>
           <div id="event-section-body" class="collapsible-body">
             <div id="event-action-grid" class="event-action-grid"></div>

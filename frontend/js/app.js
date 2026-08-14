@@ -441,13 +441,37 @@
 
   // ── Shared panel helpers (properties.js / eventPanel.js) ────────────────────
 
+  let _autoId = 0;
+
   window.UIUtils = {
+    /**
+     * Point `label` at `control`, giving the control an id if it has none.
+     * Every control in the properties panel is built in JS, so without this
+     * none of them is programmatically labelled — the visible text sits in a
+     * <label> that names nothing.
+     *
+     * A segmented toggle is a <div> of buttons, which `for=` cannot address at
+     * all; it becomes a named group instead, which is what it actually is.
+     */
+    bindLabel(label, control) {
+      if (!control) return label;
+      if (/^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(control.tagName)) {
+        if (!control.id) control.id = `ui-ctl-${++_autoId}`;
+        label.htmlFor = control.id;
+      } else {
+        control.setAttribute('role', 'group');
+        control.setAttribute('aria-label', label.textContent);
+      }
+      return label;
+    },
+
     /** Labelled control row with a trailing unit, as used in event cards. */
     paramRow(labelText, control, unitText) {
       const row = document.createElement('div');
       row.className = 'event-param-row';
       const label = document.createElement('label');
       label.textContent = labelText;
+      window.UIUtils.bindLabel(label, control);
       const unit = document.createElement('span');
       unit.style.cssText = 'color:var(--text-dim);font-size:11px;';
       unit.textContent = unitText;

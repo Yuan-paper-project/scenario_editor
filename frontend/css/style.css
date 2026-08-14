@@ -243,6 +243,27 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
   border: 1px solid var(--border); border-radius: 4px;
   padding: 4px 6px; width: 100%;
 }
+/* Spawnpunkt only: two label/input pairs per row. The label columns are
+   max-content so 'Start (m/s)' sizes column 1 and 'Gier (°)' column 3. */
+.props-group.spawn-grid {
+  grid-template-columns: max-content minmax(0, 1fr) max-content minmax(0, 1fr);
+  margin-bottom: 6px;
+}
+.spawn-grid #prop-init-speed { grid-column: 2 / -1; }
+.spawn-z-cell { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.icon-btn-quiet {
+  flex: 0 0 auto; width: 24px; height: 24px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border: 1px solid var(--border); border-radius: 4px;
+  color: var(--text-dim); font-size: 13px; line-height: 1; cursor: pointer;
+  transition: all .15s;
+}
+.icon-btn-quiet:hover { color: var(--accent); border-color: var(--accent); }
+.props-hint { color: var(--text-dim); font-size: 11px; line-height: 1.35; margin-bottom: 12px; }
+/* The panel is dense enough that a browser default focus ring gets lost in it. */
+#properties-panel :focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 3px;
+}
 .collapsible-section { margin-bottom: 8px; }
 .collapsible-header {
   width: 100%; display: flex; align-items: center; justify-content: space-between;
@@ -304,6 +325,21 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
 }
 .event-section-titlebar .btn-small { flex: 0 0 auto; white-space: nowrap; }
 .event-section-header { border-top: 0; padding: 0 0 6px; }
+.collapsible-title { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.event-count {
+  min-width: 18px; padding: 0 5px; border-radius: 8px;
+  background: var(--panel2); border: 1px solid var(--border);
+  color: var(--text-dim); font-size: 10px; font-weight: 700;
+  letter-spacing: 0; text-align: center;
+}
+/* Only rendered above the list from two events on — with one card there is
+   nothing to bulk-collapse. */
+.event-list-toolbar { display: flex; justify-content: flex-end; }
+.event-bulk-toggle {
+  background: transparent; border: 1px solid var(--border); border-radius: 4px;
+  color: var(--text-dim); font-size: 11px; padding: 2px 8px; cursor: pointer;
+}
+.event-bulk-toggle:hover { color: var(--accent); border-color: var(--accent); }
 .event-action-grid {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 4px; margin-top: 5px;
@@ -329,22 +365,19 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
   background: var(--panel2); border: 1px solid var(--border); border-radius: 5px;
   padding: 5px; display: flex; flex-direction: column; gap: 4px;
 }
-/* The summary track is sized to its own content (capped below), so a short
-   trigger like "Nach 12.0s" hands the leftover width back to the event title
-   instead of a fixed column ellipsising every title regardless. */
-.event-card-header { display: grid; grid-template-columns: 18px minmax(0, 1fr) minmax(0, max-content) 18px; gap: 5px; align-items: center; }
+/* The card whose path is being drawn / whose trigger point is being picked.
+   Until now only the map banner said which event the clicks belonged to. */
+.event-card.active-draw {
+  border-color: var(--accent); box-shadow: 0 0 0 2px rgba(42, 111, 219, .18);
+}
+/* Title and delete only: the trigger summary moved down into .event-summary,
+   where it reads as one line with the action instead of being ellipsised
+   against the title in a capped column. */
+.event-card-header { display: grid; grid-template-columns: 18px minmax(0, 1fr) 18px; gap: 5px; align-items: center; }
 .event-title-text {
   color: var(--text); font-size: 11px; font-weight: 700; line-height: 1.2;
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.event-trigger-summary {
-  color: var(--text-dim); font-size: 11px; line-height: 1.2;
-  text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  min-width: 0; max-width: 140px;
-}
-/* An assign_route's start is not editable and not exported — mark it as a
-   stated fact rather than a summary of a setting. */
-.event-trigger-summary.fixed { font-style: italic; }
 .event-card input,
 .event-card select {
   background: var(--bg); color: var(--text); border: 1px solid var(--border);
@@ -413,7 +446,28 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
 .event-primary-row label {
   color: var(--accent); font-weight: 800; letter-spacing: .5px; text-transform: uppercase;
 }
-.event-compact-divider { height: 1px; background: var(--border); margin: 1px 0; }
+/* A card reads WENN → DANN: this block holds the trigger and sits directly
+   under the header, above the action controls. Tinted and accent-edged so the
+   two halves are distinguishable at a glance — a hairline divider was not. */
+.event-trigger-block {
+  display: flex; flex-direction: column; gap: 4px;
+  background: var(--bg); border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px; padding: 5px;
+}
+/* The block's own background is --bg, which is also the input background
+   everywhere else in the card — lift them a step so they stay legible. */
+.event-trigger-block input,
+.event-trigger-block select,
+.event-trigger-block .event-action-button { background: var(--panel); }
+/* An assign_route's block states its fixed start instead of offering controls,
+   so it is one row: the same accent eyebrow as .event-primary-row, then text. */
+.event-trigger-block.fixed { flex-direction: row; align-items: baseline; gap: 5px; }
+.event-fixed-trigger-label {
+  flex: 0 0 70px; color: var(--accent); font-size: 11px;
+  font-weight: 800; letter-spacing: .5px; text-transform: uppercase;
+}
+.event-fixed-trigger-text { color: var(--text-dim); font-size: 11px; font-style: italic; }
 .event-collapse,
 .event-delete {
   background: none; border: none; cursor: pointer;
@@ -421,7 +475,14 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
 }
 .event-collapse { color: var(--text-dim); }
 .event-delete { color: var(--danger); }
-.event-summary { color: var(--text-dim); font-size: 11px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Only rendered on a collapsed card, where it is the entire reading of the
+   event — so it wraps rather than truncating. Ellipsising here would cut the
+   trigger, which is the half that is not already in the title. */
+.event-summary { color: var(--text-dim); font-size: 11px; line-height: 1.3; }
+.event-summary-sep { color: var(--accent); font-weight: 900; margin: 0 4px; }
+/* An assign_route's start is not editable and not exported — mark it as a
+   stated fact rather than a summary of a setting. */
+.event-summary-trigger.fixed { font-style: italic; }
 .event-path-controls { grid-template-columns: 1fr; }
 .event-path-controls.has-path { grid-template-columns: repeat(3, 1fr); }
 .event-waypoint-list { max-height: 160px; }

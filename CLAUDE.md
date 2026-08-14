@@ -198,6 +198,30 @@ Renaming a label is not cosmetic-only: `test_events_e2e.py`, `test_ego_events_e2
 and `test_elevation_e2e.py` all click action buttons via
 `.event-action-button:has-text("<label>")`, so a rename breaks three suites at once.
 
+**A card is laid out WENN → DANN**: `_renderEventList` appends the header (title
++ delete, nothing else), then the `.event-trigger-block` — tinted, accent-edged,
+filled by `_appendEventTriggerControls`, which appends into that block and *not*
+into the card — then the action controls. An `assign_route` gets
+`_fixedTriggerBlock()` in place of the controls, a one-row statement of its fixed
+start; dropping the block for it would leave the only card whose start condition
+is stated nowhere. Inputs inside the block are lifted to `--panel` because the
+block's own background is `--bg`, which is the card-wide input background.
+
+**`.event-summary` is rendered only on a *collapsed* card** (`_summaryLine`),
+where it is `<action> • <trigger>` — the whole event in one line, wrapping rather
+than ellipsising, because the trigger half is the part not already in the title.
+An expanded card shows both in editable form immediately below, so repeating them
+there was two rows of pure duplication. Nothing outside a collapsed card prints
+the trigger summary any more.
+
+Other panel-level pieces of the events section: `#event-count` (the pill in the
+section header, written by `_renderEventList`), `_bulkCollapseBar` (rendered above
+the list from two events on, flips every `ev.collapsed` at once), and
+`.event-card.active-draw`, which marks the card the map clicks currently belong to. That last one keys off `activeTrajectoryId`/
+`activeRouteId` **as well as** `activePathEventId`, because event ids are only
+unique within an actor — every actor's first event is `evt-1`. `properties.js`
+re-renders on an `activePathEventId`/`triggerPointMode` change to keep it current.
+
 Silent behaviours worth knowing when debugging "my event did nothing":
 
 - Unknown action/trigger strings are **silently coerced** to `follow_trajectory` / `simulation_time` rather than raising — a typo in a new action name looks like a no-op.
@@ -205,7 +229,7 @@ Silent behaviours worth knowing when debugging "my event did nothing":
 - An `after_event` trigger pointing at an `assign_route` event is rewritten to `distance_to_ego @ 400`.
 - A `distance_to_ego` trigger on an **ego-owned** event is rewritten to `simulation_time @ 0` — a distance from hero to itself is always 0, so the condition would fire on tick 1 regardless of the configured value. This coercion runs in `_normalize_actor` **after** the `after_event`→`assign_route` rewrite above, so a rewritten trigger on an ego event is caught too. `eventPanel.js` additionally omits the option from the trigger dropdown when the actor is the ego, and `event_builders.py`'s `build_start_event` / `_add_custom_event_start_trigger` fall back to `simulation_time` for `entity_name == 'hero'` as a third, defensive layer.
 - `eventPanel.js` permits at most one path-producing event (`follow_trajectory` or `assign_route`) per actor (`frontend/js/eventPanel.js`), the ego included — this is also what `route_waypoints` (for route XML export) is derived from now that there is no actor-level `ego.trajectory`. The two path buttons stay in the action grid once one exists and go **`disabled` with a title**, rather than being removed: hiding them reflowed the grid with nothing to explain where they went.
-- An `assign_route` card shows the fixed chip **`startet sofort (fest)`** where every other card shows its trigger summary, because a route's trigger is discarded at export (see above) and the card offers no trigger controls for it. Do not "fix" this by printing the stored trigger — it would state a start condition the file does not contain.
+- An `assign_route` card shows the fixed chip **`startet sofort (fest)`** — in its trigger block when expanded, in the summary line when collapsed — where every other card shows its trigger summary, because a route's trigger is discarded at export (see above) and the card offers no trigger controls for it. Do not "fix" this by printing the stored trigger — it would state a start condition the file does not contain.
 - **An actor with `events: []` gets no `<Act>` at all** — `build_custom_event_chain` returns `False` for an empty list and `_build_actor_act` (`xml_builder.py`) then returns `None` instead of building a fallback chain. The actor still spawns, still gets its `<Private>` teleport, controller and Init `<SpeedAction>`; it simply takes no part in the story, so it holds its `initial_speed` forever (or stands still at 0). This applies to the ego exactly as it does to an NPC — an ego with no events gets no `heroBehavior` Act, and `SimpleVehicleControl` drives it down its own spawn lane at whatever its Init speed was. **This is the opposite of the old behaviour**, where an event-less actor fell back to a `constant_speed` chain and drove off at 10 m/s; a "parked" car in a bench case covered 226 m before that was caught.
 - **A scenario in which *nothing* has events is rejected with a 400** (`validate_scenario_params`, `backend/scenario_io.py`). Every actor would contribute zero Acts, leaving a `<Story>` with no `<Act>` children — XSD-invalid, and the storyboard would complete on the first tick. Traffic-signal events count towards the rule, since `_inject_traffic_signals` builds a `ScenarioBehavior` Act of its own. `build_xosc` carries its own copy of the check (`_require_nonempty_story`) as a `RuntimeError`, for payloads that never went through the backend. Deleting the empty `<Story>` is **not** an alternative fix — `<Storyboard>` requires exactly one, verified against `OpenSCENARIO.xsd`.
 
@@ -428,8 +452,9 @@ out; props carry a separate invisible hit circle, so clickability is not the blo
 - Props reuse the `.actor-group` class (plus `.prop-group`), which gives them selection, body-drag and the `mapView.js` pan-exclusion list for free. If you add a new draggable map object, do the same rather than adding a class to three separate `closest()` checks.
 - Use `Toast.success/error/warn/info` for feedback (there are no `alert()` calls) and `await Confirm.show(msg)` for destructive actions.
 - **UI-facing strings are German; code, comments, and identifiers are English.** Match this when adding UI.
-- `UIUtils` (`app.js`) holds the two helpers `properties.js` and `eventPanel.js` share: `paramRow(label, control, unit)` and `fmt(value, decimals = 1)`. **`fmt`'s convention is that display precision follows the input's `step`** — a `0.1`/`0.5`-step field reads 1 dp, a whole-number one reads 0 dp — and the *same* call formats the card summary above the field, so the two can never disagree (`10` next to `10.0`).
-- The properties panel is `--props-w` wide (360px) and its content text bottoms out at **11px**; only the bold, letter-spaced uppercase section eyebrows go smaller (10px). Several event-card rows are 5–6 column grids that only fit at that width — `.event-speed-row`, `.event-point-distance-row`, and the `70px` label column shared by `.event-row` / `.event-param-row` (which is why a param label longer than ~"Sollabstand" gets shortened and the long form moved to the input's `title`).
+- `UIUtils` (`app.js`) holds the helpers `properties.js` and `eventPanel.js` share: `paramRow(label, control, unit)`, `fmt(value, decimals = 1)`, `nextIndexedId(events, prefix)` and `bindLabel(label, control)`. **`fmt`'s convention is that display precision follows the input's `step`** — a `0.1`/`0.5`-step field reads 1 dp, a whole-number one reads 0 dp — and the *same* call formats the card summary above the field, so the two can never disagree (`10` next to `10.0`). `bindLabel` exists because every panel control is built in JS with no id: it assigns one and sets `for=`, or, for a segmented `.event-toggle` (a `<div>` of buttons, which `for=` cannot address), makes it a `role="group"` with an `aria-label` instead. `paramRow` and `_row` call it for you.
+- The properties panel is `--props-w` wide (320px) and its content text bottoms out at **11px**; only the bold, letter-spaced uppercase section eyebrows go smaller (10px). Several event-card rows are 5–6 column grids that only fit at that width — `.event-speed-row`, `.event-point-distance-row`, and the `70px` label column shared by `.event-row` / `.event-param-row` (which is why a param label longer than ~"Sollabstand" gets shortened and the long form moved to the input's `title`).
+- **The Spawnpunkt grid is `.props-group.spawn-grid`, a 4-column `label input label input`** — X│Y and Z│Gier share a row, `#prop-init-speed` spans `2 / -1`. Plain `.props-group` (the type pickers) stays 2-column. The label columns are `max-content`, so hiding `Start (m/s)` for a prop visibly narrows column 1; that is the grid working, not a bug. `#prop-z-auto` beside the Z field re-derives z via `ObjectsManager.surfaceZFor` — the only way back to the surface height after typing a z by hand, short of moving the object. It is a button and **not** a live "auto/manuell" badge on purpose: the derived value comes from `_nearestLaneProjection` (a linear scan over every lane segment) and a body drag re-renders this whole panel on every `mousemove`.
 
 ## Maps
 
