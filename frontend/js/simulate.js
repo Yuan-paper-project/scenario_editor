@@ -55,7 +55,6 @@
   // because each one is a specific, cited real-world value, not a preview
   // choice.
 
-  const FALLBACK_SPEED = 10.0;              // build_start_event's absolute_speed
   const DISTANCE_TO_EGO_FALLBACK_S = 60.0;  // event_builders.py fallback_time
   const ACT_TEARDOWN_DISTANCE_M = 500.0;    // every Act's StopTrigger
   const VEHICLE_WAYPOINT_ACCEPT_M = 4.0;    // SimpleVehicleControl explicit-waypoint advance
@@ -656,9 +655,10 @@
       // runs in InitialActorSettings on tick 1, before any Act's
       // SimulationTime>0 start trigger, so the actor already has this speed
       // when the story begins. Nothing else is needed to model "unless a later
-      // speed action replaces it" — set_speed, follow_trajectory and the
-      // constant_speed fallback all assign sim.speed when they fire, exactly as
-      // BasicControl.update_target_speed() overwrites _target_speed.
+      // speed action replaces it" — set_speed and follow_trajectory both assign
+      // sim.speed when they fire, exactly as BasicControl.update_target_speed()
+      // overwrites _target_speed. An actor with no events gets no Act at all,
+      // so for it this is the only speed it ever has.
       speed: Math.max(0, actor.initial_speed || 0),
       events,
       fired: new Map(),           // eventId → {firedAt, completedAt|null}
@@ -679,9 +679,8 @@
       traveled: 0,
       frozen: false,
       goalStopped: false,          // SimpleVehicleControl._reached_goal — sticky
-      usesFallbackChain: events.length === 0,
-      fallbackFired: false,
-      triggerDistance: actor.trigger_distance || 400,
+      hasNoEvents: events.length === 0,
+      noEventsBadgeShown: false,
     };
   }
 
@@ -967,19 +966,16 @@
   function _stepActor(sim, dt, egoPrevPos, simTime) {
     if (sim.frozen) return;
 
-    if (sim.usesFallbackChain) {
-      // events: [] — the shared constant_speed fallback, exactly like any
-      // other actor with no authored plan. Still real motion, not a static
-      // placeholder; badged so it's clear WHY an event-less actor moves.
-      if (!sim.fallbackFired) {
-        const gateOk = sim.isEgo
-          ? true // hero's fallback starts on SimulationTime>0 — cannot wait for itself
-          : (egoPrevPos && _dist3(sim, egoPrevPos) < sim.triggerDistance) || simTime > DISTANCE_TO_EGO_FALLBACK_S;
-        if (gateOk) {
-          sim.fallbackFired = true;
-          sim.speed = FALLBACK_SPEED;
-          sim.badge = { icon: '▶', text: 'Kein Event — fährt mit Standardverhalten (constant_speed) los' };
-        }
+    if (sim.hasNoEvents) {
+      // events: [] — no Act is emitted for this actor at all, so the Init
+      // <SpeedAction> is the only speed command it ever receives: it holds its
+      // start speed for the whole scenario, or stands still at 0. Badged once
+      // so an actor that never reacts to anything reads as authored, not broken.
+      if (!sim.noEventsBadgeShown) {
+        sim.noEventsBadgeShown = true;
+        sim.badge = sim.speed > 0
+          ? { icon: '▶', text: 'Kein Event — fährt nur mit Startgeschwindigkeit' }
+          : { icon: '⏸', text: 'Kein Event — steht still' };
       }
     } else {
       for (const ev of sim.events) {

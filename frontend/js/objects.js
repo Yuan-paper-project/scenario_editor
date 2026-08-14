@@ -20,9 +20,9 @@
   const trajUndoBtn    = document.getElementById('traj-undo-btn');
 
   // Speed a newly placed actor starts with, emitted as a SpeedAction in the
-  // Storyboard Init. Deliberately the same 10.0 as simulate.js's FALLBACK_SPEED
-  // and build_start_event's own absolute_speed, so a freshly placed actor moves
-  // the same way whether or not it has events.
+  // Storyboard Init. An actor with no events gets no Act at all, so this is the
+  // only speed it ever has — placing one at the default means it drives, rather
+  // than spawning into a scenario as an invisible obstacle.
   //
   // This is the *placement* default only. An actor loaded from a save file or
   // seeded straight into AppState without the field defaults to 0 instead
@@ -104,12 +104,10 @@
     // to; free placement has to look it up at the final position.
     const z = _roundZ((snap?.z ?? groundZAt(x, y)) + _clearanceFor(type));
 
-    // Ego and NPCs share the same actor shape — behaviors/trigger_distance/
-    // events all mean the same thing for both. Only the storage differs.
+    // Ego and NPCs share the same actor shape — initial_speed and events both
+    // mean the same thing for both. Only the storage differs.
     const actor = {
       id: AppState.nextId(), type, x, y, z, yaw,
-      behaviors: ['constant_speed'],
-      trigger_distance: 400,
       initial_speed: DEFAULT_INIT_SPEED,
       events: [],
     };

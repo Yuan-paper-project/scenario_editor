@@ -153,10 +153,6 @@
       "y": -2.046,
       "z": 0.2,
       "yaw": 180,
-      "behaviors": [
-        "constant_speed"
-      ],
-      "trigger_distance": 100,
       "trajectory": [
         {
           "x": 144.96,
@@ -263,6 +259,28 @@
           "y": 72.2,
           "velocity": 10
         }
+      ],
+      "events": [
+        {
+          "id": "evt-1",
+          "name": "Losfahren",
+          "trigger": {
+            "type": "distance_to_ego",
+            "value": 100.0
+          },
+          "action": {
+            "type": "set_speed",
+            "target": {
+              "mode": "absolute",
+              "value": 10.0
+            },
+            "dynamics": {
+              "shape": "step",
+              "dimension": "time",
+              "value": 10.0
+            }
+          }
+        }
       ]
     },
     {
@@ -272,10 +290,6 @@
       "y": -6.1,
       "z": 0.2,
       "yaw": 49,
-      "behaviors": [
-        "constant_speed"
-      ],
-      "trigger_distance": 38,
       "trajectory": [
         {
           "x": 79.4,
@@ -322,6 +336,28 @@
           "y": 22.9,
           "velocity": 1
         }
+      ],
+      "events": [
+        {
+          "id": "evt-1",
+          "name": "Losfahren",
+          "trigger": {
+            "type": "distance_to_ego",
+            "value": 38.0
+          },
+          "action": {
+            "type": "set_speed",
+            "target": {
+              "mode": "absolute",
+              "value": 10.0
+            },
+            "dynamics": {
+              "shape": "step",
+              "dimension": "time",
+              "value": 10.0
+            }
+          }
+        }
       ]
     },
     {
@@ -331,10 +367,6 @@
       "y": 1.6,
       "z": 0.2,
       "yaw": 2,
-      "behaviors": [
-        "constant_speed"
-      ],
-      "trigger_distance": 400,
       "trajectory": [
         {
           "x": 68.6,
@@ -380,6 +412,28 @@
           "x": 120.6,
           "y": 2.1,
           "velocity": 2
+        }
+      ],
+      "events": [
+        {
+          "id": "evt-1",
+          "name": "Losfahren",
+          "trigger": {
+            "type": "distance_to_ego",
+            "value": 400.0
+          },
+          "action": {
+            "type": "set_speed",
+            "target": {
+              "mode": "absolute",
+              "value": 10.0
+            },
+            "dynamics": {
+              "shape": "step",
+              "dimension": "time",
+              "value": 10.0
+            }
+          }
         }
       ]
     }

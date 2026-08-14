@@ -378,7 +378,7 @@ steps = [
     ("Route des Ego zeichnen",
      "Wählen Sie das Ego → klicken Sie auf Pfad zeichnen → setzen Sie Wegpunkte → Fertig."),
     ("NPC-Akteure hinzufügen",
-     "Werkzeuge: Auto, LKW, Bus, Motorrad, Fußgänger, Radfahrer. NPCs erhalten Verhalten und Auslöserabstand."),
+     "Werkzeuge: Auto, LKW, Bus, Motorrad, Fußgänger, Radfahrer. NPCs erhalten Events wie das Ego."),
     ("Umgebung konfigurieren",
      "Wetterleiste unten: Tageszeit, Nebel, Regen, Wolken, Sonne, nasse Straße, Schnee, Staub (je 0–1)."),
     ("Vorschau & Export",
@@ -436,7 +436,7 @@ rows = [
     ("Entities",         "Ego & NPC-Definitionen (Vehicle, Pedestrian …)"),
     ("TeleportAction",   "Startposition der Akteure (x, y, z, Yaw)"),
     ("FollowTrajectory", "Bewegungspfade mit Wegpunkten & Geschwindigkeit"),
-    ("DistanceCondition","Aktivierungsauslöser: NPC startet bei Ego-Nähe"),
+    ("DistanceCondition","Abstands-Auslöser für Events"),
     ("EnvironmentAction","Wetter & Tageszeit (Nebel, Regen, Sonne …)"),
     ("RoadNetwork",      "Referenz auf OpenDRIVE (.xodr) Kartendatei"),
 ]
@@ -538,7 +538,7 @@ for i, (f, t) in enumerate(fe_rows):
 # ═════════════════════════════════════════════════════════════════════════════
 sl = prs.slides.add_slide(blank)
 add_rect(sl, 0, 0, W, H, fill=WHITE)
-add_slide_header(sl, "Akteure & Trajektorien", "Platzierung, Pfade und NPC-Verhalten")
+add_slide_header(sl, "Akteure & Trajektorien", "Platzierung, Pfade und NPC-Events")
 add_footer(sl, 5)
 
 half_w5 = (W - MARGIN_L - MARGIN_R - Inches(0.30)) / 2
@@ -578,10 +578,10 @@ add_section_label(sl, rx5, BODY_TOP, half_w5, "NPC-Konfiguration")
 npc_steps = [
     ("➤", "Trajektorienpfad",
      "Klick-Wegpunkte mit individueller Geschwindigkeit (m/s) — erzeugt FollowTrajectoryAction in der .xosc"),
-    ("⏱", "Aktivierungsauslöser",
-     "NPC startet wenn Ego im einstellbaren Abstand (5–1000 m) — erzeugt DistanceCondition"),
-    ("⚙", "Verhaltensoptionen",
-     "Konstante Geschwindigkeit · Beschleunigen · Abbremsen · Anhalten · Spurwechsel links/rechts"),
+    ("⏱", "Event-Auslöser",
+     "Simulationszeit · Abstand zum Ego · Abstand zu einem Punkt · nach einem anderen Event"),
+    ("⚙", "Event-Aktionen",
+     "Trajektorie folgen · Route zuweisen · Geschwindigkeit setzen · Abstand halten · Spurwechsel"),
     ("↩", "Rückgängig (Strg+Z)",
      "Letzte 20 Löschaktionen wiederherstellbar — kein versehentlicher Datenverlust"),
 ]

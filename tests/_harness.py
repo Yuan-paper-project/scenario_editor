@@ -17,6 +17,22 @@ import xml.etree.ElementTree as ET
 BASE = os.environ.get("EDITOR_URL", "http://localhost:9090")
 VIEWPORT = {"width": 1600, "height": 900}
 
+# One trivial event, for fixtures whose subject is something other than events.
+#
+# An actor with no events contributes no <Act>, so a scenario in which nothing
+# has events is rejected — by scenarioIO.js before it POSTs, and by
+# validate_scenario_params with a 400 if a payload reaches the backend directly.
+# A props-only or pose-only fixture therefore has to give SOME actor an event or
+# the export it is trying to inspect never happens. Attach this to the ego.
+MIN_EVENT = {
+    "id": "keepalive",
+    "name": "Keepalive",
+    "trigger": {"type": "simulation_time", "value": 0},
+    "action": {"type": "set_speed",
+               "target": {"mode": "absolute", "value": 10.0},
+               "dynamics": {"shape": "step", "dimension": "time", "value": 5.0}},
+}
+
 
 # ── Result accumulation ──────────────────────────────────────────────────────
 

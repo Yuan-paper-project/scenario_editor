@@ -27,11 +27,18 @@
     if (!AppState.map) warnings.push('Keine Karte ausgewählt');
     if (!AppState.ego) return { errors: ['Bitte zuerst ein Ego-Fahrzeug platzieren.'], warnings };
 
-    for (const npc of AppState.npcs) {
-      const label = AppState.actorLabel(npc);
-      if ((!npc.behaviors || npc.behaviors.length === 0) && (!npc.events || npc.events.length === 0)) {
-        warnings.push(`${label} hat kein Verhalten und keine Events`);
-      }
+    // Client-side half of the backend's own rejection. An actor with no events
+    // gets no Act, so a scenario in which nothing has events emits a storyboard
+    // with nothing to run and ends the moment it starts.
+    const hasActorEvents = [AppState.ego, ...AppState.npcs]
+      .some(a => a && (a.events || []).length > 0);
+    const hasSignalEvents = AppState.trafficSignals
+      .some(sig => (sig.events || []).length > 0);
+    if (!hasActorEvents && !hasSignalEvents) {
+      return {
+        errors: ['Kein Akteur hat Events — das Szenario würde sofort enden. Bitte mindestens ein Event anlegen.'],
+        warnings,
+      };
     }
     return { errors: [], warnings };
   }
@@ -73,15 +80,12 @@
     const routePts = AppState.pathPointsOf(ego);
 
     // Shared shape for the ego and every NPC — the ego is a scenario actor
-    // with events/behaviors/trigger_distance exactly like an NPC, not a
-    // special case. `typeOverride` exists only because the ego's internal
-    // type ('ego') is coerced to 'car' at export; the backend and emitter
-    // never see the literal 'ego'.
+    // with events exactly like an NPC, not a special case. `typeOverride`
+    // exists only because the ego's internal type ('ego') is coerced to 'car'
+    // at export; the backend and emitter never see the literal 'ego'.
     const dumpActor = (actor, typeOverride) => ({
       id: actor.id, type: typeOverride || actor.type,
       x: actor.x, y: actor.y, z: actor.z??0.2, yaw: actor.yaw??0,
-      behaviors:        actor.behaviors||['constant_speed'],
-      trigger_distance: actor.trigger_distance??400,
       initial_speed:    actor.initial_speed??0,
       events: (actor.events||[]).map(ev => ({
         id: ev.id, name: ev.name,

@@ -70,8 +70,8 @@
     laneGraph: null,      // cached CARLA routing graph from /api/maps/{town}/lane_graph, or null if unprobed
 
     // ── Scenario ─────────────────────────────────────────────
-    ego: null,            // {id, type:'ego', x, y, z, yaw, behaviors, trigger_distance, initial_speed, events} or null
-    npcs: [],             // [{id, type, x, y, z, yaw, behaviors, trigger_distance, initial_speed, events}]
+    ego: null,            // {id, type:'ego', x, y, z, yaw, initial_speed, events} or null
+    npcs: [],             // [{id, type, x, y, z, yaw, initial_speed, events}]
     staticObjects: [],    // [{id, type:'prop', prop:'static.prop.*', x, y, z, yaw}]
     trafficSignals: [],   // configured traffic-light events from the map
 
@@ -101,7 +101,7 @@
     // ── Helpers ───────────────────────────────────────────────
     nextId() { return `obj-${_nextId++}`; },
 
-    /** True for static props, which have no behaviour, events, or path. */
+    /** True for static props, which have no speed, events, or path. */
     isProp(actorOrId) {
       const actor = typeof actorOrId === 'string' ? this.findById(actorOrId) : actorOrId;
       return actor?.type === 'prop';
@@ -250,8 +250,8 @@
     },
 
     /**
-     * Swap a placed NPC's type in place. Only `type` changes — id, pose, events,
-     * behaviours and trigger settings are left untouched.
+     * Swap a placed NPC's type in place. Only `type` changes — id, pose, events
+     * and start speed are left untouched.
      *
      * The actor is moved to the end of `npcs` so it takes the next number in its
      * new type group, exactly as a freshly placed actor does; the type it left
@@ -272,7 +272,6 @@
       return {
         ...a,
         events: (a.events || []).map(ev => ({ ...ev })),
-        behaviors: [...(a.behaviors || [])],
       };
     },
 
@@ -296,11 +295,13 @@
 
     /** Fill an actor's shared defaults on load (ego and NPCs alike). */
     _hydrateActor(a) {
+      // behaviors/trigger_distance are dropped rather than spread through: a
+      // save file predating their removal would otherwise carry them straight
+      // back out through toJSON()'s `...a`, as fields nothing reads any more.
+      const { behaviors, trigger_distance, ...rest } = a;
       return {
-        ...a,
+        ...rest,
         events: a.events || [],
-        behaviors: a.behaviors && a.behaviors.length ? a.behaviors : ['constant_speed'],
-        trigger_distance: a.trigger_distance ?? 400,
         // 0, not ObjectsManager's placement default of 10: this runs on
         // loadJSON, and a save file predating the field must keep its actors
         // exactly as stationary as they were when it was written.

@@ -253,11 +253,11 @@ the benchmark from "not expressible" into reach.
 
 ## 5. Smaller findings worth keeping
 
-- **An NPC with `events: []` drives off.** `build_custom_event_chain()` returns
-  False for an empty list, and `xml_builder` then falls back to
-  `build_behavior_chain()` with the default `behaviors: ['constant_speed']`.
-  A "parked" car covered 226 m before this was caught. Every stationary actor
-  here uses an explicit `set_speed 0` (`_parked()` in `carla_cases.py`).
+- **An NPC with `events: []` gets no Act and stays put.** It holds its
+  `initial_speed` (0 when omitted) for the whole run. This reverses the older
+  behaviour, where `xml_builder` fell back to a `constant_speed` chain and a
+  "parked" car covered 226 m. Every stationary actor here still uses an explicit
+  `set_speed 0` (`_parked()` in `carla_cases.py`), which also states the intent.
 - **Distance radii need margin for the corner a turning ego cuts.** A
   `distance_to_ego@35` trigger on the cross street missed by 0.6 m — the ego
   begins its left swing at (−134, 89) rather than running to the junction

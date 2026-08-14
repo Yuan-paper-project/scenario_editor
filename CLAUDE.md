@@ -104,7 +104,7 @@ bare string, and the "registry" is the set of lookup tables it appears in.
 — so ego geometry and `vehicleCategory` are frozen at car values regardless.
 `truck.ego_default` / `bus.ego_default` in the catalogue are unreachable.
 The type coercion is the *only* thing still special about the ego at export —
-it otherwise carries `behaviors`/`trigger_distance`/`initial_speed`/`events` exactly
+it otherwise carries `initial_speed`/`events` exactly
 like an NPC (see "The event model" below).
 
 Adding one means editing both repos. Every lookup below **falls back silently**,
@@ -206,7 +206,8 @@ Silent behaviours worth knowing when debugging "my event did nothing":
 - A `distance_to_ego` trigger on an **ego-owned** event is rewritten to `simulation_time @ 0` — a distance from hero to itself is always 0, so the condition would fire on tick 1 regardless of the configured value. This coercion runs in `_normalize_actor` **after** the `after_event`→`assign_route` rewrite above, so a rewritten trigger on an ego event is caught too. `eventPanel.js` additionally omits the option from the trigger dropdown when the actor is the ego, and `event_builders.py`'s `build_start_event` / `_add_custom_event_start_trigger` fall back to `simulation_time` for `entity_name == 'hero'` as a third, defensive layer.
 - `eventPanel.js` permits at most one path-producing event (`follow_trajectory` or `assign_route`) per actor (`frontend/js/eventPanel.js`), the ego included — this is also what `route_waypoints` (for route XML export) is derived from now that there is no actor-level `ego.trajectory`. The two path buttons stay in the action grid once one exists and go **`disabled` with a title**, rather than being removed: hiding them reflowed the grid with nothing to explain where they went.
 - An `assign_route` card shows the fixed chip **`startet sofort (fest)`** where every other card shows its trigger summary, because a route's trigger is discarded at export (see above) and the card offers no trigger controls for it. Do not "fix" this by printing the stored trigger — it would state a start condition the file does not contain.
-- **An actor with `events: []` is not stationary — it drives off.** `build_custom_event_chain` returns `False` for an empty list and `xml_builder` falls back to `build_behavior_chain` with the default `behaviors: ['constant_speed']`. This applies to the ego exactly as it does to an NPC: an ego placed with no events gets its own `heroBehavior` Act built from the fallback chain, not a motionless spawn.
+- **An actor with `events: []` gets no `<Act>` at all** — `build_custom_event_chain` returns `False` for an empty list and `_build_actor_act` (`xml_builder.py`) then returns `None` instead of building a fallback chain. The actor still spawns, still gets its `<Private>` teleport, controller and Init `<SpeedAction>`; it simply takes no part in the story, so it holds its `initial_speed` forever (or stands still at 0). This applies to the ego exactly as it does to an NPC — an ego with no events gets no `heroBehavior` Act, and `SimpleVehicleControl` drives it down its own spawn lane at whatever its Init speed was. **This is the opposite of the old behaviour**, where an event-less actor fell back to a `constant_speed` chain and drove off at 10 m/s; a "parked" car in a bench case covered 226 m before that was caught.
+- **A scenario in which *nothing* has events is rejected with a 400** (`validate_scenario_params`, `backend/scenario_io.py`). Every actor would contribute zero Acts, leaving a `<Story>` with no `<Act>` children — XSD-invalid, and the storyboard would complete on the first tick. Traffic-signal events count towards the rule, since `_inject_traffic_signals` builds a `ScenarioBehavior` Act of its own. `build_xosc` carries its own copy of the check (`_require_nonempty_story`) as a `RuntimeError`, for payloads that never went through the backend. Deleting the empty `<Story>` is **not** an alternative fix — `<Storyboard>` requires exactly one, verified against `OpenSCENARIO.xsd`.
 
 ### `set_speed`'s dynamics dimension: a hold (`time`) or a ramp (`rate`)
 
@@ -270,15 +271,16 @@ What ScenarioRunner does with it, because none of it is guessable from the file:
   directly (our templates never pass `max_acceleration`) and `PedestrianControl` sets
   `control.speed`. The actor is *at* the speed on tick 1.
 
-**`0` means "no init speed", not "parked".** Nothing is emitted at 0, and
-`open_scenario.py`'s `if actor.speed > 0` would skip it anyway. An actor with
-`events: []` still drives off at 10 m/s on the `constant_speed` fallback regardless of
-its init speed. Parking still needs an explicit `set_speed 0` event (`_parked()` in
-`tests/carla_cases.py`).
+**`0` means "no init speed", and for an event-less actor that now also means
+"parked".** Nothing is emitted at 0, and `open_scenario.py`'s `if actor.speed > 0`
+would skip it anyway. Since an actor with `events: []` gets no Act, its init speed is
+the *only* speed command it ever receives — so it holds that speed for the whole run,
+and 0 leaves it stationary. An actor that has events but must stay put still needs an
+explicit `set_speed 0` (`_parked()` in `tests/carla_cases.py`), because its own later
+events would otherwise move it.
 
 **The default is split on purpose, and this is the trap.** `ObjectsManager`'s
-`DEFAULT_INIT_SPEED` gives a *placed* actor `10` (deliberately the same 10.0 as
-`simulate.js`'s `FALLBACK_SPEED` and `build_start_event`'s `absolute_speed`), while an
+`DEFAULT_INIT_SPEED` gives a *placed* actor `10`, while an
 **omitted** key defaults to `0` in both `AppState._hydrateActor` and
 `_normalize_actor`. So a legacy save file, an LLM payload and every
 `tests/carla_cases.py` case — none of which mention the field — keep exporting exactly
@@ -484,14 +486,15 @@ simplification. `speedRampFrom`/`speedRampTarget` hold the snapshot, and
 
 `_makeSimActor` seeds `sim.speed` from the actor's `initial_speed` rather than from 0,
 which is the whole of the Init-`<SpeedAction>` mirror: every existing overwrite path
-(`set_speed`, `_avgTrajectorySpeed` on a trajectory, the `constant_speed` fallback gate)
-already reproduces "replaced by the first Story speed action" without any special case,
+(`set_speed`, `_avgTrajectorySpeed` on a trajectory) already reproduces "replaced by the
+first Story speed action" without any special case,
 because that is literally what `BasicControl.update_target_speed` does. Consequences
 worth expecting: an `assign_route` actor with an init speed now drives its route
 immediately instead of sitting still, and an actor with no waypoints starts
 lane-following on tick 1, so the "Pfad ab hier unbekannt" freeze can fire earlier than
-it used to. An `events: []` actor still ends up at `FALLBACK_SPEED` (10) whatever its
-init speed — the fallback event overrides it, in the preview and in CARLA alike.
+it used to. An `events: []` actor keeps its init speed for the whole run — it gets no
+Act, so nothing ever overwrites it, in the preview and in CARLA alike; the preview
+badges it (`Kein Event — fährt nur mit Startgeschwindigkeit` / `steht still`).
 
 The one thing a lightweight preview cannot compute from the `.xodr` alone is **fork order** —
 which successor `waypoint.next()` returns first when a lane genuinely has more than one. That is
@@ -651,7 +654,7 @@ bash run.sh                      # startup log lists each town + road count + el
 curl -s localhost:9090/api/maps  # → {"maps": [...]}
 ```
 
-Then in the browser: place an ego, add a `follow_trajectory` event to it (or leave it with no events at all — it still drives off on the shared `constant_speed` fallback), add an NPC with a `set_speed` event, and click **Export .xosc**. This is the only path that exercises the `llm-scenario-gen` dependency. Check the export: `grep -c external_control` on the file must be `0`, and `grep -A2 'Controller name="HeroAgent"'` must show `simple_vehicle_control`.
+Then in the browser: place an ego, add a `follow_trajectory` event to it, add an NPC with a `set_speed` event, and click **Export .xosc**. At least one actor must have an event — a scenario where nothing does is rejected with a 400. This is the only path that exercises the `llm-scenario-gen` dependency. Check the export: `grep -c external_control` on the file must be `0`, and `grep -A2 'Controller name="HeroAgent"'` must show `simple_vehicle_control`.
 
 For props, also open **Requisiten**, place a few cones (the tool stays armed), place a barrier on each carriageway of a two-way road, and export. In the `.xosc` check that each prop has a teleport-only `<Private>` with **no `ControllerAction`**, that `miscObjectCategory` is `obstacle` on everything except `streetbarrier`, and that the two barriers' `h` values differ by 180°.
 
@@ -690,15 +693,17 @@ bash run.sh 9090                 # terminal 1
 bash tests/run_tests.sh          # terminal 2 (EDITOR_URL overrides the target)
 ```
 
-That runs `test_normalization.py` (93 checks, no browser or server needed), then `compare_xodr_lane_graph.py` (also no browser/server/CARLA — validates `backend/lane_graph_builder.py` against the 8 committed probed graphs), then the eight Playwright suites: props (54), prop yaw (23), templates (149), events (54, one of them a `KNOWN` open defect — see below), ego events (56), actor types (272, grows with the catalogue), elevation (33), route fidelity (9). All but the first two drive a real browser against a real server and a real export. **Restart the editor first if you changed `../llm-scenario-gen`** — otherwise the frontend shows new catalogue data while the backend exports the old, which looks like a test bug and is not one.
+That runs `test_normalization.py` (94 checks, no browser or server needed), then `compare_xodr_lane_graph.py` (also no browser/server/CARLA — validates `backend/lane_graph_builder.py` against the 8 committed probed graphs), then the eight Playwright suites: props (54), prop yaw (23), templates (149), events (55, one of them a `KNOWN` open defect — see below), ego events (61), actor types (260, grows with the catalogue), elevation (33), route fidelity (9). All but the first two drive a real browser against a real server and a real export. **Restart the editor first if you changed `../llm-scenario-gen`** — otherwise the frontend shows new catalogue data while the backend exports the old, which looks like a test bug and is not one.
 
-`test_ego_events_e2e.py` is kept separate from `test_events_e2e.py` rather than folded in: the older suite's `EGO` fixture and every one of its assertions assume an inert ego (no behaviors, no events), which was true before the ego became a controllable actor and is the entire premise the new suite tests against.
+`test_ego_events_e2e.py` is kept separate from `test_events_e2e.py` rather than folded in: the older suite's `EGO` fixture and every one of its assertions assume an inert ego (no events), which was true before the ego became a controllable actor and is the entire premise the new suite tests against.
 
 `test_events_e2e.py` reports one **`KNOWN`** line instead of failing. `Checks.known_issue()` exists so an open defect stays visible without making the exit code permanently non-zero; it flips to `KFIXED` when the bug is fixed, which is the cue to promote it to a normal check. The defect is in `build_custom_event_chain` (`../llm-scenario-gen`): it maps event ids to names for *all* events, then skips any whose action builder returns `False` (`follow_trajectory` under 2 waypoints, `assign_route` on a non-routable type), leaving any `after_event` chained onto the skipped one pointing at a `storyboardElementRef` that is not in the file. That trigger can never fire.
 
 ### CARLA behavioural tests
 
-**This section, and `tests/run_carla_cases.py`/`tests/carla_cases.py` themselves, describe the pre-ego-authoring world and have not been re-baselined yet** — deliberately deferred, a separate piece of work. Two things changed underneath them: `SCENARIO_GOAL` is dead in the current `run.sh` (it runs `run_selfref_video_test.py`, which has no `--goal` and launches no external agent — dead independently of anything below), and the ego now drives via its own authored events rather than a planner. Every case's ego is currently `events: []` (an editor default, never a literal in the harness), which — now that `events: []` triggers the shared `constant_speed` fallback for the ego too — means **every case's ego drives off in a straight line down its spawn lane, planner or no planner**, rather than sitting still. All 28 cases need re-running and their assertions re-checked before this section can be trusted again; treat every specific claim below about ego motion as describing the old, planner-driven behaviour until that happens. A second, independent change adds to the same debt: NPC Acts no longer wait for `hero traveled 0.1 m` before starting (see the two-clocks paragraph below), so timings measured relative to that gate have shifted too.
+**This section, and `tests/run_carla_cases.py`/`tests/carla_cases.py` themselves, describe the pre-ego-authoring world and have not been re-baselined yet** — deliberately deferred, a separate piece of work. Two things changed underneath them: `SCENARIO_GOAL` is dead in the current `run.sh` (it runs `run_selfref_video_test.py`, which has no `--goal` and launches no external agent — dead independently of anything below), and the ego now drives via its own authored events rather than a planner. Every case's ego is currently `events: []` (an editor default, never a literal in the harness), which — now that an event-less actor gets **no Act at all** — means **every case's ego sits still**: it has no events, and no `initial_speed` either, so nothing ever commands it to move. That is the third revision of this paragraph and the second reversal: before the ego became authorable it was driven by an external planner, then briefly it drove off on the `constant_speed` fallback, and now it is stationary unless the case gives it an event or a start speed. All 28 cases need re-running and their assertions re-checked before this section can be trusted again; treat every specific claim below about ego motion as describing the old, planner-driven behaviour until that happens. A second, independent change adds to the same debt: NPC Acts no longer wait for `hero traveled 0.1 m` before starting (see the two-clocks paragraph below), so timings measured relative to that gate have shifted too.
+
+None of the 28 cases is *blocked* by the new "something must have events" rule — the 7 that state no `events` are all `kind: template`, and every template produces events at placement — but every case's ego needs an authored event (or an `initial_speed`) before its ego-motion assertions can mean anything again.
 
 `tests/carla_telemetry.py` is a **passive** sidecar: it attaches to the running CARLA, subscribes with `world.on_tick`, and writes one CSV row per actor per tick. It **must never call `world.tick()`** — ScenarioRunner owns the clock in synchronous mode. Names must be captured while actors are alive (a background poller does this); resolving them after the run returns blanks, because teardown has already destroyed everything.
 
@@ -736,7 +741,7 @@ Each case leaves `tests/artifacts/<case>/scenario.json` — `AppState.toJSON()` 
 
 **A route on its own does not move an actor.** `AssignRouteAction` becomes `ChangeActorWaypoints`, which sets waypoints and nothing else, and `BasicControl._target_speed` stays `0` until a speed action lands. (`FollowTrajectoryAction` is the exception — `openscenario_parser` derives a target speed from the trajectory's `relativeTime` values.) That is usable rather than merely annoying: it is how `bench-highway-cut-in` parks a car on the on-ramp with its route already assigned and releases it on the ego's approach.
 
-**Any actor with `events: []` is not stationary — it drives off, the ego included.** `build_custom_event_chain` returns `False` for an empty list and `xml_builder` falls back to `build_behavior_chain` with the default `behaviors: ['constant_speed']`. A "parked" car in a bench case covered 226 m before this was caught. Anything that must stay put needs an explicit `set_speed 0` event — `_parked()` in `tests/carla_cases.py`.
+**Any actor with `events: []` gets no Act and therefore never moves under its own storyboard, the ego included** — it holds its `initial_speed`, which every case here omits, so it stays put. This reverses the older behaviour, where the same actor fell back to a `constant_speed` chain: a "parked" car in a bench case covered 226 m before that was caught. An actor that *has* events but must stay put still needs an explicit `set_speed 0` — `_parked()` in `tests/carla_cases.py`.
 
 **Traffic lights are emittable but not obeyable.** `AppState.trafficSignals` → `_inject_traffic_signals` really does emit a `TrafficSignalStateAction`, so a signal's state can be forced. But an actor on `simple_vehicle_control` **ignores traffic lights entirely** — the ego included, now that it uses the same controller with the same bare `module` property and no `consider_trafficlights` argument — so running a red is free and light-abiding traffic is impossible for the ego or an NPC. That constrains every signalised-junction scenario and it is a ScenarioRunner limitation, not an editor one.
 

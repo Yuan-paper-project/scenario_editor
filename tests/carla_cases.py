@@ -574,12 +574,16 @@ def _at_start(value=400.0):
 def _parked():
     """A vehicle that must not move.
 
-    NOT the same as `events: []`. An NPC with no events makes
-    build_custom_event_chain() return False, and xml_builder then falls back to
-    build_behavior_chain() with the default `behaviors: ['constant_speed']` — so
-    an actor given no events at all DRIVES OFF at constant speed. Measured: a
-    'stationary' car covered 226 m. Every parked vehicle here therefore says so
-    explicitly.
+    An explicit `set_speed 0` rather than `events: []`. The two now agree —
+    an actor with no events gets no Act at all, so it simply holds its Init
+    speed (absent here, so 0) — but this stays explicit for two reasons: it
+    states the intent in the case itself, and `events: []` on EVERY actor is
+    rejected outright at export, since a scenario in which nothing happens has
+    no Acts to run.
+
+    Historical note, because the old behaviour was a real trap: an event-less
+    actor used to fall back to a constant_speed chain and drive off. Measured: a
+    'stationary' car covered 226 m.
     """
     return [_speed("p1", _at_start(), 0.0, 20.0)]
 

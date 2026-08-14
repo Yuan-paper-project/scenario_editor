@@ -1,20 +1,18 @@
 """The ego as a fully controllable actor: same event UI, same .xosc parity as an NPC.
 
-Complements test_events_e2e.py, which seeds an inert ego (no behaviors, no
-events) and only exercises NPC events. This suite is kept separate rather than
-folded in because that file's `EGO` const and every one of its assertions
-assume the ego contributes nothing to the storyboard — which was true before
-this change and is the entire premise being tested here.
+Complements test_events_e2e.py, which seeds an inert ego (no events) and only
+exercises NPC events. This suite is kept separate rather than folded in because
+that file's `EGO` const and every one of its assertions assume the ego
+contributes nothing to the storyboard — which was true before this change and
+is the entire premise being tested here.
 
-Covers: the properties/event panel renders identically for the ego and an NPC
-(minus the activation-distance trigger, which is meaningless for the ego
-itself); the ego's controller module is simple_vehicle_control, not
-external_control; the ego gets its OWN Act, gated on simulation_time rather
-than "hero traveled 0.1 m" (an NPC's Act keeps that gate); an ego with no
-events falls back to the shared constant_speed chain; self-referencing
-set_distance is rejected the same way for the ego as for an NPC; and a legacy
-save file with an actor-level `ego.trajectory` still loads, migrated into a
-follow_trajectory event.
+Covers: the properties/event panel renders identically for the ego and an NPC;
+the ego's controller module is simple_vehicle_control, not external_control;
+the ego gets its OWN Act, gated on simulation_time rather than "hero traveled
+0.1 m" (an NPC's Act keeps that gate); an ego with no events gets no Act at
+all; self-referencing set_distance is rejected the same way for the ego as for
+an NPC; and a legacy save file with an actor-level `ego.trajectory` still
+loads, migrated into a follow_trajectory event.
 
     bash run.sh 9090            # terminal 1
     .venv/bin/python3 tests/test_ego_events_e2e.py
@@ -33,11 +31,9 @@ check = H.Checks()
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 EGO_BASE = {"id": "obj-1", "type": "ego", "x": 300.631, "y": -2.025,
-            "z": 0.2, "yaw": 180, "behaviors": ["constant_speed"],
-            "trigger_distance": 400, "events": []}
+            "z": 0.2, "yaw": 180, "events": []}
 NPC_BASE = {"id": "obj-2", "type": "car", "x": 265.364, "y": 1.967,
-            "z": 0.2, "yaw": 0, "behaviors": ["constant_speed"],
-            "trigger_distance": 400, "events": []}
+            "z": 0.2, "yaw": 0, "events": []}
 
 
 def seed(page, ego_events, npc_events=None, with_npc=True):
@@ -81,20 +77,19 @@ with sync_playwright() as p:
                          "Abstand halten", "Spurwechsel"], str(ego_labels))
     check("ego's event section is visible",
           not page.evaluate("document.getElementById('event-section').classList.contains('hidden')"))
-    check("ego's behavior panel is visible",
-          page.evaluate("!document.getElementById('behavior-panel').classList.contains('hidden')"))
-    check("ego's activation-distance trigger is hidden (meaningless for itself)",
-          page.evaluate("getComputedStyle(document.getElementById('trigger-section')).display") == "none")
 
     page.evaluate("AppState.select('obj-2')")
-    check("an NPC's activation-distance trigger IS shown",
-          page.evaluate("getComputedStyle(document.getElementById('trigger-section')).display") != "none")
+    check("an NPC's event section is visible too",
+          not page.evaluate("document.getElementById('event-section').classList.contains('hidden')"))
 
     # The ego-only path UI (superseded by the shared event-card path controls)
-    # must be gone entirely, not just hidden — a leftover element with a stale
-    # id is exactly the kind of thing that silently stops being wired up.
+    # and the removed Verhalten section must be gone entirely, not just hidden —
+    # a leftover element with a stale id is exactly the kind of thing that
+    # silently stops being wired up.
     for deleted_id in ("btn-draw-path", "btn-toggle-path", "btn-clear-path",
-                       "waypoint-list", "ego-route-hint", "path-section-label"):
+                       "waypoint-list", "ego-route-hint", "path-section-label",
+                       "behavior-panel", "behavior-checkboxes", "trigger-section",
+                       "prop-trigger-dist"):
         check(f"#{deleted_id} no longer exists in the DOM",
               page.evaluate(f"document.getElementById('{deleted_id}')") is None)
 
@@ -199,18 +194,43 @@ with sync_playwright() as p:
     check("no internal obj- id survives into the export",
           "obj-" not in xml)
 
-    # ── No-event fallback: the ego drives off exactly like an NPC would ──────
+    # ── No events: no Act, exactly like an NPC ───────────────────────────────
+    # An ego-only scenario with no events at all has nothing to run: every actor
+    # would contribute no Act, so the storyboard completes on the first tick.
+    # Rejected in two independent places, and both are asserted — scenarioIO.js
+    # refuses before it POSTs, so the backend's own 400 is never reached through
+    # the UI and has to be provoked with a direct fetch.
     seed(page, [], with_npc=False)
+    page.evaluate("document.getElementById('toast-container')?.replaceChildren()")
+    page.click("#btn-export")
+    page.wait_for_timeout(500)
+    toast = page.evaluate(
+        "document.getElementById('toast-container')?.textContent || ''")
+    check("the editor refuses to export a scenario with no events at all",
+          "Event" in toast, repr(toast))
+
+    check("a no-events payload POSTed directly is rejected with a 400",
+          H.export_status(page, {
+              "map": "Town01",
+              "ego": {"id": "obj-1", "type": "car", "x": 300.6, "y": -2.0},
+              "npcs": [],
+          }) == 400)
+
+    # With an NPC carrying the story, an event-less ego simply contributes no
+    # Act — it spawns, keeps its Init speed, and SimpleVehicleControl drives it
+    # down its own lane. It does NOT get a constant_speed fallback chain any
+    # more; that concept is gone along with the Verhalten section.
+    seed(page, [], npc_events=[
+        speed_event("n1", {"type": "simulation_time", "value": 0})])
     xml = H.export_xosc(page)
-    hero_events = H.parse_events(xml, entity="hero")
-    names = [e["name"] for e in hero_events]
-    check("an ego with no events gets the shared constant_speed fallback chain",
-          any("hero_StartEvent" in n for n in names) and any("ConstantSpeed" in n for n in names),
-          str(names))
-    start_ev = next(e for e in hero_events if "StartEvent" in e["name"])
-    check("the hero's fallback start event triggers on simulation_time, "
-          "not a self-distance",
-          start_ev["trigger"]["kind"] == "simulation_time", str(start_ev["trigger"]))
+    act_names = [a["name"] for a in H.acts(xml)]
+    check("an ego with no events gets no Act at all",
+          "heroBehavior" not in act_names, str(act_names))
+    check("the npc carrying the story still gets its own Act",
+          "adversaryBehavior" in act_names, str(act_names))
+    check("an event-less ego contributes no events to the export",
+          H.parse_events(xml, entity="hero") == [],
+          str(H.parse_events(xml, entity="hero")))
 
     # ── Self-reference is a hard 400 for the ego too ─────────────────────────
     seed(page, [{"id": "e1", "trigger": {"type": "simulation_time", "value": 0},
@@ -248,6 +268,11 @@ with sync_playwright() as p:
     npc = H.place_actor(page, "car", 265.364, 1.967)
     check("a placed NPC defaults to 10 m/s initial speed",
           npc.get("initial_speed") == 10.0, str(npc.get("initial_speed")))
+
+    # The placement defaults above are the subject; this event exists only so
+    # the scenario is exportable at all (nothing else here has one).
+    page.evaluate("(ev) => AppState.updateById(AppState.ego.id, {events: [ev]})",
+                  H.MIN_EVENT)
 
     xml = H.export_xosc(page)
     check("a placed ego's default speed reaches the Init <Private>",
@@ -287,7 +312,8 @@ with sync_playwright() as p:
           str(page.evaluate("AppState.ego.initial_speed")))
 
     # A seeded payload omitting the field keeps the pre-feature behaviour.
-    seed(page, [], with_npc=False)
+    # The event carries no initial_speed, so it does not disturb the subject.
+    seed(page, [H.MIN_EVENT], with_npc=False)
     check("a seeded ego without the field hydrates to 0",
           page.evaluate("AppState.ego.initial_speed") == 0,
           str(page.evaluate("AppState.ego.initial_speed")))

@@ -99,7 +99,7 @@ The startup script creates a Python virtual environment, installs dependencies, 
 2. Place Ego         →  Click "Ego" tool, then click on the map
 3. Draw Ego Route    →  Select ego → "Draw Path" → click waypoints → "Done"
 4. Add NPCs          →  Click actor tool (car/pedestrian/...) → click on map
-5. Configure NPCs    →  Set behaviors, trigger distance, draw trajectories
+5. Configure NPCs    →  Add events (actions + triggers), draw trajectories
 6. Set Environment   →  Adjust weather sliders and time-of-day
 7. Preview           →  Hit Play to animate all actors along their paths
 8. Export            →  "Export .xosc" / "Export Route" / "Save" as JSON

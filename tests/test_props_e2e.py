@@ -168,9 +168,17 @@ with sync_playwright() as p:
                         "catch(e){return String(e);}})()") is True)
 
     # ── Export ────────────────────────────────────────────────────────────────
+    # The ego carries one trivial event purely so the scenario is exportable:
+    # an actor with no events gets no Act, and a scenario in which NOTHING has
+    # events is rejected before the POST. The props are the subject here.
     page.evaluate("""() => {
         AppState.map = 'Town01';
-        AppState.ego = {id:'obj-1',type:'ego',x:10,y:-20,z:0.2,yaw:0,trajectory:[],events:[]};
+        AppState.ego = {id:'obj-1',type:'ego',x:10,y:-20,z:0.2,yaw:0,trajectory:[],
+          events:[{id:'keepalive',
+                   trigger:{type:'simulation_time',value:0},
+                   action:{type:'set_speed',
+                           target:{mode:'absolute',value:10},
+                           dynamics:{shape:'step',dimension:'time',value:5}}}]};
         AppState.npcs = [];
         AppState.staticObjects = [
           {id:'obj-2',type:'prop',prop:'static.prop.trafficcone01',x:12.3,y:-45.6,z:0,yaw:90},
@@ -203,7 +211,13 @@ with sync_playwright() as p:
     def post_status(prop_id):
         return page.evaluate("""async (pid) => {
             const p = {schema_version:'1.0', map:'Town01', weather:{},
-              ego:{type:'car',x:1,y:2,z:0.2,yaw:0}, npcs:[], trafficSignals:[],
+              ego:{type:'car',x:1,y:2,z:0.2,yaw:0,
+                   events:[{id:'keepalive',
+                            trigger:{type:'simulation_time',value:0},
+                            action:{type:'set_speed',
+                                    target:{mode:'absolute',value:10},
+                                    dynamics:{shape:'step',dimension:'time',value:5}}}]},
+              npcs:[], trafficSignals:[],
               staticObjects:[{prop:pid,x:0,y:0,z:0,yaw:0}], route_waypoints:[]};
             const r = await fetch('/api/export', {method:'POST',
               headers:{'Content-Type':'application/json'}, body: JSON.stringify(p)});

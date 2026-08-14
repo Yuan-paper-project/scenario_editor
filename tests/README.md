@@ -44,11 +44,11 @@ still exports the old — which reads as a test bug but is not one.
 |---|---|---|
 | `test_props_e2e.py` | 54 | catalogue contents, toolbar tabs, sticky placement, Shift lane-snap, selection/properties, prop-type swap, drag without panning, save/load round-trip, `.xosc` export incl. `MiscObject` categories and `yaw_offset`, 400 on unknown/removed ids |
 | `test_prop_yaw_e2e.py` | 23 | per-prop facing rules on a **real two-way road** (Town01 road 8, lanes ±1 at exactly 180°), free-vs-Shift orientation, far-from-lane fallback, manual-override persistence |
-| `test_normalization.py` | 88 | `validate_scenario_params` in isolation: every silent coercion, both trigger rewrites, all clamps, the entity-ref mapping that `scenarioIO.js` duplicates, the actor-type whitelist, and the ego's shared `_normalize_actor` path (self-reference rejection, the `distance_to_ego`→`simulation_time` coercion, derived `route_waypoints`) |
-| `test_actor_types_e2e.py` | 272 | all 12 actor types — toolbar tile and German label, placement (spawn-snap vs road-facing), map marker shape/colour/footprint, and the entity each one exports: element kind, blueprint id, category, bounding box, `maxSpeed`, controller module; plus `assign_route` survival, the walker-first base-template fork, and the 400 on an unknown type |
+| `test_normalization.py` | 94 | `validate_scenario_params` in isolation: every silent coercion, both trigger rewrites, all clamps, the entity-ref mapping that `scenarioIO.js` duplicates, the actor-type whitelist, and the ego's shared `_normalize_actor` path (self-reference rejection, the `distance_to_ego`→`simulation_time` coercion, derived `route_waypoints`) |
+| `test_actor_types_e2e.py` | 260 | all 12 actor types — toolbar tile and German label, placement (spawn-snap vs road-facing), map marker shape/colour/footprint, and the entity each one exports: element kind, blueprint id, category, bounding box, `maxSpeed`, controller module; plus `assign_route` survival, the walker-first base-template fork, and the 400 on an unknown type |
 | `test_templates_e2e.py` | 149 | all 11 templates — panel renders them, placement attaches the right chain, `placement` rules apply, and the chain survives export with the right triggers, speeds, dynamics and lane offsets |
-| `test_events_e2e.py` | 49 | the event editor across every action and trigger type, including the ones no template uses; the one-path-event rule; the cases where an event silently vanishes from the export; and `initial_speed` on an NPC and on a walker (emitted in the Storyboard Init, not as a Story event) |
-| `test_ego_events_e2e.py` | 56 | the ego as a fully controllable actor: panel parity with an NPC (minus the ego-only-hidden `distance_to_ego` trigger), `simple_vehicle_control` (not `external_control`) in the export, the ego's own `heroBehavior` Act gated on `simulation_time` rather than `hero traveled 0.1m`, the shared `constant_speed` fallback, the `set_distance` self-reference 400, legacy `ego.trajectory` migration into a `follow_trajectory` event — both synthetic and against the real `example/Town01_scenario2.json` — and the `initial_speed` split default (10 on placement, 0 when the key is absent) |
+| `test_events_e2e.py` | 55 | the event editor across every action and trigger type, including the ones no template uses; the one-path-event rule; the cases where an event silently vanishes from the export; and `initial_speed` on an NPC and on a walker (emitted in the Storyboard Init, not as a Story event) |
+| `test_ego_events_e2e.py` | 61 | the ego as a fully controllable actor: panel parity with an NPC (minus the ego-only-hidden `distance_to_ego` trigger), `simple_vehicle_control` (not `external_control`) in the export, the ego's own `heroBehavior` Act gated on `simulation_time` rather than `hero traveled 0.1m`, no Act at all for an event-less ego (and a 400 when nothing in the scenario has events), the `set_distance` self-reference 400, legacy `ego.trajectory` migration into a `follow_trajectory` event — both synthetic and against the real `example/Town01_scenario2.json` — and the `initial_speed` split default (10 on placement, 0 when the key is absent) |
 | `test_elevation_e2e.py` | 33 | z derived from `<elevationProfile>` — the render payload's point shape, `groundZAt` interpolation, per-category clearance, drag and X/Y-edit recompute, waypoints following a gradient, and the flat-map baseline |
 
 `test_actor_types_e2e.py`'s count grows with the catalogue; the number above is
@@ -56,7 +56,7 @@ what it reported the last time this file was touched, not a target.
 
 `test_ego_events_e2e.py` is kept separate from `test_events_e2e.py` rather than
 folded in: the older suite's `EGO` fixture and every one of its assertions
-assume an inert ego (no `behaviors`, no `events`) — true before the ego became
+assume an inert ego (no `events`) — true before the ego became
 a controllable actor, and the entire premise the newer suite tests against.
 
 ### Why the elevation suite runs on two maps
@@ -140,9 +140,9 @@ describes `run_carla_cases.py`/`carla_cases.py` as they exist today, unchanged
 by the ego-controller work: the hero's `.xosc` controller went from
 `external_control` to `simple_vehicle_control`, and the ego now takes the same
 authored events an NPC does. Every case's ego is `events: []` today (never a
-literal here — it is what `AppState` defaults to), and `events: []` now drives
-off on the shared `constant_speed` fallback for the ego too, so **every case's
-ego moves on its own regardless of `SCENARIO_GOAL`** — which, separately, is
+literal here — it is what `AppState` defaults to), and `events: []` now means
+the ego gets no Act at all, so **every case's ego sits still regardless of
+`SCENARIO_GOAL`** — which, separately, is
 already dead against the current `run.sh` (it runs `run_selfref_video_test.py`,
 which takes no `--goal` and launches no external agent). All 28 cases need
 re-running and their assertions re-checked before any claim below about ego
@@ -193,11 +193,15 @@ A `scene` case's `npcs` array order is load-bearing: `buildScenarioParams` names
 them `adversary`, `adversary1`, … by index, and that is the entity ref the
 expectations read back.
 
-**Any actor with `events: []` does not stay still — it drives off, the ego
-included.** `build_custom_event_chain()` returns False for an empty list and
-`xml_builder` falls back to `build_behavior_chain()` with the default
-`behaviors: ['constant_speed']`. A "parked" car covered 226 m before this was
-caught. Use `_parked()` (an explicit `set_speed 0`) for anything stationary.
+**Any actor with `events: []` gets no Act, the ego included** —
+`build_custom_event_chain()` returns False for an empty list and
+`_build_actor_act()` then returns None, so the actor holds its `initial_speed`
+(0 when omitted, as it is in every case here) for the whole run. This reverses
+the older behaviour, where the same actor drove off on a `constant_speed`
+fallback: a "parked" car covered 226 m before that was caught. An actor that
+*has* events but must stay put still needs `_parked()` (an explicit
+`set_speed 0`). A scenario in which *nothing* has events is rejected at export
+with a 400.
 
 Each case builds its scenario through the real editor, runs it through
 `/home/dellpro2/Antonio/run.sh`, and judges the result against two independent

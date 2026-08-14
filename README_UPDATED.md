@@ -158,8 +158,6 @@ The editor JSON uses the current structured format:
       "y": 0,
       "z": 0.2,
       "yaw": 0,
-      "behaviors": ["constant_speed"],
-      "trigger_distance": 400,
       "events": [
         {
           "id": "event_1",

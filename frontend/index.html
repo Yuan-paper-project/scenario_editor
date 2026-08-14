@@ -272,33 +272,8 @@
         </div>
       </div>
 
-      <!-- Verhalten + Events: gemeinsam für Ego und NPCs -->
+      <!-- Events: gemeinsam für Ego und NPCs -->
       <div id="props-npc-section" class="hidden">
-        <div id="behavior-panel" class="collapsible-section">
-          <button class="collapsible-header" type="button" data-collapse-target="behavior-panel-body">
-            <span>Verhalten</span><span class="collapse-indicator">-</span>
-          </button>
-          <div id="behavior-panel-body" class="collapsible-body">
-            <div class="section-note">Wenn keine Events definiert sind</div>
-            <div id="behavior-checkboxes" class="behavior-list">
-              <label><input type="checkbox" name="behavior" value="constant_speed" checked> Konstante Geschwindigkeit</label>
-              <label><input type="checkbox" name="behavior" value="accelerate"> Beschleunigen</label>
-              <label><input type="checkbox" name="behavior" value="decelerate"> Abbremsen</label>
-              <label><input type="checkbox" name="behavior" value="stop"> Anhalten</label>
-              <label><input type="checkbox" name="behavior" value="change_lane_left"> Spurwechsel links</label>
-              <label><input type="checkbox" name="behavior" value="change_lane_right"> Spurwechsel rechts</label>
-            </div>
-            <div id="trigger-section" class="behavior-trigger-section">
-              <div class="props-subgroup-label">Aktivierungsauslöser</div>
-              <div class="props-group">
-                <label>Abstand (m)</label>
-                <input type="number" id="prop-trigger-dist" step="10" min="5" max="1000" value="400" title="NPC aktiviert sich, wenn das Ego-Fahrzeug innerhalb dieses Abstands ist">
-              </div>
-              <div class="trigger-hint">NPC startet, wenn das Ego-Fahrzeug in diesem Abstand ist</div>
-            </div>
-          </div>
-        </div>
-
         <div id="event-section" class="collapsible-section event-section">
           <button class="collapsible-header event-section-header" type="button" data-collapse-target="event-section-body">
             <span>Events</span><span class="collapse-indicator">-</span>
@@ -414,7 +389,7 @@
         <div class="step-num">4</div>
         <div class="step-body">
           <strong>NPC-Akteure hinzufügen</strong>
-          <span>Werkzeuge: Auto, LKW, Bus, Motorrad, Fußgänger, Radfahrer. Gleiche Vorgehensweise wie beim Ego. NPCs erhalten Verhalten und Auslöserabstand.</span>
+          <span>Werkzeuge: Auto, LKW, Bus, Motorrad, Fußgänger, Radfahrer. Gleiche Vorgehensweise wie beim Ego. NPCs erhalten Events wie das Ego.</span>
         </div>
       </div>
       <div class="welcome-step">

@@ -55,6 +55,18 @@ def norm_ego(events, ego_extra=None, npcs=None):
     return validate_scenario_params(params)
 
 
+# validate_scenario_params rejects a payload in which nothing has events at all
+# — every actor would contribute zero Acts and the storyboard would complete on
+# the first tick. The default-checking payloads below are about one actor's own
+# fields, so they carry this second actor whose only job is to hold an event and
+# keep the scenario exportable.
+KEEPALIVE_NPC = {
+    "id": "obj-9", "type": "car", "x": 9.0, "y": 9.0,
+    "events": [{"id": "k1", "trigger": {"type": "simulation_time", "value": 0},
+                "action": {"type": "set_speed"}}],
+}
+
+
 def raises(fn):
     try:
         fn()
@@ -303,16 +315,12 @@ check("a ref naming an adversary index that does not exist raises",
 
 # ── NPC-level defaults ───────────────────────────────────────────────────────
 
-out = norm([], npcs=[{"id": "obj-2", "type": "car", "x": 1, "y": 1}])
+out = norm([], npcs=[{"id": "obj-2", "type": "car", "x": 1, "y": 1}, KEEPALIVE_NPC])
 npc = out["npcs"][0]
 check("npc defaults z to 0.2", npc["z"] == 0.2)
-check("npc defaults behaviors to constant_speed", npc["behaviors"] == ["constant_speed"])
-check("npc defaults trigger_distance to 400", npc["trigger_distance"] == 400.0)
-
-out = norm([], npcs=[{"id": "obj-2", "type": "car", "x": 1, "y": 1, "trigger_distance": 2}])
-check("trigger_distance clamps up to 5", out["npcs"][0]["trigger_distance"] == 5.0)
-out = norm([], npcs=[{"id": "obj-2", "type": "car", "x": 1, "y": 1, "trigger_distance": 9999}])
-check("trigger_distance clamps down to 1000", out["npcs"][0]["trigger_distance"] == 1000.0)
+check("npc defaults events to []", npc["events"] == [])
+check("npc gets no behaviors key", "behaviors" not in npc, str(npc.keys()))
+check("npc gets no trigger_distance key", "trigger_distance" not in npc, str(npc.keys()))
 
 # initial_speed — the Init SpeedAction. The default is 0 and NOT the editor's
 # placement default of 10: this function also normalises hand-written payloads,
@@ -322,13 +330,16 @@ check("trigger_distance clamps down to 1000", out["npcs"][0]["trigger_distance"]
 check("npc defaults initial_speed to 0", npc["initial_speed"] == 0.0,
       str(npc.get("initial_speed")))
 
-out = norm([], npcs=[{"id": "obj-2", "type": "car", "x": 1, "y": 1, "initial_speed": 12.5}])
+out = norm([], npcs=[{"id": "obj-2", "type": "car", "x": 1, "y": 1, "initial_speed": 12.5},
+               KEEPALIVE_NPC])
 check("initial_speed passes through intact", out["npcs"][0]["initial_speed"] == 12.5)
 # ScenarioRunner's _get_actor_speed *raises* on a negative AbsoluteTargetSpeed
 # in Init, so the floor is a real guard rather than tidiness.
-out = norm([], npcs=[{"id": "obj-2", "type": "car", "x": 1, "y": 1, "initial_speed": -5}])
+out = norm([], npcs=[{"id": "obj-2", "type": "car", "x": 1, "y": 1, "initial_speed": -5},
+               KEEPALIVE_NPC])
 check("initial_speed clamps up to 0", out["npcs"][0]["initial_speed"] == 0.0)
-out = norm([], npcs=[{"id": "obj-2", "type": "car", "x": 1, "y": 1, "initial_speed": 9999}])
+out = norm([], npcs=[{"id": "obj-2", "type": "car", "x": 1, "y": 1, "initial_speed": 9999},
+               KEEPALIVE_NPC])
 check("initial_speed clamps down to 100", out["npcs"][0]["initial_speed"] == 100.0)
 
 out = norm([{"trigger": {"type": "simulation_time"}, "action": {"type": "set_speed"}}])
@@ -416,22 +427,18 @@ check("ego: distance_to_point naming itself is allowed",
       out["ego"]["events"][0]["trigger"].get("entity_ref"))
 
 # Ego-level defaults mirror the NPC ones exactly.
-out = norm_ego([])
-check("ego defaults behaviors to constant_speed", out["ego"]["behaviors"] == ["constant_speed"])
-check("ego defaults trigger_distance to 400", out["ego"]["trigger_distance"] == 400.0)
+out = norm_ego([], npcs=[KEEPALIVE_NPC])
 check("ego defaults events to []", out["ego"]["events"] == [])
+check("ego gets no behaviors key", "behaviors" not in out["ego"], str(out["ego"].keys()))
+check("ego gets no trigger_distance key", "trigger_distance" not in out["ego"],
+      str(out["ego"].keys()))
 
 check("ego defaults initial_speed to 0", out["ego"]["initial_speed"] == 0.0,
       str(out["ego"].get("initial_speed")))
 
-out = norm_ego([], ego_extra={"trigger_distance": 2})
-check("ego trigger_distance clamps up to 5", out["ego"]["trigger_distance"] == 5.0)
-out = norm_ego([], ego_extra={"trigger_distance": 9999})
-check("ego trigger_distance clamps down to 1000", out["ego"]["trigger_distance"] == 1000.0)
-
-out = norm_ego([], ego_extra={"initial_speed": -3})
+out = norm_ego([], ego_extra={"initial_speed": -3}, npcs=[KEEPALIVE_NPC])
 check("ego initial_speed clamps up to 0", out["ego"]["initial_speed"] == 0.0)
-out = norm_ego([], ego_extra={"initial_speed": 9999})
+out = norm_ego([], ego_extra={"initial_speed": 9999}, npcs=[KEEPALIVE_NPC])
 check("ego initial_speed clamps down to 100", out["ego"]["initial_speed"] == 100.0)
 
 # route_waypoints, when omitted, is derived from the ego's own path event.
@@ -444,7 +451,7 @@ check("route_waypoints derives from the ego's follow_trajectory event",
 check("derived route_waypoints carry a per-segment yaw",
       out["route_waypoints"][0]["yaw"] == 0.0, str(out["route_waypoints"][0]))
 
-out = norm_ego([])
+out = norm_ego([], npcs=[KEEPALIVE_NPC])
 check("route_waypoints is empty when the ego has no path event",
       out["route_waypoints"] == [], str(out["route_waypoints"]))
 
@@ -467,10 +474,14 @@ check("non-dict params raises", raises(lambda: validate_scenario_params([])))
 # someone watched the simulation. Same policy as static props.
 
 def npc_of(actor_type):
+    # KEEPALIVE_NPC keeps the payload exportable: these cases are about the type
+    # string alone, and a payload where nothing has events is rejected for an
+    # entirely different reason.
     return lambda: validate_scenario_params({
         "map": "Town01",
         "ego": {"id": "obj-1", "type": "car", "x": 0, "y": 0},
-        "npcs": [{"id": "obj-2", "type": actor_type, "x": 1, "y": 1}],
+        "npcs": [{"id": "obj-2", "type": actor_type, "x": 1, "y": 1},
+                 dict(KEEPALIVE_NPC)],
     })
 
 
@@ -491,12 +502,59 @@ for bad in ("pedestrain", "Car", "nonsense", ""):
 check("surrounding whitespace is trimmed off the type",
       npc_of(" car ")()["npcs"][0]["type"] == "car")
 
-out = validate_scenario_params({"ego": {"type": "car", "x": 0, "y": 0}})
+out = validate_scenario_params(
+    {"ego": {"type": "car", "x": 0, "y": 0, "events": KEEPALIVE_NPC["events"]}})
 check("map defaults to Town01", out["map"] == "Town01")
 check("unknown time-of-day coerces to daytime",
       validate_scenario_params(
-          {"ego": {"type": "car", "x": 0, "y": 0}, "time": "midnightish"}
+          {"ego": {"type": "car", "x": 0, "y": 0,
+                   "events": KEEPALIVE_NPC["events"]}, "time": "midnightish"}
       )["time"] == "daytime")
+
+
+# ── A scenario in which nothing has events is rejected ───────────────────────
+# An actor with no events contributes no <Act>, so such a payload emits a
+# storyboard with nothing in it: XSD-invalid, and it would complete on the first
+# tick. Rejected rather than coerced, same policy as an unknown prop id or a
+# dangling entity_ref — the alternative is a clean file that silently does
+# nothing. This replaces the old constant_speed fallback chain.
+
+def no_events_anywhere():
+    return validate_scenario_params({
+        "map": "Town01",
+        "ego": {"id": "obj-1", "type": "car", "x": 0, "y": 0},
+        "npcs": [{"id": "obj-2", "type": "car", "x": 1, "y": 1}],
+    })
+
+
+check("a payload where no actor has events raises", raises(no_events_anywhere))
+
+check("one ego event is enough to make it exportable",
+      not raises(lambda: validate_scenario_params({
+          "map": "Town01",
+          "ego": {"id": "obj-1", "type": "car", "x": 0, "y": 0,
+                  "events": KEEPALIVE_NPC["events"]},
+          "npcs": [{"id": "obj-2", "type": "car", "x": 1, "y": 1}],
+      })))
+
+check("one npc event is enough to make it exportable",
+      not raises(lambda: validate_scenario_params({
+          "map": "Town01",
+          "ego": {"id": "obj-1", "type": "car", "x": 0, "y": 0},
+          "npcs": [dict(KEEPALIVE_NPC)],
+      })))
+
+# A traffic-signal event is a real Act too (_inject_traffic_signals builds a
+# ScenarioBehavior Act of its own), so it satisfies the rule even with every
+# actor inert.
+check("a traffic-signal event alone is enough",
+      not raises(lambda: validate_scenario_params({
+          "map": "Town01",
+          "ego": {"id": "obj-1", "type": "car", "x": 0, "y": 0},
+          "npcs": [],
+          "trafficSignals": [{"id": "sig1", "x": 0, "y": 0,
+                              "events": [{"id": "t1", "state": "red"}]}],
+      })))
 
 
 sys.exit(check.report())

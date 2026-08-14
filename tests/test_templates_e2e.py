@@ -203,7 +203,6 @@ with sync_playwright() as p:
             const actor = {id:'obj-2',
                            type: ScenarioTemplates.templates[id].actorType,
                            x:265.364, y:1.967, z:0.2, yaw:0,
-                           behaviors:['constant_speed'], trigger_distance:400,
                            events:[]};
             actor.events = ScenarioTemplates.eventsForActor(actor, id);
             AppState.npcs = [actor];

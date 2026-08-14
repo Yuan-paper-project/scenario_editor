@@ -133,8 +133,13 @@ ROAD_FACING = {"pedestrian", "child", "cyclist"}
 # the element check below assert they agree.
 WALKERS = {"pedestrian", "child"}
 
+# The ego carries one trivial event so every fixture here is exportable: an
+# actor with no events gets no Act, and a scenario in which nothing at all has
+# events is rejected before it is POSTed. Actor TYPES are the subject here, so
+# the NPCs stay event-less on purpose — that is also the shape this suite is
+# meant to exercise.
 EGO = {"id": "obj-1", "type": "ego", "x": 300.631, "y": -2.025,
-       "z": 0.2, "yaw": 180, "trajectory": [], "events": []}
+       "z": 0.2, "yaw": 180, "trajectory": [], "events": [H.MIN_EVENT]}
 
 # One spot per EXPECTED entry, in the same order. All on Town01 road 1, which
 # runs east-west, and all on screen at the default zoom — assert_on_screen()
@@ -171,8 +176,7 @@ def seed(page, npcs):
 def npc(idx, actor_type, events=None):
     x, y = SPOTS[idx % len(SPOTS)]
     return {"id": f"obj-{idx + 2}", "type": actor_type, "x": x, "y": y,
-            "z": 0.2, "yaw": 180, "behaviors": ["constant_speed"],
-            "trigger_distance": 400, "events": events or []}
+            "z": 0.2, "yaw": 180, "events": events or []}
 
 
 def entity(xml_text, name):
@@ -239,10 +243,8 @@ with sync_playwright() as p:
                               tolerance=1.0 if t in ROAD_FACING else 12.5)
         check(f"{t}: placed actor carries its type", actor["type"] == t,
               str(actor["type"]))
-        check(f"{t}: default behaviour is constant_speed",
-              actor["behaviors"] == ["constant_speed"], str(actor.get("behaviors")))
-        check(f"{t}: default trigger_distance is 400",
-              actor["trigger_distance"] == 400, str(actor.get("trigger_distance")))
+        check(f"{t}: a placed actor carries no behaviors field",
+              "behaviors" not in actor, str(sorted(actor.keys())))
 
         # SPOTS put road-facing types 4 m south of a lane running east-west, so
         # facing the lane means yaw ~90 while inheriting the lane's direction

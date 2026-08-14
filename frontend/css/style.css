@@ -262,32 +262,10 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
 .collapsible-section.collapsed .collapse-indicator { font-size: 0; }
 /* 11px is the floor for panel content text. Uppercase section eyebrows stay at
    10px — bold and letter-spaced, they read fine and act as structure, not copy. */
-.section-note { color: var(--text-dim); font-size: 11px; margin-bottom: 6px; }
-
 .props-group-label {
   font-size: 10px; font-weight: 700; letter-spacing: .8px;
   color: var(--text-dim); text-transform: uppercase;
   margin: 10px 0 6px; border-top: 1px solid var(--border); padding-top: 8px;
-}
-.props-subgroup-label {
-  font-size: 10px; font-weight: 700; letter-spacing: .8px;
-  color: var(--text-dim); text-transform: uppercase;
-  margin: 8px 0 6px;
-}
-
-/* Behavior checkboxes */
-.behavior-list { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
-.behavior-list label {
-  display: flex; align-items: center; gap: 7px;
-  font-size: 12px; cursor: pointer; color: var(--text);
-}
-.behavior-list input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
-.behavior-trigger-section { margin-top: 4px; }
-
-/* Trigger hint */
-.trigger-hint {
-  font-size: 11px; color: var(--text-dim); margin-bottom: 8px;
-  padding: 4px 0; font-style: italic;
 }
 
 /* Trajectory controls */

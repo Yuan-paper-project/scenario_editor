@@ -33,7 +33,6 @@ from _harness import Checks, open_editor  # noqa: E402
 # degenerate and duplicated leg 1's opening stretch.
 EGO = {
     "id": "obj-1", "type": "ego", "x": 110.51, "y": -3.33, "z": 0.62, "yaw": 180.9,
-    "behaviors": ["constant_speed"], "trigger_distance": 400,
     "events": [
         {"id": "evt-1", "trigger": {"type": "simulation_time", "value": 0},
          "action": {"type": "assign_route", "route_strategy": "fastest", "waypoints": [

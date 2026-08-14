@@ -19,9 +19,13 @@ import _harness as H  # noqa: E402
 
 check = H.Checks()
 
+# The ego carries one trivial event, and nothing in this suite asserts against
+# it — NPC events are the subject throughout. It is here because an actor with
+# no events contributes no <Act>, so a fixture whose NPC has no events (several
+# below do, deliberately) would otherwise be a scenario in which NOTHING has
+# events, which is rejected before it can be exported.
 EGO = {"id": "obj-1", "type": "ego", "x": 300.631, "y": -2.025,
-       "z": 0.2, "yaw": 180, "behaviors": ["constant_speed"],
-       "trigger_distance": 400, "events": []}
+       "z": 0.2, "yaw": 180, "events": [H.MIN_EVENT]}
 
 
 def seed(page, events, npc_type="car", extra_npcs=None):
@@ -41,8 +45,7 @@ def seed(page, events, npc_type="car", extra_npcs=None):
         "ego": EGO,
         "npcs": [{
             "id": "obj-2", "type": npc_type, "x": 265.364, "y": 1.967,
-            "z": 0.2, "yaw": 0, "behaviors": ["constant_speed"],
-            "trigger_distance": 400, "events": events,
+            "z": 0.2, "yaw": 0, "events": events,
         }] + (extra_npcs or []),
     })
 
@@ -335,7 +338,7 @@ with sync_playwright() as p:
          [speed_event("e1", {"type": "simulation_time", "value": 0}, 10.0)],
          extra_npcs=[
              {"id": "obj-3", "type": "car", "x": 240.0, "y": 1.967, "z": 0.2,
-              "yaw": 0, "behaviors": ["constant_speed"], "trigger_distance": 400,
+              "yaw": 0,
               "events": [{"id": "d1", "trigger": {"type": "simulation_time", "value": 0},
                           "action": {"type": "set_distance", "axis": "longitudinal",
                                      "entity_ref": "obj-2", "value": 15.0}}]},
@@ -349,22 +352,32 @@ with sync_playwright() as p:
           ev["action"]["entity_ref"] == "adversary", str(ev["action"]))
 
     # ── Unknown action/trigger reach the export as the coerced kind ──────────
-    seed(page, [{"id": "e1", "trigger": {"type": "teleport_when_ready"},
-                 "action": {"type": "make_it_fly"}}])
-    xml = H.export_xosc(page)
-    evs = H.parse_events(xml, entity="adversary")
-    names = [e["name"] for e in evs]
     # The typo'd action coerces to follow_trajectory, which then has no
     # waypoints and gets dropped — so build_custom_event_chain() adds nothing
-    # and _inject_npcs falls back to the legacy behaviors chain. The NPC still
-    # moves, just not the way the event said. Worth knowing when debugging
-    # "my event did nothing": the actor driving at a constant speed is the
-    # fallback, not the event.
-    check("an npc whose events all vanish falls back to its behaviors chain",
-          any("ConstantSpeed" in n for n in names), str(names))
+    # and the NPC ends up with no Act at all: it spawns, holds its Init speed,
+    # and takes no part in the story. Worth knowing when debugging "my event
+    # did nothing" — the actor really does nothing now, where it used to drive
+    # off on a constant_speed fallback chain.
+    #
+    # A second NPC carries a real event purely so the scenario still has an Act
+    # to export: validate_scenario_params rejects a payload in which nothing
+    # has events, and build_xosc refuses to emit a Story with zero Acts.
+    seed(page, [{"id": "e1", "trigger": {"type": "teleport_when_ready"},
+                 "action": {"type": "make_it_fly"}}],
+         extra_npcs=[
+             {"id": "obj-3", "type": "car", "x": 240.0, "y": 1.967, "z": 0.2,
+              "yaw": 0, "events": [
+                  speed_event("k1", {"type": "simulation_time", "value": 0}, 10.0)]},
+         ])
+    xml = H.export_xosc(page)
+    act_names = [a["name"] for a in H.acts(xml)]
+    check("an npc whose events all vanish gets no Act at all",
+          "adversaryBehavior" not in act_names, str(act_names))
+    check("the surviving npc still gets its own Act",
+          "adversary1Behavior" in act_names, str(act_names))
     check("the typo'd event itself contributes nothing",
-          not any("Speed0" in n and "ConstantSpeed" not in n for n in names),
-          str(names))
+          H.parse_events(xml, entity="adversary") == [],
+          str(H.parse_events(xml, entity="adversary")))
 
     # ── Initial speed on an NPC ──────────────────────────────────────────────
     # seed() omits initial_speed, so this is also the regression guard that a

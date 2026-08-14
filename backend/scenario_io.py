@@ -210,12 +210,9 @@ def _normalize_actor(
     """
     actor.setdefault("z", 0.2)
     actor.setdefault("yaw", 0.0)
-    actor.setdefault("behaviors", ["constant_speed"])
     actor.setdefault("events", [])
     if not isinstance(actor["events"], list):
         actor["events"] = []
-    actor.setdefault("trigger_distance", 400)
-    actor["trigger_distance"] = max(5.0, min(1000.0, float(actor["trigger_distance"])))
 
     # Speed the actor has on the first tick, emitted as a SpeedAction in the
     # Storyboard Init. The floor at 0 is not cosmetic: ScenarioRunner's
@@ -395,6 +392,23 @@ def validate_scenario_params(params: dict) -> dict:
         npc.setdefault("type", "car")
         npc_name = "adversary" if npc_idx == 0 else f"adversary{npc_idx}"
         _normalize_actor(npc, npc_name, actor_refs, valid_refs, f"npcs[{npc_idx}]")
+
+    # An actor with no events gets no <Act> at all (xml_builder._build_actor_act),
+    # so a scenario in which nothing has events emits a <Story> with zero Acts:
+    # XSD-invalid, and there would be nothing for ScenarioRunner to run — the
+    # storyboard would complete on the first tick. Rejected rather than coerced,
+    # same policy as an unknown prop id or a dangling entity_ref, because the
+    # alternative is a clean file that silently does nothing. Checked *after*
+    # normalisation so it sees the events that actually survive it, and traffic
+    # signals count: _inject_traffic_signals emits a ScenarioBehavior Act of its
+    # own, which is a real scenario even with every actor inert.
+    if not any(actor.get("events") for actor in [ego, *params["npcs"]]) and not any(
+        signal["events"] for signal in params["trafficSignals"]
+    ):
+        raise ValueError(
+            "No actor has any events — the scenario would end immediately. "
+            "Add at least one event before exporting."
+        )
 
     # Static props
     _normalize_static_objects(params)

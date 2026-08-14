@@ -408,7 +408,7 @@ em { color: var(--tum); font-style: normal; font-weight: 700; }
         <div class="step-num">4</div>
         <div class="step-body">
           <div class="step-title">NPC-Akteure hinzufügen</div>
-          <div class="step-desc">Werkzeuge: Auto, LKW, Bus, Motorrad, Fußgänger, Radfahrer. Gleiche Vorgehensweise wie beim Ego. NPCs erhalten Verhalten und Auslöserabstand.</div>
+          <div class="step-desc">Werkzeuge: Auto, LKW, Bus, Motorrad, Fußgänger, Radfahrer. Gleiche Vorgehensweise wie beim Ego. NPCs erhalten Events wie das Ego.</div>
         </div>
       </div>
       <div class="step">
@@ -479,7 +479,7 @@ em { color: var(--tum); font-style: normal; font-weight: 700; }
           <tr><td><code>Entities</code></td><td>Ego &amp; NPC-Definitionen</td></tr>
           <tr><td><code>TeleportAction</code></td><td>Startposition der Akteure</td></tr>
           <tr><td><code>FollowTrajectory</code></td><td>Bewegungspfade mit Geschwindigkeit</td></tr>
-          <tr><td><code>DistanceCondition</code></td><td>Aktivierungsauslöser für NPCs</td></tr>
+          <tr><td><code>DistanceCondition</code></td><td>Abstands-Auslöser für Events</td></tr>
           <tr><td><code>EnvironmentAction</code></td><td>Wetter &amp; Tageszeit</td></tr>
         </table>
       </div>
@@ -583,7 +583,7 @@ em { color: var(--tum); font-style: normal; font-weight: 700; }
 
   <div class="slide-title">
     <h1>Akteure &amp; Trajektorien</h1>
-    <div class="sub">Platzierung, Pfade und NPC-Verhalten</div>
+    <div class="sub">Platzierung, Pfade und NPC-Events</div>
   </div>
   <div class="divider"></div>
 
@@ -614,15 +614,15 @@ em { color: var(--tum); font-style: normal; font-weight: 700; }
         <div class="step">
           <div class="step-num" style="background:#0065BD">⏱</div>
           <div class="step-body">
-            <div class="step-title">Aktivierungsauslöser</div>
-            <div class="step-desc">NPC startet wenn Ego in einstellbarem Abstand (5–1000 m) — generiert <em>DistanceCondition</em></div>
+            <div class="step-title">Event-Auslöser</div>
+            <div class="step-desc">Simulationszeit · Abstand zum Ego · Abstand zu einem Punkt · nach einem anderen Event</div>
           </div>
         </div>
         <div class="step">
           <div class="step-num" style="background:#0065BD">⚙</div>
           <div class="step-body">
-            <div class="step-title">Verhaltensoptionen</div>
-            <div class="step-desc">Konstante Geschwindigkeit · Beschleunigen · Abbremsen · Anhalten · Spurwechsel links/rechts</div>
+            <div class="step-title">Event-Aktionen</div>
+            <div class="step-desc">Trajektorie folgen · Route zuweisen · Geschwindigkeit setzen · Abstand halten · Spurwechsel</div>
           </div>
         </div>
         <div class="step">

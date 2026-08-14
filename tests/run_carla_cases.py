@@ -158,7 +158,6 @@ def build_scenarios(cases):
                         id: `obj-${i + 2}`, type: n.type,
                         x: n.spot[0], y: n.spot[1], yaw: n.yaw,
                         z: ObjectsManager.surfaceZFor(n.type, n.spot[0], n.spot[1]),
-                        behaviors: ['constant_speed'], trigger_distance: 400,
                         events: window.__seedEvents(n.events)}));
                     AppState.set({});
                 }""", [{"type": n["type"], "spot": list(n["spot"]),
@@ -177,8 +176,6 @@ def build_scenarios(cases):
                                  x:c.spot[0], y:c.spot[1], yaw:c.yaw,
                                  z:ObjectsManager.surfaceZFor(c.npc_type,
                                                               c.spot[0], c.spot[1]),
-                                 behaviors:['constant_speed'],
-                                 trigger_distance:400,
                                  events:window.__seedEvents(c.events)};
                     AppState.npcs = [npc];
                     AppState.set({});
