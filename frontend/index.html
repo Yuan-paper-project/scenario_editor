@@ -196,11 +196,13 @@
       </div>
     </div>
 
-    <!-- Trajektorienmodus-Banner -->
+    <!-- Zeichenmodus-Banner — geteilt von Pfad-/Routenzeichnen und dem Setzen
+         eines Auslösepunkts; objects.js schreibt Text und Buttons je Modus. -->
     <div id="traj-banner" class="traj-banner hidden">
-      Pfad für <strong id="traj-banner-name"></strong> zeichnen — auf die Karte klicken, um Wegpunkte zu setzen &nbsp;
+      <span id="traj-banner-text">Pfad für <strong id="traj-banner-name"></strong> zeichnen — auf die Karte klicken, um Wegpunkte zu setzen</span>
       <button id="traj-done-btn" class="btn btn-small btn-primary">Fertig</button>
       <button id="traj-undo-btn" class="btn btn-small btn-secondary">Rückgängig</button>
+      <button id="traj-cancel-btn" class="btn btn-small btn-secondary hidden">Abbrechen</button>
     </div>
   </main>
 
@@ -290,7 +292,7 @@
         <div id="event-section" class="collapsible-section event-section">
           <button class="collapsible-header event-section-header" type="button" data-collapse-target="event-section-body"
                   aria-expanded="true" aria-controls="event-section-body">
-            <span class="collapsible-title">Events<span id="event-count" class="event-count">0</span></span>
+            <span class="collapsible-title">Events<span id="event-count" class="event-count">0</span><span id="event-warn" class="event-warn hidden">0</span></span>
             <span class="collapse-indicator" aria-hidden="true">-</span>
           </button>
           <div id="event-section-body" class="collapsible-body">

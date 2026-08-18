@@ -44,11 +44,11 @@ still exports the old — which reads as a test bug but is not one.
 |---|---|---|
 | `test_props_e2e.py` | 54 | catalogue contents, toolbar tabs, sticky placement, Shift lane-snap, selection/properties, prop-type swap, drag without panning, save/load round-trip, `.xosc` export incl. `MiscObject` categories and `yaw_offset`, 400 on unknown/removed ids |
 | `test_prop_yaw_e2e.py` | 23 | per-prop facing rules on a **real two-way road** (Town01 road 8, lanes ±1 at exactly 180°), free-vs-Shift orientation, far-from-lane fallback, manual-override persistence |
-| `test_normalization.py` | 94 | `validate_scenario_params` in isolation: every silent coercion, both trigger rewrites, all clamps, the entity-ref mapping that `scenarioIO.js` duplicates, the actor-type whitelist, and the ego's shared `_normalize_actor` path (self-reference rejection, the `distance_to_ego`→`simulation_time` coercion, derived `route_waypoints`) |
+| `test_normalization.py` | 101 | `validate_scenario_params` in isolation: every silent coercion, both trigger rewrites, all clamps, the entity-ref mapping that `scenarioIO.js` duplicates, the actor-type whitelist, and the ego's shared `_normalize_actor` path (self-reference rejection, the `distance_to_ego`→`simulation_time` coercion, derived `route_waypoints`) |
 | `test_actor_types_e2e.py` | 260 | all 12 actor types — toolbar tile and German label, placement (spawn-snap vs road-facing), map marker shape/colour/footprint, and the entity each one exports: element kind, blueprint id, category, bounding box, `maxSpeed`, controller module; plus `assign_route` survival, the walker-first base-template fork, and the 400 on an unknown type |
-| `test_templates_e2e.py` | 149 | all 11 templates — panel renders them, placement attaches the right chain, `placement` rules apply, and the chain survives export with the right triggers, speeds, dynamics and lane offsets |
-| `test_events_e2e.py` | 55 | the event editor across every action and trigger type, including the ones no template uses; the one-path-event rule; the cases where an event silently vanishes from the export; and `initial_speed` on an NPC and on a walker (emitted in the Storyboard Init, not as a Story event) |
-| `test_ego_events_e2e.py` | 61 | the ego as a fully controllable actor: panel parity with an NPC (minus the ego-only-hidden `distance_to_ego` trigger), `simple_vehicle_control` (not `external_control`) in the export, the ego's own `heroBehavior` Act gated on `simulation_time` rather than `hero traveled 0.1m`, no Act at all for an event-less ego (and a 400 when nothing in the scenario has events), the `set_distance` self-reference 400, legacy `ego.trajectory` migration into a `follow_trajectory` event — both synthetic and against the real `example/Town01_scenario2.json` — and the `initial_speed` split default (10 on placement, 0 when the key is absent) |
+| `test_templates_e2e.py` | 159 | all 11 templates — panel renders them, placement attaches the right chain, `placement` rules apply, and the chain survives export with the right triggers, speeds, dynamics and lane offsets |
+| `test_events_e2e.py` | 60 | the event editor across every action and trigger type, including the ones no template uses; the one-path-event rule; the events that would vanish from the export and are now refused at both ends (panel chip, client gate, backend 400); and `initial_speed` on an NPC and on a walker (emitted in the Storyboard Init, not as a Story event) |
+| `test_ego_events_e2e.py` | 68 | the ego as a fully controllable actor: panel parity with an NPC (minus the ego-only-hidden `distance_to_ego` trigger), `simple_vehicle_control` (not `external_control`) in the export, the ego's own `heroBehavior` Act gated on `simulation_time` rather than `hero traveled 0.1m`, no Act at all for an event-less ego (and a 400 when nothing in the scenario has events), the `set_distance` self-reference 400, legacy `ego.trajectory` migration into a `follow_trajectory` event — both synthetic and against the real `example/Town01_scenario2.json` — the `initial_speed` split default (10 on placement, 0 when the key is absent), and the completeness guards: a path event starting empty and discarding itself when drawing ends under 2 waypoints, and a `distance_to_point` trigger seeded with a real point the moment it is chosen |
 | `test_elevation_e2e.py` | 33 | z derived from `<elevationProfile>` — the render payload's point shape, `groundZAt` interpolation, per-category clearance, drag and X/Y-edit recompute, waypoints following a gradient, and the flat-map baseline |
 
 `test_actor_types_e2e.py`'s count grows with the catalogue; the number above is
@@ -105,22 +105,24 @@ Two smaller traps it is built around:
 .venv/bin/python3 tests/test_normalization.py
 ```
 
-### Known defect reported by `test_events_e2e.py`
+### `known_issue()` is currently unused
 
-The suite prints one `KNOWN` line rather than failing. `known_issue()` in
-`_harness.py` exists so a documented open bug stays visible without making the
-exit code permanently non-zero — otherwise real regressions get ignored along
-with it. When the bug is fixed the line flips to `KFIXED`, which is the cue to
-promote it to a normal `check()`.
+`known_issue()` in `_harness.py` exists so a documented open bug can stay
+visible without making the exit code permanently non-zero — otherwise real
+regressions get ignored along with it. It prints `KNOWN` while the bug is open
+and `KFIXED` once it is fixed, which is the cue to promote it to a normal
+`check()`.
 
-The defect: `build_custom_event_chain()` in `../llm-scenario-gen` builds its
-`event_name_by_id` map from **all** events, then skips any whose action builder
-returns `False` — a `follow_trajectory` with fewer than two waypoints, or an
-`assign_route` on a type that cannot route. An event chained onto a skipped one
-keeps a `storyboardElementRef` pointing at an `<Event>` that is not in the file,
-so that trigger can never be satisfied and the follow-up never fires. Drawing a
-"Follow trajectory" event without drawing the path, then chaining a speed event
-after it, reproduces it.
+Its one user was this defect, now fixed: `build_custom_event_chain()` in
+`../llm-scenario-gen` built its `event_name_by_id` map from **all** events, then
+skipped any whose action builder returned `False` — a `follow_trajectory` with
+fewer than two waypoints, or an `assign_route` on a type that cannot route. An
+event chained onto a skipped one kept a `storyboardElementRef` pointing at an
+`<Event>` that was not in the file, so that trigger could never be satisfied and
+the follow-up never fired. It now builds the map from the events actually
+appended, in a second pass, and such a trigger falls back to `simulation_time`.
+Reaching it at all now takes a payload that bypasses the editor and the backend,
+both of which reject an event that cannot be built.
 
 ## Two traps these suites are built around
 

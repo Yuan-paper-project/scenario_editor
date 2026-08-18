@@ -4,15 +4,24 @@
 (function () {
   'use strict';
 
+  // Acceleration/deceleration magnitude (m/s²) shared by every template that
+  // ramps. Comfortable-but-brisk; well clear of the 0.1 floor _normalize_actor
+  // applies to keep a rate event from never terminating.
+  const RAMP_RATE = 5.0;
+
   class ScenarioTemplateManager {
     constructor() {
       this.templates = {
+        // The four speed-profile templates below ramp rather than step: a
+        // 'rate' set_speed ends when the commanded speed REACHES the target
+        // (|dv|/rate seconds), so a hold after a ramp has to be a separate
+        // 'time' event — see the set_speed dynamics table in CLAUDE.md.
         'vehicle-accelerating': {
           label: 'Beschleunigen',
           actorType: 'car',
           events: [
             this._setSpeedEvent('evt-1', { type: 'distance_to_ego', value: 400 }, 10.0, 5.0),
-            this._setSpeedEvent('evt-2', { type: 'after_event', event_id: 'evt-1' }, 15.0, 10.0),
+            this._speedRampEvent('evt-2', { type: 'after_event', event_id: 'evt-1' }, 15.0, RAMP_RATE),
           ],
         },
         'vehicle-braking': {
@@ -20,7 +29,7 @@
           actorType: 'car',
           events: [
             this._setSpeedEvent('evt-1', { type: 'distance_to_ego', value: 400 }, 10.0, 5.0),
-            this._setSpeedEvent('evt-2', { type: 'after_event', event_id: 'evt-1' }, 5.0, 10.0),
+            this._speedRampEvent('evt-2', { type: 'after_event', event_id: 'evt-1' }, 5.0, RAMP_RATE),
           ],
         },
         'vehicle-stopping': {
@@ -28,8 +37,8 @@
           actorType: 'car',
           events: [
             this._setSpeedEvent('evt-1', { type: 'distance_to_ego', value: 400 }, 10.0, 5.0),
-            this._setSpeedEvent('evt-2', { type: 'after_event', event_id: 'evt-1' }, 5.0, 2.0),
-            this._setSpeedEvent('evt-3', { type: 'after_event', event_id: 'evt-2' }, 0.0, 10.0),
+            this._speedRampEvent('evt-2', { type: 'after_event', event_id: 'evt-1' }, 0.0, RAMP_RATE),
+            this._setSpeedEvent('evt-3', { type: 'after_event', event_id: 'evt-2' }, 0.0, 5.0),
           ],
         },
         'vehicle-stop-and-go': {
@@ -37,9 +46,10 @@
           actorType: 'car',
           events: [
             this._setSpeedEvent('evt-1', { type: 'distance_to_ego', value: 400 }, 10.0, 5.0),
-            this._setSpeedEvent('evt-2', { type: 'after_event', event_id: 'evt-1' }, 5.0, 2.0),
-            this._setSpeedEvent('evt-3', { type: 'after_event', event_id: 'evt-2' }, 0.0, 2.0),
-            this._setSpeedEvent('evt-4', { type: 'after_event', event_id: 'evt-3' }, 5.0, 5.0),
+            this._speedRampEvent('evt-2', { type: 'after_event', event_id: 'evt-1' }, 0.0, RAMP_RATE),
+            this._setSpeedEvent('evt-3', { type: 'after_event', event_id: 'evt-2' }, 0.0, 1.0),
+            this._speedRampEvent('evt-4', { type: 'after_event', event_id: 'evt-3' }, 5.0, RAMP_RATE),
+            this._setSpeedEvent('evt-5', { type: 'after_event', event_id: 'evt-4' }, 5.0, 2.0),
           ],
         },
         'vehicle-lane-change-left': {
@@ -195,6 +205,21 @@
         action: {
           type: 'set_speed',
           dynamics: { shape: 'step', dimension: 'time', value: duration },
+          target: { mode: 'absolute', value: speed },
+        },
+      };
+    }
+
+    /** A ramp: `rate` m/s² until the target is reached, then the event ends. */
+    _speedRampEvent(id, trigger, speed, rate) {
+      return {
+        id,
+        trigger,
+        action: {
+          type: 'set_speed',
+          // 'step' + 'rate' is self-contradictory; the backend forces 'linear'
+          // for a rate event anyway, so state it here too.
+          dynamics: { shape: 'linear', dimension: 'rate', value: rate },
           target: { mode: 'absolute', value: speed },
         },
       };

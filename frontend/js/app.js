@@ -439,6 +439,119 @@
     get length() { return _undoStack.length; },
   };
 
+  // ── Which events actually survive the export ────────────────────────────────
+
+  /**
+   * ScenarioRules — the single definition of "will this event reach the .xosc",
+   * shared by eventPanel.js (warning chips), scenarioIO.js (the export gate) and
+   * simulate.js (the preview). It used to live only inside simulate.js, so the
+   * panel could show a card the exporter silently threw away.
+   *
+   * Every rule here mirrors one in ../llm-scenario-gen/generator/event_builders.py
+   * — an action builder that returns False makes build_custom_event_chain skip
+   * the whole event. The consequence is worse than the lost event: anything
+   * chained onto it with after_event is left pointing at a storyboard element
+   * that is not in the file, and can never fire.
+   */
+  const ROUTE_ACTION_TYPES = new Set([
+    'car', 'van', 'truck', 'bus', 'motorcycle', 'scooter',
+    'police', 'ambulance', 'firetruck', 'ego',
+  ]);
+
+  /** A trigger point is only usable once it actually carries coordinates. */
+  function _isTriggerPoint(point) {
+    return !!point && Number.isFinite(Number(point.x)) && Number.isFinite(Number(point.y));
+  }
+
+  window.ScenarioRules = {
+    ROUTE_ACTION_TYPES,
+
+    /** Mirrors _add_*_action's own return value: false ⇒ the event is dropped. */
+    actionEmits(action, actorType) {
+      if (!action) return false;
+      if (action.type === 'follow_trajectory') return (action.trajectory || []).length >= 2;
+      if (action.type === 'assign_route') {
+        return (action.waypoints || []).length >= 2 && ROUTE_ACTION_TYPES.has(actorType);
+      }
+      return true;   // set_speed / set_distance / lane_change never fail to emit
+    },
+
+    /**
+     * The one thing wrong with `ev`, or null. `short` is the card chip, `message`
+     * the full sentence used by the export gate. Reports the event's own action
+     * before its trigger — a dropped action is why the trigger stops mattering.
+     */
+    eventProblem(actor, ev, events) {
+      const action = (ev && ev.action) || {};
+      const trigger = (ev && ev.trigger) || {};
+      const type = actor && actor.type;
+
+      if (action.type === 'follow_trajectory' && (action.trajectory || []).length < 2) {
+        return {
+          code: 'path_too_short',
+          short: 'Mindestens 2 Wegpunkte nötig',
+          message: 'die Trajektorie hat weniger als 2 Wegpunkte',
+        };
+      }
+      if (action.type === 'assign_route') {
+        if (!ROUTE_ACTION_TYPES.has(type)) {
+          return {
+            code: 'route_not_routable',
+            short: 'Route nur für Fahrzeuge möglich',
+            message: 'eine Route ist für diesen Akteurstyp nicht möglich',
+          };
+        }
+        if ((action.waypoints || []).length < 2) {
+          return {
+            code: 'path_too_short',
+            short: 'Mindestens 2 Wegpunkte nötig',
+            message: 'die Route hat weniger als 2 Wegpunkte',
+          };
+        }
+        // An assign_route's own trigger is discarded and forced to
+        // simulation_time 0 at export, so it can never be the problem.
+        return null;
+      }
+
+      if (trigger.type === 'distance_to_point' && !_isTriggerPoint(trigger.point)) {
+        return {
+          code: 'no_trigger_point',
+          short: 'Kein Auslösepunkt gesetzt',
+          message: 'der Auslösepunkt wurde nie auf der Karte gesetzt',
+        };
+      }
+      if (trigger.type === 'after_event') {
+        const target = (events || []).find(o => String(o.id) === String(trigger.event_id));
+        if (!target) {
+          return {
+            code: 'dangling_after_event',
+            short: 'Auslöser feuert nie — Event fehlt',
+            message: 'der Auslöser verweist auf ein Event, das es nicht gibt',
+          };
+        }
+        // Pointing at an assign_route is fine: the backend rewrites that trigger
+        // to distance_to_ego @ 400 rather than leaving it dangling.
+        const targetAction = target.action || {};
+        if (targetAction.type !== 'assign_route' && !this.actionEmits(targetAction, type)) {
+          return {
+            code: 'dangling_after_event',
+            short: 'Auslöser feuert nie — Vorgänger unvollständig',
+            message: 'der Auslöser wartet auf ein Event, das selbst nicht exportiert wird',
+          };
+        }
+      }
+      return null;
+    },
+
+    /** Every problem on one actor, as [{ev, index, problem}]. */
+    problemsOf(actor) {
+      const events = (actor && actor.events) || [];
+      return events
+        .map((ev, index) => ({ ev, index, problem: this.eventProblem(actor, ev, events) }))
+        .filter(entry => entry.problem);
+    },
+  };
+
   // ── Shared panel helpers (properties.js / eventPanel.js) ────────────────────
 
   let _autoId = 0;

@@ -387,6 +387,31 @@ def stopped_within(run, role, t_from, t_to, threshold=0.5):
         f"over [{t_from:.1f},{t_to:.1f}]s")
 
 
+def ramp_rate(run, role, t_from, t_to):
+    """Mean |dv/dt| over a window -> (rate_m_s2, detail).
+
+    The only way to tell a `rate` set_speed from a `time` one in telemetry: a
+    step reaches its target within a tick, a ramp takes |dv|/rate seconds. Uses
+    the window's first and last sample rather than a fit, because the window is
+    meant to bracket exactly one monotonic ramp.
+    """
+    track = run.get(role)
+    if track is None:
+        return None, f"no telemetry for '{role}'"
+    a, b = _abs_t(run, t_from), _abs_t(run, t_to)
+    if a is None:
+        return None, "ego never moved, so the act never started"
+    ts, speeds = track.window(a, b)
+    if len(speeds) < 2:
+        return None, f"<2 samples in [{t_from:.1f},{t_to:.1f}]s after act start"
+    dt = ts[-1] - ts[0]
+    if dt <= 0:
+        return None, "zero-length window"
+    rate = abs(speeds[-1] - speeds[0]) / dt
+    return rate, (f"{speeds[0]:.2f} -> {speeds[-1]:.2f} m/s over {dt:.2f}s "
+                  f"= {rate:.2f} m/s2")
+
+
 def speed_profile(run, role, boundaries, tol=1.5):
     """Check a step-and-hold profile: [(t_from, t_to, target), ...].
 

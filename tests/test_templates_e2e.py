@@ -28,56 +28,60 @@ import _harness as H  # noqa: E402
 
 check = H.Checks()
 
-# (trigger_kind, trigger_arg, action_kind, action_arg, dynamics_value)
+# (trigger_kind, trigger_arg, action_kind, action_arg, dynamics_value, dimension)
 #   trigger_arg: metres for distance_to_ego, referenced event id for after_event
 #   action_arg : target speed for set_speed, direction for lane_change
+#   dimension  : 'time' -> dynamics_value is a hold in seconds
+#                'rate' -> dynamics_value is m/s2 and the event ends on arrival
+#                None   -> lane_change, which has no dimension
 EXPECTED = {
     "vehicle-accelerating": ("car", [
-        ("distance_to_ego", 400, "set_speed", 10.0, 5.0),
-        ("after_event", "evt-1", "set_speed", 15.0, 10.0),
+        ("distance_to_ego", 400, "set_speed", 10.0, 5.0, "time"),
+        ("after_event", "evt-1", "set_speed", 15.0, 5.0, "rate"),
     ]),
     "vehicle-braking": ("car", [
-        ("distance_to_ego", 400, "set_speed", 10.0, 5.0),
-        ("after_event", "evt-1", "set_speed", 5.0, 10.0),
+        ("distance_to_ego", 400, "set_speed", 10.0, 5.0, "time"),
+        ("after_event", "evt-1", "set_speed", 5.0, 5.0, "rate"),
     ]),
     "vehicle-stopping": ("car", [
-        ("distance_to_ego", 400, "set_speed", 10.0, 5.0),
-        ("after_event", "evt-1", "set_speed", 5.0, 2.0),
-        ("after_event", "evt-2", "set_speed", 0.0, 10.0),
+        ("distance_to_ego", 400, "set_speed", 10.0, 5.0, "time"),
+        ("after_event", "evt-1", "set_speed", 0.0, 5.0, "rate"),
+        ("after_event", "evt-2", "set_speed", 0.0, 5.0, "time"),
     ]),
     "vehicle-stop-and-go": ("car", [
-        ("distance_to_ego", 400, "set_speed", 10.0, 5.0),
-        ("after_event", "evt-1", "set_speed", 5.0, 2.0),
-        ("after_event", "evt-2", "set_speed", 0.0, 2.0),
-        ("after_event", "evt-3", "set_speed", 5.0, 5.0),
+        ("distance_to_ego", 400, "set_speed", 10.0, 5.0, "time"),
+        ("after_event", "evt-1", "set_speed", 0.0, 5.0, "rate"),
+        ("after_event", "evt-2", "set_speed", 0.0, 1.0, "time"),
+        ("after_event", "evt-3", "set_speed", 5.0, 5.0, "rate"),
+        ("after_event", "evt-4", "set_speed", 5.0, 2.0, "time"),
     ]),
     "vehicle-lane-change-left": ("car", [
-        ("distance_to_ego", 400, "set_speed", 10.0, 5.0),
-        ("after_event", "evt-1", "lane_change", "left", 15.0),
-        ("after_event", "evt-2", "set_speed", 10.0, 5.0),
+        ("distance_to_ego", 400, "set_speed", 10.0, 5.0, "time"),
+        ("after_event", "evt-1", "lane_change", "left", 15.0, None),
+        ("after_event", "evt-2", "set_speed", 10.0, 5.0, "time"),
     ]),
     "vehicle-lane-change-right": ("car", [
-        ("distance_to_ego", 400, "set_speed", 10.0, 5.0),
-        ("after_event", "evt-1", "lane_change", "right", 15.0),
-        ("after_event", "evt-2", "set_speed", 10.0, 5.0),
+        ("distance_to_ego", 400, "set_speed", 10.0, 5.0, "time"),
+        ("after_event", "evt-1", "lane_change", "right", 15.0, None),
+        ("after_event", "evt-2", "set_speed", 10.0, 5.0, "time"),
     ]),
     "vehicle-pull-out": ("car", [
-        ("distance_to_ego", 20, "set_speed", 5.0, 10.0),
-        ("distance_to_ego", 20, "lane_change", "left", 10.0),
+        ("distance_to_ego", 20, "set_speed", 5.0, 10.0, "time"),
+        ("distance_to_ego", 20, "lane_change", "left", 10.0, None),
     ]),
     "pedestrian-crossing": ("pedestrian", [
-        ("distance_to_ego", 50, "set_speed", 2.0, 10.0),
-        ("after_event", "evt-1", "set_speed", 0.0, 5.0),
+        ("distance_to_ego", 50, "set_speed", 2.0, 10.0, "time"),
+        ("after_event", "evt-1", "set_speed", 0.0, 5.0, "time"),
     ]),
     "pedestrian-along-lane": ("pedestrian", [
-        ("distance_to_ego", 400, "set_speed", 2.0, 10.0),
+        ("distance_to_ego", 400, "set_speed", 2.0, 10.0, "time"),
     ]),
     "cyclist-crossing": ("cyclist", [
-        ("distance_to_ego", 30, "set_speed", 4.0, 5.0),
-        ("after_event", "evt-1", "set_speed", 0.0, 5.0),
+        ("distance_to_ego", 30, "set_speed", 4.0, 5.0, "time"),
+        ("after_event", "evt-1", "set_speed", 0.0, 5.0, "time"),
     ]),
     "cyclist-along-lane": ("cyclist", [
-        ("distance_to_ego", 400, "set_speed", 4.0, 10.0),
+        ("distance_to_ego", 400, "set_speed", 4.0, 10.0, "time"),
     ]),
 }
 
@@ -100,11 +104,12 @@ def summarise(events):
         arg = trig.get("event_id") if kind == "after_event" else trig.get("value")
         if act.get("type") == "lane_change":
             out.append((kind, arg, "lane_change", act.get("direction"),
-                        (act.get("dynamics") or {}).get("value")))
+                        (act.get("dynamics") or {}).get("value"), None))
         else:
             out.append((kind, arg, act.get("type"),
                         (act.get("target") or {}).get("value"),
-                        (act.get("dynamics") or {}).get("value")))
+                        (act.get("dynamics") or {}).get("value"),
+                        (act.get("dynamics") or {}).get("dimension")))
     return out
 
 
@@ -222,20 +227,26 @@ with sync_playwright() as p:
               H.dangling_event_refs(xml) == [], str(H.dangling_event_refs(xml)))
 
         for i, (want, got) in enumerate(zip(want_events, evs)):
-            t_kind, t_arg, a_kind, a_arg, dyn = want
+            t_kind, t_arg, a_kind, a_arg, dyn, dim = want
             check(f"{tpl_id}[{i}]: action is {a_kind}",
                   got["action"]["kind"] == a_kind, got["action"]["kind"])
             if a_kind == "set_speed":
                 check(f"{tpl_id}[{i}]: target speed {a_arg}",
                       got["action"].get("value") == a_arg,
                       str(got["action"].get("value")))
-                # 'step' is what makes the duration a hold rather than a ramp;
-                # if this ever becomes 'linear' the CARLA timing assertions in
-                # carla_cases.py stop being valid.
-                check(f"{tpl_id}[{i}]: dynamicsShape is step",
-                      got["action"].get("shape") == "step",
+                check(f"{tpl_id}[{i}]: dynamicsDimension is {dim}",
+                      got["action"].get("dimension") == dim,
+                      str(got["action"].get("dimension")))
+                # 'step' is what makes a 'time' duration a hold rather than a
+                # ramp; if one of those ever becomes 'linear' the CARLA timing
+                # assertions in carla_cases.py stop being valid. A 'rate' event
+                # is the ramp, and the backend forces its shape to linear.
+                want_shape = "linear" if dim == "rate" else "step"
+                check(f"{tpl_id}[{i}]: dynamicsShape is {want_shape}",
+                      got["action"].get("shape") == want_shape,
                       str(got["action"].get("shape")))
-                check(f"{tpl_id}[{i}]: duration {dyn} survives export",
+                unit = "m/s2" if dim == "rate" else "s"
+                check(f"{tpl_id}[{i}]: dynamics value {dyn} {unit} survives export",
                       got["action"].get("dynamics_value") == dyn,
                       str(got["action"].get("dynamics_value")))
             elif a_kind == "lane_change":

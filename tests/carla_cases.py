@@ -335,7 +335,7 @@ CASES = [
         "template": "vehicle-braking",
         "spot": SPOT_LANE,
         "npc_yaw": 180.0,        # spawn-point yaw can face back up the road
-        "note": "distance_to_ego@400 fires at act start, then after_event",
+        "note": "distance_to_ego@400 fires at act start, then a 5 m/s2 ramp down",
     },
     {
         "name": "tpl-stopping",
@@ -343,7 +343,7 @@ CASES = [
         "template": "vehicle-stopping",
         "spot": SPOT_LANE,
         "npc_yaw": 180.0,
-        "note": "3-link chain to a full stop; the step/hold profile probe",
+        "note": "3-link chain to a full stop; the rate-ramp + hold profile probe",
     },
     {
         "name": "tpl-lane-change-left",
@@ -1314,8 +1314,13 @@ def expect_braking(run, timeline):
     out.append(("first speed event fires", ok, detail))
     ok, detail = _chain_order(timeline, ["SpeedEvent0", "SpeedEvent1"])
     out.append(("chain runs in order", ok, detail))
-    ok, detail = A.reaches_speed(run, "adversary", 10.0, 0.5, 6.0)
+    ok, detail = A.reaches_speed(run, "adversary", 10.0, 0.5, 4.5)
     out.append(("npc reaches 10 m/s", ok, detail))
+    # 10 m/s held for 5 s, then a 5 m/s2 ramp down to 5 m/s — 1 s of decel,
+    # ending on arrival rather than on a clock.
+    rate, detail = A.ramp_rate(run, "adversary", 5.0, 6.2)
+    out.append(("decelerates at ~5 m/s2 rather than stepping",
+                rate is not None and 3.0 <= rate <= 7.0, detail))
     ok, detail = A.holds_speed(run, "adversary", 5.0, 8.0, 14.0, tol=1.5)
     out.append(("npc brakes to and holds 5 m/s", ok, detail))
     return out
@@ -1325,11 +1330,17 @@ def expect_stopping(run, timeline):
     out = []
     ok, detail = _chain_order(timeline, ["SpeedEvent0", "SpeedEvent1", "SpeedEvent2"])
     out.append(("3-link chain runs in order", ok, detail))
-    # 10 m/s for 5 s -> 5 m/s for 2 s -> 0 m/s for 10 s, from act start.
+    # 10 m/s for 5 s -> ramp to 0 at 5 m/s2 (2 s) -> hold 0 for 5 s, from act
+    # start. The middle link ends on ARRIVAL at 0, not after a duration, so the
+    # third link starts at ~7 s; nothing commands the actor after ~12 s and it
+    # holds its last target.
     ok, details = A.speed_profile(run, "adversary",
-                                  [(1.0, 4.5, 10.0), (5.5, 6.8, 5.0), (9.0, 15.0, 0.0)])
-    out.append(("step-and-hold profile 10 -> 5 -> 0", ok, "; ".join(details)))
-    ok, detail = A.holds_speed(run, "adversary", 0.0, 9.0, 15.0, tol=0.6)
+                                  [(1.0, 4.5, 10.0), (7.5, 15.0, 0.0)])
+    out.append(("profile 10 -> ramp -> 0", ok, "; ".join(details)))
+    rate, detail = A.ramp_rate(run, "adversary", 5.0, 7.2)
+    out.append(("decelerates at ~5 m/s2 rather than stepping",
+                rate is not None and 3.0 <= rate <= 7.0, detail))
+    ok, detail = A.holds_speed(run, "adversary", 0.0, 8.0, 15.0, tol=0.6)
     out.append(("npc actually comes to a stop", ok, detail))
     return out
 

@@ -11,6 +11,7 @@
   const eventActionGrid = document.getElementById('event-action-grid');
   const eventList = document.getElementById('event-list');
   const eventCount = document.getElementById('event-count');
+  const eventWarn = document.getElementById('event-warn');
 
   // UI-facing strings are German throughout (see CLAUDE.md); the internal
   // action/trigger keys stay the OpenSCENARIO-side snake_case names and are
@@ -75,6 +76,11 @@
 
     EVENT_ACTIONS.forEach(([actionType, label]) => {
       const isPathAction = actionType === 'follow_trajectory' || actionType === 'assign_route';
+      // AssignRouteAction is vehicle-only downstream (_ROUTE_ACTION_TYPES in
+      // event_builders.py). Offering it to a Fußgänger produced an event that
+      // was silently dropped at export — along with anything chained onto it.
+      const routeUnavailable = actionType === 'assign_route' &&
+        !ScenarioRules.ROUTE_ACTION_TYPES.has(actor.type);
 
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -83,9 +89,11 @@
       // The two path actions used to be *removed* once a path event existed,
       // reflowing the grid with nothing to explain where they went. Keeping
       // them disabled states the rule instead of hiding its consequence.
-      if (isPathAction && hasPathEvent) {
+      if (routeUnavailable || (isPathAction && hasPathEvent)) {
         btn.disabled = true;
-        btn.title = 'Pro Akteur ist nur ein Pfad-Event erlaubt';
+        btn.title = routeUnavailable
+          ? 'Eine Route ist nur für Fahrzeuge möglich — für Personen die Trajektorie verwenden'
+          : 'Pro Akteur ist nur ein Pfad-Event erlaubt';
         eventActionGrid.appendChild(btn);
         return;
       }
@@ -113,6 +121,20 @@
     const events = actor.events || [];
     if (eventCount) eventCount.textContent = String(events.length);
 
+    // Events that will not survive the export, keyed by id. The rule lives in
+    // ScenarioRules (app.js) so the card, the export gate and the preview can
+    // never disagree about what "incomplete" means.
+    const problems = new Map(
+      ScenarioRules.problemsOf(actor).map(entry => [entry.ev.id, entry.problem])
+    );
+    if (eventWarn) {
+      eventWarn.textContent = String(problems.size);
+      eventWarn.classList.toggle('hidden', problems.size === 0);
+      eventWarn.title = problems.size === 1
+        ? '1 Event wird beim Export verworfen'
+        : `${problems.size} Events werden beim Export verworfen`;
+    }
+
     if (events.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'event-empty';
@@ -139,7 +161,9 @@
       const card = document.createElement('div');
       const isCollapsed = !!ev.collapsed;
       const isDrawing = drawingEventId === ev.id;
-      card.className = `event-card${isCollapsed ? ' collapsed' : ''}${isDrawing ? ' active-draw' : ''}`;
+      const problem = problems.get(ev.id) || null;
+      card.className = `event-card${isCollapsed ? ' collapsed' : ''}` +
+        `${isDrawing ? ' active-draw' : ''}${problem ? ' has-problem' : ''}`;
 
       const header = document.createElement('div');
       header.className = 'event-card-header';
@@ -178,9 +202,14 @@
       // below, so repeating them there was two rows of pure duplication.
       if (isCollapsed) {
         card.appendChild(_summaryLine(ev, actor, actionType, triggerSummary));
+        if (problem) card.appendChild(_problemChip(problem));
         eventList.appendChild(card);
         return;
       }
+
+      // Directly under the header, before the trigger: this is the reason the
+      // rest of the card will not happen, so it reads first.
+      if (problem) card.appendChild(_problemChip(problem));
 
       // WENN before DANN: the trigger goes first, the action controls below it.
       // An assign_route has no trigger *controls* — its start is discarded and
@@ -238,6 +267,23 @@
     }
     line.appendChild(triggerText);
     return line;
+  }
+
+  /** „⚠ <Grund>" — why this card will not reach the exported file. */
+  function _problemChip(problem) {
+    const chip = document.createElement('div');
+    chip.className = 'event-problem';
+    chip.setAttribute('role', 'status');
+    const icon = document.createElement('span');
+    icon.className = 'event-problem-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = '⚠';
+    const text = document.createElement('span');
+    text.textContent = problem.short;
+    chip.title = `Dieses Event wird beim Export verworfen: ${problem.message}.`;
+    chip.appendChild(icon);
+    chip.appendChild(text);
+    return chip;
   }
 
   function _triggerBlock(actor, ev, events) {
@@ -445,17 +491,21 @@
       : `für ${UIUtils.fmt(dynamics.value ?? DEFAULT_SPEED_TIME)}s`;
     const relativeSpeedTarget = target.entity_ref || _defaultRelativeActorId(actor);
     const distanceTarget = action.entity_ref || _defaultRelativeActorId(actor);
-    const hasTrajectory = (action.trajectory || []).length > 0;
-    const hasRoute = (action.waypoints || []).length > 0;
+    // Counted against the 2 the emitter needs, not against 0: a single waypoint
+    // draws nothing on the map and is dropped at export, so calling it "drawn"
+    // was the card's most convincing lie.
+    const trajectoryPoints = (action.trajectory || []).length;
+    const routePoints = (action.waypoints || []).length;
     const trajectoryVisible = MapView.isTrajectoryVisible(actor.id, ev.id);
     const routeVisible = MapView.isRouteVisible(actor.id, ev.id);
+    const partial = n => `unvollständig (${n} Wegpunkt${n === 1 ? '' : 'e'})`;
     const actionLabels = {
-      follow_trajectory: hasTrajectory
+      follow_trajectory: trajectoryPoints >= 2
         ? `Pfad gezeichnet${trajectoryVisible ? '' : ', ausgeblendet'}`
-        : 'Pfad nicht gezeichnet',
-      assign_route: hasRoute
+        : trajectoryPoints > 0 ? `Pfad ${partial(trajectoryPoints)}` : 'Pfad nicht gezeichnet',
+      assign_route: routePoints >= 2
         ? `Route gezeichnet${routeVisible ? '' : ', ausgeblendet'}`
-        : 'Route nicht gezeichnet',
+        : routePoints > 0 ? `Route ${partial(routePoints)}` : 'Route nicht gezeichnet',
       set_speed: speedMode === 'relative'
         ? `${UIUtils.fmt(target.delta ?? 10)} m/s relativ zu ${_eventActorLabel(relativeSpeedTarget)} ${speedDynamicsSummary}`
         : `${UIUtils.fmt(target.value ?? 10)} m/s ${speedDynamicsSummary}`,
@@ -479,14 +529,19 @@
         const ref = events.find(other => other.id !== ev.id && _eventAction(other).type !== 'assign_route');
         _updateEvent(actor, ev.id, { trigger: { type: 'after_event', event_id: ref ? ref.id : '' } });
       } else if (e.target.value === 'distance_to_point') {
+        // The point is placed on the actor straight away rather than left null:
+        // a null point used to reach the backend and be silently defaulted to
+        // the map origin (0, 0), where the condition can never fire. Picking on
+        // the map then *moves* an existing point instead of creating the first.
         _updateEvent(actor, ev.id, {
           trigger: {
             type: 'distance_to_point',
             value: trigger.value ?? 20,
             entity_ref: trigger.entity_ref || _defaultPointTriggerActorId(actor),
-            point: trigger.point || null,
+            point: trigger.point || ObjectsManager.defaultTriggerPoint(actor.id, ev.id),
           },
         });
+        MapView.renderAllActors();
         _startTriggerPointMode(actor.id, ev.id);
       } else {
         _updateEvent(actor, ev.id, {
@@ -1060,5 +1115,10 @@
   window.EventPanel = {
     render,
     setRefreshHandler,
+    // objects.js discards a path event left under 2 waypoints and must go
+    // through this: it re-points any after_event chained onto the deleted
+    // event and clears the draw-mode state, which a bare events.filter() would
+    // leave dangling.
+    deleteEvent: _deleteEvent,
   };
 })();

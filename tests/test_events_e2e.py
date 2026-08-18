@@ -58,6 +58,36 @@ def speed_event(eid, trigger, value=10.0, duration=5.0):
                        "target": {"mode": "absolute", "value": value}}}
 
 
+def _params(page):
+    """The export payload, bypassing the client-side gate.
+
+    The Export button now refuses an incomplete scenario, so this is the only
+    way to hand the backend one — which is exactly what a hand-written or
+    LLM-generated payload does.
+    """
+    return page.evaluate("() => ScenarioIO.buildParamsForTesting()")
+
+
+def _export_blocked(page):
+    """True if clicking Export .xosc raises an error toast and sends nothing."""
+    page.evaluate("document.getElementById('toast-container')?.replaceChildren()")
+    fired = []
+
+    def _watch(request):
+        if request.url.endswith("/api/export"):
+            fired.append(request.url)
+
+    page.on("request", _watch)
+    try:
+        page.click("#btn-export")
+        page.wait_for_timeout(500)
+        toast = page.evaluate(
+            "document.querySelector('#toast-container .toast-error')?.textContent || ''")
+    finally:
+        page.remove_listener("request", _watch)
+    return not fired and "nvollständig" in toast
+
+
 with sync_playwright() as p:
     browser, page, errors = H.open_editor(p, "Town01")
     check("no JS errors on load", not errors, str(errors[:3]))
@@ -293,45 +323,59 @@ with sync_playwright() as p:
           evs[1]["trigger"]["kind"] == "distance_to_ego"
           and evs[1]["trigger"]["value"] == 400.0, str(evs[1]["trigger"]))
 
-    # ── Events that silently vanish from the export ──────────────────────────
+    # ── Events that would vanish from the export are now refused ─────────────
     # _add_follow_trajectory_action returns False below 2 waypoints, so the
-    # event is dropped. build_custom_event_chain still registered its NAME, so
-    # anything chained onto it keeps a storyboardElementRef pointing at an
-    # Event that no longer exists. ScenarioRunner has no way to satisfy that
-    # trigger, so the follow-up event never fires either.
+    # event used to be dropped while build_custom_event_chain kept its NAME —
+    # anything chained onto it held a storyboardElementRef pointing at an Event
+    # that was not in the file, and could never fire. Both ends are now closed:
+    # the editor refuses to export it, and so does the backend.
     seed(page, [
         {"id": "e1", "trigger": {"type": "simulation_time", "value": 0},
          "action": {"type": "follow_trajectory", "trajectory": []}},
         speed_event("e2", {"type": "after_event", "event_id": "e1"}, 9.0, 5.0),
     ])
-    xml = H.export_xosc(page)
-    evs = H.parse_events(xml, entity="adversary")
-    dangling = H.dangling_event_refs(xml)
-    check("an empty follow_trajectory is dropped from the export",
-          len(evs) == 1, f"{len(evs)} events: {[e['name'] for e in evs]}")
-    check.known_issue(
-        "OPEN DEFECT: after_event ref survives when its target event is dropped",
-        dangling == [],
-        f"unresolvable storyboardElementRef(s): {dangling} — the chained event "
-        f"can never fire. Fix in llm-scenario-gen build_custom_event_chain(): "
-        f"build event_name_by_id from the events actually appended, or drop "
-        f"triggers whose ref was skipped")
+    # Both cards are flagged, and that is the point: the chained event is just
+    # as dead as the one it waits for.
+    problems = page.evaluate("""() => {
+        AppState.select('obj-2');
+        return [...document.querySelectorAll('.event-card.has-problem .event-problem')]
+            .map(el => el.textContent);
+    }""")
+    check("the panel flags the incomplete path event and the one chained onto it",
+          len(problems) == 2, str(problems))
+    check("...naming the missing waypoints",
+          any("2 Wegpunkte" in text for text in problems), str(problems))
+    check("...and the trigger that can never fire",
+          any("feuert nie" in text for text in problems), str(problems))
+    check("the section header counts them",
+          page.evaluate("document.getElementById('event-warn').textContent") == "2",
+          page.evaluate("document.getElementById('event-warn').textContent"))
+    check("the export gate refuses a path event under 2 waypoints",
+          _export_blocked(page), "export was not blocked")
+    check("the backend rejects it too",
+          H.export_status(page, _params(page)) == 400,
+          str(H.export_status(page, _params(page))))
 
     # Same failure via a different route: pedestrians cannot take an
-    # AssignRouteAction, so the event is dropped for them specifically.
+    # AssignRouteAction, so the event was dropped for them specifically.
     seed(page, [
         {"id": "r1", "trigger": {"type": "simulation_time", "value": 0},
          "action": {"type": "assign_route", "route_strategy": "fastest",
                     "waypoints": route}},
         speed_event("s1", {"type": "after_event", "event_id": "r1"}, 2.0, 5.0),
     ], npc_type="pedestrian")
-    xml = H.export_xosc(page)
-    evs = H.parse_events(xml, entity="adversary")
-    check("assign_route on a pedestrian is dropped",
-          all(e["action"]["kind"] != "assign_route" for e in evs),
-          str([e["action"]["kind"] for e in evs]))
-    check("no dangling ref after a dropped pedestrian route",
-          H.dangling_event_refs(xml) == [], str(H.dangling_event_refs(xml)))
+    check("the export gate refuses a route on a pedestrian",
+          _export_blocked(page), "export was not blocked")
+    check("the backend rejects a route on a pedestrian",
+          H.export_status(page, _params(page)) == 400,
+          str(H.export_status(page, _params(page))))
+    check("the action grid does not offer a route to a pedestrian at all",
+          page.evaluate("""() => {
+              AppState.select('obj-2');
+              const btn = [...document.querySelectorAll('#event-action-grid button')]
+                  .find(b => b.textContent.includes('Route zuweisen'));
+              return !!btn && btn.disabled;
+          }"""))
 
     # ── Multi-NPC entity refs ────────────────────────────────────────────────
     seed(page,
@@ -352,16 +396,11 @@ with sync_playwright() as p:
           ev["action"]["entity_ref"] == "adversary", str(ev["action"]))
 
     # ── Unknown action/trigger reach the export as the coerced kind ──────────
-    # The typo'd action coerces to follow_trajectory, which then has no
-    # waypoints and gets dropped — so build_custom_event_chain() adds nothing
-    # and the NPC ends up with no Act at all: it spawns, holds its Init speed,
-    # and takes no part in the story. Worth knowing when debugging "my event
-    # did nothing" — the actor really does nothing now, where it used to drive
-    # off on a constant_speed fallback chain.
-    #
-    # A second NPC carries a real event purely so the scenario still has an Act
-    # to export: validate_scenario_params rejects a payload in which nothing
-    # has events, and build_xosc refuses to emit a Story with zero Acts.
+    # The typo'd action still coerces to follow_trajectory — that coercion is
+    # deliberate — but the result has no waypoints, and an event that cannot be
+    # built is now rejected instead of silently vanishing. The old behaviour was
+    # the worst of both: the NPC got no Act at all and simply held its Init
+    # speed, with nothing anywhere pointing at the typo.
     seed(page, [{"id": "e1", "trigger": {"type": "teleport_when_ready"},
                  "action": {"type": "make_it_fly"}}],
          extra_npcs=[
@@ -369,15 +408,20 @@ with sync_playwright() as p:
               "yaw": 0, "events": [
                   speed_event("k1", {"type": "simulation_time", "value": 0}, 10.0)]},
          ])
+    check("a typo'd action is rejected rather than silently dropped",
+          H.export_status(page, _params(page)) == 400,
+          str(H.export_status(page, _params(page))))
+
+    # The coercion itself is unchanged — given waypoints, the typo'd action
+    # still exports as a follow_trajectory.
+    seed(page, [{"id": "e1", "trigger": {"type": "teleport_when_ready"},
+                 "action": {"type": "make_it_fly", "trajectory": traj}}])
     xml = H.export_xosc(page)
-    act_names = [a["name"] for a in H.acts(xml)]
-    check("an npc whose events all vanish gets no Act at all",
-          "adversaryBehavior" not in act_names, str(act_names))
-    check("the surviving npc still gets its own Act",
-          "adversary1Behavior" in act_names, str(act_names))
-    check("the typo'd event itself contributes nothing",
-          H.parse_events(xml, entity="adversary") == [],
-          str(H.parse_events(xml, entity="adversary")))
+    ev = H.parse_events(xml, entity="adversary")[0]
+    check("an unknown action still coerces to follow_trajectory",
+          ev["action"]["kind"] == "follow_trajectory", str(ev["action"]))
+    check("an unknown trigger still coerces to simulation_time",
+          ev["trigger"]["kind"] == "simulation_time", str(ev["trigger"]))
 
     # ── Initial speed on an NPC ──────────────────────────────────────────────
     # seed() omits initial_speed, so this is also the regression guard that a

@@ -78,18 +78,63 @@ def raises(fn):
 # ── Unknown action / trigger are coerced, not rejected ───────────────────────
 
 out = norm([{"id": "e1", "trigger": {"type": "nonsense"},
-             "action": {"type": "also_nonsense"}}])
+             "action": {"type": "also_nonsense",
+                        "trajectory": [{"x": 0, "y": 0}, {"x": 10, "y": 0}]}}])
 ev = out["npcs"][0]["events"][0]
 check("unknown action coerces to follow_trajectory",
       ev["action"]["type"] == "follow_trajectory", ev["action"]["type"])
 check("unknown trigger coerces to simulation_time",
       ev["trigger"]["type"] == "simulation_time", ev["trigger"]["type"])
+check("the coerced follow_trajectory keeps its waypoints",
+      len(ev["action"]["trajectory"]) == 2, str(ev["action"]["trajectory"]))
 
-# The coerced follow_trajectory has no waypoints, which makes the generator's
-# action builder return False and drop the event entirely. Worth knowing: a
-# typo'd action name is not just wrong, it vanishes.
-check("coerced follow_trajectory has an empty trajectory",
-      ev["action"]["trajectory"] == [], str(ev["action"]["trajectory"]))
+# The coercion above is only half the story: a typo'd action name that carries
+# no trajectory coerces to a follow_trajectory with nothing to follow. That used
+# to export cleanly and vanish inside the emitter (the action builder returns
+# False under 2 waypoints, and build_custom_event_chain skips the whole event).
+# It is now rejected, so the typo is named once instead of surfacing as an actor
+# that mysteriously does nothing.
+check("unknown action with no trajectory is rejected, not silently dropped",
+      raises(lambda: norm([{"id": "e1", "trigger": {"type": "nonsense"},
+                            "action": {"type": "also_nonsense"}}])))
+
+
+# ── Path actions the emitter would drop are rejected ─────────────────────────
+
+check("follow_trajectory with 0 waypoints is rejected",
+      raises(lambda: norm([{"id": "e1", "trigger": {"type": "simulation_time"},
+                            "action": {"type": "follow_trajectory", "trajectory": []}}])))
+check("follow_trajectory with 1 waypoint is rejected",
+      raises(lambda: norm([{"id": "e1", "trigger": {"type": "simulation_time"},
+                            "action": {"type": "follow_trajectory",
+                                       "trajectory": [{"x": 1, "y": 2}]}}])))
+check("assign_route with 1 waypoint is rejected",
+      raises(lambda: norm([{"id": "e1", "trigger": {"type": "simulation_time"},
+                            "action": {"type": "assign_route",
+                                       "waypoints": [{"x": 1, "y": 2}]}}])))
+
+# AssignRouteAction is vehicle-only (_ROUTE_ACTION_TYPES in event_builders.py);
+# on a walker the builder returns False and the event disappears.
+check("assign_route on a pedestrian is rejected",
+      raises(lambda: norm([{"id": "e1", "trigger": {"type": "simulation_time"},
+                            "action": {"type": "assign_route",
+                                       "waypoints": [{"x": 1, "y": 2}, {"x": 3, "y": 4}]}}],
+                          npcs=[{"id": "obj-2", "type": "pedestrian", "x": 3.0, "y": 4.0,
+                                 "events": [{"id": "e1",
+                                             "trigger": {"type": "simulation_time"},
+                                             "action": {"type": "assign_route",
+                                                        "waypoints": [{"x": 1, "y": 2},
+                                                                      {"x": 3, "y": 4}]}}]}])))
+
+# 'lorry' aliases to 'truck', which IS routable — the alias table runs before
+# the emitter's own check, so the backend copy has to know about it too.
+out = norm([], npcs=[{"id": "obj-2", "type": "lorry", "x": 3.0, "y": 4.0,
+                      "events": [{"id": "e1", "trigger": {"type": "simulation_time"},
+                                  "action": {"type": "assign_route",
+                                             "waypoints": [{"x": 1, "y": 2},
+                                                           {"x": 3, "y": 4}]}}]}])
+check("assign_route on an alias of a routable type is allowed",
+      out["npcs"][0]["events"][0]["action"]["type"] == "assign_route")
 
 
 # ── Trigger defaults ─────────────────────────────────────────────────────────
@@ -134,12 +179,19 @@ check("distance_to_point maps an explicit npc id to its entity ref",
       out["npcs"][0]["events"][0]["trigger"]["entity_ref"] == "adversary",
       out["npcs"][0]["events"][0]["trigger"]["entity_ref"])
 
-out = norm([{"id": "e1",
-             "trigger": {"type": "distance_to_point", "value": 25, "point": {}},
-             "action": {"type": "set_speed"}}])
-check("distance_to_point with an empty point defaults to origin",
-      (out["npcs"][0]["events"][0]["trigger"]["point"]["x"],
-       out["npcs"][0]["events"][0]["trigger"]["point"]["y"]) == (0.0, 0.0))
+# A point-less trigger used to be defaulted to (0, 0, 0.2) — the map origin.
+# DistanceCondition is 3-D, so that is a real condition measured against a
+# corner of the town: it never becomes true, and reads as a badly tuned radius
+# rather than an unfinished event. The editor now places the point on the actor
+# the moment the trigger is chosen, so this only guards loaded/LLM payloads.
+check("distance_to_point with an empty point is rejected",
+      raises(lambda: norm([{"id": "e1",
+                            "trigger": {"type": "distance_to_point", "value": 25, "point": {}},
+                            "action": {"type": "set_speed"}}])))
+check("distance_to_point with no point at all is rejected",
+      raises(lambda: norm([{"id": "e1",
+                            "trigger": {"type": "distance_to_point", "value": 25},
+                            "action": {"type": "set_speed"}}])))
 
 
 # ── The two silent trigger rewrites ──────────────────────────────────────────
@@ -355,7 +407,8 @@ check("an event with no id is given one",
 # so it is coerced to simulation_time@0 rather than left alone.
 
 out = norm_ego([{"id": "e1", "trigger": {"type": "nonsense"},
-                 "action": {"type": "also_nonsense"}}])
+                 "action": {"type": "also_nonsense",
+                            "trajectory": [{"x": 0, "y": 0}, {"x": 10, "y": 0}]}}])
 ev = out["ego"]["events"][0]
 check("ego: unknown action coerces to follow_trajectory",
       ev["action"]["type"] == "follow_trajectory", ev["action"]["type"])

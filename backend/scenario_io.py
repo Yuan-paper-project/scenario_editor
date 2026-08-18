@@ -83,6 +83,22 @@ def _entity_ref(
     return ref
 
 
+# Actor types AssignRouteAction accepts — _ROUTE_ACTION_TYPES in
+# ../llm-scenario-gen/generator/event_builders.py, and ROUTE_ACTION_TYPES in
+# frontend/js/app.js; the three must stay in step. 'ego' is here because a saved
+# scenario carries the literal type (the frontend exports it as 'car').
+#
+# The emitter runs the type through _TYPE_ALIASES first, so the aliases that
+# resolve to a routable type are listed too — without 'lorry' and 'moped' this
+# would reject payloads the emitter is perfectly happy with. 'cyclist' and
+# 'bicycle' alias to 'bike', which is not routable, so their absence is correct.
+_ROUTE_ACTOR_TYPES = {
+    "car", "van", "truck", "bus", "motorcycle", "scooter",
+    "police", "ambulance", "firetruck", "ego",
+    "lorry", "moped",
+}
+
+
 def _normalize_structured_event(
     event: dict,
     actor_refs: dict[str, str],
@@ -91,6 +107,7 @@ def _normalize_structured_event(
     default_entity_ref: str = "hero",
     *,
     self_ref: str | None = None,
+    actor_type: str = "car",
 ) -> None:
     trigger = event.get("trigger")
     if not isinstance(trigger, dict):
@@ -102,15 +119,25 @@ def _normalize_structured_event(
     if trigger_kind == "after_event":
         event["trigger"]["event_id"] = str(trigger.get("event_id", ""))
     elif trigger_kind == "distance_to_point":
-        point = trigger.get("point") if isinstance(trigger.get("point"), dict) else {}
+        point = trigger.get("point") if isinstance(trigger.get("point"), dict) else None
+        # A missing point used to be defaulted to (0, 0, 0.2) — the map origin.
+        # DistanceCondition is 3-D, so that is a real condition measured against
+        # a corner of the town: it simply never becomes true, and the event looks
+        # like a badly tuned radius rather than an unfinished one. Rejected for
+        # the same reason as a dangling entity_ref.
+        if point is None or point.get("x") is None or point.get("y") is None:
+            raise ValueError(
+                f"{where}: distance_to_point trigger has no point — set one on "
+                f"the map, or the condition can never fire"
+            )
         event["trigger"]["value"] = max(0.0, float(trigger.get("value", 20.0)))
         event["trigger"]["entity_ref"] = _entity_ref(
             trigger.get("entity_ref"), actor_refs, valid_refs, where, default_entity_ref
         )
         event["trigger"]["point"] = {
             "name": str(point.get("name", "Point")),
-            "x": float(point.get("x", 0.0)),
-            "y": float(point.get("y", 0.0)),
+            "x": float(point.get("x")),
+            "y": float(point.get("y")),
             "z": float(point.get("z", 0.2)),
         }
     else:
@@ -124,16 +151,39 @@ def _normalize_structured_event(
     if action_kind not in {"follow_trajectory", "assign_route", "set_speed", "set_distance", "lane_change"}:
         action_kind = "follow_trajectory"
 
+    # A path action the emitter cannot build is not a smaller scenario, it is a
+    # different one: build_custom_event_chain skips the whole event, and any
+    # after_event chained onto it is left pointing at a storyboard element that
+    # is not in the file, so that event never fires either. Rejected rather than
+    # dropped, so the cause is named once instead of surfacing as an actor that
+    # mysteriously does nothing.
     if action_kind == "follow_trajectory":
+        trajectory = _normalize_waypoints(action.get("trajectory"), include_velocity=True)
+        if len(trajectory) < 2:
+            raise ValueError(
+                f"{where}: follow_trajectory needs at least 2 waypoints, got "
+                f"{len(trajectory)} — the event would be dropped from the file"
+            )
         event["action"] = {
             "type": "follow_trajectory",
-            "trajectory": _normalize_waypoints(action.get("trajectory"), include_velocity=True),
+            "trajectory": trajectory,
         }
     elif action_kind == "assign_route":
+        if actor_type not in _ROUTE_ACTOR_TYPES:
+            raise ValueError(
+                f"{where}: assign_route is not available for actor type "
+                f"'{actor_type}' — only vehicles may be routed"
+            )
+        waypoints = _normalize_waypoints(action.get("waypoints"))
+        if len(waypoints) < 2:
+            raise ValueError(
+                f"{where}: assign_route needs at least 2 waypoints, got "
+                f"{len(waypoints)} — the event would be dropped from the file"
+            )
         event["action"] = {
             "type": "assign_route",
             "route_strategy": action.get("route_strategy", "fastest"),
-            "waypoints": _normalize_waypoints(action.get("waypoints")),
+            "waypoints": waypoints,
         }
         event["trigger"] = {"type": "simulation_time", "value": 0.0}
     elif action_kind == "set_speed":
@@ -231,7 +281,9 @@ def _normalize_actor(
             actor["events"][idx] = event = {}
         event.setdefault("id", f"event_{idx + 1}")
         _normalize_structured_event(
-            event, actor_refs, valid_refs, f"{where}.events[{idx}]", self_ref=entity_name
+            event, actor_refs, valid_refs, f"{where}.events[{idx}]",
+            self_ref=entity_name,
+            actor_type=str(actor.get("type", "car")),
         )
 
     assign_route_ids = {

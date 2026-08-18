@@ -40,6 +40,20 @@
         warnings,
       };
     }
+
+    // Events the emitter would silently drop, taking any after_event chained
+    // onto them along too. The editor no longer lets you *create* one, so this
+    // catches a loaded .json or a scenario built before that guard existed.
+    const incomplete = [AppState.ego, ...AppState.npcs]
+      .filter(Boolean)
+      .flatMap(actor => ScenarioRules.problemsOf(actor).map(({ index, problem }) =>
+        `${AppState.actorLabel(actor, { ego: 'Ego-Fahrzeug' })} · Event ${index + 1}: ${problem.message}`));
+    if (incomplete.length > 0) {
+      return {
+        errors: [`Unvollständige Events — sie würden beim Export verworfen:\n${incomplete.join('\n')}`],
+        warnings,
+      };
+    }
     return { errors: [], warnings };
   }
 
@@ -191,6 +205,12 @@
   });
 
   // ── Export ego route as XML ─────────────────────────────────────────────────
+
+  // The export payload, without the click and without the client-side gate —
+  // the only way a test can hand the backend a payload the gate refuses, which
+  // is exactly what a hand-written or LLM-generated payload does. Same shape of
+  // hook as Simulate.routeForTesting; no UI code calls it.
+  window.ScenarioIO = { buildParamsForTesting: buildScenarioParams };
 
   btnExportRoute.addEventListener('click', async () => {
     if (!AppState.ego) {

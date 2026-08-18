@@ -77,10 +77,10 @@
   const ROUTE_HEADING_ACCEPT_LO = 2.0;        // accept when |delta| < LO ...
   const ROUTE_HEADING_ACCEPT_HI = 4.3;        // ... or > HI; the band between is a reversal
 
-  const ROUTE_ACTION_TYPES = new Set([
-    'car', 'van', 'truck', 'bus', 'motorcycle', 'scooter',
-    'police', 'ambulance', 'firetruck', 'ego',
-  ]);
+  // Which actor types AssignRouteAction accepts — mirrors _ROUTE_ACTION_TYPES in
+  // ../llm-scenario-gen/generator/event_builders.py. Shared with eventPanel.js
+  // (which greys the action out) and the export gate via app.js.
+  const ROUTE_ACTION_TYPES = ScenarioRules.ROUTE_ACTION_TYPES;
 
   // ── Controls (created dynamically) ─────────────────────────────────────────
 
@@ -167,14 +167,9 @@
   const TRIGGER_TYPES = new Set(['simulation_time', 'distance_to_ego', 'distance_to_point', 'after_event']);
   const ACTION_TYPES  = new Set(['follow_trajectory', 'assign_route', 'set_speed', 'set_distance', 'lane_change']);
 
-  function _actionEmits(action, actorType) {
-    if (!action) return false;
-    if (action.type === 'follow_trajectory') return (action.trajectory || []).length >= 2;
-    if (action.type === 'assign_route') {
-      return (action.waypoints || []).length >= 2 && ROUTE_ACTION_TYPES.has(actorType);
-    }
-    return true; // set_speed / set_distance / lane_change never fail to emit
-  }
+  // The emitter's own "does this action produce XML" rule, shared with the
+  // panel's warning chips and the export gate (ScenarioRules, app.js).
+  const _actionEmits = (action, actorType) => ScenarioRules.actionEmits(action, actorType);
 
   function _normalizeEventsForSim(actor) {
     const events = JSON.parse(JSON.stringify(actor.events || []));

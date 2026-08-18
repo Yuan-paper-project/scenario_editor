@@ -15,9 +15,10 @@
 
   const svg        = MapView.svg;
   const trajBanner = document.getElementById('traj-banner');
-  const trajBannerName = document.getElementById('traj-banner-name');
+  const trajBannerText = document.getElementById('traj-banner-text');
   const trajDoneBtn    = document.getElementById('traj-done-btn');
   const trajUndoBtn    = document.getElementById('traj-undo-btn');
+  const trajCancelBtn  = document.getElementById('traj-cancel-btn');
 
   // Speed a newly placed actor starts with, emitted as a SpeedAction in the
   // Storyboard Init. An actor with no events gets no Act at all, so this is the
@@ -404,23 +405,101 @@
 
   // ── Path drawing mode ─────────────────────────────────────────────────────────
 
+  // What the banner is currently announcing, so leaving a mode can be detected
+  // and acted on. A path event that never got 2 waypoints is discarded here
+  // rather than in _finishPathMode(): Esc clears the mode flags directly
+  // (mapView.js), so hanging the check off the *button* would miss it.
+  let _drawContext = null;   // { kind:'path'|'point', actorId, eventId, type }
+
   AppState.on('change', patch => {
     if (!('trajectoryMode' in patch) && !('activeTrajectoryId' in patch) &&
         !('routeMode' in patch) && !('activeRouteId' in patch) &&
-        !('activePathEventId' in patch)) return;
-    const activeId = (AppState.trajectoryMode && AppState.activeTrajectoryId) ||
-                     (AppState.routeMode && AppState.activeRouteId);
-    const active = !!activeId;
-    trajBanner.classList.toggle('hidden', !active);
-    svg.classList.toggle('trajectory-mode', !!active);
-    if (active) {
-      const actor = AppState.findById(activeId);
-      trajBannerName.textContent = actor ? AppState.actorLabel(actor, { ego: 'EGO' }) : activeId;
+        !('activePathEventId' in patch) && !('triggerPointMode' in patch)) return;
+
+    const pathId = (AppState.trajectoryMode && AppState.activeTrajectoryId) ||
+                   (AppState.routeMode && AppState.activeRouteId);
+    const pointMode = AppState.triggerPointMode;
+    const next = pathId
+      ? {
+        kind: 'path',
+        actorId: pathId,
+        eventId: AppState.activePathEventId,
+        type: AppState.routeMode ? 'route' : 'trajectory',
+      }
+      : pointMode
+        ? { kind: 'point', actorId: pointMode.actorId, eventId: pointMode.eventId }
+        : null;
+
+    const left = _drawContext;
+    _drawContext = next;
+    if (left && left.kind === 'path' &&
+        !(next && next.kind === 'path' && next.actorId === left.actorId && next.eventId === left.eventId)) {
+      _discardIncompletePath(left);
     }
+
+    const active = !!next;
+    trajBanner.classList.toggle('hidden', !active);
+    svg.classList.toggle('trajectory-mode', active);
+    if (!active) return;
+
+    const actor = AppState.findById(next.actorId);
+    const name = actor ? AppState.actorLabel(actor, { ego: 'EGO' }) : next.actorId;
+    const isPath = next.kind === 'path';
+    trajBannerText.innerHTML = isPath
+      ? `${next.type === 'route' ? 'Route' : 'Pfad'} für <strong></strong> zeichnen — auf die Karte klicken, um Wegpunkte zu setzen`
+      : 'Auslösepunkt für <strong></strong> setzen — auf die Karte klicken';
+    trajBannerText.querySelector('strong').textContent = name;
+    // A single point has nothing to undo and no "done" state beyond the click
+    // itself, so point mode offers only a way out.
+    trajDoneBtn.classList.toggle('hidden', !isPath);
+    trajUndoBtn.classList.toggle('hidden', !isPath);
+    trajCancelBtn.classList.toggle('hidden', isPath);
+  });
+
+  /**
+   * Drop a path event that was left with fewer than 2 waypoints.
+   *
+   * Such an event is dropped by the emitter anyway (_add_follow_trajectory_action
+   * / _add_assign_route_action return False under 2 points) and takes any
+   * after_event chained onto it down with it, so the editor removes it at the
+   * moment it becomes clear the user is not going to finish drawing.
+   * EventPanel.deleteEvent does the re-pointing of those chains.
+   */
+  function _discardIncompletePath(context) {
+    const actor = _findActor(context.actorId);
+    if (!actor) return;
+    const ev = (actor.events || []).find(item => item.id === context.eventId);
+    if (!ev) return;
+    const action = ev.action || {};
+    const isRoute = action.type === 'assign_route';
+    if (action.type !== 'follow_trajectory' && !isRoute) return;
+    const points = isRoute ? (action.waypoints || []) : (action.trajectory || []);
+    if (points.length >= 2) return;
+
+    EventPanel.deleteEvent(actor, context.eventId);
+    Toast.warn(isRoute
+      ? 'Event verworfen — eine Route braucht mindestens 2 Wegpunkte'
+      : 'Event verworfen — eine Trajektorie braucht mindestens 2 Wegpunkte');
+    MapView.renderAllActors();
+  }
+
+  // loadJSON clears every mode flag by direct assignment and emits 'stateLoaded'
+  // rather than 'change', so the handler above never sees it. Without this the
+  // banner would survive a load started mid-draw, and _drawContext would keep
+  // pointing at an id from the scenario that was just replaced — ids restart at
+  // obj-1/evt-1 in every file, so that is a real collision, not a theoretical one.
+  AppState.on('stateLoaded', () => {
+    _drawContext = null;
+    trajBanner.classList.add('hidden');
+    svg.classList.remove('trajectory-mode');
   });
 
   trajDoneBtn.addEventListener('click', () => {
     _finishPathMode();
+  });
+
+  trajCancelBtn.addEventListener('click', () => {
+    AppState.set({ triggerPointMode: null });
   });
 
   trajUndoBtn.addEventListener('click', () => {
@@ -469,14 +548,11 @@
   function startPathMode(actorId, type, eventId = null) {
     const actor = _findActor(actorId);
     if (!actor || !eventId) return;
-    let path = _eventPath(actor, eventId, type);
-    if (!path || path.length === 0) {
-      // Seeded from the actor's own pose, so it inherits the actor's height too.
-      path = type === 'trajectory'
-        ? [{ x: actor.x, y: actor.y, z: actor.z ?? 0, velocity: 10.0 }]
-        : [{ x: actor.x, y: actor.y, z: actor.z ?? 0 }];
-      _setEventPath(actor, eventId, type, path);
-    }
+    // A new path event starts genuinely empty. It used to be seeded with one
+    // waypoint on the actor itself, which is below the 2 the emitter needs and
+    // invisible on the map (mapView skips a path under 2 points) — yet the card
+    // read "Pfad gezeichnet". The event is now discarded on leaving draw mode
+    // instead (_discardIncompletePath).
     AppState.set({
       activeTool: null,
       pendingTemplate: null,
@@ -510,23 +586,45 @@
     AppState.emit('actorUpdated', actorId);
   }
 
-  function _setTriggerPoint(target, wx, wy) {
-    const actor = _findActor(target.actorId);
-    if (!actor) return;
+  /**
+   * A trigger point at (wx, wy) for one event of `actor`, keeping the event's
+   * existing name if it already had one.
+   *
+   * Shared by the map click and by eventPanel.js, which seeds a point the moment
+   * the trigger is selected so it is never null — a point-less distance_to_point
+   * used to reach the backend and be silently defaulted to the map origin.
+   * DistanceCondition is 3-D, so the z comes from the elevation profile exactly
+   * as a waypoint's does; a literal here cannot fire on a graded road.
+   */
+  function _triggerPointAt(actor, eventId, wx, wy) {
     const events = actor.events || [];
-    const currentEvent = events.find(ev => ev.id === target.eventId);
+    const currentEvent = events.find(ev => ev.id === eventId);
     const pointIndex = events.reduce((max, ev) => {
       const match = String(ev.trigger?.point?.name || '').match(/^Point\s+(\d+)$/);
       return match ? Math.max(max, parseInt(match[1], 10)) : max;
     }, 0) + 1;
     const px = Math.round(wx * 10) / 10;
     const py = Math.round(wy * 10) / 10;
-    const point = {
+    return {
       name: currentEvent?.trigger?.point?.name || `Point ${pointIndex}`,
       x: px,
       y: py,
       z: _roundZ(groundZAt(px, py) + SPAWN_CLEARANCE.waypoint),
     };
+  }
+
+  /** The point a distance_to_point trigger starts life with: the actor's pose. */
+  function defaultTriggerPoint(actorId, eventId) {
+    const actor = _findActor(actorId);
+    if (!actor) return null;
+    return _triggerPointAt(actor, eventId, actor.x, actor.y);
+  }
+
+  function _setTriggerPoint(target, wx, wy) {
+    const actor = _findActor(target.actorId);
+    if (!actor) return;
+    const events = actor.events || [];
+    const point = _triggerPointAt(actor, target.eventId, wx, wy);
     const patchedEvents = events.map(ev => {
       if (ev.id !== target.eventId) return ev;
       return {
@@ -572,6 +670,7 @@
   // ── Public interface ─────────────────────────────────────────────────────────
   window.ObjectsManager = {
     startPathMode,
+    defaultTriggerPoint,
     deletePathPoint,
     setPathPointVelocity,
     clearPath,

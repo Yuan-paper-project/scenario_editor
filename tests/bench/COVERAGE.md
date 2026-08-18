@@ -301,4 +301,6 @@ One pre-existing wobble, **not** introduced here: `tpl-stopping`'s middle
 profile segment (`[6-7s] → 5 m/s`) holds for only ~59% of its samples against a
 60% bar. Reproduced identically with `tests/` stashed back to `HEAD`, so it is
 the case's 1.3 s window being too tight for the controller's ramp, not a
-harness change.
+harness change. **Obsolete since the template moved to a `rate` ramp** — that
+intermediate 5 m/s step no longer exists and the assertion was replaced by a
+`A.ramp_rate` check; the counts in the table above predate the same change.
