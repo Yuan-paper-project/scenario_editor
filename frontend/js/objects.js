@@ -548,11 +548,22 @@
   function startPathMode(actorId, type, eventId = null) {
     const actor = _findActor(actorId);
     if (!actor || !eventId) return;
-    // A new path event starts genuinely empty. It used to be seeded with one
-    // waypoint on the actor itself, which is below the 2 the emitter needs and
-    // invisible on the map (mapView skips a path under 2 points) — yet the card
-    // read "Pfad gezeichnet". The event is now discarded on leaving draw mode
-    // instead (_discardIncompletePath).
+    // Waypoint 1 is the actor's own pose, so it inherits the actor's height too
+    // and the first map click already completes a usable 2-point path.
+    //
+    // On its own that seed is what used to make a forgotten path event silently
+    // wrong: one waypoint is below the 2 the emitter needs and draws nothing on
+    // the map (mapView skips a path under 2 points), while the card claimed
+    // "Pfad gezeichnet". The seed is fine; leaving it *alone* is what is not, so
+    // the event is discarded on leaving draw mode instead
+    // (_discardIncompletePath), and the card counts against 2 rather than 0.
+    let path = _eventPath(actor, eventId, type);
+    if (!path || path.length === 0) {
+      path = type === 'trajectory'
+        ? [{ x: actor.x, y: actor.y, z: actor.z ?? 0, velocity: 10.0 }]
+        : [{ x: actor.x, y: actor.y, z: actor.z ?? 0 }];
+      _setEventPath(actor, eventId, type, path);
+    }
     AppState.set({
       activeTool: null,
       pendingTemplate: null,

@@ -200,15 +200,16 @@ with sync_playwright() as p:
         }}
     }}""")
     traj = page.evaluate("AppState.ego.events[0].action.trajectory")
-    # Every point here is a clicked one: a path event no longer starts with a
-    # seeded waypoint on the actor (it left the event one short of the 2 the
-    # emitter needs), so there is nothing to skip before checking the gradient.
-    check("trajectory points were added", len(traj) == 2, str(len(traj)))
+    check("trajectory points were added", len(traj) == 3, str(len(traj)))
     check("every trajectory point carries a z",
           all(isinstance(w.get("z"), (int, float)) for w in traj), str(traj))
+    # Waypoint 1 is the seed on the actor itself, which carries the actor's z
+    # rather than a freshly derived one — the gradient check is about the
+    # clicked points.
+    drawn = traj[1:]
     check("waypoints follow the road down the gradient",
-          all(w["z"] > 0.4 for w in traj) and traj[0]["z"] > traj[-1]["z"],
-          str([w["z"] for w in traj]))
+          all(w["z"] > 0.4 for w in drawn) and drawn[0]["z"] > drawn[-1]["z"],
+          str([w["z"] for w in drawn]))
 
     # ── Flat map: only the clearance shows ───────────────────────────────────
     page.evaluate("AppState.loadJSON({map:'Town01', ego:null, npcs:[], staticObjects:[]})")

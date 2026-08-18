@@ -142,36 +142,46 @@ with sync_playwright() as p:
         page.mouse.click(sx, sy)
     page.click("#traj-done-btn")
     traj = page.evaluate("AppState.ego.events[0].action.trajectory")
-    # A path event starts empty: the point that used to be seeded on the actor
-    # left every untouched event one waypoint short of what the emitter needs,
-    # while the card claimed "Pfad gezeichnet".
-    check("ego path event holds exactly the two clicked points",
-          len(traj) == 2, str(len(traj)))
+    check("ego path event accumulated the seed point plus two clicks",
+          len(traj) == 3, str(len(traj)))
     check("every ego path point carries a derived z, not the flat 0.2 default",
           all(isinstance(w.get("z"), (int, float)) for w in traj), str(traj))
 
     # ── An unfinished path event discards itself ─────────────────────────────
-    # Under 2 waypoints the emitter drops the event and leaves anything chained
-    # onto it pointing at a storyboard element that is not in the file, so the
-    # editor removes it the moment drawing ends.
+    # The seed alone is one waypoint, below the 2 the emitter needs: it drops
+    # such an event and leaves anything chained onto it pointing at a storyboard
+    # element that is not in the file. So the seed is what makes the FIRST click
+    # enough, and never drawing at all removes the event rather than leaving it
+    # broken and labelled "Pfad gezeichnet".
     seed(page, [])
     page.evaluate("AppState.select('obj-1')")
     page.click('#event-action-grid .event-action-button:has-text("Trajektorie folgen")')
-    check("a fresh path event starts with no waypoints at all",
-          page.evaluate("AppState.ego.events[0].action.trajectory.length") == 0,
-          str(page.evaluate("AppState.ego.events[0].action.trajectory")))
+    seeded = page.evaluate("AppState.ego.events[0].action.trajectory")
+    check("a fresh path event is seeded with the actor's own position",
+          len(seeded) == 1 and abs(seeded[0]["x"] - page.evaluate("AppState.ego.x")) < 0.15,
+          str(seeded))
     page.click("#traj-done-btn")
-    check("leaving draw mode with 0 waypoints discards the event",
+    check("leaving draw mode with only the seed discards the event",
           page.evaluate("AppState.ego.events.length") == 0,
           str(page.evaluate("AppState.ego.events")))
 
     page.click('#event-action-grid .event-action-button:has-text("Trajektorie folgen")')
+    page.keyboard.press("Escape")
+    check("Esc with only the seed discards the event too",
+          page.evaluate("AppState.ego.events.length") == 0,
+          str(page.evaluate("AppState.ego.events")))
+
+    # One click is all it takes, because the seed is already waypoint 1.
+    page.click('#event-action-grid .event-action-button:has-text("Trajektorie folgen")')
     sx, sy = H.assert_on_screen(page, 290.0, -2.0)
     page.mouse.click(sx, sy)
     page.keyboard.press("Escape")
-    check("Esc with a single waypoint discards the event too",
-          page.evaluate("AppState.ego.events.length") == 0,
+    check("the first click completes the path, so the event survives",
+          page.evaluate("AppState.ego.events.length") == 1,
           str(page.evaluate("AppState.ego.events")))
+    check("...holding the seed and the clicked point",
+          page.evaluate("AppState.ego.events[0].action.trajectory.length") == 2,
+          str(page.evaluate("AppState.ego.events[0].action.trajectory")))
 
     # ── A distance_to_point trigger is never point-less ──────────────────────
     # A null point used to reach the backend and be defaulted to the map origin,
