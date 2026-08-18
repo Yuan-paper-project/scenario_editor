@@ -38,10 +38,12 @@ EXPECTED = {
     "vehicle-accelerating": ("car", [
         ("distance_to_ego", 400, "set_speed", 10.0, 5.0, "time"),
         ("after_event", "evt-1", "set_speed", 15.0, 5.0, "rate"),
+        ("after_event", "evt-2", "set_speed", 15.0, 5.0, "time"),
     ]),
     "vehicle-braking": ("car", [
         ("distance_to_ego", 400, "set_speed", 10.0, 5.0, "time"),
         ("after_event", "evt-1", "set_speed", 5.0, 5.0, "rate"),
+        ("after_event", "evt-2", "set_speed", 5.0, 5.0, "time"),
     ]),
     "vehicle-stopping": ("car", [
         ("distance_to_ego", 400, "set_speed", 10.0, 5.0, "time"),

@@ -274,9 +274,9 @@ Things that only make sense once you have read `ChangeActorTargetSpeed`:
   keeps `test_templates_e2e.py`'s "`step` is what makes the duration a hold" assertion
   coherent.
 - **The four speed-profile templates ramp** (`RAMP_RATE = 5.0` m/s², `frontend/js/templates.js`):
-  *Beschleunigen* and *Bremsen* end on a rate event; *Stoppen* and *Stop-and-Go* alternate
-  ramp and hold, because a `rate` event ends on arrival and therefore cannot itself hold —
-  every dwell in those chains is a separate `time` event. Every other template, and every
+  all four alternate ramp and hold, because a `rate` event ends on arrival and therefore
+  cannot itself hold — every dwell in those chains, including the final one, is a separate
+  `time` event. Every other template, and every
   hand-written `tests/carla_cases.py` chain, stays on `time`.
 - **`rate` is a local ScenarioRunner patch, not upstream.** See the Verification section.
 

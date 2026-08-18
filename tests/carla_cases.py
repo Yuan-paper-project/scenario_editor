@@ -335,7 +335,7 @@ CASES = [
         "template": "vehicle-braking",
         "spot": SPOT_LANE,
         "npc_yaw": 180.0,        # spawn-point yaw can face back up the road
-        "note": "distance_to_ego@400 fires at act start, then a 5 m/s2 ramp down",
+        "note": "distance_to_ego@400 at act start, then a 5 m/s2 ramp down and a hold",
     },
     {
         "name": "tpl-stopping",
@@ -1312,7 +1312,8 @@ def expect_braking(run, timeline):
     out = []
     ok, detail, _ = _fired(timeline, "SpeedEvent0")
     out.append(("first speed event fires", ok, detail))
-    ok, detail = _chain_order(timeline, ["SpeedEvent0", "SpeedEvent1"])
+    ok, detail = _chain_order(timeline,
+                              ["SpeedEvent0", "SpeedEvent1", "SpeedEvent2"])
     out.append(("chain runs in order", ok, detail))
     ok, detail = A.reaches_speed(run, "adversary", 10.0, 0.5, 4.5)
     out.append(("npc reaches 10 m/s", ok, detail))

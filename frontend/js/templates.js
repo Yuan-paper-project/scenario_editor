@@ -22,6 +22,7 @@
           events: [
             this._setSpeedEvent('evt-1', { type: 'distance_to_ego', value: 400 }, 10.0, 5.0),
             this._speedRampEvent('evt-2', { type: 'after_event', event_id: 'evt-1' }, 15.0, RAMP_RATE),
+            this._setSpeedEvent('evt-3', { type: 'after_event', event_id: 'evt-2' }, 15.0, 5.0),
           ],
         },
         'vehicle-braking': {
@@ -30,6 +31,7 @@
           events: [
             this._setSpeedEvent('evt-1', { type: 'distance_to_ego', value: 400 }, 10.0, 5.0),
             this._speedRampEvent('evt-2', { type: 'after_event', event_id: 'evt-1' }, 5.0, RAMP_RATE),
+            this._setSpeedEvent('evt-3', { type: 'after_event', event_id: 'evt-2' }, 5.0, 5.0),
           ],
         },
         'vehicle-stopping': {
