@@ -43,22 +43,71 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
   padding: 3px 8px; border-radius: 10px; border: 1px solid var(--border);
 }
 
-/* ── Layer toggles ──────────────────────────────────────────── */
-.layer-toggles {
-  display: flex; align-items: center; gap: 6px; margin-left: 8px;
+/* ── Header dropdown menus (Ebenen, Datei) ──────────────────── */
+.menu { position: relative; }
+.menu-btn {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 10px; font-size: 12px;
 }
+.menu-btn:hover { opacity: 1; border-color: var(--accent); color: var(--accent); }
+.menu-btn.open  { border-color: var(--accent); color: var(--accent); }
+.menu-caret     { font-size: 9px; line-height: 1; color: var(--text-dim); }
+
+.menu-panel {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 40;
+  min-width: 190px; padding: 6px;
+  display: flex; flex-direction: column; gap: 2px;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 6px; box-shadow: 0 6px 18px rgba(26, 30, 46, .16);
+}
+/* Right-hand menus open leftwards so they cannot run off the window edge. */
+.menu-panel-right { left: auto; right: 0; }
+
+.menu-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 6px 8px; font-size: 11px; font-family: inherit; text-align: left;
+  color: var(--text-dim); cursor: pointer; white-space: nowrap;
+  background: transparent; border: 1px solid transparent; border-radius: 5px;
+  transition: all .15s;
+}
+.menu-item:hover { color: var(--text); background: var(--panel2); }
+.menu-item-icon  { font-size: 13px; line-height: 1; width: 13px; text-align: center; }
+
+/* ── Layer menu extras ──────────────────────────────────────── */
+#layer-toggles { margin-left: 8px; }
+.layer-menu-icon { font-size: 12px; line-height: 1; }
+.layer-menu-count {
+  font-size: 10px; font-weight: 700; color: var(--text-dim);
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 8px; padding: 1px 6px; line-height: 1.4;
+}
+.menu-btn.open .layer-menu-count { color: var(--accent); border-color: var(--accent); }
+
+.layer-menu-actions {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px; padding-bottom: 6px; margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.layer-menu-action {
+  padding: 4px 6px; font-size: 10px; font-weight: 700; letter-spacing: .5px;
+  cursor: pointer; color: var(--text-dim);
+  background: var(--panel2); border: 1px solid var(--border); border-radius: 5px;
+  transition: all .15s;
+}
+.layer-menu-action:hover { color: var(--accent); border-color: var(--accent); }
+
 .layer-toggle {
-  display: flex; align-items: center; gap: 4px;
+  display: flex; align-items: center; gap: 6px;
   font-size: 11px; color: var(--text-dim); cursor: pointer;
-  background: var(--panel2); border: 1px solid var(--border);
-  border-radius: 5px; padding: 3px 8px;
-  transition: all .15s; user-select: none;
+  border: 1px solid transparent; border-radius: 5px; padding: 4px 6px;
+  transition: all .15s; user-select: none; white-space: nowrap;
 }
-.layer-toggle:hover { color: var(--text); border-color: var(--accent); }
+.layer-toggle:hover { color: var(--text); background: var(--panel2); }
 .layer-toggle input[type="checkbox"] {
   accent-color: var(--accent); cursor: pointer; width: 12px; height: 12px;
+  flex-shrink: 0;
 }
-.layer-toggle-icon { font-size: 13px; line-height: 1; }
+.layer-toggle-icon { font-size: 13px; line-height: 1; width: 13px; text-align: center; }
 
 /* ── Buttons ─────────────────────────────────────────────── */
 .btn {
@@ -176,8 +225,17 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
 }
 
 /* Trajectory drawing banner */
-.traj-banner {
+/* Bottom-centre overlay stack: draw banner above, sim controls below. The
+   wrapper is click-through so it never eats a map click; each child opts back
+   in. Children are stacked, so either can be hidden without the other moving. */
+.map-bottom-stack {
   position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  pointer-events: none; z-index: 20;
+}
+.map-bottom-stack > * { pointer-events: auto; }
+
+.traj-banner {
   background: rgba(0,0,0,.8); color: #fff; border: 1px solid var(--accent);
   border-radius: 8px; padding: 8px 18px; display: flex; align-items: center; gap: 10px;
   font-size: 12px;
@@ -704,9 +762,10 @@ input[type="range"]::-webkit-slider-thumb {
 
 /* ── Simulation controls ─────────────────────────────────── */
 .sim-controls {
-  display: flex; align-items: center; gap: 6px;
-  background: var(--panel2); border: 1px solid var(--border);
-  border-radius: 6px; padding: 4px 10px; margin-right: 8px;
+  display: flex; align-items: center; gap: 8px;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 12px;
+  box-shadow: 0 4px 14px rgba(26, 30, 46, .18);
 }
 .sim-speed-label {
   font-size: 10px; color: var(--accent); font-weight: 700;

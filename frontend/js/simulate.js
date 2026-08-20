@@ -95,9 +95,11 @@
       <div    id="sim-progress-bar" class="sim-progress-bar"><div id="sim-progress-fill" class="sim-progress-fill"></div></div>
     </div>`;
 
-  // Insert into header-right (before export buttons)
-  const headerRight = document.querySelector('.header-right');
-  headerRight.insertAdjacentHTML('afterbegin', controlsHtml);
+  // Float over the map's lower edge rather than sitting in the header: these
+  // are the controls in constant use during a preview, and they belong next to
+  // what they animate. #map-bottom-stack keeps them clear of the draw banner.
+  const bottomStack = document.getElementById('map-bottom-stack');
+  bottomStack.insertAdjacentHTML('beforeend', controlsHtml);
 
   const simControls  = document.getElementById('sim-controls');
   const btnPlay      = document.getElementById('sim-play');

@@ -16,31 +16,50 @@
       <option value="">— Karte wählen —</option>
     </select>
     <span id="map-status" class="status-badge">Keine Karte geladen</span>
-    <div id="layer-toggles" class="layer-toggles hidden">
-      <label class="layer-toggle" title="Zebrastreifen ein-/ausblenden">
-        <input type="checkbox" id="toggle-crosswalks" checked>
-        <span class="layer-toggle-icon">&#9618;</span> Zebrastreifen
-      </label>
-      <label class="layer-toggle" title="Ampeln ein-/ausblenden">
-        <input type="checkbox" id="toggle-trafficlights" checked>
-        <span class="layer-toggle-icon" style="color:#ff3333;">&#9679;</span> Ampeln
-      </label>
-      <label class="layer-toggle" title="Startpunkte ein-/ausblenden">
-        <input type="checkbox" id="toggle-spawns" checked>
-        <span class="layer-toggle-icon" style="color:rgba(255,255,255,.5);">&#8226;</span> Startpunkte
-      </label>
-      <label class="layer-toggle" title="Requisiten ein-/ausblenden">
-        <input type="checkbox" id="toggle-props" checked>
-        <span class="layer-toggle-icon" style="color:#e8801a;">&#9650;</span> Requisiten
-      </label>
-      <label class="layer-toggle" title="Spurmarkierungen ein-/ausblenden">
-        <input type="checkbox" id="toggle-markings" checked>
-        <span class="layer-toggle-icon" style="color:#ffd250;">&#8212;</span> Markierungen
-      </label>
-      <label class="layer-toggle" title="Fahrtrichtungspfeile ein-/ausblenden">
-        <input type="checkbox" id="toggle-roaddir" checked>
-        <span class="layer-toggle-icon" style="color:rgba(255,255,255,.5);">&#9654;</span> Richtung
-      </label>
+    <!-- Layer visibility: one dropdown, six checkboxes. The input ids are the
+         contract with mapView.js's _setupLayerToggles(); #layer-toggles is what
+         mapImport.js un-hides once a map is loaded. -->
+    <div id="layer-toggles" class="menu hidden">
+      <button type="button" id="layer-menu-btn" class="btn btn-secondary menu-btn"
+              title="Kartenebenen ein-/ausblenden" aria-haspopup="true" aria-expanded="false">
+        <span class="layer-menu-icon">&#9776;</span>
+        Ebenen
+        <span id="layer-menu-count" class="layer-menu-count">6/6</span>
+        <span class="menu-caret">&#9662;</span>
+      </button>
+      <div id="layer-menu-panel" class="menu-panel hidden"
+           role="group" aria-label="Kartenebenen">
+        <div class="layer-menu-actions">
+          <button type="button" class="layer-menu-action" data-layer-action="all"
+                  title="Alle Ebenen einblenden">Alle</button>
+          <button type="button" class="layer-menu-action" data-layer-action="none"
+                  title="Alle Ebenen ausblenden">Keine</button>
+        </div>
+        <label class="layer-toggle" title="Zebrastreifen ein-/ausblenden">
+          <input type="checkbox" id="toggle-crosswalks" checked>
+          <span class="layer-toggle-icon">&#9618;</span> Zebrastreifen
+        </label>
+        <label class="layer-toggle" title="Ampeln ein-/ausblenden">
+          <input type="checkbox" id="toggle-trafficlights" checked>
+          <span class="layer-toggle-icon" style="color:#ff3333;">&#9679;</span> Ampeln
+        </label>
+        <label class="layer-toggle" title="Startpunkte ein-/ausblenden">
+          <input type="checkbox" id="toggle-spawns" checked>
+          <span class="layer-toggle-icon" style="color:var(--text-dim);">&#8226;</span> Startpunkte
+        </label>
+        <label class="layer-toggle" title="Requisiten ein-/ausblenden">
+          <input type="checkbox" id="toggle-props" checked>
+          <span class="layer-toggle-icon" style="color:#e8801a;">&#9650;</span> Requisiten
+        </label>
+        <label class="layer-toggle" title="Spurmarkierungen ein-/ausblenden">
+          <input type="checkbox" id="toggle-markings" checked>
+          <span class="layer-toggle-icon" style="color:#e0a800;">&#8212;</span> Markierungen
+        </label>
+        <label class="layer-toggle" title="Fahrtrichtungspfeile ein-/ausblenden">
+          <input type="checkbox" id="toggle-roaddir" checked>
+          <span class="layer-toggle-icon" style="color:var(--text-dim);">&#9654;</span> Richtung
+        </label>
+      </div>
     </div>
   </div>
   <div class="header-right">
@@ -49,12 +68,33 @@
       &#8853; Karte importieren
       <input type="file" id="btn-import-map-input" accept=".xodr" style="display:none">
     </label>
-    <button id="btn-save"   class="btn btn-secondary" title="Szenario als JSON speichern">Speichern</button>
-    <label  id="btn-load-label" class="btn btn-secondary" title="Szenario aus JSON laden">
-      Laden <input type="file" id="btn-load-input" accept=".json" style="display:none">
-    </label>
+    <!-- The secondary file actions, behind one menu. Their ids are unchanged —
+         scenarioIO.js binds #btn-save / #btn-load-input / #btn-export-route by
+         id and does not care where they sit. Export .xosc stays outside: it is
+         the app's primary action (and the e2e harness clicks it directly). -->
+    <div class="menu" data-dropdown>
+      <button type="button" id="file-menu-btn" class="btn btn-secondary menu-btn"
+              data-dropdown-button title="Datei-Aktionen" aria-haspopup="true" aria-expanded="false">
+        Datei <span class="menu-caret">&#9662;</span>
+      </button>
+      <div id="file-menu-panel" class="menu-panel menu-panel-right hidden" data-dropdown-panel
+           role="menu" aria-label="Datei-Aktionen">
+        <button type="button" id="btn-save" class="menu-item" data-menu-item role="menuitem"
+                title="Szenario als JSON speichern">
+          <span class="menu-item-icon">&#8615;</span> Speichern
+        </button>
+        <label id="btn-load-label" class="menu-item" data-menu-item role="menuitem"
+               title="Szenario aus JSON laden">
+          <span class="menu-item-icon">&#8613;</span> Laden
+          <input type="file" id="btn-load-input" accept=".json" style="display:none">
+        </label>
+        <button type="button" id="btn-export-route" class="menu-item" data-menu-item role="menuitem"
+                title="Ego-Route als XML exportieren (für Autoware/CARLA Planer)">
+          <span class="menu-item-icon">&#8631;</span> Route exportieren
+        </button>
+      </div>
+    </div>
     <button id="btn-export" class="btn btn-primary"   title="Als OpenSCENARIO .xosc exportieren">Export .xosc</button>
-    <button id="btn-export-route" class="btn btn-secondary" title="Ego-Route als XML exportieren (für Autoware/CARLA Planer)">Route exportieren</button>
   </div>
 </header>
 
@@ -196,12 +236,18 @@
       </div>
     </div>
 
-    <!-- Zeichenmodus-Banner für das Pfad-/Routenzeichnen; objects.js schreibt
-         den Text je Modus. -->
-    <div id="traj-banner" class="traj-banner hidden">
-      <span id="traj-banner-text">Pfad für <strong id="traj-banner-name"></strong> zeichnen — auf die Karte klicken, um Wegpunkte zu setzen</span>
-      <button id="traj-done-btn" class="btn btn-small btn-primary">Fertig</button>
-      <button id="traj-undo-btn" class="btn btn-small btn-secondary">Rückgängig</button>
+    <!-- Bottom-centre overlay stack. Both children float over the map and are
+         independently hidden, so they are stacked rather than given fixed
+         bottom offsets — nothing has to know whether the other is visible.
+         simulate.js injects #sim-controls in here at load. -->
+    <div id="map-bottom-stack" class="map-bottom-stack">
+      <!-- Zeichenmodus-Banner für das Pfad-/Routenzeichnen; objects.js schreibt
+           den Text je Modus. -->
+      <div id="traj-banner" class="traj-banner hidden">
+        <span id="traj-banner-text">Pfad für <strong id="traj-banner-name"></strong> zeichnen — auf die Karte klicken, um Wegpunkte zu setzen</span>
+        <button id="traj-done-btn" class="btn btn-small btn-primary">Fertig</button>
+        <button id="traj-undo-btn" class="btn btn-small btn-secondary">Rückgängig</button>
+      </div>
     </div>
   </main>
 
@@ -502,6 +548,8 @@
 <script src="/static/js/propCatalog.js"></script>  <!-- before toolbar.js: renders the prop tiles -->
 <script src="/static/js/mapView.js"></script>
 <script src="/static/js/toolbar.js"></script>
+<script src="/static/js/dropdown.js"></script>  <!-- before layerMenu.js: auto-binds [data-dropdown] menus -->
+<script src="/static/js/layerMenu.js"></script>  <!-- header "Ebenen" dropdown; mapView.js owns the checkbox wiring -->
 <script src="/static/js/objects.js"></script>
 <script src="/static/js/eventPanel.js"></script>
 <script src="/static/js/properties.js"></script>

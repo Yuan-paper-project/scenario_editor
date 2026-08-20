@@ -110,7 +110,7 @@
       AppState.set({ map: town, mapData, laneGraph });
       MapView.renderMap(mapData);
       MapView.renderAllActors();
-      mapStatus.textContent = `${town} (${mapData.roads.length} Straßen)`;
+      mapStatus.textContent = `${mapData.roads.length} Straßen`;
     } catch (e) {
       mapStatus.textContent = 'Karte konnte nicht geladen werden';
       console.error(e);
@@ -129,7 +129,7 @@
           AppState.set({ mapData, laneGraph });
           MapView.renderMap(mapData);
           MapView.renderAllActors();
-          mapStatus.textContent = `${data.map} geladen`;
+          mapStatus.textContent = `${mapData.roads.length} Straßen`;
         } catch (e) {
           console.error(e);
         }

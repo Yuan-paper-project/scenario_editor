@@ -56,7 +56,7 @@
       AppState.set({ map: town, mapData, laneGraph });
       MapView.renderMap(mapData);
       MapView.renderAllActors();
-      mapStatus.textContent = `${town} (${mapData.roads.length} Straßen)`;
+      mapStatus.textContent = `${mapData.roads.length} Straßen`;
       const layerToggles = document.getElementById('layer-toggles');
       if (layerToggles) layerToggles.classList.remove('hidden');
     } catch (err) {
