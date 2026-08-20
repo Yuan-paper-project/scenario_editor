@@ -59,7 +59,7 @@
         activeTool: tool, pendingTemplate: null, pendingProp: prop,
         trajectoryMode: false, activeTrajectoryId: null,
         routeMode: false, activeRouteId: null,
-        activePathEventId: null, triggerPointMode: null,
+        activePathEventId: null,
       });
     }
   });

@@ -455,7 +455,7 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
   color: var(--text-dim); font-size: 11px; white-space: nowrap;
 }
 .event-point-distance-row {
-  display: grid; grid-template-columns: minmax(58px, .8fr) auto minmax(48px, 64px) auto minmax(0, 1fr);
+  display: grid; grid-template-columns: auto minmax(48px, 72px) auto minmax(0, 1fr);
   gap: 4px; align-items: center;
 }
 .event-point-distance-row label,
@@ -576,6 +576,10 @@ input[type="range"]::-webkit-slider-thumb {
 .trigger-point { pointer-events: none; }
 .trigger-radius-control { pointer-events: stroke; cursor: ew-resize; }
 .trigger-radius-handle { pointer-events: all; cursor: ew-resize; }
+/* The point itself is dragged by its centre marker; the hit target is a plain
+   invisible circle, the same trick props use, because the visible marker is
+   0.7 m across and unhittable at town zoom. */
+.trigger-point-control { pointer-events: all; cursor: move; }
 
 .yaw-arrow { cursor: grab; }
 .yaw-arrow:active { cursor: grabbing; }

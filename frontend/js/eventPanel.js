@@ -36,6 +36,11 @@
     ['after_event', 'Nach anderem Event'],
   ];
 
+  // A freshly chosen distance_to_point starts as a small ring around the point
+  // rather than inheriting the outgoing trigger's value, which is a delay in
+  // seconds or a 400 m ego distance and means nothing as a radius.
+  const DEFAULT_POINT_RADIUS = 5;
+
   // set_speed's dynamics value means a different physical quantity per
   // dimension, so switching re-defaults it — 5 is a nonsense rate and 2.5 a
   // nonsense duration. 2.5 m/s² is ≈0.25 g, everyday accel/brake.
@@ -145,13 +150,11 @@
 
     if (events.length > 1) eventList.appendChild(_bulkCollapseBar(actor, events));
 
-    // Which card the map clicks currently belong to — a path being drawn or a
-    // trigger point being picked. Event ids are only unique within an actor
-    // (every actor's first event is `evt-1`), so both arms check the owner.
+    // Which card the map clicks currently belong to. Event ids are only unique
+    // within an actor (every actor's first event is `evt-1`), so this checks
+    // the owner too.
     const pathOwnerId = AppState.activeTrajectoryId || AppState.activeRouteId;
-    const drawingEventId =
-      (pathOwnerId === actor.id ? AppState.activePathEventId : null) ||
-      (AppState.triggerPointMode?.actorId === actor.id ? AppState.triggerPointMode.eventId : null);
+    const drawingEventId = pathOwnerId === actor.id ? AppState.activePathEventId : null;
 
     events.forEach((ev, i) => {
       const action = _eventAction(ev);
@@ -531,18 +534,18 @@
       } else if (e.target.value === 'distance_to_point') {
         // The point is placed on the actor straight away rather than left null:
         // a null point used to reach the backend and be silently defaulted to
-        // the map origin (0, 0), where the condition can never fire. Picking on
-        // the map then *moves* an existing point instead of creating the first.
+        // the map origin (0, 0), where the condition can never fire. It is then
+        // moved by dragging its map marker (mapView.js) — there is no picking
+        // mode and no "set the point" button.
         _updateEvent(actor, ev.id, {
           trigger: {
             type: 'distance_to_point',
-            value: trigger.value ?? 20,
+            value: DEFAULT_POINT_RADIUS,
             entity_ref: trigger.entity_ref || _defaultPointTriggerActorId(actor),
             point: trigger.point || ObjectsManager.defaultTriggerPoint(actor.id, ev.id),
           },
         });
         MapView.renderAllActors();
-        _startTriggerPointMode(actor.id, ev.id);
       } else {
         _updateEvent(actor, ev.id, {
           trigger: {
@@ -571,15 +574,12 @@
       const pointInfo = document.createElement('div');
       pointInfo.className = 'event-point-info';
       pointInfo.textContent = point
-        ? `${point.name}: (${Number(point.x).toFixed(1)}, ${Number(point.y).toFixed(1)})`
+        ? `${point.name}: (${Number(point.x).toFixed(1)}, ${Number(point.y).toFixed(1)}) — auf der Karte ziehen`
         : 'Kein Punkt gesetzt';
+      pointInfo.title = point
+        ? 'Punktmarker auf der Karte ziehen, um ihn zu verschieben; den Griff am Ring ziehen, um den Radius zu ändern'
+        : '';
       block.appendChild(pointInfo);
-
-      const pickBtn = document.createElement('button');
-      pickBtn.type = 'button';
-      pickBtn.className = 'event-action-button';
-      pickBtn.textContent = point ? 'Neu setzen' : 'Setzen';
-      pickBtn.addEventListener('click', () => _startTriggerPointMode(actor.id, ev.id));
 
       const distanceInput = document.createElement('input');
       distanceInput.type = 'number';
@@ -604,7 +604,7 @@
           point: trigger.point || null,
         });
       });
-      block.appendChild(_pointDistanceRow(pickBtn, distanceInput, targetSelect));
+      block.appendChild(_pointDistanceRow(distanceInput, targetSelect));
     } else {
       const isEgoDistance = (trigger.type || 'simulation_time') === 'distance_to_ego';
       const valueInput = document.createElement('input');
@@ -623,20 +623,6 @@
       block.appendChild(UIUtils.paramRow(
         isEgoDistance ? 'Abstand' : 'Zeit', valueInput, isEgoDistance ? 'm' : 's'));
     }
-  }
-
-  function _startTriggerPointMode(actorId, eventId) {
-    AppState.set({
-      activeTool: null,
-      pendingTemplate: null,
-      trajectoryMode: false,
-      activeTrajectoryId: null,
-      routeMode: false,
-      activeRouteId: null,
-      activePathEventId: null,
-      triggerPointMode: { actorId, eventId },
-    });
-    Toast.info('Punkt auf der Karte anklicken');
   }
 
   // ── Actor References And Toggles ────────────────────────────────────────────
@@ -831,7 +817,7 @@
     return row;
   }
 
-  function _pointDistanceRow(pointButton, distanceInput, targetSelect) {
+  function _pointDistanceRow(distanceInput, targetSelect) {
     const row = document.createElement('div');
     row.className = 'event-point-distance-row';
 
@@ -842,7 +828,6 @@
     unit.textContent = 'm zu';
     targetSelect.setAttribute('aria-label', 'Bezugsakteur für den Abstand');
 
-    row.appendChild(pointButton);
     row.appendChild(distanceLabel);
     row.appendChild(distanceInput);
     row.appendChild(unit);

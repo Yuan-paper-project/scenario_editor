@@ -196,12 +196,37 @@ with sync_playwright() as p:
     check("...on the acting actor's own position",
           point is not None and abs(point["x"] - page.evaluate("AppState.ego.x")) < 0.15,
           str(point))
-    check("...and arms the map for moving it",
-          page.evaluate("!!AppState.triggerPointMode"))
-    check("the shared banner announces point mode",
-          "Auslösepunkt" in page.inner_text("#traj-banner-text"),
-          page.inner_text("#traj-banner-text"))
-    page.keyboard.press("Escape")
+    check("...with the 5 m default radius",
+          page.evaluate("AppState.ego.events[0].trigger.value") == 5,
+          str(page.evaluate("AppState.ego.events[0].trigger.value")))
+    # The point is repositioned by dragging its map marker, so choosing the
+    # trigger must not arm a picking mode or raise the drawing banner.
+    check("...without arming a map-click mode",
+          page.is_hidden("#traj-banner"))
+    check("the trigger block offers no 'set the point' button any more",
+          page.locator("#event-list .event-trigger-block button").count() == 0)
+    # Repositioning is a drag on the map marker, which is why the marker layer
+    # sits above layer-actors: a point seeded on its own actor would otherwise
+    # be drawn — and hit-tested — under the vehicle rectangle.
+    layers = page.evaluate(
+        "[...document.getElementById('world').children].map(c => c.id)")
+    check("the trigger-point layer is drawn above the actors",
+          layers.index("layer-trigger-points") > layers.index("layer-actors"),
+          str(layers))
+    sx, sy = H.assert_on_screen(page, point["x"], point["y"])
+    tx, ty = H.assert_on_screen(page, point["x"] - 15.0, point["y"] + 4.0)
+    page.mouse.move(sx, sy)
+    page.mouse.down()
+    page.mouse.move(tx, ty, steps=4)
+    page.mouse.up()
+    moved = page.evaluate("AppState.ego.events[0].trigger.point")
+    check("dragging the marker moves the point",
+          abs(moved["x"] - (point["x"] - 15.0)) < 1.0 and
+          abs(moved["y"] - (point["y"] + 4.0)) < 1.0, str(moved))
+    check("...and re-derives its z from the elevation profile",
+          moved["z"] > 0, str(moved))
+    check("...without moving the actor it was seeded on",
+          abs(page.evaluate("AppState.ego.x") - 300.631) < 0.15)
 
     # ── Export: controller module, hero's own Act, hero events ──────────────
     route = [{"x": 300.631, "y": -2.025, "z": 0.2},

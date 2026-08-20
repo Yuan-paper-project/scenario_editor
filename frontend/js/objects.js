@@ -18,7 +18,6 @@
   const trajBannerText = document.getElementById('traj-banner-text');
   const trajDoneBtn    = document.getElementById('traj-done-btn');
   const trajUndoBtn    = document.getElementById('traj-undo-btn');
-  const trajCancelBtn  = document.getElementById('traj-cancel-btn');
 
   // Speed a newly placed actor starts with, emitted as a SpeedAction in the
   // Storyboard Init. An actor with no events gets no Act at all, so this is the
@@ -41,11 +40,6 @@
     if (_wasDragging) { _wasDragging = false; return; }
 
     const world = MapView.svgToWorld(e);
-
-    if (AppState.triggerPointMode) {
-      _setTriggerPoint(AppState.triggerPointMode, world.x, world.y);
-      return;
-    }
 
     const activeType = AppState.routeMode ? 'route' : 'trajectory';
     const activeId = AppState.routeMode ? AppState.activeRouteId : AppState.activeTrajectoryId;
@@ -409,31 +403,26 @@
   // and acted on. A path event that never got 2 waypoints is discarded here
   // rather than in _finishPathMode(): Esc clears the mode flags directly
   // (mapView.js), so hanging the check off the *button* would miss it.
-  let _drawContext = null;   // { kind:'path'|'point', actorId, eventId, type }
+  let _drawContext = null;   // { actorId, eventId, type }
 
   AppState.on('change', patch => {
     if (!('trajectoryMode' in patch) && !('activeTrajectoryId' in patch) &&
         !('routeMode' in patch) && !('activeRouteId' in patch) &&
-        !('activePathEventId' in patch) && !('triggerPointMode' in patch)) return;
+        !('activePathEventId' in patch)) return;
 
     const pathId = (AppState.trajectoryMode && AppState.activeTrajectoryId) ||
                    (AppState.routeMode && AppState.activeRouteId);
-    const pointMode = AppState.triggerPointMode;
     const next = pathId
       ? {
-        kind: 'path',
         actorId: pathId,
         eventId: AppState.activePathEventId,
         type: AppState.routeMode ? 'route' : 'trajectory',
       }
-      : pointMode
-        ? { kind: 'point', actorId: pointMode.actorId, eventId: pointMode.eventId }
-        : null;
+      : null;
 
     const left = _drawContext;
     _drawContext = next;
-    if (left && left.kind === 'path' &&
-        !(next && next.kind === 'path' && next.actorId === left.actorId && next.eventId === left.eventId)) {
+    if (left && !(next && next.actorId === left.actorId && next.eventId === left.eventId)) {
       _discardIncompletePath(left);
     }
 
@@ -444,16 +433,9 @@
 
     const actor = AppState.findById(next.actorId);
     const name = actor ? AppState.actorLabel(actor, { ego: 'EGO' }) : next.actorId;
-    const isPath = next.kind === 'path';
-    trajBannerText.innerHTML = isPath
-      ? `${next.type === 'route' ? 'Route' : 'Pfad'} für <strong></strong> zeichnen — auf die Karte klicken, um Wegpunkte zu setzen`
-      : 'Auslösepunkt für <strong></strong> setzen — auf die Karte klicken';
+    trajBannerText.innerHTML =
+      `${next.type === 'route' ? 'Route' : 'Pfad'} für <strong></strong> zeichnen — auf die Karte klicken, um Wegpunkte zu setzen`;
     trajBannerText.querySelector('strong').textContent = name;
-    // A single point has nothing to undo and no "done" state beyond the click
-    // itself, so point mode offers only a way out.
-    trajDoneBtn.classList.toggle('hidden', !isPath);
-    trajUndoBtn.classList.toggle('hidden', !isPath);
-    trajCancelBtn.classList.toggle('hidden', isPath);
   });
 
   /**
@@ -496,10 +478,6 @@
 
   trajDoneBtn.addEventListener('click', () => {
     _finishPathMode();
-  });
-
-  trajCancelBtn.addEventListener('click', () => {
-    AppState.set({ triggerPointMode: null });
   });
 
   trajUndoBtn.addEventListener('click', () => {
@@ -572,7 +550,6 @@
       routeMode: type === 'route',
       activeRouteId: type === 'route' ? actorId : null,
       activePathEventId: eventId,
-      triggerPointMode: null,
     });
     MapView.renderAllActors();
   }
@@ -601,9 +578,10 @@
    * A trigger point at (wx, wy) for one event of `actor`, keeping the event's
    * existing name if it already had one.
    *
-   * Shared by the map click and by eventPanel.js, which seeds a point the moment
-   * the trigger is selected so it is never null — a point-less distance_to_point
-   * used to reach the backend and be silently defaulted to the map origin.
+   * Shared by the marker drag (moveTriggerPoint) and by eventPanel.js, which
+   * seeds a point the moment the trigger is selected so it is never null — a
+   * point-less distance_to_point used to reach the backend and be silently
+   * defaulted to the map origin.
    * DistanceCondition is 3-D, so the z comes from the elevation profile exactly
    * as a waypoint's does; a literal here cannot fire on a graded road.
    */
@@ -631,13 +609,20 @@
     return _triggerPointAt(actor, eventId, actor.x, actor.y);
   }
 
-  function _setTriggerPoint(target, wx, wy) {
-    const actor = _findActor(target.actorId);
+  /**
+   * Move an existing trigger point to (wx, wy) — the end of a marker drag on
+   * the map (mapView.js). The z is re-derived from the elevation profile here
+   * and not on every mousemove, for the same reason an actor's is: the lookup
+   * is a linear scan over every lane segment and z has no effect in a top-down
+   * view.
+   */
+  function moveTriggerPoint(actorId, eventId, wx, wy) {
+    const actor = _findActor(actorId);
     if (!actor) return;
     const events = actor.events || [];
-    const point = _triggerPointAt(actor, target.eventId, wx, wy);
+    const point = _triggerPointAt(actor, eventId, wx, wy);
     const patchedEvents = events.map(ev => {
-      if (ev.id !== target.eventId) return ev;
+      if (ev.id !== eventId) return ev;
       return {
         ...ev,
         trigger: {
@@ -649,7 +634,6 @@
       };
     });
     AppState.updateById(actor.id, { events: patchedEvents });
-    AppState.set({ triggerPointMode: null });
   }
 
   function deletePathPoint(actorId, type, idx, eventId = null) {
@@ -682,6 +666,7 @@
   window.ObjectsManager = {
     startPathMode,
     defaultTriggerPoint,
+    moveTriggerPoint,
     deletePathPoint,
     setPathPointVelocity,
     clearPath,

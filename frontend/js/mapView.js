@@ -41,6 +41,7 @@
   let _suppressNextClick = false;
   const _PAN_CLICK_THRESHOLD = 4;
   let _triggerRadiusDrag = null;
+  let _triggerPointDrag  = null;
 
   // ── Scale ruler ──────────────────────────────────────────────────────────────
   const _scaleBar   = document.querySelector('.scale-bar');
@@ -127,7 +128,10 @@
     worldGroup.insertBefore(layerRoadDir,       layerTrajEl);
     worldGroup.insertBefore(layerCrosswalks,    layerTrajEl);
     worldGroup.insertBefore(layerTrafficLights, layerTrajEl);
-    worldGroup.insertBefore(layerTriggerPoints, layerTrajEl);
+    // Trigger points go last, i.e. above layer-actors: the marker is what the
+    // user drags, and under the vehicle rectangles it is both invisible and
+    // unclickable exactly where it matters (a point seeded on its own actor).
+    worldGroup.appendChild(layerTriggerPoints);
 
     const { bounds, roads, spawnPoints, intersections, trafficLights, crosswalks, grassColor } = mapData;
     const w = bounds.xMax - bounds.xMin;
@@ -342,7 +346,7 @@
       'data-traffic-light-id': id,
     });
     g.addEventListener('click', e => {
-      if (AppState.activeTool || AppState.trajectoryMode || AppState.routeMode || AppState.triggerPointMode) return;
+      if (AppState.activeTool || AppState.trajectoryMode || AppState.routeMode) return;
       e.preventDefault();
       e.stopPropagation();
       TrafficSignals.select(id);
@@ -485,12 +489,20 @@
       });
       _attachTriggerRadiusDrag(ring, actor.id, ev.id, point);
       g.appendChild(ring);
-      g.appendChild(_svgEl('circle', {
+      const marker = _svgEl('g', { class: 'trigger-point-control' });
+      // Invisible hit target — the drawn marker is 0.7 m across, which is a
+      // sub-pixel click target at whole-town zoom.
+      marker.appendChild(_svgEl('circle', {
+        cx: '0', cy: '0', r: '2.2', fill: 'transparent',
+      }));
+      marker.appendChild(_svgEl('circle', {
         cx: '0', cy: '0', r: '0.7',
         fill: '#ffffff00',
         stroke: '#ffffff',
         'stroke-width': '0.5',
       }));
+      _attachTriggerPointDrag(marker, actor.id, ev.id);
+      g.appendChild(marker);
       const label = _svgEl('text', {
         x: '0', y: '-4',
         'text-anchor': 'middle',
@@ -518,6 +530,35 @@
 
   function _formatSvgNumber(value) {
     return Number(value).toFixed(2).replace(/\.?0+$/, '');
+  }
+
+  function _attachTriggerPointDrag(el, actorId, eventId) {
+    el.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      _triggerPointDrag = { actorId, eventId };
+      e.preventDefault();
+      e.stopPropagation();
+    });
+  }
+
+  /**
+   * Live-move the point while the mouse is down. Only x/y are written here —
+   * ObjectsManager.moveTriggerPoint re-derives z on mouseup, matching how an
+   * actor's height is handled (the lookup scans every lane segment, and z is
+   * invisible in a top-down view anyway).
+   */
+  function _updateTriggerPointDrag(e) {
+    const actor = AppState.findById(_triggerPointDrag.actorId);
+    if (!actor) return;
+    const world = svgToWorld(e);
+    const x = Math.round(world.x * 10) / 10;
+    const y = Math.round(world.y * 10) / 10;
+    const events = (actor.events || []).map(ev => {
+      if (ev.id !== _triggerPointDrag.eventId || !ev.trigger?.point) return ev;
+      return { ...ev, trigger: { ...ev.trigger, point: { ...ev.trigger.point, x, y } } };
+    });
+    _triggerPointDrag.moved = { x, y };
+    AppState.updateById(actor.id, { events });
   }
 
   function _attachTriggerRadiusDrag(el, actorId, eventId, point) {
@@ -914,7 +955,8 @@
     if (e.button !== 0) return;
     if (e.target.closest('.actor-group') ||
         e.target.closest('.yaw-arrow') ||
-        e.target.closest('.trigger-radius-control')) return;
+        e.target.closest('.trigger-radius-control') ||
+        e.target.closest('.trigger-point-control')) return;
 
     _dragging  = true;
     _dragStart = { x: e.clientX, y: e.clientY };
@@ -925,6 +967,10 @@
   }, true);
 
   window.addEventListener('mousemove', e => {
+    if (_triggerPointDrag) {
+      _updateTriggerPointDrag(e);
+      return;
+    }
     if (_triggerRadiusDrag) {
       _updateTriggerRadiusDrag(e);
       return;
@@ -940,6 +986,20 @@
   });
 
   window.addEventListener('mouseup', () => {
+    if (_triggerPointDrag) {
+      const { actorId, eventId, moved } = _triggerPointDrag;
+      _triggerPointDrag = null;
+      if (moved) {
+        ObjectsManager.moveTriggerPoint(actorId, eventId, moved.x, moved.y);
+        // The marker is re-rendered on every mousemove, so by mouseup the
+        // element the drag started on is detached and the browser may not
+        // dispatch a click at all — the flag has to expire on its own or it
+        // swallows an unrelated map click much later (a placement, a waypoint).
+        _suppressNextClick = true;
+        setTimeout(() => { _suppressNextClick = false; }, 50);
+      }
+      return;
+    }
     if (_triggerRadiusDrag) {
       _triggerRadiusDrag = null;
       _suppressNextClick = true;
@@ -989,7 +1049,7 @@
         _shortcutsOverlay.classList.add('hidden');
         return;
       }
-      AppState.set({ activeTool: null, pendingTemplate: null, pendingProp: null, trajectoryMode: false, activeTrajectoryId: null, routeMode: false, activeRouteId: null, activePathEventId: null, triggerPointMode: null });
+      AppState.set({ activeTool: null, pendingTemplate: null, pendingProp: null, trajectoryMode: false, activeTrajectoryId: null, routeMode: false, activeRouteId: null, activePathEventId: null });
       return;
     }
 

@@ -161,7 +161,6 @@
         routeMode: false,
         activeRouteId: null,
         activePathEventId: null,
-        triggerPointMode: null,
       });
       Toast.info(`${template.label}-Template: Akteur auf der Karte platzieren`);
     }

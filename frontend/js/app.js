@@ -91,7 +91,6 @@
     routeMode:           false,  // true while drawing a route
     activeRouteId:       null,   // actor id whose route we're drawing
     activePathEventId:    null,   // event id whose action path/route we're drawing
-    triggerPointMode:    null,   // { actorId, eventId } while picking a distance trigger point
     pendingTemplate:     null,   // scenario template to apply to the next placed actor
     pendingProp:         null,   // CARLA blueprint id to place while activeTool === 'prop'
 
@@ -360,7 +359,6 @@
       this.routeMode       = false;
       this.activeRouteId   = null;
       this.activePathEventId = null;
-      this.triggerPointMode = null;
       this.pendingTemplate = null;
       this.pendingProp     = null;
       this.emit('stateLoaded', data);
