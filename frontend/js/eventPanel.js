@@ -476,9 +476,12 @@
   }
 
   function _eventActorLabel(actorId) {
-    if (AppState.ego && actorId === AppState.ego.id) return 'Ego';
-    const npc = AppState.npcs.find(n => n.id === actorId);
-    return npc ? AppState.actorLabel(npc) : 'Ego';
+    // The short spelling: these sit beside AUTO 1 / FUSSGAENGER 2 in the same
+    // dropdown, so 'EGO' matches their case and width where 'Ego-Fahrzeug'
+    // would not. AppState.actorLabel owns both spellings.
+    const actor = AppState.findById(actorId);
+    return actor ? AppState.actorLabel(actor, { short: true })
+                 : AppState.actorLabel(AppState.ego, { short: true });
   }
 
   function _eventActionSummary(ev, actor) {
@@ -664,7 +667,7 @@
   function _triggerActorOptions(actor) {
     const options = [];
     if (AppState.ego) {
-      options.push([AppState.ego.id, 'Ego']);
+      options.push([AppState.ego.id, AppState.actorLabel(AppState.ego, { short: true })]);
     }
     if (actor?.id && actor.id !== AppState.ego?.id) {
       options.push([actor.id, AppState.actorLabel(actor)]);

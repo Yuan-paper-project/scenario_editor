@@ -127,6 +127,25 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
   overflow: hidden;
 }
 
+/* ── Map view controls (zoom in / out / fit) ─────────────── */
+/* Top-right of the map: the scale ruler owns bottom-left and
+   #map-bottom-stack owns bottom-centre. */
+.map-view-controls {
+  position: absolute; top: 12px; right: 12px; z-index: 6;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.map-view-btn {
+  width: 28px; height: 28px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-dim); cursor: pointer;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 5px;
+  box-shadow: 0 1px 3px rgba(26, 30, 46, .14);
+  transition: color .15s, border-color .15s;
+}
+.map-view-btn:hover { color: var(--accent); border-color: var(--accent); }
+.map-view-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.map-view-btn svg { width: 14px; height: 14px; display: block; }
+
 /* ── Left toolbar ────────────────────────────────────────── */
 #toolbar {
   width: var(--toolbar-w); background: var(--panel);

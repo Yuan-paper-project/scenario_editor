@@ -63,6 +63,24 @@
     },
   ];
 
+  /**
+   * German names for the weather keys and the time-of-day values.
+   *
+   * These are the same words the weather bar prints, and the bar spells them
+   * out in index.html markup — keep the two in step. Anything that reports
+   * weather back to the user (today the scenario summary) reads them from here
+   * rather than printing the raw key, which is how the summary came to say
+   * 'wet_road' underneath a slider labelled 'Nasse Str.'.
+   */
+  const WEATHER_LABELS = {
+    fog: 'Nebel', rainy: 'Regen', cloudy: 'Wolken', sunny: 'Sonne',
+    wet_road: 'Nasse Stra\u00dfe', snowy: 'Schnee', dust_storm: 'Staub',
+  };
+  const TIME_LABELS = {
+    daytime: 'Tags\u00fcber', morning: 'Morgen', noon: 'Mittag',
+    afternoon: 'Nachmittag', dusk: 'D\u00e4mmerung', nighttime: 'Nacht',
+  };
+
   const AppState = {
     // ── Map ──────────────────────────────────────────────────
     map:      null,       // selected town name string
@@ -201,11 +219,20 @@
       return best;
     },
 
-    /** Human-readable actor label, indexed per actor type for NPCs. */
+    /**
+     * Human-readable actor label, indexed per actor type for NPCs.
+     *
+     * The ego has exactly two spellings and this is where both live: prose
+     * ('Ego-Fahrzeug' — panel titles, toasts, validation messages) and `short`
+     * ('EGO' — the map marker, the draw banner and the event dropdowns, where
+     * it sits beside AUTO 1 / FUSSGAENGER 2 and has to match their case and
+     * width). Callers used to pass the spelling in, which is how one vehicle
+     * ended up called Ego-Fahrzeug, EGO, Ego Vehicle and Ego in four places.
+     */
     actorLabel(actorOrId, options = {}) {
       const actor = typeof actorOrId === 'string' ? this.findById(actorOrId) : actorOrId;
-      if (!actor) return options.fallback || 'Actor';
-      if (actor.type === 'ego') return options.ego || 'Ego';
+      if (!actor) return options.fallback || 'Akteur';
+      if (actor.type === 'ego') return options.ego || (options.short ? 'EGO' : 'Ego-Fahrzeug');
 
       // Props are numbered within staticObjects and labelled by prop, not type
       // (every prop has type === 'prop', so the type would carry no meaning).
@@ -222,6 +249,36 @@
         .filter(n => n.type === actor.type)
         .findIndex(n => n.id === actor.id);
       return index >= 0 ? `${type} ${index + 1}` : type;
+    },
+
+    /**
+     * German label for a bare actor type string ('car' -> 'Auto').
+     *
+     * Derived from ACTOR_TYPE_GROUPS rather than a second table, so a type
+     * added to the picker is named correctly everywhere for free. Falls back
+     * to the raw key, which is what the scenario summary used to print for
+     * every type ('car', 'pedestrian') next to a toolbar saying Auto and
+     * Fussgaenger.
+     */
+    WEATHER_LABELS,
+    TIME_LABELS,
+
+    /** German name for a weather key, falling back to the key itself. */
+    weatherLabel(key) { return WEATHER_LABELS[key] || String(key || ''); },
+
+    /** German name for a time-of-day value, falling back to the value itself. */
+    timeLabel(value) { return TIME_LABELS[value] || String(value || ''); },
+
+    typeLabel(type) {
+      if (type === 'ego') return 'Ego-Fahrzeug';
+      if (type === 'prop') return 'Requisite';
+      for (const group of ACTOR_TYPE_GROUPS) {
+        for (const section of group.sections) {
+          const hit = section.types.find(t => t.type === type);
+          if (hit) return hit.label;
+        }
+      }
+      return String(type || '');
     },
 
     // ── Actor type switching ──────────────────────────────────
@@ -409,7 +466,7 @@
   const _confirmOk      = document.getElementById('confirm-ok');
   let _confirmResolve   = null;
 
-  function showConfirm(message, okLabel = 'Delete') {
+  function showConfirm(message, okLabel = 'L\u00f6schen') {
     return new Promise(resolve => {
       _confirmMsg.textContent = message;
       _confirmOk.textContent  = okLabel;

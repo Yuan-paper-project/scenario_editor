@@ -61,7 +61,7 @@
   function _summaryHtml() {
     const hasEgo = !!AppState.ego;
     const npcCount = AppState.npcs.length;
-    const mapName = AppState.map || 'None';
+    const mapName = AppState.map || 'Keine';
     const withTraj = [AppState.ego, ...AppState.npcs]
       .filter(Boolean)
       .filter(a => AppState.pathPointsOf(a).length >= 2).length;
@@ -79,7 +79,7 @@
     if (npcCount > 0) {
       html += '<div class="summary-section">NPC-Aufschlüsselung</div>';
       for (const [type, count] of Object.entries(npcBreakdown)) {
-        html += `<div class="summary-row"><span class="label">${type}</span><span class="value">${count}</span></div>`;
+        html += `<div class="summary-row"><span class="label">${AppState.typeLabel(type)}</span><span class="value">${count}</span></div>`;
       }
     }
 
@@ -98,11 +98,11 @@
     }
 
     html += `<div class="summary-section">Wetter</div>`;
-    html += `<div class="summary-row"><span class="label">Tageszeit</span><span class="value">${AppState.time}</span></div>`;
+    html += `<div class="summary-row"><span class="label">Tageszeit</span><span class="value">${AppState.timeLabel(AppState.time)}</span></div>`;
     const activeWeather = Object.entries(AppState.weather).filter(([, v]) => v > 0);
     if (activeWeather.length > 0) {
       activeWeather.forEach(([k, v]) => {
-        html += `<div class="summary-row"><span class="label">${k.replace('_', ' ')}</span><span class="value">${v.toFixed(2)}</span></div>`;
+        html += `<div class="summary-row"><span class="label">${AppState.weatherLabel(k)}</span><span class="value">${v.toFixed(2)}</span></div>`;
       });
     } else {
       html += `<div class="summary-row"><span class="label">Bedingungen</span><span class="value">Klar</span></div>`;
@@ -497,7 +497,13 @@
   AppState.on('actorRemoved',     () => render());
   AppState.on('stateLoaded',      () => render());
   AppState.on('change',           patch => {
-    if (!AppState.selectedId && ('weather' in patch || 'time' in patch)) _renderOverviewPanel();
+    // 'map'/'mapData' are in here because the summary prints the town name and
+    // used to sit on "Karte: None" from load until some unrelated event forced
+    // a render — which read as intermittent rather than broken.
+    if (!AppState.selectedId
+        && ('weather' in patch || 'time' in patch || 'map' in patch || 'mapData' in patch)) {
+      _renderOverviewPanel();
+    }
     // Entering or leaving draw mode changes which event card is marked as the
     // one the map clicks belong to (eventPanel.js `active-draw`).
     if (AppState.selectedId && 'activePathEventId' in patch) {

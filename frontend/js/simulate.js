@@ -86,10 +86,10 @@
 
   const controlsHtml = `
     <div id="sim-controls" class="sim-controls hidden">
-      <button id="sim-play"  class="btn btn-small btn-primary" title="Play simulation">Play</button>
-      <button id="sim-pause" class="btn btn-small btn-secondary hidden" title="Pause">Pause</button>
-      <button id="sim-stop"  class="btn btn-small btn-danger hidden" title="Stop and reset">Stop</button>
-      <input  id="sim-speed" type="range" min="0.25" max="4" step="0.25" value="1" title="Playback speed">
+      <button id="sim-play"  class="btn btn-small btn-primary" title="Vorschau abspielen">Play</button>
+      <button id="sim-pause" class="btn btn-small btn-secondary hidden" title="Vorschau anhalten">Pause</button>
+      <button id="sim-stop"  class="btn btn-small btn-danger hidden" title="Vorschau beenden und zurücksetzen">Stop</button>
+      <input  id="sim-speed" type="range" min="0.25" max="4" step="0.25" value="1" title="Abspielgeschwindigkeit">
       <span   id="sim-speed-label" class="sim-speed-label">1.0x</span>
       <span   id="sim-time-label"  class="sim-time-label">0.0s</span>
       <div    id="sim-progress-bar" class="sim-progress-bar"><div id="sim-progress-fill" class="sim-progress-fill"></div></div>
@@ -1217,7 +1217,7 @@
     if (_running && ('activeTool' in patch || 'trajectoryMode' in patch || 'routeMode' in patch)) {
       if (AppState.activeTool || AppState.trajectoryMode || AppState.routeMode) {
         _stopSimulation();
-        Toast.info('Simulation stopped — editing resumed');
+        Toast.info('Simulation beendet — Bearbeitung fortgesetzt');
       }
     }
   });

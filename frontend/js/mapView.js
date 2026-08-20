@@ -32,6 +32,23 @@
   let layerTriggerPoints = null;
 
   // ── Pan / zoom state ────────────────────────────────────────────────────────
+  //
+  // `_zoom` is 1.0 when the whole town fills the viewBox (renderMap sets the
+  // viewBox to the CARLA bounds), so the limits below read as "a quarter of the
+  // overview" and "well past lane detail".
+  //
+  // Clamping is not tidiness: `_zoom *= factor` was unbounded, 200 wheel notches
+  // outward reached scale(0.0000087) — map gone, actors gone — and nothing but
+  // renderMap() ever reset the view, so the only way back was a reload, which
+  // discards the scenario. resetView() below is the other half of that fix.
+  const MIN_ZOOM = 0.25;
+  const MAX_ZOOM = 200;
+  const ZOOM_STEP        = 1.12;   // ~26 notches from town view to lane view
+  const ZOOM_STEP_COARSE = 1.40;   // Shift: the same traversal in ~9
+  const ZOOM_TO_SPAN     = 90;     // metres across the view when framing a selection
+
+  const _clampZoom = z => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
+
   let _pan  = { x: 0, y: 0 };
   let _zoom = 1.0;
   let _dragging = false;
@@ -279,6 +296,55 @@
     _pan  = { x: 0, y: 0 };
     _zoom = 1.0;
     _applyTransform();
+  }
+
+  /**
+   * Put a world point at the centre of the view at `zoom`.
+   *
+   * #world is transformed in viewBox units, so centring means placing the point
+   * at the viewBox centre; preserveAspectRatio letterboxes that onto the centre
+   * of the element for free.
+   */
+  function _centreOn(wx, wy, zoom) {
+    const vb = svg.viewBox.baseVal;
+    if (!vb || !vb.width) return false;
+    _zoom = _clampZoom(zoom);
+    _pan.x = (vb.x + vb.width  / 2) - wx * _zoom;
+    _pan.y = (vb.y + vb.height / 2) - wy * _zoom;
+    _applyTransform();
+    return true;
+  }
+
+  /**
+   * Zoom about the centre of the view — what a zoom BUTTON means, as opposed to
+   * the wheel, which zooms about the cursor. Scaling `_zoom` on its own would
+   * zoom about the viewBox origin and walk the map off screen.
+   */
+  function zoomBy(factor) {
+    const vb = svg.viewBox.baseVal;
+    if (!vb || !vb.width) { _zoom = _clampZoom(_zoom * factor); _applyTransform(); return; }
+    const cx = vb.x + vb.width  / 2;
+    const cy = vb.y + vb.height / 2;
+    const wx = (cx - _pan.x) / _zoom;   // world point currently at the centre
+    const wy = (cy - _pan.y) / _zoom;
+    _centreOn(wx, wy, _zoom * factor);
+  }
+
+  /** Reset pan/zoom so the whole map fills the view again. */
+  function resetView() {
+    _fitToView();
+  }
+
+  /**
+   * Frame the selected object at street scale, or reset the view when nothing
+   * is selected — so one control always lands on a view that contains
+   * something. Returns true if it framed a selection.
+   */
+  function zoomToSelection() {
+    const actor = AppState.selectedId ? AppState.findById(AppState.selectedId) : null;
+    if (!actor || actor.x == null || actor.y == null) { resetView(); return false; }
+    const vb = svg.viewBox.baseVal;
+    return _centreOn(actor.x, actor.y, vb && vb.width ? vb.width / ZOOM_TO_SPAN : _zoom);
   }
 
   // ── Crosswalk rendering ────────────────────────────────────────────────────
@@ -735,7 +801,7 @@
   }
 
   function _actorMapLabel(actor) {
-    return AppState.actorLabel(actor, {ego: 'EGO'});
+    return AppState.actorLabel(actor, { short: true });
   }
 
   // lenOverride: props are far smaller than a 4.5 m car, and the actor floor
@@ -1023,18 +1089,33 @@
   // Zoom with mouse wheel
   svg.addEventListener('wheel', e => {
     e.preventDefault();
-    const factor = e.deltaY < 0 ? 1.06 : 1 / 1.06;
+    const step   = e.shiftKey ? ZOOM_STEP_COARSE : ZOOM_STEP;
+    const factor = e.deltaY < 0 ? step : 1 / step;
     const cursor = _clientToSvg(e);
     if (!cursor) return;
 
-    // Keep the world point under the cursor fixed while zooming.
+    // Keep the world point under the cursor fixed while zooming. The pan has to
+    // be derived from the CLAMPED zoom and not the requested one — otherwise
+    // wheeling at either limit stops scaling but keeps translating the map,
+    // which walks it off screen just as effectively as no clamp at all.
     const world = svgToWorld(e);
-    _zoom *= factor;
+    _zoom = _clampZoom(_zoom * factor);
     _pan.x = cursor.x - world.x * _zoom;
     _pan.y = cursor.y - world.y * _zoom;
 
     _applyTransform();
   }, { passive: false });
+
+  // ── Map view controls ──────────────────────────────────────────────────────
+  // Buttons zoom about the view centre; the wheel zooms about the cursor.
+  document.getElementById('btn-zoom-in')
+    ?.addEventListener('click', () => zoomBy(ZOOM_STEP_COARSE));
+  document.getElementById('btn-zoom-out')
+    ?.addEventListener('click', () => zoomBy(1 / ZOOM_STEP_COARSE));
+  document.getElementById('btn-zoom-fit')
+    ?.addEventListener('click', () => {
+      Toast.info(zoomToSelection() ? 'Auf Auswahl gezoomt' : 'Ansicht zur\u00fcckgesetzt');
+    });
 
   // Keyboard shortcuts
   const _shortcutsOverlay = document.getElementById('shortcuts-overlay');
@@ -1068,10 +1149,18 @@
       return;
     }
 
+    // F — frame the selection, or reset the view when nothing is selected.
+    // Together with the zoom clamp this is the way back from a view that no
+    // longer contains the map.
+    if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      Toast.info(zoomToSelection() ? 'Auf Auswahl gezoomt' : 'Ansicht zur\u00fcckgesetzt');
+      return;
+    }
+
     // Shift+R — clear all ruler measurements
     if (e.key === 'R' && !e.ctrlKey && !e.metaKey) {
       _clearAllRulers();
-      Toast.info('All measurements cleared');
+      Toast.info('Alle Messungen gel\u00f6scht');
       return;
     }
 
@@ -1079,7 +1168,7 @@
     if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
       e.preventDefault();
       const entry = UndoStack.pop();
-      if (!entry) { Toast.info('Nothing to undo'); return; }
+      if (!entry) { Toast.info('Nichts r\u00fcckg\u00e4ngig zu machen'); return; }
       if (entry.action === 'delete') {
         const actor = entry.actor;
         if (actor.type === 'ego') {
@@ -1093,7 +1182,7 @@
         }
         AppState.select(actor.id);
         MapView.renderAllActors();
-        Toast.success(`Restored ${AppState.actorLabel(actor, { ego: 'EGO' })}`);
+        Toast.success(`${AppState.actorLabel(actor)} wiederhergestellt`);
       }
       return;
     }
@@ -1103,10 +1192,10 @@
       const actor = AppState.findById(AppState.selectedId);
       if (actor) {
         UndoStack.push({ action: 'delete', actor: JSON.parse(JSON.stringify(actor)) });
-        const label = AppState.actorLabel(actor, { ego: 'Ego Vehicle' });
+        const label = AppState.actorLabel(actor);
         AppState.removeById(AppState.selectedId);
         MapView.renderAllActors();
-        Toast.info(`Deleted ${label} \u2014 Ctrl+Z to undo`);
+        Toast.info(`${label} gel\u00f6scht \u2014 Strg+Z zum R\u00fcckg\u00e4ngigmachen`);
       }
     }
   });
@@ -1118,6 +1207,8 @@
   function _setupLayerToggles() {
     // Show toggle bar once a map is loaded
     layerTogglesEl.classList.remove('hidden');
+    // Same gate for the zoom cluster: neither means anything without a map.
+    document.getElementById('map-view-controls')?.classList.remove('hidden');
 
     const pairs = [
       { id: 'toggle-crosswalks',     get layer() { return layerCrosswalks; } },
@@ -1313,6 +1404,10 @@
     renderMap,
     renderAllActors,
     svgToWorld,
+    resetView,
+    zoomToSelection,
+    zoomBy,
+    get zoom() { return _zoom; },
     get svg() { return svg; },
     toggleTrajectoryVisibility(actorId, eventId = null) {
       const key = _pathKey(actorId, eventId, 'trajectory');

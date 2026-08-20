@@ -432,7 +432,7 @@
     if (!active) return;
 
     const actor = AppState.findById(next.actorId);
-    const name = actor ? AppState.actorLabel(actor, { ego: 'EGO' }) : next.actorId;
+    const name = actor ? AppState.actorLabel(actor, { short: true }) : next.actorId;
     trajBannerText.innerHTML =
       `${next.type === 'route' ? 'Route' : 'Pfad'} für <strong></strong> zeichnen — auf die Karte klicken, um Wegpunkte zu setzen`;
     trajBannerText.querySelector('strong').textContent = name;
