@@ -298,7 +298,6 @@
     if (!actor) return;
     const label = AppState.actorLabel(actor, { ego: 'Ego-Fahrzeug' });
     if (!skipConfirm && !await Confirm.show(`${label} löschen?`, 'Löschen')) return;
-    UndoStack.push({ action: 'delete', actor: JSON.parse(JSON.stringify(actor)) });
     AppState.removeById(id);
     if (_locatedId === id) _locatedId = null;
     MapView.renderAllActors();
@@ -312,18 +311,19 @@
     const name = window.PropCatalog?.label(blueprint) || blueprint;
     if (!skipConfirm
         && !await Confirm.show(`Alle ${items.length} × ${name} löschen?`, 'Löschen')) return;
-    // One undo entry per prop rather than a new bulk entry shape: UndoStack only
-    // understands a single {action:'delete', actor}, so N presses of Strg+Z put
-    // them back one at a time. Deliberate — see the toast.
-    items.forEach(p => UndoStack.push({ action: 'delete', actor: JSON.parse(JSON.stringify(p)) }));
     items.forEach(p => { if (_locatedId === p.id) _locatedId = null; });
-    AppState.staticObjects = AppState.staticObjects.filter(p => p.prop !== blueprint);
+    // One entry for the whole bulk delete. It used to push one per prop, so a
+    // taper of twelve cones took twelve presses of Strg+Z to put back; the
+    // history holds whole scenario states now, so the group can be atomic.
+    UndoStack.group(`${items.length} × ${name} löschen`, () => {
+      AppState.staticObjects = AppState.staticObjects.filter(p => p.prop !== blueprint);
+      if (AppState.selectedId && !AppState.findById(AppState.selectedId)) AppState.selectedId = null;
+      AppState.set({});              // empty patch: the array-mutation signal
+    });
     delete _propCursor[blueprint];
-    if (AppState.selectedId && !AppState.findById(AppState.selectedId)) AppState.selectedId = null;
-    AppState.set({});                // empty patch: the array-mutation signal
     MapView.renderAllActors();
     render();
-    Toast.info(`${items.length} × ${name} gelöscht — Strg+Z macht sie einzeln rückgängig`);
+    Toast.info(`${items.length} × ${name} gelöscht — Strg+Z macht sie zusammen rückgängig`);
   }
 
   function _bindSceneList(root) {
@@ -753,7 +753,6 @@
     // trashes \u2014 one modifier, one meaning, everywhere a delete is guarded.
     const ok = e.shiftKey || await Confirm.show(`${label} l\u00f6schen?`, 'L\u00f6schen');
     if (!ok) return;
-    UndoStack.push({ action: 'delete', actor: JSON.parse(JSON.stringify(actor)) });
     AppState.removeById(id);
     MapView.renderAllActors();
     render();

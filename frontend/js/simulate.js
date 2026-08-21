@@ -1109,6 +1109,11 @@
       if (!_prepareSimulation()) return;
       _simTime = 0;
       _running = true;
+      // The preview drives the real actors' poses through AppState.updateById
+      // on every tick (see _tick), and _stopSimulation puts the originals back
+      // the same way. None of that is an edit: without this a single run would
+      // push hundreds of entries and bury the user's actual history.
+      UndoStack.suspend();
     }
     _paused = false;
     _lastFrame = performance.now();
@@ -1135,6 +1140,11 @@
   }
 
   function _stopSimulation() {
+    // Balances the suspend() in _startSimulation. Read before the flag is
+    // cleared: Stop is also reachable when nothing is running (the editing
+    // handler below calls this unconditionally), and resuming then would
+    // decrement a suspension this module never took.
+    const wasRunning = _running;
     _running = false;
     _paused = false;
     if (_animId) cancelAnimationFrame(_animId);
@@ -1154,6 +1164,9 @@
     btnStop.classList.add('hidden');
     timeLabel.textContent = '0.0s';
     progressFill.style.width = '0%';
+
+    // After the originals are back, so the restore is not recorded either.
+    if (wasRunning) UndoStack.resume();
 
     MapView.renderAllActors();
   }

@@ -38,7 +38,24 @@
   }
 
   function update(id, patch) {
-    if (!actionById(id)) return;
+    const current = actionById(id);
+    if (!current) return;
+    // The one scenario mutation in the app that does not go through
+    // AppState.set/updateById/removeById, so it is also the one the undo
+    // history cannot capture on its own — and every signal-event edit in
+    // properties.js lands here, so this single call covers them all.
+    //
+    // Recorded unconditionally, like every other scenario edit: an edit that is
+    // skipped is not merely un-undoable, it is destroyed by the next undo,
+    // because the entry pushed after it describes a world where it never
+    // happened. Signal events are edited from inside an `.event-card` like an
+    // actor's, so app.js's seal rule already folds a card's controls into one
+    // undo step.
+    const next = (patch.events || []).length;
+    const prev = (current.events || []).length;
+    UndoStack.record(next > prev ? 'Event hinzugefügt'
+                   : next < prev ? 'Event gelöscht'
+                                 : 'Event bearbeitet');
     AppState.trafficSignals = AppState.trafficSignals.map(signal => (
       String(signal.id) === String(id) ? { ...signal, ...patch } : signal
     ));

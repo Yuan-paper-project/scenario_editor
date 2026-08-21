@@ -474,7 +474,7 @@ out; props carry a separate invisible hit circle, so clickability is not the blo
 
 - **The `Übersicht` tab is a scene list, and its single click does not select.** `_sceneListHtml` (`properties.js`) renders one `.scene-row` per scenario actor — ego first, then a collapsible `NPCs` section — carrying the map's own colour swatch, `actorLabel(actor, { short: true })`, the event count and the `.event-warn` chip from `ScenarioRules.problemsOf`. **Click flies the map to the actor without selecting it** (`MapView.focusActor`), **double-click or `Enter` selects**; `Space` re-locates and the arrow keys walk the rows. The split is load-bearing, not a preference: the overview panel is only rendered while *nothing* is selected, so a selecting single click would close the list on the first row and you could never walk down it. Selection is the deliberate gesture because it swaps the whole panel out.
   - **Props are counted per type, never listed per object.** A cone taper is a dozen entries differing only in position and would push the actors off the panel. One `.scene-prop-row` per **blueprint** carries a stepper (`◀ n/N ▶`, also the ←/→ keys on a focused row) that walks that type's instances; the row's `data-scene-id` is whichever instance the stepper points at, so click/double-click/delete all act on *that* one. `_propCursor` is clamped at render time rather than maintained on delete — props are also added and removed by the map and the toolbar, which never touch it.
-  - **Every row has a delete, rightmost, and on a prop row there are two with different blast radii.** `✕` sits with the stepper and takes the instance; the trash (`.scene-del-all`, behind a divider) takes the whole type. **At `count === 1` the row collapses to a single instance-trash** — the two would otherwise do the same thing and the bulk one would have to say “Alle 1 × …”; `.scene-del-spacer` holds the `✕` column open so the trashes stay aligned. What actually makes this safe is not the icons but that **both confirm and the confirm text names the target** (`LEITKEGEL 3 löschen?` vs `Alle 6 × Leitkegel löschen?`). A bulk delete pushes **one `UndoStack` entry per prop**, so `Strg+Z` restores them one at a time — the stack only understands a single `{action:'delete', actor}` and the toast says so.
+  - **Every row has a delete, rightmost, and on a prop row there are two with different blast radii.** `✕` sits with the stepper and takes the instance; the trash (`.scene-del-all`, behind a divider) takes the whole type. **At `count === 1` the row collapses to a single instance-trash** — the two would otherwise do the same thing and the bulk one would have to say “Alle 1 × …”; `.scene-del-spacer` holds the `✕` column open so the trashes stay aligned. What actually makes this safe is not the icons but that **both confirm and the confirm text names the target** (`LEITKEGEL 3 löschen?` vs `Alle 6 × Leitkegel löschen?`). A bulk delete is wrapped in `UndoStack.group()` and is therefore **one** undo entry, so a taper of twelve cones comes back on one `Strg+Z`.
   - **Every delete confirms, and Shift is the app-wide "skip the confirm" modifier.** It is honoured by `Entf`/`Backspace` (`mapView.js`), by every scene-list trash and the prop `✕`, and by `#props-delete` in the properties header; each button carries it in its `title`. The `Entf` path used to delete outright — it was the one unguarded delete in the app — so it now awaits `Confirm.show` and **re-reads the object in the callback** rather than trusting the id it captured, since the selection can move while the dialog is open.
   - `_sceneCollapsed` and `_locatedId` are module-local in `properties.js` **because `_renderOverviewPanel` rebuilds its `innerHTML` wholesale** — a collapsed section held only in the DOM springs back open the moment a prop is placed. Anything else the scene list needs to remember goes there too.
   - The summary above the list no longer prints `Ego-Fahrzeug` / `NPCs` / `Requisiten` counts or the NPC breakdown; the list is the same numbers with the objects reachable behind them. `Karte`, `Akteure mit Pfad` and the `Wetter` block stayed — the list cannot show those.
@@ -482,6 +482,89 @@ out; props carry a separate invisible hit circle, so clickability is not the blo
 - The left toolbar is **tabbed** (`Akteure` | `Requisiten`, `data-toolbar-tab`). `toolbar.js` uses **event delegation** on `#toolbar`, not a load-time `.tool-btn` snapshot — prop tiles are rendered at runtime and a snapshot would silently miss them. Tab state is module-local, matching `_overviewPanelTab` in `properties.js`.
 - Props reuse the `.actor-group` class (plus `.prop-group`), which gives them selection, body-drag and the `mapView.js` pan-exclusion list for free. If you add a new draggable map object, do the same rather than adding a class to three separate `closest()` checks.
 - Use `Toast.success/error/warn/info` for feedback (there are no `alert()` calls) and `await Confirm.show(msg)` for destructive actions. The dialog answers to **`Enter` = confirm, `Esc` = cancel** from anywhere, via a **capture-phase** `keydown` in `app.js` that `stopPropagation`s — without capture, `Esc` would also cancel the tool or the path being drawn *behind* the dialog, and `Enter` would reach the finish-path shortcut. `Confirm.isOpen` is there so other key handlers can stand down; `objects.js`'s `Enter` handler checks it.
+
+### Undo is snapshot-based and captured automatically
+
+`UndoStack` (`app.js`) holds whole **scenario states**, not edit descriptions. It
+used to hold one deleted actor per entry, and the failure mode was worse than a
+missing feature: `Strg+Z` after a misplaced *drag* popped an unrelated delete
+from earlier in the session and resurrected that actor, while the drag stood.
+
+- **Capture is automatic, at `AppState.set` / `updateById` / `removeById`.** Every
+  scenario edit in the app goes through one of those, so placement, both drags,
+  the Spawnpunkt fields, type swaps, event add/delete and templates are covered
+  without a call at the site — and so is anything added later. **The one
+  exception is `TrafficSignals.update()`**, which rewrites
+  `AppState.trafficSignals` directly; it calls `UndoStack.record()` itself. A new
+  mutation path that bypasses the three mutators must do the same.
+- **Everything in the snapshot must be recorded.** This is the rule the whole
+  design turns on, and it is not obvious: an edit that is *skipped* is not merely
+  un-undoable, it is **destroyed by the next undo**, because the entry pushed
+  after it describes a world where it never happened. Skipping event tweaks made
+  "add event A, retune event B, `Strg+Z`" silently throw the retune away. The way
+  to keep something out of undo is to keep it out of the **snapshot** — which is
+  what `weather`/`time` do, and why they cause no such problem — never to stop
+  recording something the snapshot contains.
+- **Noise is handled by coalescing, not by exclusion.** An `{events}` patch keys
+  on the id of the one event it changed plus what kind of change it is
+  (`_eventsPatchInfo`), and `_sealUnlessInEventCard` skips the seal inside a
+  `.event-card` — so every control in one card folds into a single undo step,
+  while a different card, or deleting the card being edited, starts its own. The
+  changed event is found by **reference identity**, not by comparing contents:
+  every mutation site rebuilds the array with `.map()`, so untouched events are
+  the same objects, which keeps this free on the trigger-point drag (one patch
+  per mousemove against a possibly-huge trajectory).
+- **A path mutator must copy the points array, never write through to it.**
+  `_eventPath` (`objects.js`) returns the *live* `action.trajectory`/`waypoints`,
+  so `path.push(point)` changed the actor before `updateById` was told —
+  the patch then equalled the state it was patching, `_isNoOpPatch` scored it a
+  no-op, and the waypoint was silently unrecordable. `_addPathPoint`,
+  `deletePathPoint` and `setPathPointVelocity` all build a new array. Relatedly,
+  `_setEventPath` now goes through `updateById` rather than assigning
+  `actor.events` directly: as the one scenario mutation reaching neither of
+  AppState's mutators, it left the baseline stale, and undoing an unrelated
+  rotate wiped a five-point trajectory that had been drawn after it.
+- Each waypoint click is its own entry, so `Strg+Z` while drawing removes one
+  waypoint — the same granularity as the banner's own *Rückgängig* button.
+- **Scope is the scenario objects only** — `ego`, `npcs`, `staticObjects`,
+  `trafficSignals` and their events, plus `selectedId`/`selectedTrafficLightId` so
+  the panel follows the undo. `map`/`mapData` are out (undoing a town switch would
+  need an async re-fetch on the undo path) and so are `weather`/`time` (a global
+  setting rather than an edit — and the weather sliders are the only controls in
+  the app that fire on `input` rather than `change`, so they would need their own
+  coalescing).
+- **What gets pushed is `_baseline`, not a snapshot taken at record time.** The
+  placement paths mutate the array *first* and only then announce it
+  (`AppState.npcs = [...]; AppState.set({})`), so when `set()` runs the "before"
+  state is already gone. `_settle()` re-reads the baseline after each mutation
+  instead. Get this wrong and placements undo to themselves — which is exactly
+  what the first cut did.
+- **Coalescing is by `kind`**: `id + sorted patch keys` for `updateById`, so a
+  drag's dozens of same-shaped calls are one entry. `seal()` ends a run and is
+  bound to `change` and `mousedown` in the **capture** phase, which is what keeps
+  two deliberate Spawnpunkt edits apart — `_onPosChange` sends all four of
+  `x/y/z/yaw` every time, so both produce an identical key. A patch that changes
+  nothing records nothing (`_isNoOpPatch`), or blurring a field would push a step
+  that undoes to where it started.
+- **`suspend()`/`resume()` is for code that writes poses without editing.** The
+  preview does this on every tick (`simulate.js` `_startSimulation` /
+  `_stopSimulation`, balanced on a `wasRunning` flag) — unsuspended, one run
+  buries the history. The drag's mouseup z-fixup (`objects.js`) uses it too: the
+  drag's entry already holds the pre-drag z, and a separate entry would undo the
+  height without the position. `resume()` re-reads the baseline on the way out,
+  so whatever ran underneath is invisible rather than merely unrecorded.
+- **Both directions deep-copy.** `AppState.toJSON()` is *not* a deep copy —
+  `_dumpActor` spreads each event, so an action's `trajectory`/`waypoints` array
+  stays shared with the live state — and `updateById` mutates actors in place with
+  `Object.assign`. So `_snapshot` and `_apply` both JSON round-trip, or the
+  history silently rewrites itself.
+- **`Strg+Z` is ignored while a field has focus** (`mapView.js`'s `inInput`
+  guard): the browser's own text undo owns the keystroke there. Redo is
+  `Strg+Umschalt+Z` or `Strg+Y`. `loadJSON` clears both stacks — restoring a
+  pre-load scenario would leave it beside the map, weather and time from the file.
+- Depth is `MAX_HISTORY` (100) — raised from 50 once waypoints started recording,
+  since one long path would otherwise evict every placement behind it.
+  `tests/test_undo_e2e.py` pins all of the above.
 - **`Enter` finishes a path or route being drawn** (`objects.js`, same code path as the banner's *Fertig*); `Esc` still cancels. It is bound in `objects.js` rather than `mapView.js`'s keydown because `_finishPathMode` and the banner both live there. Remember `_discardIncompletePath` still applies — finishing under 2 waypoints deletes the event.
 - **UI-facing strings are German; code, comments, and identifiers are English.** Match this when adding UI. `tests/` assert on German labels in several places, so a rename is not cosmetic.
 - **`AppState.actorLabel` owns the ego's two spellings; never pass one in.** Prose is `Ego-Fahrzeug` (panel titles, toasts, validation messages) and `{ short: true }` is `EGO` (map marker, draw banner, event dropdowns, scene-list rows — where it sits beside `CAR 1` and has to match their case and width; note the short form uppercases the **raw type**, so it is `CAR 1`, not the German `AUTO 1` the toolbar shows, and `test_actor_types_e2e.py` asserts exactly that). Callers used to pass the string, which is how one vehicle came to be called `Ego-Fahrzeug`, `EGO`, `Ego Vehicle` and `Ego` in four places. The `fallback` for an unresolvable id is `Akteur`.
@@ -752,7 +835,7 @@ bash run.sh 9090                 # terminal 1
 bash tests/run_tests.sh          # terminal 2 (EDITOR_URL overrides the target)
 ```
 
-That runs `test_normalization.py` (101 checks, no browser or server needed), then `compare_xodr_lane_graph.py` (also no browser/server/CARLA — validates `backend/lane_graph_builder.py` against the 8 committed probed graphs), then the eight Playwright suites: props (54), prop yaw (23), templates (159), events (60), ego events (75), actor types (260, grows with the catalogue), elevation (33), route fidelity (9). All but the first two drive a real browser against a real server and a real export. **Restart the editor first if you changed `../llm-scenario-gen`** — otherwise the frontend shows new catalogue data while the backend exports the old, which looks like a test bug and is not one.
+That runs `test_normalization.py` (101 checks, no browser or server needed), then `compare_xodr_lane_graph.py` (also no browser/server/CARLA — validates `backend/lane_graph_builder.py` against the 8 committed probed graphs), then the nine Playwright suites: props (54), prop yaw (23), templates (159), events (60), ego events (75), actor types (260, grows with the catalogue), elevation (33), route fidelity (9), undo (44). All but the first two drive a real browser against a real server and a real export. **Restart the editor first if you changed `../llm-scenario-gen`** — otherwise the frontend shows new catalogue data while the backend exports the old, which looks like a test bug and is not one.
 
 `test_ego_events_e2e.py` is kept separate from `test_events_e2e.py` rather than folded in: the older suite's `EGO` fixture and every one of its assertions assume an inert ego (no events), which was true before the ego became a controllable actor and is the entire premise the new suite tests against.
 

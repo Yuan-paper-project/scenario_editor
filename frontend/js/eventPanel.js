@@ -111,10 +111,16 @@
         const currentEvents = actor.events || [];
         const newEvent = _defaultEvent(actor, actionType, isPathAction);
         const events = isPathAction ? [newEvent, ...currentEvents] : [...currentEvents, newEvent];
-        AppState.updateById(actor.id, { events });
-        if (isPathAction) {
-          ObjectsManager.startPathMode(actor.id, actionType === 'assign_route' ? 'route' : 'trajectory', newEvent.id);
-        }
+        // One undo entry for the whole click. A path action also seeds waypoint
+        // 1 with the actor's own pose (startPathMode), which is a second
+        // `{events}` patch — ungrouped, Strg+Z would leave the event in place
+        // with an empty path rather than removing what the click created.
+        UndoStack.group('Event hinzugefügt', () => {
+          AppState.updateById(actor.id, { events });
+          if (isPathAction) {
+            ObjectsManager.startPathMode(actor.id, actionType === 'assign_route' ? 'route' : 'trajectory', newEvent.id);
+          }
+        });
       });
       eventActionGrid.appendChild(btn);
     });

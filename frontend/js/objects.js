@@ -387,9 +387,16 @@
       if (_dragState.type === 'actor') {
         const actor = AppState.findById(_dragState.actorId);
         if (actor) {
+          // Not recorded: the drag's own undo entry was taken before the first
+          // mousemove and already holds the pre-drag z. Left unsuspended this
+          // would be a second entry — different patch keys, so it does not
+          // coalesce — and one Strg+Z would put the height back without the
+          // position.
+          UndoStack.suspend();
           AppState.updateById(actor.id, {
             z: _surfaceZFor(actor.type, actor.x, actor.y, actor.prop),
           });
+          UndoStack.resume();
         }
       }
       _dragState = null;
@@ -505,7 +512,6 @@
     const path = actor ? _eventPath(actor, eventId, type) : null;
     if (!path?.length) return;
     _setEventPath(actor, eventId, type, path.slice(0, -1));
-    AppState.emit('actorUpdated', id);
   });
 
   function _finishPathMode() {
@@ -527,7 +533,7 @@
   }
 
   function _setEventPath(actor, eventId, type, points) {
-    actor.events = (actor.events || []).map(ev => {
+    const events = (actor.events || []).map(ev => {
       if (ev.id !== eventId) return ev;
       const action = ev.action || { type: type === 'route' ? 'assign_route' : 'follow_trajectory' };
       return {
@@ -537,6 +543,13 @@
           : { ...action, type: 'follow_trajectory', trajectory: points },
       };
     });
+    // Through updateById, not `actor.events = …` directly. This used to be the
+    // one scenario mutation in the app that reached neither of AppState's
+    // mutators, which put it outside the undo history in the worst possible
+    // way: not merely un-undoable, but *destroyed* by the next undo, because
+    // the entry pushed after it described a world where the path was never
+    // drawn. Undoing an unrelated rotate wiped a five-point trajectory.
+    AppState.updateById(actor.id, { events });
   }
 
   function startPathMode(actorId, type, eventId = null) {
@@ -585,9 +598,12 @@
         ? path[path.length - 1].velocity
         : 10.0;
     }
-    path.push(point);
-    _setEventPath(actor, eventId, type, path);
-    AppState.emit('actorUpdated', actorId);
+    // A NEW array, not path.push(). _eventPath returns the live
+    // action.trajectory/waypoints, so mutating it in place would change the
+    // actor before updateById is told about it — the patch would then be
+    // identical to the state it is patching, the undo history would score it a
+    // no-op, and the waypoint would not be undoable.
+    _setEventPath(actor, eventId, type, [...path, point]);
   }
 
   /**
@@ -656,9 +672,8 @@
     const actor = _findActor(actorId);
     const path = actor ? _eventPath(actor, eventId, type) : null;
     if (!actor || !path) return;
-    path.splice(idx, 1);
-    _setEventPath(actor, eventId, type, path);
-    AppState.emit('actorUpdated', actorId);
+    // Copy rather than splice the live array — see _addPathPoint.
+    _setEventPath(actor, eventId, type, path.filter((_, i) => i !== idx));
   }
 
   function setPathPointVelocity(actorId, type, idx, velocity, eventId = null) {
@@ -666,16 +681,16 @@
     const actor = _findActor(actorId);
     const path = actor ? _eventPath(actor, eventId, type) : null;
     if (!actor || !path?.[idx]) return;
-    path[idx].velocity = parseFloat(velocity) || 10.0;
-    _setEventPath(actor, eventId, type, path);
-    AppState.emit('actorUpdated', actorId);
+    // Copy rather than write through to the live point — see _addPathPoint.
+    _setEventPath(actor, eventId, type, path.map((pt, i) => (
+      i === idx ? { ...pt, velocity: parseFloat(velocity) || 10.0 } : pt
+    )));
   }
 
   function clearPath(actorId, type, eventId = null) {
     const actor = _findActor(actorId);
     if (!actor || !eventId) return;
     _setEventPath(actor, eventId, type, []);
-    AppState.emit('actorUpdated', actorId);
   }
 
   // ── Public interface ─────────────────────────────────────────────────────────

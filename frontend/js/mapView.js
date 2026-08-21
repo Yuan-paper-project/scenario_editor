@@ -1248,26 +1248,32 @@
       return;
     }
 
-    // Ctrl+Z — undo last delete
-    if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+    // Ctrl+Z / Ctrl+Shift+Z — undo and redo any scenario edit.
+    //
+    // UndoStack.undo() restores its snapshot and emits the re-render signals
+    // itself, so there is nothing to reconstruct here. This handler used to
+    // rebuild the deleted actor by hand, because the stack held one deleted
+    // actor per entry and understood no other kind of edit.
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
       e.preventDefault();
-      const entry = UndoStack.pop();
-      if (!entry) { Toast.info('Nichts r\u00fcckg\u00e4ngig zu machen'); return; }
-      if (entry.action === 'delete') {
-        const actor = entry.actor;
-        if (actor.type === 'ego') {
-          AppState.set({ ego: actor });
-        } else if (actor.type === 'prop') {
-          AppState.staticObjects = [...AppState.staticObjects, actor];
-          AppState.set({});
-        } else {
-          AppState.npcs = [...AppState.npcs, actor];
-          AppState.set({});
-        }
-        AppState.select(actor.id);
-        MapView.renderAllActors();
-        Toast.success(`${AppState.actorLabel(actor)} wiederhergestellt`);
+      const wantRedo = e.shiftKey;
+      const step = wantRedo ? UndoStack.redo() : UndoStack.undo();
+      if (!step) {
+        Toast.info(wantRedo ? 'Nichts zu wiederholen' : 'Nichts r\u00fcckg\u00e4ngig zu machen');
+        return;
       }
+      const verb = wantRedo ? 'Wiederholt' : 'R\u00fcckg\u00e4ngig';
+      Toast.info(step.label ? `${verb}: ${step.label}` : verb);
+      return;
+    }
+
+    // Ctrl+Y — redo, for the keyboards that expect it there.
+    if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+      e.preventDefault();
+      const step = UndoStack.redo();
+      Toast.info(step
+        ? (step.label ? `Wiederholt: ${step.label}` : 'Wiederholt')
+        : 'Nichts zu wiederholen');
       return;
     }
 
@@ -1288,7 +1294,6 @@
         // actor: it can be deleted, or the selection moved, while it was open.
         const still = AppState.findById(id);
         if (!still) return;
-        UndoStack.push({ action: 'delete', actor: JSON.parse(JSON.stringify(still)) });
         AppState.removeById(id);
         MapView.renderAllActors();
         Toast.info(`${label} gelöscht — Strg+Z zum Rückgängigmachen`);
