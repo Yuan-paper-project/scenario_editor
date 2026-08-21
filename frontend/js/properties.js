@@ -143,7 +143,7 @@
         <span class="scene-meta">${events} Event${events === 1 ? '' : 's'}</span>
         ${warn}
         <button type="button" class="scene-del" data-scene-del="${_esc(actor.id)}"
-                title="${_esc(label)} löschen (Shift: ohne Rückfrage)"
+                title="${_esc(label)} löschen (Strg: ohne Rückfrage)"
                 aria-label="${_esc(label)} löschen">${TRASH_SVG}</button>
       </div>`;
   }
@@ -194,14 +194,14 @@
     // the trash in the same grid column as every other row's.
     const deletes = count > 1
       ? `<button type="button" class="scene-del scene-del-one" data-scene-del="${_esc(current.id)}"
-                 title="${_esc(currentLabel)} löschen (Shift: ohne Rückfrage)"
+                 title="${_esc(currentLabel)} löschen (Strg: ohne Rückfrage)"
                  aria-label="${_esc(currentLabel)} löschen">&#10005;</button>
          <button type="button" class="scene-del scene-del-all" data-prop-del-all="${_esc(blueprint)}"
-                 title="Alle ${count} × ${_esc(name)} löschen (Shift: ohne Rückfrage)"
+                 title="Alle ${count} × ${_esc(name)} löschen (Strg: ohne Rückfrage)"
                  aria-label="Alle ${count} ${_esc(name)} löschen">${TRASH_SVG}</button>`
       : `<span class="scene-del-spacer" aria-hidden="true"></span>
          <button type="button" class="scene-del" data-scene-del="${_esc(current.id)}"
-                 title="${_esc(currentLabel)} löschen (Shift: ohne Rückfrage)"
+                 title="${_esc(currentLabel)} löschen (Strg: ohne Rückfrage)"
                  aria-label="${_esc(currentLabel)} löschen">${TRASH_SVG}</button>`;
 
     return `
@@ -343,12 +343,13 @@
         return;
       }
       // Every control below sits inside a row whose own click means "locate",
-      // so each one has to claim the event before it gets there. Shift is the
-      // app-wide "I meant it" modifier: it skips the confirm dialog.
+      // so each one has to claim the event before it gets there. Strg (Cmd on a
+      // Mac) is the app-wide "I meant it" modifier: it skips the confirm dialog.
+      const skip = e.ctrlKey || e.metaKey;
       const delAll = e.target.closest('[data-prop-del-all]');
-      if (delAll) { _deleteAllProps(delAll.dataset.propDelAll, e.shiftKey); return; }
+      if (delAll) { _deleteAllProps(delAll.dataset.propDelAll, skip); return; }
       const del = e.target.closest('[data-scene-del]');
-      if (del) { _deleteFromScene(del.dataset.sceneDel, e.shiftKey); return; }
+      if (del) { _deleteFromScene(del.dataset.sceneDel, skip); return; }
       const step = e.target.closest('[data-prop-step]');
       if (step) { _stepProp(step.dataset.propBp, Number(step.dataset.propStep)); return; }
 
@@ -372,6 +373,11 @@
         e.preventDefault();
         AppState.select(row.dataset.sceneId);
       } else if (e.key === ' ') {
+        // Only a row the user actually keyboard-focused owns Space; a row left
+        // focused by a click does not, or Space would re-locate what that click
+        // already located instead of starting the preview (simulate.js reads
+        // the same predicate, and defers to the preventDefault below).
+        if (!UIUtils.keyboardFocused(row)) return;
         e.preventDefault();
         _locateScene(root, row.dataset.sceneId);
       } else if (bp && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
@@ -749,9 +755,9 @@
     const actor = AppState.findById(id);
     if (!actor) return;
     const label = AppState.actorLabel(actor, { ego: 'Ego-Fahrzeug' });
-    // Shift skips the confirm here exactly as it does on the scene list's
-    // trashes \u2014 one modifier, one meaning, everywhere a delete is guarded.
-    const ok = e.shiftKey || await Confirm.show(`${label} l\u00f6schen?`, 'L\u00f6schen');
+    // Strg (Cmd on a Mac) skips the confirm here exactly as it does on the scene
+    // list's trashes \u2014 one modifier, one meaning, everywhere a delete is guarded.
+    const ok = e.ctrlKey || e.metaKey || await Confirm.show(`${label} l\u00f6schen?`, 'L\u00f6schen');
     if (!ok) return;
     AppState.removeById(id);
     MapView.renderAllActors();

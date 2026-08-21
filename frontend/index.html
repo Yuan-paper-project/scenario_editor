@@ -294,7 +294,7 @@
         <!-- Icon, not a filled red button: it used to be the loudest element in
              the panel. Confirm.show() still guards the actual delete. -->
         <button id="props-delete" class="icon-btn-danger" type="button"
-                title="Objekt löschen (Entf)" aria-label="Objekt löschen">
+                title="Objekt löschen (Entf) — Strg: ohne Rückfrage" aria-label="Objekt löschen">
           <svg viewBox="0 0 16 16" aria-hidden="true">
             <path d="M6.5 2h3M2.5 4.5h11M4.5 4.5l.7 8.2a1 1 0 0 0 1 .8h3.6a1 1 0 0 0 1-.8l.7-8.2M6.7 7v4M9.3 7v4"
                   fill="none" stroke="currentColor" stroke-width="1.3"
@@ -523,6 +523,7 @@
     <div class="welcome-shortcuts">
       <span class="shortcut-pill"><kbd>Esc</kbd> Abbrechen</span>
       <span class="shortcut-pill"><kbd>Enter</kbd> Pfad beenden</span>
+      <span class="shortcut-pill"><kbd>Leertaste</kbd> Vorschau</span>
       <span class="shortcut-pill"><kbd>Entf</kbd> Löschen</span>
       <span class="shortcut-pill"><kbd>Strg+Z</kbd> Rückgängig</span>
       <span class="shortcut-pill"><kbd>Strg+Shift+Z</kbd> Wiederholen</span>
@@ -547,9 +548,11 @@
     <h2>Tastaturkürzel</h2>
     <div class="shortcut-row"><span>Werkzeug / Trajektorie abbrechen</span><span class="shortcut-key">Esc</span></div>
     <div class="shortcut-row"><span>Ausgewählten Akteur löschen (mit Rückfrage)</span><span class="shortcut-key">Entf</span></div>
-    <div class="shortcut-row"><span>Löschen ohne Rückfrage</span><span><span class="shortcut-key">Shift</span> + <span class="shortcut-key">Entf</span> / Klick auf Papierkorb</span></div>
+    <div class="shortcut-row"><span>Löschen ohne Rückfrage</span><span><span class="shortcut-key">Strg</span> + <span class="shortcut-key">Entf</span> / Strg + Klick auf Papierkorb</span></div>
     <div class="shortcut-row"><span>Rückfrage bestätigen / abbrechen</span><span><span class="shortcut-key">Enter</span> / <span class="shortcut-key">Esc</span></span></div>
     <div class="shortcut-row"><span>Pfad- oder Routenzeichnen beenden</span><span class="shortcut-key">Enter</span></div>
+    <div class="shortcut-row"><span>Vorschau abspielen / anhalten</span><span class="shortcut-key">Leertaste</span></div>
+    <div class="shortcut-row"><span>Vorschau beenden</span><span class="shortcut-key">Esc</span></div>
     <div class="shortcut-row"><span>Objekt in der Szeneliste zeigen</span><span>Klick (Doppelklick öffnet)</span></div>
     <div class="shortcut-row"><span>Letzte Änderung rückgängig</span><span class="shortcut-key">Strg+Z</span></div>
     <div class="shortcut-row"><span>Änderung wiederholen</span><span><span class="shortcut-key">Strg+Shift+Z</span> / <span class="shortcut-key">Strg+Y</span></span></div>
@@ -560,7 +563,8 @@
     <div class="shortcut-row"><span>Karte verschieben</span><span>Klicken + Ziehen</span></div>
     <div class="shortcut-row"><span>Karte zoomen</span><span>Mausrad</span></div>
     <div class="shortcut-row"><span>Karte grob zoomen</span><span>Shift + Mausrad</span></div>
-    <div class="shortcut-row"><span>Akteur drehen</span><span>Gier-Pfeil ziehen</span></div>
+    <div class="shortcut-row"><span>Akteur verschieben</span><span>Körper ziehen</span></div>
+    <div class="shortcut-row"><span>Akteur drehen</span><span>Griff an der Pfeilspitze ziehen</span></div>
     <p class="close-hint">Drücken Sie <span class="shortcut-key">Esc</span> oder <span class="shortcut-key">?</span> zum Schließen</p>
   </div>
 </div>

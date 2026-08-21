@@ -622,11 +622,31 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 /* ── SVG actor styles ────────────────────────────────────── */
-.actor-group { cursor: pointer; }
+/* `move`, not `pointer`: the body IS the drag target. Rotating is the yaw
+   handle out at the arrow tip, which says `grab` instead — the two zones are
+   physically disjoint (mapView.js _buildYawArrow) and the cursors say which
+   one you are over before you press. */
+.actor-group { cursor: move; }
 .actor-group:hover .actor-body { filter: brightness(1.3); }
 .actor-selected .actor-body { filter: brightness(1.2); }
-.actor-selected .actor-select-ring { display: block; }
-.actor-select-ring { display: none; }
+
+/* Selection mark — corner brackets, built by _buildSelectionMarks (mapView.js)
+   and shared by actors, props and traffic lights, so one gesture reads the same
+   everywhere on the map. It replaced a yellow ring, which competed with the
+   map's own yellow lane paint and told you nothing about the object's shape.
+   `pointer-events: none` because the casing is 5 px wide and would otherwise
+   swallow clicks aimed at the object it frames. */
+.actor-selected .actor-select-marks,
+.traffic-light.selected .actor-select-marks { display: block; }
+.actor-select-marks { display: none; pointer-events: none; }
+.sel-mark-casing, .sel-mark-line {
+  fill: none; stroke-linecap: round; stroke-linejoin: round;
+  /* Constant on screen: the corners follow the box, the line does not shrink
+     with it, so a 0.9 m cone is marked as legibly as a 9 m bus. */
+  vector-effect: non-scaling-stroke;
+}
+.sel-mark-casing { stroke: #fff; stroke-width: 5px; }
+.sel-mark-line   { stroke: #000; stroke-width: 2.2px; }
 
 /* Map labels below the legibility floor (mapView.js LABEL_MIN_PX). The marker
    itself keeps its true world size — only the text goes. */
@@ -659,10 +679,6 @@ input[type="range"]::-webkit-slider-thumb {
 .traffic-light  { pointer-events: auto; cursor: pointer; }
 #map-svg.placing .traffic-light,
 #map-svg.trajectory-mode .traffic-light { cursor: crosshair; }
-.traffic-light-select-ring { display: none; }
-.traffic-light.selected .traffic-light-select-ring {
-  display: block;
-}
 
 .traj-line { fill: none; stroke-dasharray: 3,3; }
 .traj-group { transition: opacity .15s; }
@@ -680,8 +696,19 @@ input[type="range"]::-webkit-slider-thumb {
    0.7 m across and unhittable at town zoom. */
 .trigger-point-control { pointer-events: all; cursor: move; }
 
-.yaw-arrow { cursor: grab; }
-.yaw-arrow:active { cursor: grabbing; }
+/* Shaft: decoration. It runs from the body's edge to the handle, and hit-testing
+   it is what used to make a drag across the marker rotate instead of move. */
+.yaw-shaft { pointer-events: none; }
+.yaw-handle { cursor: grab; }
+/* Draws the grab zone's own boundary, so the handle is findable before the
+   press rather than only after the actor has already spun. */
+.yaw-handle-ring { pointer-events: none; opacity: 0; transition: opacity .12s; }
+.yaw-arrow:hover .yaw-handle-ring { opacity: .85; }
+/* Held on <body> for the whole drag: the actor layer re-renders on every
+   updateById, so the pressed element is gone within a frame and :active with
+   it. Same reasoning as the pan's inline `grabbing` on the svg. */
+body.rotating, body.rotating * { cursor: grabbing !important; }
+body.dragging-actor, body.dragging-actor * { cursor: move !important; }
 
 .ruler-measurement line { pointer-events: none; }
 .ruler-delete { opacity: 0.7; transition: opacity .15s; }

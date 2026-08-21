@@ -272,7 +272,7 @@ with sync_playwright() as p:
     # ── Delete restores the object AND the selection it had ──────────────────
     page.evaluate(f"AppState.select('{nid}')")
     page.wait_for_timeout(200)
-    page.keyboard.press("Shift+Delete")   # Shift skips the confirm
+    page.keyboard.press("Control+Delete")   # Strg skips the confirm
     page.wait_for_timeout(400)
     check("actor deleted", page.evaluate(f"!AppState.findById('{nid}')"))
     undo(page)
@@ -299,7 +299,7 @@ with sync_playwright() as p:
     d0 = depth(page)[0]
     page.evaluate(
         "document.querySelector('.scene-del-all')"
-        ".dispatchEvent(new MouseEvent('click', {bubbles: true, shiftKey: true}))")
+        ".dispatchEvent(new MouseEvent('click', {bubbles: true, ctrlKey: true}))")
     page.wait_for_timeout(600)
     check("the whole cone type is gone",
           page.evaluate("AppState.staticObjects.length") == 0)

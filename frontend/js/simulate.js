@@ -1106,6 +1106,22 @@
     if (_running && !_paused) return;
 
     if (!_running) {
+      /* Finish any half-done placement before the run starts.
+       *
+       * body.simulating dims the toolbar, but the map SVG stays live for
+       * pan/zoom — so an armed tool survived Play, crosshair and all, and the
+       * first click on the animating map placed an actor. Clearing the draw
+       * flags is also what discards a path that never reached two waypoints
+       * (objects.js `_discardIncompletePath`), which is why this must run
+       * BEFORE _prepareSimulation() reads the actors: otherwise the preview
+       * would simulate an event that no longer exists. It is also before
+       * `_running = true`, so the "user picked up a tool" handler below — which
+       * only reacts to a flag going truthy — never sees it.
+       */
+      if (AppState.placementActive) {
+        AppState.cancelPlacement();
+        Toast.info('Platzierung beendet — Vorschau startet');
+      }
       if (!_prepareSimulation()) return;
       _simTime = 0;
       _running = true;
@@ -1214,6 +1230,51 @@
   btnPlay.addEventListener('click', _startSimulation);
   btnPause.addEventListener('click', _pauseSimulation);
   btnStop.addEventListener('click', _stopSimulation);
+
+  function _togglePlayPause() {
+    if (_running && !_paused) _pauseSimulation();
+    else _startSimulation();   // cold start and resume are the same call
+  }
+
+  /* Leertaste = Play/Pause, Esc = Stop.
+   *
+   * Bubble phase, and no stopPropagation: app.js's confirm dialog and
+   * dropdown.js's menus both handle Escape on the CAPTURE phase and stop it
+   * there, so they preempt this for free. mapView.js is loaded first and runs
+   * its own Escape branch before this one — harmless during a run, since
+   * _startSimulation has already cleared everything it would clear.
+   */
+  window.addEventListener('keydown', e => {
+    if (window.Confirm?.isOpen) return;
+    const t = e.target;
+    if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' ||
+        t.isContentEditable) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+    if (e.key === ' ' || e.code === 'Space') {
+      // Another handler already claimed it — the scene list's own Space, which
+      // locates the focused row.
+      if (e.defaultPrevented) return;
+      // A control the user TABBED to keeps its own Space: Space on a focused
+      // Export means Export. A control merely left focused by an earlier click
+      // does not — that is the bug this replaced, where the last-clicked
+      // toolbar tile ate every Space and re-armed itself instead of playing.
+      // preventDefault below is load-bearing for exactly that case: it is what
+      // stops the browser turning this keydown into a click on that button.
+      if (UIUtils.keyboardFocused(t)) return;
+      if (simControls.classList.contains('hidden')) return;   // no map loaded yet
+      e.preventDefault();                                     // and no page scroll
+      _togglePlayPause();
+      return;
+    }
+
+    // Stops from either state — _paused implies _running.
+    if (e.key === 'Escape' && _running &&
+        document.getElementById('shortcuts-overlay')?.classList.contains('hidden')) {
+      _stopSimulation();
+      Toast.info('Vorschau beendet');
+    }
+  });
 
   speedSlider.addEventListener('input', () => {
     _speed = parseFloat(speedSlider.value);

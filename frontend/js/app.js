@@ -399,6 +399,33 @@
       return ego;
     },
 
+    /**
+     * Disarm every in-progress placement / draw mode.
+     *
+     * Three callers need exactly this set cleared — Esc, the ruler toggle (which
+     * passes its own `activeTool`) and pressing Play — and it was two verbatim
+     * copies of an eight-key literal before the third arrived. Clearing the draw
+     * flags is also what discards a path that never reached two waypoints
+     * (objects.js `_discardIncompletePath` hangs off this change), so callers
+     * that go on to read the actors must call this first.
+     *
+     * Records no undo entry: `_isScenarioPatch` does not count editor-only keys.
+     */
+    cancelPlacement(extra = {}) {
+      this.set({
+        activeTool: null, pendingTemplate: null, pendingProp: null,
+        trajectoryMode: false, activeTrajectoryId: null,
+        routeMode: false, activeRouteId: null, activePathEventId: null,
+        ...extra,
+      });
+    },
+
+    /** True while a tool is armed, a prop is pending or a path is being drawn. */
+    get placementActive() {
+      return !!(this.activeTool || this.pendingTemplate || this.pendingProp ||
+                this.trajectoryMode || this.routeMode);
+    },
+
     /** Restore editor state from scenario JSON. */
     loadJSON(data) {
       this.map             = data.map || null;
@@ -974,7 +1001,47 @@
 
   let _autoId = 0;
 
+  /* Did the keyboard put focus where it is?
+   *
+   * Only keys that MOVE focus count. This is deliberately not the browser's own
+   * `:focus-visible`, which was tried first and does not work here: its heuristic
+   * is "was the most recent interaction a keypress", so pressing Space to start
+   * the preview *itself* flips every control into focus-visible, and the second
+   * press hands the key straight back to the button. Tab/arrow/Home/End are the
+   * only keys that can have delivered focus, so they are the only ones that set
+   * this; a bare mousedown clears it.
+   */
+  let _focusByKeyboard = false;
+  document.addEventListener('mousedown', () => { _focusByKeyboard = false; }, true);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Tab' || e.key === 'Home' || e.key === 'End' ||
+        (typeof e.key === 'string' && e.key.startsWith('Arrow'))) {
+      _focusByKeyboard = true;
+    }
+  }, true);
+
   window.UIUtils = {
+    /**
+     * True when `el` holds focus *because the user put it there with the
+     * keyboard* — tabbed or arrowed onto, rather than left focused by a click.
+     *
+     * This is the arbiter for "who owns a bare keystroke". Clicking a button
+     * leaves it focused, and the browser then turns Space into a click on it:
+     * the last tile clicked in the toolbar kept re-arming and disarming itself
+     * while the preview never started, and the same held for any panel button
+     * and for a scene row that had been clicked. But a keyboard user who tabbed
+     * onto Export really does mean Export, so the key cannot simply be taken
+     * globally either. Focus modality separates the two exactly — a
+     * click-focused control shows no focus ring, so nothing suggests it is armed.
+     *
+     * Callers that lose the tie must `preventDefault()`: that is what stops the
+     * browser generating the click the focused button would otherwise get.
+     */
+    keyboardFocused(el) {
+      if (!el || el === document.body) return false;
+      return _focusByKeyboard && el === document.activeElement;
+    },
+
     /**
      * Point `label` at `control`, giving the control an id if it has none.
      * Every control in the properties panel is built in JS, so without this

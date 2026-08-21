@@ -499,14 +499,9 @@
       TrafficSignals.select(id);
     });
 
-    // Selection ring
-    g.appendChild(_svgEl('circle', {
-      cx: '0', cy: '0', r: '4.5',
-      fill: 'none',
-      stroke: '#ffff00',
-      'stroke-width': '0.6',
-      class: 'traffic-light-select-ring',
-    }));
+    // Selection marks, sized to the glyph's own r=4 glow below. Same helper as
+    // actors and props: one selection language for everything on the map.
+    g.appendChild(_buildSelectionMarks(8, 8));
 
     // Outer glow
     g.appendChild(_svgEl('circle', {
@@ -567,6 +562,22 @@
     child:      { w: 0.6, h: 0.6 },
     cyclist:    { w: 2.0, h: 0.8 },
   };
+
+  /* Yaw-handle geometry (world metres).
+   *
+   * The rotate handle must never overlap the body, or a drag meant to MOVE the
+   * object spins it instead — which is exactly what the old hand-tuned
+   * `max(w, 4.5) * 0.8` did to every car (grab circle inner edge 2.1 m against a
+   * 2.25 m half-length) and to every small prop (the r=1.5 circle swallowed the
+   * marker whole). So the length is derived from the body's own hit radius
+   * instead of guessed, and the invariant — handle inner edge = bodyRadius +
+   * YAW_HANDLE_GAP, always positive — holds by construction for any size.
+   *
+   * The handle radius is capped at both ends: big enough to hit on a child or a
+   * cone, never so big on a bus that it swings back over the roof. */
+  const YAW_HANDLE_GAP   = 0.6;   // clear air between body edge and handle edge
+  const YAW_HANDLE_R_MAX = 1.2;   // grab radius of the rotate handle
+  const YAW_HANDLE_R_MIN = 0.7;
 
   // Drawn as a circle rather than a rectangle. Mirrors _PEDESTRIAN_TYPES in
   // ../llm-scenario-gen's xml_builder, which decides the same split for the
@@ -786,13 +797,10 @@
       g.appendChild(ws);
     }
 
-    // Selection ring
-    const ring = _svgEl('circle', {
-      r: Math.max(size.w, size.h) * 0.7 + 1,
-      fill: 'none', stroke: '#ffff00', 'stroke-width': 0.6,
-      class: 'actor-select-ring'
-    });
-    g.appendChild(ring);
+    // Selection marks, framing what is actually drawn: a walker is a circle of
+    // diameter size.w, so its box is square rather than size.w × size.h.
+    g.appendChild(_buildSelectionMarks(
+      size.w, WALKER_TYPES.has(actor.type) ? size.w : size.h));
 
     // Label. `.actor-label` is what _updateLabelVisibility hides below the
     // legibility floor — the font-size here must stay in step with
@@ -806,11 +814,9 @@
     label.textContent = _actorMapLabel(actor);
     g.appendChild(label);
 
-    // Yaw arrow (vehicles and pedestrians — not static objects)
-    if (true) {  // all scenario actors get a yaw arrow
-      const arrow = _buildYawArrow(actor, col.body, size);
-      g.appendChild(arrow);
-    }
+    // Yaw arrow (vehicles and pedestrians — not static objects). The radius
+    // passed is the marker's own, so the rotate handle lands outside it.
+    g.appendChild(_buildYawArrow(actor, col.body, Math.max(size.w, size.h) / 2));
 
     layerActors.appendChild(g);
   }
@@ -843,9 +849,9 @@
 
     // Invisible grab target: a real cone is ~4 px wide at default zoom, too
     // small to click or drag reliably. Same trick as the yaw-arrow handle.
-    g.appendChild(_svgEl('circle', {
-      r: Math.max(size * 0.6, 1.2), fill: 'transparent',
-    }));
+    // Named, because the yaw handle is placed clear of exactly this circle.
+    const grabR = Math.max(size * 0.6, 1.2);
+    g.appendChild(_svgEl('circle', { r: grabR, fill: 'transparent' }));
 
     // planRotate is cosmetic: for props whose yaw means "the way the face
     // points", the body sits ACROSS that direction (a barrier blocks the lane
@@ -859,10 +865,11 @@
     cat.planShapes(prop.prop).forEach(s => body.appendChild(s));
     g.appendChild(body);
 
-    g.appendChild(_svgEl('circle', {
-      r: size * 0.7 + 1, fill: 'none', stroke: '#ffff00',
-      'stroke-width': 0.6, class: 'actor-select-ring',
-    }));
+    // The body is drawn spun by planRotate, which swaps its extent — frame what
+    // is on screen, not the catalogue's unrotated footprint.
+    const spun = Math.abs(spin % 180) === 90;
+    g.appendChild(_buildSelectionMarks(
+      spun ? fp.wid : fp.len, spun ? fp.len : fp.wid));
 
     // Label only while selected: props are placed in runs (a six-cone taper),
     // and one label per cone buries the glyphs it is meant to annotate.
@@ -877,8 +884,7 @@
 
     // Only oriented props get a yaw handle — a cone or barrel has no heading.
     if (cat.oriented(prop.prop)) {
-      g.appendChild(_buildYawArrow(prop, color, { w: size, h: size },
-        Math.max(fp.len * 0.75, 1.6)));
+      g.appendChild(_buildYawArrow(prop, color, grabR));
     }
 
     layerProps.appendChild(g);
@@ -888,37 +894,106 @@
     return AppState.actorLabel(actor, { short: true });
   }
 
-  // lenOverride: props are far smaller than a 4.5 m car, and the actor floor
-  // below would draw an arrow longer than the prop it belongs to.
-  function _buildYawArrow(actor, color, size, lenOverride) {
-    const arrowLen = lenOverride ?? Math.max(size.w, 4.5) * 0.8;
+  /* The selection mark: four corner brackets on the object's own box.
+   *
+   * Deliberately not a ring any more. A yellow circle competed with the map's
+   * own furniture — lane paint is yellow, the ruler is `#ffee55`, a bus body is
+   * `#ddaa00` — so around a bus on a painted road it was ambiguous what it even
+   * marked; and being one radius it could say "something here" but never what,
+   * giving a 9 m bus and a 0.9 m cone the same circle. It also drew straight
+   * through the actor's own label. Crop marks are a shape a road map never
+   * draws, they frame the object instead of covering it, and they stay
+   * readable at any size.
+   *
+   * `w`/`h` are the DRAWN extent in the object's own rotated frame, so the
+   * marks turn with it and read as an oriented bounding box. Black over a white
+   * casing rather than a single accent colour: the map runs from a `#e8edf2`
+   * verge to a near-black carriageway, and only the casing carries both.
+   *
+   * The stroke is `non-scaling-stroke` (see `.sel-mark-*` in style.css), so the
+   * corners follow the box while the line keeps its width on screen. That is
+   * what keeps a cone legible — a scaled 2 px line goes sub-pixel long before
+   * the object it frames does.
+   */
+  const SEL_PAD_MIN  = 0.6;    // world m of air between the body and the mark
+  const SEL_PAD_FRAC = 0.18;   // …or this much of the box, whichever is larger
+  const SEL_ARM_FRAC = 0.3;    // corner arm, as a fraction of its own side
+  const SEL_ARM_MAX  = 1.6;    // world m — a long arm on a bus is just a box
+
+  function _buildSelectionMarks(w, h) {
+    const pad = Math.max(SEL_PAD_MIN, Math.max(w, h) * SEL_PAD_FRAC);
+    const x = w / 2 + pad, y = h / 2 + pad;
+    const ax = Math.min(2 * x * SEL_ARM_FRAC, SEL_ARM_MAX);
+    const ay = Math.min(2 * y * SEL_ARM_FRAC, SEL_ARM_MAX);
+    const corners = [
+      `M${-x},${-y + ay} L${-x},${-y} L${-x + ax},${-y}`,
+      `M${x - ax},${-y} L${x},${-y} L${x},${-y + ay}`,
+      `M${x},${y - ay} L${x},${y} L${x - ax},${y}`,
+      `M${-x + ax},${y} L${-x},${y} L${-x},${y - ay}`,
+    ];
+    const g = _svgEl('g', { class: 'actor-select-marks' });
+    // Every casing first, then every line — one path drawn twice, so no corner
+    // can end up with its casing painted over the neighbouring corner's line.
+    for (const cls of ['sel-mark-casing', 'sel-mark-line']) {
+      for (const d of corners) g.appendChild(_svgEl('path', { d, class: cls }));
+    }
+    return g;
+  }
+
+  /* The rotate handle.
+   *
+   * `bodyRadius` is the radius of the caller's OWN hit target — half the marker
+   * for an actor, the invisible grab circle for a prop — and everything here is
+   * placed outside it. That is the whole point: drag and rotate are two disjoint
+   * zones, and the gap between them is real, empty map. The shaft is decoration
+   * only (`.yaw-shaft` is pointer-events:none in CSS) and starts at the body's
+   * edge rather than at its centre, where it used to hit-test as "rotate" right
+   * across the marker.
+   *
+   * `.yaw-handle` is the one selector objects.js's mousedown looks for; the
+   * ring draws that same circle on hover so the zone is visible before you
+   * commit to a drag.
+   */
+  function _buildYawArrow(actor, color, bodyRadius) {
+    const handleR  = Math.min(YAW_HANDLE_R_MAX, Math.max(YAW_HANDLE_R_MIN, bodyRadius));
+    const arrowLen = bodyRadius + YAW_HANDLE_GAP + handleR;
+    const headLen  = Math.min(1.2, handleR);
+
     // Arrow group: drawn in local (rotated) coords of the actor
     // so the arrow always points in the actor's heading direction (+X axis = forward)
     const ag = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     ag.setAttribute('class', 'yaw-arrow');
     ag.setAttribute('data-actor-id', actor.id);
 
-    // Shaft
+    // Shaft — decoration, never a hit target (see .yaw-shaft in style.css)
     const line = _svgEl('line', {
-      x1: 0, y1: 0, x2: arrowLen, y2: 0,
-      stroke: color, 'stroke-width': 0.5, 'stroke-opacity': 0.9
+      x1: bodyRadius, y1: 0, x2: arrowLen, y2: 0,
+      stroke: color, 'stroke-width': 0.5, 'stroke-opacity': 0.9,
+      class: 'yaw-shaft'
     });
     ag.appendChild(line);
 
-    // Arrowhead (draggable)
+    // Arrowhead: the direction cue, and part of the handle. Scaled with the
+    // handle so it stays clear of the body on a 0.6 m child too.
     const head = _svgEl('polygon', {
-      points: `${arrowLen},0 ${arrowLen-1.2},-0.6 ${arrowLen-1.2},0.6`,
-      fill: color, class: 'arrow-head', 'data-actor-id': actor.id
+      points: `${arrowLen},0 ${arrowLen-headLen},${-headLen/2} ${arrowLen-headLen},${headLen/2}`,
+      fill: color, class: 'arrow-head yaw-handle', 'data-actor-id': actor.id
     });
     ag.appendChild(head);
 
-    // Invisible large hit area for easier grabbing
-    const hit = _svgEl('circle', {
-      cx: arrowLen, cy: 0, r: 1.5,
+    // Boundary of the grab zone, shown on hover only.
+    ag.appendChild(_svgEl('circle', {
+      cx: arrowLen, cy: 0, r: handleR,
+      fill: 'none', stroke: color, 'stroke-width': 0.15,
+      class: 'yaw-handle-ring'
+    }));
+
+    // Invisible hit area, last so it sits on top of the drawn parts.
+    ag.appendChild(_svgEl('circle', {
+      cx: arrowLen, cy: 0, r: handleR,
       fill: 'transparent', 'data-actor-id': actor.id,
-      style: 'cursor:grab'
-    });
-    ag.appendChild(hit);
+      class: 'yaw-handle'
+    }));
 
     return ag;
   }
@@ -1214,7 +1289,7 @@
         _shortcutsOverlay.classList.add('hidden');
         return;
       }
-      AppState.set({ activeTool: null, pendingTemplate: null, pendingProp: null, trajectoryMode: false, activeTrajectoryId: null, routeMode: false, activeRouteId: null, activePathEventId: null });
+      AppState.cancelPlacement();
       return;
     }
 
@@ -1229,7 +1304,7 @@
     // R — toggle ruler tool
     if (e.key === 'r' && !e.ctrlKey && !e.metaKey) {
       const newTool = AppState.activeTool === 'ruler' ? null : 'ruler';
-      AppState.set({ activeTool: newTool, pendingTemplate: null, pendingProp: null, trajectoryMode: false, activeTrajectoryId: null, routeMode: false, activeRouteId: null, activePathEventId: null });
+      AppState.cancelPlacement({ activeTool: newTool });
       return;
     }
 
@@ -1279,10 +1354,10 @@
 
     // Delete / Backspace — remove the selected object (with undo).
     //
-    // Shift is the app-wide "skip the confirm" modifier, honoured identically by
-    // the properties trash and every scene-list trash: plain Entf asks first,
-    // Shift+Entf does not. This key path used to delete outright, which was the
-    // one place in the app where a delete was unguarded.
+    // Strg (Cmd on a Mac) is the app-wide "skip the confirm" modifier, honoured
+    // identically by the properties trash and every scene-list trash: plain Entf
+    // asks first, Strg+Entf does not. This key path used to delete outright,
+    // which was the one place in the app where a delete was unguarded.
     if ((e.key === 'Delete' || e.key === 'Backspace') && AppState.selectedId) {
       const id    = AppState.selectedId;
       const actor = AppState.findById(id);
@@ -1299,7 +1374,7 @@
         Toast.info(`${label} gelöscht — Strg+Z zum Rückgängigmachen`);
       };
 
-      if (e.shiftKey) commit();
+      if (e.ctrlKey || e.metaKey) commit();
       else Confirm.show(`${label} löschen?`, 'Löschen').then(ok => { if (ok) commit(); });
     }
   });

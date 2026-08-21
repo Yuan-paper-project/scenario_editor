@@ -311,31 +311,43 @@
   svg.addEventListener('mousedown', e => {
     if (e.button !== 0) return;
 
-    // Yaw arrow head drag
-    const arrowHit = e.target.closest('.yaw-arrow') ||
-                     (e.target.getAttribute && e.target.getAttribute('data-actor-id') && e.target.closest('[class*="arrow"]'));
-    if (arrowHit || (e.target.getAttribute && e.target.getAttribute('class') === 'arrow-head') ||
-        (e.target.getAttribute && e.target.getAttribute('style') === 'cursor:grab')) {
-      const actorId = e.target.dataset.actorId ||
-                      e.target.closest('[data-actor-id]')?.dataset?.actorId;
-      if (actorId) {
-        const actor = AppState.findById(actorId);
-        if (actor) {
-          _dragState = {
-            type: 'yaw',
-            actorId,
-            actorPos: { x: actor.x, y: actor.y },
-          };
-          e.preventDefault();
-          e.stopPropagation();
-          return;
-        }
+    // Nothing on the map is draggable while a tool is armed or a path is being
+    // drawn: a click there means "place" or "select", never "edit this pose".
+    // The rotate branch below used to lack this guard, so grabbing the handle
+    // with a tool armed spun the actor while grabbing its body selected it.
+    if (AppState.activeTool || AppState.trajectoryMode || AppState.routeMode) return;
+
+    /* Rotate: the yaw handle only.
+     *
+     * One class, no string-matching on `style` or `class*="arrow"` as this used
+     * to do. `.yaw-handle` is placed a real gap outside the body's own hit
+     * target (mapView.js _buildYawArrow), so this branch and the body branch
+     * below can never both match the same pixel.
+     */
+    const handle = e.target.closest('.yaw-handle');
+    if (handle) {
+      const actorId = handle.dataset.actorId ||
+                      handle.closest('[data-actor-id]')?.dataset?.actorId;
+      const actor   = actorId ? AppState.findById(actorId) : null;
+      if (actor) {
+        _dragState = {
+          type: 'yaw',
+          actorId,
+          actorPos: { x: actor.x, y: actor.y },
+        };
+        // The cursor lives on <body> for the duration, not on the handle: every
+        // updateById re-renders the actor layer, so the element the drag started
+        // on is detached within a frame and :active never survives.
+        document.body.classList.add('rotating');
+        e.preventDefault();
+        e.stopPropagation();
+        return;
       }
     }
 
-    // Actor body drag
+    // Move: the body.
     const actorGroup = e.target.closest('.actor-group');
-    if (actorGroup && !AppState.activeTool && !AppState.trajectoryMode && !AppState.routeMode) {
+    if (actorGroup) {
       const id     = actorGroup.dataset.id;
       const actor  = AppState.findById(id);
       const world  = MapView.svgToWorld(e);
@@ -347,6 +359,7 @@
           startActorPos: { x: actor.x, y: actor.y },
         };
         AppState.select(id);
+        document.body.classList.add('dragging-actor');
         e.preventDefault();
         e.stopPropagation();
       }
@@ -400,6 +413,7 @@
         }
       }
       _dragState = null;
+      document.body.classList.remove('rotating', 'dragging-actor');
       setTimeout(() => { _wasDragging = false; }, 50);
     }
   });
