@@ -628,6 +628,28 @@ input[type="range"]::-webkit-slider-thumb {
 .actor-selected .actor-select-ring { display: block; }
 .actor-select-ring { display: none; }
 
+/* Map labels below the legibility floor (mapView.js LABEL_MIN_PX). The marker
+   itself keeps its true world size — only the text goes. */
+.actor-label { transition: opacity .12s linear; }
+#map-svg.map-labels-hidden .actor-label { opacity: 0; }
+
+/* Locating an object from the scene list brightens it, holds for 0.5s, then
+   fades back — a quiet "it is right here" that ends on its own. It is the
+   object's own body, the same filter it gets when hovered directly on the map:
+   no ring, and nothing added to the actor group at render time.
+   Timings must stay in step with GLOW_MS in mapView.js (0.9s total): brightness
+   is held to 55% of the timeline (~0.5s) and released over the rest. */
+.actor-glow .actor-body { animation: actor-glow-fade .9s ease-out 1; }
+@keyframes actor-glow-fade {
+  0%, 55% { filter: brightness(1.4); }
+  100%    { filter: brightness(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Hold the brightness flat for the same window instead of easing it out. */
+  .actor-glow .actor-body { animation: none; filter: brightness(1.4); }
+  .actor-label { transition: none; }
+}
+
 .spawn-dot { fill: rgba(255,255,255,.15); }
 .spawn-dot:hover { fill: rgba(255,255,255,.35); }
 
@@ -764,6 +786,118 @@ input[type="range"]::-webkit-slider-thumb {
   margin-top: 16px; padding: 10px; background: var(--panel2);
   border-radius: 6px; font-size: 11px; color: var(--text-dim);
   line-height: 1.5; text-align: center;
+}
+
+/* ── Scene list (Übersicht) ──────────────────────────────
+   One row per scenario actor. Props are counted by type instead of listed:
+   a cone taper is a dozen objects that differ only in position, and one row
+   each would bury the actors the list exists to find. */
+.scene-list { display: flex; flex-direction: column; gap: 2px; }
+.scene-section { display: flex; flex-direction: column; }
+.scene-section.collapsed .scene-section-body { display: none; }
+
+.scene-section-head {
+  width: 100%; display: flex; align-items: center; gap: 6px;
+  background: transparent; border: 0; border-top: 1px solid var(--border);
+  color: var(--text-dim); padding: 8px 0 6px;
+  font-size: 10px; font-weight: 800; letter-spacing: .8px;
+  text-transform: uppercase; text-align: left; font-family: inherit;
+}
+button.scene-section-head { cursor: pointer; }
+button.scene-section-head:hover { color: var(--text); }
+.scene-section-head .scene-head-label { flex: 1 1 auto; min-width: 0; }
+.scene-head-count {
+  min-width: 18px; padding: 0 5px; border-radius: 8px;
+  background: var(--panel2); border: 1px solid var(--border);
+  color: var(--text-dim); font-size: 10px; font-weight: 700;
+  letter-spacing: 0; text-align: center;
+}
+
+.scene-row {
+  display: grid; grid-template-columns: 10px minmax(0, 1fr) auto auto auto;
+  align-items: center; gap: 8px;
+  padding: 3px 4px 3px 6px; border-radius: 4px; cursor: pointer;
+  border: 1px solid transparent; user-select: none;
+}
+.scene-row:hover { background: var(--panel2); border-color: var(--border); }
+.scene-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* Which row the last single click flew the map to — without it, walking the
+   list with the arrow keys loses track of where the view actually is. */
+.scene-row.located { background: var(--panel2); border-color: var(--accent); }
+
+/* Row deletes. The trash is rightmost on every row; on a prop row the quieter
+   ✕ beside the stepper takes the single instance and the trash takes the whole
+   type, which is why they are different glyphs in different places. */
+.scene-del {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; flex-shrink: 0; padding: 0;
+  background: transparent; border: 1px solid transparent; border-radius: 4px;
+  color: var(--text-dim); cursor: pointer; opacity: .45;
+  font-size: 11px; line-height: 1; font-family: inherit;
+  transition: opacity .15s, color .15s, border-color .15s, background .15s;
+}
+.scene-del svg { width: 13px; height: 13px; }
+.scene-row:hover .scene-del,
+.scene-prop-row:hover .scene-del,
+.scene-del:focus-visible { opacity: 1; }
+.scene-del:hover {
+  opacity: 1; color: var(--danger); border-color: var(--danger);
+  background: rgba(192, 57, 43, .08);
+}
+.scene-del-one { font-size: 10px; }
+/* Put a visible divider between the two prop deletes: adjacent and evenly
+   spaced, "this one" and "all six" read as one control group. */
+.scene-del-all {
+  margin-left: 3px; border-left: 1px solid var(--border);
+  border-top-left-radius: 0; border-bottom-left-radius: 0;
+  padding-left: 4px; width: 24px;
+}
+.scene-del-all:hover { border-left-color: var(--danger); }
+/* Holds the ✕ column open on a single-instance row so every trash in the
+   section lines up. */
+.scene-del-spacer { display: inline-block; width: 20px; }
+
+.scene-swatch {
+  width: 10px; height: 10px; border-radius: 2px;
+  border: 1px solid rgba(0, 0, 0, .25);
+}
+.scene-swatch.round { border-radius: 50%; }
+.scene-name {
+  font-size: 11px; font-weight: 700; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.scene-meta { font-size: 10px; color: var(--text-dim); white-space: nowrap; }
+.scene-empty {
+  font-size: 11px; color: var(--text-dim); font-style: italic;
+  padding: 5px 6px;
+}
+
+/* A prop row is one type, plus a stepper that walks that type's instances —
+   the row's data-scene-id is whichever instance the stepper points at. */
+.scene-prop-row {
+  display: grid; grid-template-columns: 10px minmax(0, 1fr) auto auto auto;
+  align-items: center; gap: 6px;
+  padding: 3px 4px 3px 6px; border-radius: 4px; cursor: pointer;
+  border: 1px solid transparent; user-select: none;
+}
+.scene-prop-row:hover { background: var(--panel2); border-color: var(--border); }
+.scene-prop-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.scene-prop-row.located { background: var(--panel2); border-color: var(--accent); }
+.scene-prop-row .scene-name { font-weight: 600; }
+
+.scene-step { display: inline-flex; align-items: center; gap: 1px; }
+.scene-step-btn {
+  width: 16px; height: 18px; padding: 0; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border: 1px solid transparent; border-radius: 3px;
+  color: var(--text-dim); font-size: 8px; line-height: 1; cursor: pointer;
+  transition: color .15s, border-color .15s;
+}
+.scene-step-btn:hover { color: var(--accent); border-color: var(--accent); }
+.scene-step-pos {
+  min-width: 30px; text-align: center;
+  font-size: 10px; font-weight: 700; color: var(--text);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ── Undo banner ─────────────────────────────────────────── */

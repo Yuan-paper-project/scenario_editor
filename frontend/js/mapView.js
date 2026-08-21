@@ -47,6 +47,15 @@
   const ZOOM_STEP_COARSE = 1.40;   // Shift: the same traversal in ~9
   const ZOOM_TO_SPAN     = 90;     // metres across the view when framing a selection
 
+  // An actor's map label is drawn 2.2 world metres tall, which is ~4 px at the
+  // whole-town view — illegible, and dense enough over a cluster of actors to
+  // read as noise. It is HIDDEN below the floor rather than scaled up: markers
+  // are drawn at true world size on purpose, and a label that grew as you zoomed
+  // out would be the one thing on the map lying about scale.
+  const ACTOR_LABEL_M = 2.2;   // must match the label's font-size in _renderActor
+  const LABEL_MIN_PX  = 7;     // below this the label is hidden
+
+
   const _clampZoom = z => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
 
   let _pan  = { x: 0, y: 0 };
@@ -66,12 +75,17 @@
   const _NICE_DISTS = [5, 10, 20, 50, 100, 200, 500, 1000, 2000];
   const _TARGET_PX  = 120;  // target bar width in screen pixels
 
-  function _updateScaleRuler() {
-    // Use the CTM to find how many screen pixels = 1 world metre
+  /** Screen pixels per world metre, or null before the map has a layout. */
+  function _pxPerMetre() {
     const ctm = worldGroup.getScreenCTM();
-    if (!ctm) return;
-    const pxPerMetre = Math.abs(ctm.a);  // scale factor X
-    if (pxPerMetre <= 0) return;
+    if (!ctm) return null;
+    const px = Math.abs(ctm.a);   // scale factor X
+    return px > 0 ? px : null;
+  }
+
+  function _updateScaleRuler() {
+    const pxPerMetre = _pxPerMetre();
+    if (pxPerMetre == null) return;
 
     // Pick the nicest distance that fits close to _TARGET_PX
     let bestDist = _NICE_DISTS[0];
@@ -89,11 +103,24 @@
     _scaleLabel.textContent = bestDist >= 1000 ? `${bestDist / 1000} km` : `${bestDist} m`;
   }
 
+  /**
+   * Hide actor labels once they drop under the legibility floor. Driven off the
+   * live CTM rather than off `_zoom`, because `_zoom` is relative to a viewBox
+   * that is the town's own bounds — the same `_zoom` is a different number of
+   * pixels per metre on Town01 and Town04.
+   */
+  function _updateLabelVisibility() {
+    const pxPerMetre = _pxPerMetre();
+    if (pxPerMetre == null) return;
+    svg.classList.toggle('map-labels-hidden', pxPerMetre * ACTOR_LABEL_M < LABEL_MIN_PX);
+  }
+
   function _applyTransform() {
     worldGroup.setAttribute('transform',
       `translate(${_pan.x},${_pan.y}) scale(${_zoom})`
     );
     _updateScaleRuler();
+    _updateLabelVisibility();
   }
 
   // ── Coordinate conversion ────────────────────────────────────────────────────
@@ -343,8 +370,62 @@
   function zoomToSelection() {
     const actor = AppState.selectedId ? AppState.findById(AppState.selectedId) : null;
     if (!actor || actor.x == null || actor.y == null) { resetView(); return false; }
+    return _frameActor(actor);
+  }
+
+  /** Put an actor at street scale in the middle of the view. */
+  function _frameActor(actor) {
+    if (!actor || actor.x == null || actor.y == null) return false;
     const vb = svg.viewBox.baseVal;
     return _centreOn(actor.x, actor.y, vb && vb.width ? vb.width / ZOOM_TO_SPAN : _zoom);
+  }
+
+  /**
+   * Frame an actor, WITHOUT selecting it.
+   *
+   * This is the scene list's single click. Selecting instead would be the
+   * obvious implementation and the wrong one: the overview panel that holds the
+   * list is only rendered while nothing is selected, so selecting would close
+   * the list on the first click and you could never walk down it. Selection is
+   * the double click, which is a deliberate act.
+   *
+   * Flying the view is the whole feature — markers are drawn at true world size,
+   * so at the town view an actor is a few pixels and no amount of highlighting
+   * would find it for you.
+   */
+  function focusActor(id) {
+    const actor = id ? AppState.findById(id) : null;
+    if (!_frameActor(actor)) return false;
+    glowActor(id);
+    return true;
+  }
+
+  // Total life of the locate glow: brightens, holds ~0.5 s, then fades out.
+  // Must match the actor-glow-fade keyframes, or the class outlives the
+  // animation and leaves the object sitting bright.
+  const GLOW_MS = 900;
+  let _glowTimer = null;
+
+  /**
+   * Briefly brighten one map object — the "it is right here" cue the scene list
+   * fires when a row locates something.
+   *
+   * It is the object's own body brightening, the same `filter` it gets when
+   * hovered directly on the map; no ring, nothing added to the group at render
+   * time. Deliberately tied to the *click*, not to hover: hovering a list to
+   * read it should not set things flashing on the map.
+   */
+  function glowActor(id) {
+    clearTimeout(_glowTimer);
+    // Query off the <svg> and not off layerActors: the layers are null until a
+    // map has been rendered, and a prop lives in a different layer entirely.
+    svg.querySelectorAll('.actor-glow').forEach(el => el.classList.remove('actor-glow'));
+    if (!id) return;
+    const g = svg.querySelector(`.actor-group[data-id="${CSS.escape(String(id))}"]`);
+    if (!g) return;
+    g.getBoundingClientRect();      // reflow, so re-locating the same object replays it
+    g.classList.add('actor-glow');
+    _glowTimer = setTimeout(() => g.classList.remove('actor-glow'), GLOW_MS);
   }
 
   // ── Crosswalk rendering ────────────────────────────────────────────────────
@@ -713,10 +794,13 @@
     });
     g.appendChild(ring);
 
-    // Label
+    // Label. `.actor-label` is what _updateLabelVisibility hides below the
+    // legibility floor — the font-size here must stay in step with
+    // ACTOR_LABEL_M, which is the metre value that check is computed from.
     const label = _svgEl('text', {
       x: 0, y: -Math.max(size.w, size.h) / 2 - 1.5,
-      'text-anchor': 'middle', 'font-size': '2.2',
+      'text-anchor': 'middle', 'font-size': String(ACTOR_LABEL_M),
+      class: 'actor-label',
       fill: '#fff', style: 'pointer-events:none'
     });
     label.textContent = _actorMapLabel(actor);
@@ -1187,16 +1271,31 @@
       return;
     }
 
-    // Delete / Backspace — remove selected object (with undo)
+    // Delete / Backspace — remove the selected object (with undo).
+    //
+    // Shift is the app-wide "skip the confirm" modifier, honoured identically by
+    // the properties trash and every scene-list trash: plain Entf asks first,
+    // Shift+Entf does not. This key path used to delete outright, which was the
+    // one place in the app where a delete was unguarded.
     if ((e.key === 'Delete' || e.key === 'Backspace') && AppState.selectedId) {
-      const actor = AppState.findById(AppState.selectedId);
-      if (actor) {
-        UndoStack.push({ action: 'delete', actor: JSON.parse(JSON.stringify(actor)) });
-        const label = AppState.actorLabel(actor);
-        AppState.removeById(AppState.selectedId);
+      const id    = AppState.selectedId;
+      const actor = AppState.findById(id);
+      if (!actor) return;
+      const label = AppState.actorLabel(actor);
+
+      const commit = () => {
+        // The dialog is awaited, so re-read instead of trusting the captured
+        // actor: it can be deleted, or the selection moved, while it was open.
+        const still = AppState.findById(id);
+        if (!still) return;
+        UndoStack.push({ action: 'delete', actor: JSON.parse(JSON.stringify(still)) });
+        AppState.removeById(id);
         MapView.renderAllActors();
-        Toast.info(`${label} gel\u00f6scht \u2014 Strg+Z zum R\u00fcckg\u00e4ngigmachen`);
-      }
+        Toast.info(`${label} gelöscht — Strg+Z zum Rückgängigmachen`);
+      };
+
+      if (e.shiftKey) commit();
+      else Confirm.show(`${label} löschen?`, 'Löschen').then(ok => { if (ok) commit(); });
     }
   });
 
@@ -1407,6 +1506,9 @@
     resetView,
     zoomToSelection,
     zoomBy,
+    focusActor,
+    glowActor,
+    actorColor(type) { return ACTOR_COLORS[type] || ACTOR_COLORS.car; },
     get zoom() { return _zoom; },
     get svg() { return svg; },
     toggleTrajectoryVisibility(actorId, eventId = null) {

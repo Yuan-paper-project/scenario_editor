@@ -434,7 +434,8 @@
     const actor = AppState.findById(next.actorId);
     const name = actor ? AppState.actorLabel(actor, { short: true }) : next.actorId;
     trajBannerText.innerHTML =
-      `${next.type === 'route' ? 'Route' : 'Pfad'} für <strong></strong> zeichnen — auf die Karte klicken, um Wegpunkte zu setzen`;
+      `${next.type === 'route' ? 'Route' : 'Pfad'} für <strong></strong> zeichnen — auf die Karte klicken, `
+      + `um Wegpunkte zu setzen · <b>Enter</b> beendet`;
     trajBannerText.querySelector('strong').textContent = name;
   });
 
@@ -477,6 +478,21 @@
   });
 
   trajDoneBtn.addEventListener('click', () => {
+    _finishPathMode();
+  });
+
+  // Enter finishes a path, so drawing one never needs the mouse to leave the
+  // map: click the waypoints, press Enter. Esc still cancels (mapView.js).
+  // Bound here rather than in mapView's keydown because _finishPathMode and the
+  // banner both live in this module.
+  window.addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    if (!AppState.trajectoryMode && !AppState.routeMode) return;
+    // A dialog on top owns Enter, and so does a focused field.
+    if (window.Confirm?.isOpen) return;
+    const t = e.target.tagName;
+    if (t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT') return;
+    e.preventDefault();
     _finishPathMode();
   });
 
