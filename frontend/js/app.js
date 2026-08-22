@@ -103,6 +103,12 @@
     // ── Editor interaction ─────────────────────────────────────
     selectedId:          null,   // id of selected actor/object
     selectedTrafficLightId: null, // id of selected map traffic light
+    // The one path waypoint currently under the cursor's attention, shared by
+    // the map (mapView.js) and the event card's waypoint list (eventPanel.js)
+    // so the two always agree on which point is which:
+    //   { actorId, eventId, pathType: 'trajectory'|'route', index }
+    // Editor-only state, so it records no undo entry (_isScenarioPatch).
+    selectedWaypoint:    null,
     activeTool:          null,   // selected toolbar tool, or null
     trajectoryMode:      false,  // true while drawing a path
     activeTrajectoryId:  null,   // actor id whose trajectory we're drawing
@@ -207,15 +213,44 @@
         this.staticObjects = this.staticObjects.filter(o => o.id !== id);
       }
       if (this.selectedId === id) this.selectedId = null;
+      if (this.selectedWaypoint?.actorId === id) this.selectedWaypoint = null;
       this.emit('actorRemoved', id);
       _settle();
     },
 
     /** Select an actor. Pass null to deselect. */
     select(id) {
+      // Waypoints are only clickable while their own actor is selected, so a
+      // selection that moves elsewhere leaves the marked point unreachable —
+      // and Entf would then delete a waypoint of an actor no longer on screen.
+      if (this.selectedWaypoint && this.selectedWaypoint.actorId !== id) {
+        this.selectedWaypoint = null;
+      }
       this.selectedId = id;
       this.selectedTrafficLightId = null;
       this.emit('selectionChanged', id);
+    },
+
+    /**
+     * Mark one path waypoint, or clear the mark with null.
+     *
+     * Goes through set() so both the map and the event card hear about it on
+     * the same 'change'; the key is editor-only, so nothing lands in the undo
+     * history (marking a point is not an edit).
+     */
+    selectWaypoint(sel) {
+      this.set({ selectedWaypoint: sel || null });
+    },
+
+    /** The waypoint array `selectedWaypoint` points into, or null. */
+    waypointPathOf(sel) {
+      if (!sel) return null;
+      const actor = this.findById(sel.actorId);
+      const ev = (actor?.events || []).find(item => item.id === sel.eventId);
+      const action = ev?.action;
+      if (!action) return null;
+      const points = sel.pathType === 'route' ? action.waypoints : action.trajectory;
+      return Array.isArray(points) ? points : null;
     },
 
     /** Find nearest spawn point within maxDist metres. Returns null if none. */
@@ -447,6 +482,7 @@
 
       this.selectedId      = null;
       this.selectedTrafficLightId = null;
+      this.selectedWaypoint = null;
       this.activeTool      = null;
       this.trajectoryMode  = false;
       this.activeTrajectoryId = null;
@@ -776,6 +812,10 @@
         ? snap.selectedId
         : null;
       AppState.selectedTrafficLightId = snap.selectedTrafficLightId;
+      // Waypoint indices are positions in an array the snapshot has just
+      // replaced, so a mark taken before the undo can now name a different
+      // point — or none at all.
+      AppState.selectedWaypoint = null;
 
       // The empty patch redraws the scene list and the overview; the
       // selectionChanged emit is what re-renders the map and the properties

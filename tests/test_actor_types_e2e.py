@@ -260,7 +260,10 @@ with sync_playwright() as p:
 
         marker = page.evaluate(
             """(id) => {
-                const g = document.querySelector(`#layer-actors [data-id="${id}"]`);
+                // Both layers: the SELECTED actor is drawn in layer-actors-top,
+                // above its own path, and placement selects what it places.
+                const g = document.querySelector(
+                    `#layer-actors [data-id="${id}"], #layer-actors-top [data-id="${id}"]`);
                 if (!g) return null;
                 const body = g.querySelector('.actor-body');
                 return {tag: body && body.tagName.toLowerCase(),
@@ -285,7 +288,8 @@ with sync_playwright() as p:
     # Distinct colours: two types sharing one fill makes them indistinguishable
     # on the map, which is the whole point of having separate types.
     fills = page.evaluate(
-        """() => [...document.querySelectorAll('#layer-actors .actor-body')]
+        """() => [...document.querySelectorAll(
+                 '#layer-actors .actor-body, #layer-actors-top .actor-body')]
              .map(b => b.getAttribute('fill'))""")
     check("every placed actor has a distinct colour",
           len(set(fills)) == len(fills), str(fills))
@@ -491,7 +495,8 @@ with sync_playwright() as p:
     marker = page.evaluate(
         """(id) => {
             const b = document.querySelector(
-                `#layer-actors [data-id="${id}"] .actor-body`);
+                `#layer-actors [data-id="${id}"] .actor-body,`
+                + ` #layer-actors-top [data-id="${id}"] .actor-body`);
             return b && {w: b.getAttribute('width'), fill: b.getAttribute('fill')};
         }""", first_car)
     check("the map marker redraws at the new type's footprint",

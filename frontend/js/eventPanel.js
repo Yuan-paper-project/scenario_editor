@@ -245,6 +245,8 @@
 
       eventList.appendChild(card);
     });
+
+    syncWaypointSelection();
   }
 
   /**
@@ -871,6 +873,36 @@
     points.forEach((wp, i) => {
       const item = document.createElement('div');
       item.className = `waypoint-item${isRoute ? ' route-waypoint-item' : ''}`;
+      // The same four attributes the map's waypoint groups carry — they are the
+      // whole contract between the two halves, so a row and a marker can always
+      // be matched up without either side knowing how the other is built.
+      item.dataset.actorId  = actor.id;
+      item.dataset.eventId  = eventId;
+      item.dataset.pathType = type;
+      item.dataset.wpIdx    = i;
+      // Focusable so Entf/Backspace reaches mapView's handler straight after a
+      // click on the row: the guard there is "not inside a field", and a row is
+      // not a field. Enter re-locates, matching the click.
+      item.tabIndex = 0;
+      item.title = 'Klicken, um auf der Karte zu zeigen · Entf löscht';
+
+      const locate = () => {
+        const sel = { actorId: actor.id, eventId, pathType: type, index: i };
+        AppState.selectWaypoint(sel);
+        MapView.focusWaypoint(sel);
+      };
+      item.addEventListener('click', e => {
+        // The row's own controls keep their clicks: the delete button and the
+        // velocity field both sit inside it.
+        if (e.target.closest('button, input')) return;
+        locate();
+      });
+      item.addEventListener('keydown', e => {
+        if (e.key !== 'Enter') return;
+        if (e.target.closest('input')) return;
+        e.preventDefault();
+        locate();
+      });
 
       const num = document.createElement('span');
       num.className = 'wp-num';
@@ -888,6 +920,17 @@
       delBtn.setAttribute('aria-label', `Wegpunkt ${i + 1} entfernen`);
       delBtn.addEventListener('click', () => {
         ObjectsManager.deletePathPoint(actor.id, type, i, eventId);
+        // Indices past the deleted one all shift down, so a mark left as it is
+        // would silently start naming the next point along — and Entf would
+        // then delete something the user never marked.
+        const sel = AppState.selectedWaypoint;
+        if (sel && sel.actorId === actor.id && sel.eventId === eventId
+            && sel.pathType === type && sel.index >= i) {
+          const left = (AppState.waypointPathOf(sel) || []).length;
+          AppState.selectWaypoint(left && sel.index > i
+            ? { ...sel, index: sel.index - 1 }
+            : null);
+        }
       });
 
       item.appendChild(num);
@@ -917,6 +960,33 @@
       item.appendChild(delBtn);
       target.appendChild(item);
     });
+  }
+
+  /**
+   * Put the `.waypoint-selected` class on the row the map's mark names, and
+   * bring it into view — but only when the mark actually MOVED.
+   *
+   * The panel re-renders on every actorUpdated, which during a waypoint drag is
+   * every mousemove; scrolling on each of those would fight the user for the
+   * list's scroll position while they drag.
+   */
+  let _lastMarkKey = null;
+
+  function syncWaypointSelection() {
+    const sel = AppState.selectedWaypoint;
+    const key = sel
+      ? `${sel.actorId}:${sel.eventId}:${sel.pathType}:${sel.index}`
+      : null;
+    let marked = null;
+    eventList.querySelectorAll('.waypoint-item').forEach(row => {
+      const d = row.dataset;
+      const hit = !!sel && d.actorId === sel.actorId && d.eventId === sel.eventId
+               && d.pathType === sel.pathType && Number(d.wpIdx) === sel.index;
+      row.classList.toggle('waypoint-selected', hit);
+      if (hit) marked = row;
+    });
+    if (marked && key !== _lastMarkKey) marked.scrollIntoView({ block: 'nearest' });
+    _lastMarkKey = key;
   }
 
   function _appendEventPathControls(card, actor, ev) {
@@ -953,6 +1023,13 @@
     const toggleBtn = document.createElement('button');
     toggleBtn.type = 'button';
     toggleBtn.textContent = visible ? 'Ausblenden' : 'Anzeigen';
+    // Ausblenden hides the path outright, selected or not. The way back is
+    // either this button or working on the path — drawing it, or clicking one
+    // of its waypoints below, both un-hide it (MapView.showPath).
+    toggleBtn.title = visible
+      ? 'Pfad auf der Karte ausblenden'
+      : 'Pfad wieder einblenden — Zeichnen oder das Anklicken eines '
+        + 'Wegpunkts blendet ihn ebenfalls wieder ein.';
     toggleBtn.addEventListener('click', () => {
       if (isRouteAction) MapView.toggleRouteVisibility(actor.id, ev.id);
       else MapView.toggleTrajectoryVisibility(actor.id, ev.id);
@@ -966,6 +1043,13 @@
     }
     card.appendChild(controls);
   }
+
+  // A mark set on the map has to light up the matching row without rebuilding
+  // the panel: the rebuild would happen anyway on the next actorUpdated, but a
+  // click on a marker is not an edit and must not cost a full re-render.
+  AppState.on('change', patch => {
+    if ('selectedWaypoint' in patch) syncWaypointSelection();
+  });
 
   // ── Event State ─────────────────────────────────────────────────────────────
 

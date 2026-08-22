@@ -377,6 +377,16 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
   background: var(--panel2); border-radius: 4px; padding: 4px 6px;
   font-size: 11px; border: 1px solid var(--border);
 }
+.waypoint-item { cursor: pointer; }
+.waypoint-item:hover { border-color: var(--text-dim); }
+/* Marked from either side — a click on the row, or on the marker out on the
+   map. The accent edge is what makes a row findable after the map put the mark
+   there; the list scrolls it into view but does not otherwise announce it. */
+.waypoint-item.waypoint-selected {
+  border-color: var(--accent); box-shadow: inset 2px 0 0 var(--accent);
+}
+.waypoint-item.waypoint-selected .wp-num { color: var(--text); font-weight: 700; }
+.waypoint-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .waypoint-item .wp-num { color: var(--text-dim); width: 18px; flex-shrink: 0; }
 .waypoint-item .wp-coords { flex: 1; color: var(--text-dim); font-size: 11px; }
 .waypoint-item input[type="number"] {
@@ -637,7 +647,10 @@ input[type="range"]::-webkit-slider-thumb {
    `pointer-events: none` because the casing is 5 px wide and would otherwise
    swallow clicks aimed at the object it frames. */
 .actor-selected .actor-select-marks,
-.traffic-light.selected .actor-select-marks { display: block; }
+.traffic-light.selected .actor-select-marks,
+/* A marked path waypoint wears the same marks as everything else selectable —
+   actors, props, signals. One selection language across the whole map. */
+.path-waypoint.waypoint-marked .actor-select-marks { display: block; }
 .actor-select-marks { display: none; pointer-events: none; }
 .sel-mark-casing, .sel-mark-line {
   fill: none; stroke-linecap: round; stroke-linejoin: round;
@@ -683,11 +696,27 @@ input[type="range"]::-webkit-slider-thumb {
 .traj-line { fill: none; stroke-dasharray: 3,3; }
 .traj-group { transition: opacity .15s; }
 .traj-selected .traj-line { stroke-dasharray: 4,2; }
-.traj-waypoint { cursor: pointer; }
-.traj-waypoint:hover circle { opacity: 1; }
 .route-line { fill: none; stroke-dasharray: 8,3; }
 .route-group { transition: opacity .15s; }
-.route-waypoint { cursor: pointer; }
+/* Straight-chord fallback: the lane graph could not route this one, so the line
+   is a statement of where the route passes, not of the shape it will take. */
+.route-line-approx { stroke-dasharray: 2,4; opacity: .75; }
+
+/* Only the selected actor's waypoints are hit-testable. Everyone else's are
+   inert, so a path drawn across the one being edited cannot swallow a
+   mousedown aimed at it — the reason the map can afford to keep every path on
+   screen at once. */
+.path-waypoint { pointer-events: none; }
+.path-waypoint.waypoint-interactive { pointer-events: all; cursor: move; }
+.path-waypoint text { pointer-events: none; }
+.waypoint-interactive:hover .wp-dot { opacity: 1; }
+/* Follows the box, keeps its screen width — the same reason the selection
+   crop marks use it: a scaled 0.4 line goes sub-pixel long before the 1 m dot
+   it rings does. */
+.wp-locating .wp-dot { animation: actor-glow-fade .9s ease-out 1; }
+@media (prefers-reduced-motion: reduce) {
+  .wp-locating .wp-dot { animation: none; filter: brightness(1.4); }
+}
 .trigger-point { pointer-events: none; }
 .trigger-radius-control { pointer-events: stroke; cursor: ew-resize; }
 .trigger-radius-handle { pointer-events: all; cursor: ew-resize; }

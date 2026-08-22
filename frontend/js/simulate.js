@@ -1296,18 +1296,65 @@
     }
   });
 
-  // The module's only export, and it exists purely for
-  // tests/test_route_fidelity_e2e.py: it returns the waypoint list an
-  // assign_route would actually be driven along, without running the
-  // animation. Asserting on the route directly is deterministic, whereas
-  // sampling a moving actor can only ever catch a reversal that happens to
-  // straddle two samples. Not used by any UI code.
+  /**
+   * The point list an assign_route actor is actually driven along: the cached
+   * lane graph routed between the authored waypoints (LaneGraph.route, a port
+   * of GlobalRoutePlanner.trace_route) and then filtered exactly as
+   * ChangeActorWaypoints filters it. Returns null when the town has no lane
+   * graph or the very first lane lookup fails.
+   *
+   * `rawPoints` defaults to the event's own waypoints. mapView.js draws this
+   * instead of the straight chords between the clicks — the clicks are where
+   * the route must PASS, not the shape it takes to get there, and a straight
+   * line between two of them crosses buildings and oncoming lanes it will
+   * never touch. It caches the result, because this walks every lane segment
+   * on the map once per authored waypoint and renderAllActors runs per frame
+   * during a drag.
+   */
+  function routeGeometry(actor, ev, rawPoints = null) {
+    if (!actor || !ev) return null;
+    const points = rawPoints || ev.action?.waypoints || [];
+    if (points.length < 2) return null;
+    // Through _makeSimActor so the seed sees the same normalized events (and
+    // the same initial pose) the preview would; _exactRoute reads only the
+    // actor's position off it, but building it by hand would be a second,
+    // drifting definition of what a sim actor is.
+    //
+    // ...off the AUTHORED pose, though, never the live one. A running preview
+    // rewrites actor.x/y every tick, and leg 0 is seeded from the actor's own
+    // position — so computing this from the live pose made the drawn route
+    // crawl along underneath the moving vehicle, redrawn every frame. The
+    // route is a property of the scenario, not of where the car has got to.
+    const sim = _makeSimActor({ ...actor, ...(authoredPose(actor.id) || {}) },
+                              actor.type === 'ego');
+    return _exactRoute(sim, points);
+  }
+
+  /**
+   * The pose an actor had before the preview picked it up, or null when no
+   * preview is running (in which case the actor's own pose IS the authored
+   * one). mapView.js needs it for the same reason routeGeometry does: its
+   * cache signature keys on the pose, and a live pose would invalidate the
+   * entry on every tick.
+   */
+  function authoredPose(actorId) {
+    if (!_running) return null;
+    const orig = _originals.get(actorId);
+    return orig ? { x: orig.x, y: orig.y, z: orig.z, yaw: orig.yaw } : null;
+  }
+
   window.Simulate = {
+    // routeForTesting exists purely for tests/test_route_fidelity_e2e.py: it
+    // returns the route without running the animation. Asserting on the route
+    // directly is deterministic, whereas sampling a moving actor can only ever
+    // catch a reversal that happens to straddle two samples.
     routeForTesting(actor) {
       const sim = _makeSimActor(actor, actor.type === 'ego');
       const ev = (sim.events || []).find(e => e.action && e.action.type === 'assign_route');
       if (!ev) return null;
       return _exactRoute(sim, ev.action.waypoints || []);
     },
+    routeGeometry,
+    authoredPose,
   };
 })();

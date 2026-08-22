@@ -31,7 +31,7 @@
   const DEFAULT_INIT_SPEED = 10.0;
 
   // ── Drag state ───────────────────────────────────────────────────────────────
-  let _dragState = null;   // { type: 'actor'|'yaw', actorId, startWorld, startActorPos, startYaw }
+  let _dragState = null;   // { type: 'actor'|'yaw'|'waypoint', actorId, ... }
 
   // ── SVG click handler ─────────────────────────────────────────────────────────
 
@@ -47,6 +47,12 @@
       _addPathPoint(activeId, activeType, world.x, world.y, AppState.activePathEventId);
       return;
     }
+
+    // A waypoint marker owns its own click: mousedown already marked it (and
+    // may have dragged it). Without this the click falls through to the
+    // deselect branch at the bottom, which drops the actor whose waypoints are
+    // the only reason the marker was reachable in the first place.
+    if (e.target.closest('.path-waypoint')) return;
 
     // ── Check for actor click first (even with tool active — clicking existing actor selects it) ──
     // Exception: the prop tool is sticky, so it keeps placing over existing
@@ -294,6 +300,46 @@
     return near ? near.z : 0;
   }
 
+  /* Route waypoints snap to the lane centreline ────────────────────────────
+   *
+   * A route waypoint is never driven to as authored: AssignRouteAction hands
+   * each one to GlobalRoutePlanner, which projects it with map.get_waypoint()
+   * and routes to whichever lane centre came out. So a point dropped between
+   * two lanes is not "between two lanes" — it silently becomes one of them, and
+   * when that is the oncoming carriageway the vehicle drives away from the
+   * route and loops back to reach it (weirdLooping.xosc). Snapping at authoring
+   * time makes the map show the point CARLA will actually use.
+   *
+   * follow_trajectory is deliberately NOT snapped: a trajectory is driven
+   * literally, vertex by vertex, and its whole purpose is going where lanes do
+   * not — a pedestrian crossing, a cyclist bending out, a reversing curve.
+   */
+  const ROUTE_SNAP_LANE_TYPES = new Set(['driving', 'bidirectional']);
+  const ROUTE_SNAP_MAX_DIST   = 25;   // how far to reach for a lane to snap onto
+
+  /**
+   * A route waypoint for the click at (wx, wy): the nearest driving-lane
+   * centreline point, or the raw click when no lane is within reach.
+   *
+   * Returns {x, y, z, snapped}. The snapped case takes its z from the same
+   * lane segment the position came from, so no separate elevation lookup is
+   * needed; the unsnapped case falls back to the ordinary surface query.
+   */
+  function _routeWaypointAt(wx, wy) {
+    const near = _nearestLaneProjection(wx, wy, ROUTE_SNAP_LANE_TYPES, ROUTE_SNAP_MAX_DIST);
+    if (!near) {
+      const x = Math.round(wx * 10) / 10;
+      const y = Math.round(wy * 10) / 10;
+      return { x, y, z: _roundZ(groundZAt(x, y) + SPAWN_CLEARANCE.waypoint), snapped: false };
+    }
+    return {
+      x: Math.round(near.x * 10) / 10,
+      y: Math.round(near.y * 10) / 10,
+      z: _roundZ(near.z + SPAWN_CLEARANCE.waypoint),
+      snapped: true,
+    };
+  }
+
   /* Height for an object of `type` standing at (x, y): road surface plus the
    * category's clearance, or plus the catalogue offset for a prop. The single
    * entry point for anything that moves an already-placed object. */
@@ -316,6 +362,30 @@
     // The rotate branch below used to lack this guard, so grabbing the handle
     // with a tool armed spun the actor while grabbing its body selected it.
     if (AppState.activeTool || AppState.trajectoryMode || AppState.routeMode) return;
+
+    /* A path waypoint of the SELECTED actor: mark it, and drag it.
+     *
+     * Only the selected actor's waypoints are hit-testable at all (mapView
+     * renders everyone else's with pointer-events: none), so this branch can
+     * never steal a mousedown aimed at some other actor's path drawn across
+     * the same stretch of road. The mark is set here rather than on click so
+     * that a drag marks the point it is about to move.
+     */
+    const wpEl = e.target.closest('.path-waypoint');
+    if (wpEl) {
+      const actorId  = wpEl.dataset.actorId;
+      const eventId  = wpEl.dataset.eventId;
+      const pathType = wpEl.dataset.pathType;
+      const index    = Number(wpEl.dataset.wpIdx);
+      if (actorId === AppState.selectedId && Number.isFinite(index)) {
+        AppState.selectWaypoint({ actorId, eventId, pathType, index });
+        _dragState = { type: 'waypoint', actorId, eventId, pathType, index };
+        document.body.classList.add('dragging-actor');
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+    }
 
     /* Rotate: the yaw handle only.
      *
@@ -380,6 +450,12 @@
         y: Math.round((_dragState.startActorPos.y + dy) * 10) / 10,
       });
 
+    } else if (_dragState.type === 'waypoint') {
+      ObjectsManager.movePathPoint(
+        _dragState.actorId, _dragState.pathType, _dragState.index,
+        world.x, world.y, _dragState.eventId,
+      );
+
     } else if (_dragState.type === 'yaw') {
       // Compute angle from actor centre to current mouse position
       const dx = world.x - _dragState.actorPos.x;
@@ -409,6 +485,22 @@
           AppState.updateById(actor.id, {
             z: _surfaceZFor(actor.type, actor.x, actor.y, actor.prop),
           });
+          UndoStack.resume();
+        }
+      }
+      // Same deal for a dragged trajectory vertex: x/y tracked the cursor every
+      // frame, the elevation lookup waited for the drop. A route waypoint needs
+      // nothing here — its z came out of the lane snap on every move.
+      if (_dragState.type === 'waypoint' && _dragState.pathType !== 'route') {
+        const actor = _findActor(_dragState.actorId);
+        const path = actor ? _eventPath(actor, _dragState.eventId, _dragState.pathType) : null;
+        const pt = path?.[_dragState.index];
+        if (pt) {
+          UndoStack.suspend();
+          ObjectsManager.movePathPoint(
+            _dragState.actorId, _dragState.pathType, _dragState.index,
+            pt.x, pt.y, _dragState.eventId, true,
+          );
           UndoStack.resume();
         }
       }
@@ -580,11 +672,22 @@
     // (_discardIncompletePath), and the card counts against 2 rather than 0.
     let path = _eventPath(actor, eventId, type);
     if (!path || path.length === 0) {
-      path = type === 'trajectory'
-        ? [{ x: actor.x, y: actor.y, z: actor.z ?? 0, velocity: 10.0 }]
-        : [{ x: actor.x, y: actor.y, z: actor.z ?? 0 }];
+      if (type === 'trajectory') {
+        path = [{ x: actor.x, y: actor.y, z: actor.z ?? 0, velocity: 10.0 }];
+      } else {
+        // Snapped like every other route waypoint. A vehicle sits on a spawn
+        // point, which is a lane centre already, so this normally moves the
+        // seed by centimetres — but a hand-typed or dragged pose need not be
+        // on a lane at all, and leg 0 would then start off the network.
+        const snap = _routeWaypointAt(actor.x, actor.y);
+        path = [{ x: snap.x, y: snap.y, z: snap.snapped ? snap.z : (actor.z ?? 0) }];
+      }
       _setEventPath(actor, eventId, type, path);
     }
+    // Drawing into a hidden path would put every click somewhere invisible, so
+    // starting a draw un-hides it for good (MapView.showPath flips the stored
+    // toggle rather than overriding it, so the card's button stays truthful).
+    MapView.showPath(actorId, eventId, type);
     AppState.set({
       activeTool: null,
       pendingTemplate: null,
@@ -602,11 +705,18 @@
     if (!actor) return;
     let path = _eventPath(actor, eventId, type);
     if (!path) path = [];
-    const x = Math.round(wx * 10) / 10;
-    const y = Math.round(wy * 10) / 10;
     // Waypoints used to carry no z at all and picked up a flat 0.2 downstream,
     // which drags a trajectory across an elevated road straight under it.
-    const point = { x, y, z: _roundZ(groundZAt(x, y) + SPAWN_CLEARANCE.waypoint) };
+    let point;
+    if (type === 'route') {
+      const snap = _routeWaypointAt(wx, wy);
+      if (!snap.snapped) _warnUnsnapped();
+      point = { x: snap.x, y: snap.y, z: snap.z };
+    } else {
+      const x = Math.round(wx * 10) / 10;
+      const y = Math.round(wy * 10) / 10;
+      point = { x, y, z: _roundZ(groundZAt(x, y) + SPAWN_CLEARANCE.waypoint) };
+    }
     if (type === 'trajectory') {
       point.velocity = path.length > 0
         ? path[path.length - 1].velocity
@@ -682,6 +792,47 @@
     AppState.updateById(actor.id, { events: patchedEvents });
   }
 
+  /* One warning per drawing run, not one per click: building a path across a
+   * car park would otherwise stack a toast per waypoint. */
+  let _unsnappedWarned = false;
+  function _warnUnsnapped() {
+    if (_unsnappedWarned) return;
+    _unsnappedWarned = true;
+    Toast.warn(`Kein Fahrstreifen in ${ROUTE_SNAP_MAX_DIST} m — Wegpunkt nicht eingerastet`);
+    setTimeout(() => { _unsnappedWarned = false; }, 4000);
+  }
+
+  /**
+   * Move one existing waypoint to (wx, wy) — the map drag.
+   *
+   * A route waypoint is snapped here exactly as it is at placement, so dragging
+   * one cannot put it somewhere clicking one could not. `deriveZ` is off during
+   * the drag itself for a trajectory point (the elevation lookup is a linear
+   * scan over every lane segment, the same reason an actor's z waits for
+   * mouseup) — a route point gets its z free, out of the snap.
+   */
+  function movePathPoint(actorId, type, idx, wx, wy, eventId = null, deriveZ = false) {
+    const actor = _findActor(actorId);
+    const path = actor ? _eventPath(actor, eventId, type) : null;
+    if (!actor || !path?.[idx]) return;
+
+    let patch;
+    if (type === 'route') {
+      const snap = _routeWaypointAt(wx, wy);
+      patch = { x: snap.x, y: snap.y, z: snap.z };
+    } else {
+      const x = Math.round(wx * 10) / 10;
+      const y = Math.round(wy * 10) / 10;
+      patch = deriveZ
+        ? { x, y, z: _roundZ(groundZAt(x, y) + SPAWN_CLEARANCE.waypoint) }
+        : { x, y };
+    }
+    // Copy rather than write through to the live point — see _addPathPoint.
+    _setEventPath(actor, eventId, type, path.map((pt, i) => (
+      i === idx ? { ...pt, ...patch } : pt
+    )));
+  }
+
   function deletePathPoint(actorId, type, idx, eventId = null) {
     const actor = _findActor(actorId);
     const path = actor ? _eventPath(actor, eventId, type) : null;
@@ -712,6 +863,7 @@
     startPathMode,
     defaultTriggerPoint,
     moveTriggerPoint,
+    movePathPoint,
     deletePathPoint,
     setPathPointVelocity,
     clearPath,
