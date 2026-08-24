@@ -188,6 +188,7 @@
 
     /** Update an existing object's fields. */
     updateById(id, patch) {
+      patch = _seedFollowPatch(id, patch);
       _recordUpdate(id, patch);
       if (this.ego && this.ego.id === id) {
         Object.assign(this.ego, patch);
@@ -719,6 +720,70 @@
   }
 
   /** True when every field in the patch already holds that value. */
+  /**
+   * Waypoint 1 of every path event is the actor's own pose, so an actor that
+   * moves takes it with it. Without this the seed stays where the path was
+   * drawn and the actor routes back to a point it has since left — visible as a
+   * route that starts by driving backwards.
+   *
+   * Folded into the caller's patch rather than issued as a second updateById:
+   * `events` then rides along in the SAME patch as x/y, so the move and the
+   * seed are one undo entry instead of two that can be separated.
+   *
+   * `events` is attached whenever the actor has a path at all, even on the
+   * frames where the snap leaves the seed exactly where it was. The undo key is
+   * `id + sorted patch keys`, so a key that alternated between {x,y} and
+   * {x,y,events} mid-drag would break a single drag into several entries.
+   * A patch that genuinely changes nothing is still dropped by _isNoOpPatch,
+   * which deep-compares.
+   *
+   * Skipped outright while the preview is driving this actor: it rewrites
+   * actor.x/y every tick, and following that would rewrite the authored path
+   * under the running preview — the same reason routeGeometry reads the
+   * authored pose rather than the live one.
+   */
+  function _seedFollowPatch(id, patch) {
+    if (!('x' in patch) && !('y' in patch)) return patch;
+    if (window.Simulate && Simulate.authoredPose && Simulate.authoredPose(id)) return patch;
+
+    const actor = (AppState.ego && AppState.ego.id === id)
+      ? AppState.ego
+      : AppState.npcs.find(n => n.id === id);
+    if (!actor) return patch;
+
+    const x = 'x' in patch ? patch.x : actor.x;
+    const y = 'y' in patch ? patch.y : actor.y;
+    const z = 'z' in patch ? patch.z : actor.z;
+
+    let hasPath = false;
+    const events = (actor.events || []).map(ev => {
+      const action = ev.action || {};
+      const isRoute = action.type === 'assign_route';
+      const path = isRoute ? action.waypoints
+                 : action.type === 'follow_trajectory' ? action.trajectory
+                 : null;
+      if (!path || !path.length) return ev;
+      hasPath = true;
+
+      let seed;
+      if (isRoute && window.ObjectsManager) {
+        // Snapped like any other 'fastest' waypoint — the actor's own pose need
+        // not be on a lane (hand-typed, or dragged onto the verge).
+        const snap = ObjectsManager.routeWaypointAt(x, y);
+        seed = { ...path[0], x: snap.x, y: snap.y,
+                 z: snap.snapped ? snap.z : (z ?? path[0].z), strategy: 'fastest' };
+      } else {
+        seed = { ...path[0], x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10,
+                 z: z ?? path[0].z };
+      }
+      const next = [seed, ...path.slice(1)];
+      return { ...ev, action: isRoute ? { ...action, waypoints: next }
+                                      : { ...action, trajectory: next } };
+    });
+
+    return hasPath ? { ...patch, events } : patch;
+  }
+
   function _isNoOpPatch(id, patch) {
     const actor = AppState.findById(id);
     if (!actor) return false;
@@ -991,6 +1056,20 @@
             code: 'path_too_short',
             short: 'Mindestens 2 Wegpunkte nötig',
             message: 'die Route hat weniger als 2 Wegpunkte',
+          };
+        }
+        // The first waypoint must route. Its leg runs from the actor's own pose
+        // to itself, so on any path the editor built this is already true (the
+        // seed is placed 'fastest' and cannot be deleted or toggled) — the gate
+        // exists for a path that reached the editor another way: a save file
+        // predating the seed guard, or an LLM payload. The backend raises the
+        // same case as a 400; without this the export would fail with no chip
+        // ever having said which event was at fault.
+        if (action.waypoints[0] && action.waypoints[0].strategy === 'shortest') {
+          return {
+            code: 'route_starts_straight',
+            short: 'Erster Wegpunkt muss der Spur folgen',
+            message: 'der erste Wegpunkt der Route ist auf „Gerade" gesetzt',
           };
         }
         // An assign_route's own trigger is discarded and forced to

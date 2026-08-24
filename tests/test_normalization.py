@@ -137,6 +137,66 @@ check("assign_route on an alias of a routable type is allowed",
       out["npcs"][0]["events"][0]["action"]["type"] == "assign_route")
 
 
+# ── Per-waypoint routeStrategy ───────────────────────────────────────────────
+#
+# A waypoint's strategy governs the LEG THAT ENDS AT IT: 'shortest' is appended
+# to the route verbatim and driven as a straight line (exactly what
+# FollowTrajectoryAction becomes — its parser tags every vertex 'shortest'),
+# anything else routes that leg through the GlobalRoutePlanner. Mixing them is
+# how one path action expresses both.
+
+def route(waypoints, strategy=None):
+    action = {"type": "assign_route", "waypoints": waypoints}
+    if strategy is not None:
+        action["route_strategy"] = strategy
+    return norm([{"id": "e1", "trigger": {"type": "simulation_time"}, "action": action}])
+
+
+WP = [{"x": 1, "y": 2}, {"x": 3, "y": 4}, {"x": 5, "y": 6}]
+
+out = route(WP)
+check("a waypoint with no strategy defaults to fastest",
+      [w["strategy"] for w in out["npcs"][0]["events"][0]["action"]["waypoints"]]
+      == ["fastest"] * 3)
+
+out = route([WP[0], {**WP[1], "strategy": "shortest"}, WP[2]])
+check("a per-waypoint strategy survives normalization",
+      [w["strategy"] for w in out["npcs"][0]["events"][0]["action"]["waypoints"]]
+      == ["fastest", "shortest", "fastest"])
+
+# The XSD also allows leastIntersections and random, but ScenarioRunner treats
+# everything that is not 'shortest' as the planner — so folding them into
+# 'fastest' changes the file without changing what CARLA does.
+out = route([WP[0], {**WP[1], "strategy": "leastIntersections"}, WP[2]])
+check("an unsupported strategy folds into fastest",
+      out["npcs"][0]["events"][0]["action"]["waypoints"][1]["strategy"] == "fastest")
+
+# The one hard rule. Waypoint 0's leg runs from the actor's own pose to itself,
+# so on an editor-built route the choice is meaningless — but 'shortest' there
+# leaves ChangeActorWaypoints.initialise's `ego_next_wp` unbound on the first
+# routed leg and kills the run with an UnboundLocalError, on stock 0.9.15 as
+# well as here. Rejected rather than coerced: a payload the editor did not build
+# may have no waypoint on the actor at all, and rewriting its first leg from a
+# straight line into a routed one hands back a different scenario.
+check("a route whose first waypoint is shortest is rejected",
+      raises(lambda: route([{**WP[0], "strategy": "shortest"}, WP[1]])))
+check("action-level route_strategy=shortest is rejected the same way",
+      raises(lambda: route([WP[0], WP[1]], strategy="shortest")))
+check("shortest on a later waypoint is fine",
+      route([WP[0], WP[1], {**WP[2], "strategy": "shortest"}])
+      ["npcs"][0]["events"][0]["action"]["waypoints"][2]["strategy"] == "shortest")
+
+# follow_trajectory vertices carry no strategy at all — the emitter writes a
+# Polyline, not a Route, and a stray key would be silently dropped anyway.
+out = norm([{"id": "e1", "trigger": {"type": "simulation_time"},
+             "action": {"type": "follow_trajectory",
+                        "trajectory": [{"x": 1, "y": 2, "strategy": "shortest"},
+                                       {"x": 3, "y": 4}]}}])
+check("a trajectory vertex carries no strategy",
+      all("strategy" not in w
+          for w in out["npcs"][0]["events"][0]["action"]["trajectory"]))
+
+
 # ── Trigger defaults ─────────────────────────────────────────────────────────
 
 out = norm([{"id": "e1", "trigger": {"type": "distance_to_ego"},

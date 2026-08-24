@@ -1129,7 +1129,12 @@
   function _routeSignature(actor, points) {
     const pose = (window.Simulate && Simulate.authoredPose
                   && Simulate.authoredPose(actor.id)) || actor;
-    return `${pose.x},${pose.y}|${points.map(p => `${p.x},${p.y}`).join(';')}`;
+    // The strategy is part of the signature, not decoration: it decides whether
+    // a leg is routed or drawn as a chord, and toggling a waypoint to 'Gerade'
+    // leaves its coordinates untouched — so keying on position alone left the
+    // drawn route showing the lane-following line it no longer is.
+    return `${pose.x},${pose.y}|`
+         + points.map(p => `${p.x},${p.y},${p.strategy || 'fastest'}`).join(';');
   }
 
   /** The route as CARLA will drive it, or null to fall back to straight chords
@@ -1185,9 +1190,16 @@
   function _waypointGroup(item, i, isSel) {
     const wg = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     const marked = isSel && _isMarkedWaypoint(item, i);
+    // Waypoint 1 is never interactive, selected actor or not: it is the
+    // vehicle's own position and tracks it (AppState.updateById), so it is the
+    // vehicle you drag, and the vehicle you delete. Leaving it grabbable would
+    // offer a drag that the next actor move silently undoes, and a mark that
+    // Entf then refuses to act on. Its own marker sits squarely on the actor,
+    // so dropping pointer-events also hands those clicks back to the car.
+    const interactive = isSel && i > 0;
     wg.setAttribute('class',
       `path-waypoint ${item.pathType === 'route' ? 'route-waypoint' : 'traj-waypoint'}`
-      + `${isSel ? ' waypoint-interactive' : ''}${marked ? ' waypoint-marked' : ''}`);
+      + `${interactive ? ' waypoint-interactive' : ''}${marked ? ' waypoint-marked' : ''}`);
     wg.setAttribute('data-actor-id', item.actor.id);
     wg.setAttribute('data-event-id', item.eventId);
     wg.setAttribute('data-path-type', item.pathType);
@@ -1340,18 +1352,33 @@
       const wg = _waypointGroup(item, i, isSel);
       if (isSel) _appendWaypointHit(wg, wp);
 
-      wg.appendChild(_svgEl('rect', {
-        x: wp.x - (isSel ? 1.1 : 0.75),
-        y: wp.y - (isSel ? 1.1 : 0.75),
-        width: isSel ? 2.2 : 1.5,
-        height: isSel ? 2.2 : 1.5,
+      // A 'shortest' waypoint is turned 45 degrees and outlined in the same
+      // orange the event card's toggle uses. Two cues rather than one: at town
+      // zoom the marker is a couple of pixels across, where a stroke colour
+      // alone is invisible and the silhouette still reads. The FILL stays the
+      // actor's own colour either way — that is what says whose path this is,
+      // and the strategy must not cost that.
+      const shortest = wp.strategy === 'shortest';
+      const half = isSel ? 1.1 : 0.75;
+      const dot = _svgEl('rect', {
+        x: wp.x - half, y: wp.y - half,
+        width: half * 2, height: half * 2,
         rx: 0.2,
         fill: col.body,
         opacity: '0.9',
-        stroke: '#fff',
-        'stroke-width': 0.2,
+        stroke: shortest ? '#e07a00' : '#fff',
+        'stroke-width': shortest ? 0.35 : 0.2,
         class: 'wp-dot',
-      }));
+      });
+      if (shortest) dot.setAttribute('transform', `rotate(45 ${wp.x} ${wp.y})`);
+      wg.appendChild(dot);
+      if (isSel && i > 0) {
+        const wpTitle = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+        wpTitle.textContent = shortest
+          ? `Wegpunkt ${i + 1}: gerade Linie vom vorherigen Wegpunkt`
+          : `Wegpunkt ${i + 1}: folgt der Fahrspur ab dem vorherigen Wegpunkt`;
+        wg.appendChild(wpTitle);
+      }
       if (isSel && _isMarkedWaypoint(item, i)) _appendWaypointMark(wg, wp, isSel ? 2.2 : 1.5);
 
       if (isSel) {

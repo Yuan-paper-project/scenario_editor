@@ -884,11 +884,17 @@
       // click on the row: the guard there is "not inside a field", and a row is
       // not a field. Enter re-locates, matching the click.
       item.tabIndex = 0;
-      item.title = 'Klicken, um auf der Karte zu zeigen · Entf löscht';
+      item.title = i === 0
+        ? 'Startpunkt — liegt auf dem Fahrzeug und folgt ihm'
+        : 'Klicken, um auf der Karte zu zeigen · Entf löscht';
 
       const locate = () => {
         const sel = { actorId: actor.id, eventId, pathType: type, index: i };
-        AppState.selectWaypoint(sel);
+        // The seed is shown but not marked. It is not interactive on the map
+        // either, so a mark on it could only have come from here — and Entf
+        // would then refuse to delete it, leaving the key dead on exactly one
+        // row of the list. Flying the map to it still works.
+        if (i > 0) AppState.selectWaypoint(sel);
         MapView.focusWaypoint(sel);
       };
       item.addEventListener('click', e => {
@@ -912,13 +918,18 @@
       coords.className = 'wp-coords';
       coords.textContent = `(${wp.x.toFixed(1)}, ${wp.y.toFixed(1)})`;
 
-      const delBtn = document.createElement('button');
-      delBtn.className = 'wp-delete';
-      delBtn.type = 'button';
+      // Waypoint 1 is the vehicle — it is seeded on the actor's pose and
+      // tracks it, so it cannot be removed (ObjectsManager.deletePathPoint
+      // refuses it too). Rendered as a hidden spacer rather than dropped, or
+      // the row would be the only one in the list with a different right edge.
+      const delBtn = document.createElement(i === 0 ? 'span' : 'button');
+      delBtn.className = i === 0 ? 'wp-delete wp-delete-spacer' : 'wp-delete';
+      if (i === 0) delBtn.setAttribute('aria-hidden', 'true');
+      else delBtn.type = 'button';
       delBtn.textContent = '×';
-      delBtn.title = 'Wegpunkt entfernen';
-      delBtn.setAttribute('aria-label', `Wegpunkt ${i + 1} entfernen`);
-      delBtn.addEventListener('click', () => {
+      delBtn.title = i === 0 ? '' : 'Wegpunkt entfernen';
+      if (i > 0) delBtn.setAttribute('aria-label', `Wegpunkt ${i + 1} entfernen`);
+      if (i > 0) delBtn.addEventListener('click', () => {
         ObjectsManager.deletePathPoint(actor.id, type, i, eventId);
         // Indices past the deleted one all shift down, so a mark left as it is
         // would silently start naming the next point along — and Entf would
@@ -935,6 +946,28 @@
 
       item.appendChild(num);
       item.appendChild(coords);
+      // A route waypoint's strategy governs the leg that ENDS at it, so the
+      // toggle belongs to waypoints 2..N. Waypoint 1's leg runs from the
+      // actor's own pose to itself and is empty, so a control there would
+      // claim an effect it does not have — and 'Gerade' on waypoint 1 is the
+      // one arrangement that kills a run on an unpatched ScenarioRunner.
+      if (isRoute && i > 0) {
+        const shortest = wp.strategy === 'shortest';
+        const stratBtn = document.createElement('button');
+        stratBtn.type = 'button';
+        stratBtn.className = `wp-strategy${shortest ? ' is-shortest' : ''}`;
+        stratBtn.textContent = shortest ? 'Gerade' : 'Spur';
+        stratBtn.title = shortest
+          ? 'Gerade Linie vom vorherigen Wegpunkt — klicken, um der Fahrspur zu folgen'
+          : 'Folgt der Fahrspur ab dem vorherigen Wegpunkt — klicken für eine gerade Linie';
+        stratBtn.setAttribute('aria-label',
+          `Wegpunkt ${i + 1}: ${shortest ? 'gerade Linie' : 'Fahrspur'}`);
+        stratBtn.addEventListener('click', () => {
+          ObjectsManager.setPathPointStrategy(
+            actor.id, i, shortest ? 'fastest' : 'shortest', eventId);
+        });
+        item.appendChild(stratBtn);
+      }
       if (!isRoute) {
         const velInput = document.createElement('input');
         velInput.type = 'number';

@@ -44,7 +44,8 @@
     const activeType = AppState.routeMode ? 'route' : 'trajectory';
     const activeId = AppState.routeMode ? AppState.activeRouteId : AppState.activeTrajectoryId;
     if ((AppState.trajectoryMode || AppState.routeMode) && activeId) {
-      _addPathPoint(activeId, activeType, world.x, world.y, AppState.activePathEventId);
+      _addPathPoint(activeId, activeType, world.x, world.y,
+                    AppState.activePathEventId, e.shiftKey);
       return;
     }
 
@@ -680,7 +681,11 @@
         // seed by centimetres — but a hand-typed or dragged pose need not be
         // on a lane at all, and leg 0 would then start off the network.
         const snap = _routeWaypointAt(actor.x, actor.y);
-        path = [{ x: snap.x, y: snap.y, z: snap.snapped ? snap.z : (actor.z ?? 0) }];
+        path = [{
+          x: snap.x, y: snap.y,
+          z: snap.snapped ? snap.z : (actor.z ?? 0),
+          strategy: 'fastest',
+        }];
       }
       _setEventPath(actor, eventId, type, path);
     }
@@ -700,7 +705,7 @@
     MapView.renderAllActors();
   }
 
-  function _addPathPoint(actorId, type, wx, wy, eventId = null) {
+  function _addPathPoint(actorId, type, wx, wy, eventId = null, shortest = false) {
     const actor = _findActor(actorId);
     if (!actor) return;
     let path = _eventPath(actor, eventId, type);
@@ -709,9 +714,28 @@
     // which drags a trajectory across an elevated road straight under it.
     let point;
     if (type === 'route') {
-      const snap = _routeWaypointAt(wx, wy);
-      if (!snap.snapped) _warnUnsnapped();
-      point = { x: snap.x, y: snap.y, z: snap.z };
+      // Shift places a 'shortest' waypoint. Same modifier and the same meaning
+      // it already has for prop placement: do not snap to the lane. That is not
+      // a convenience here, it is the semantics — a 'shortest' leg is appended
+      // to the route verbatim and driven as the straight line it is drawn as,
+      // so going where lanes do not is the whole point of choosing it. A plain
+      // click stays snapped, because a 'fastest' leg is handed to the
+      // GlobalRoutePlanner, which projects the point with map.get_waypoint()
+      // and routes to whichever lane came out — off-centre that can silently be
+      // the oncoming carriageway.
+      if (shortest) {
+        const x = Math.round(wx * 10) / 10;
+        const y = Math.round(wy * 10) / 10;
+        point = {
+          x, y,
+          z: _roundZ(groundZAt(x, y) + SPAWN_CLEARANCE.waypoint),
+          strategy: 'shortest',
+        };
+      } else {
+        const snap = _routeWaypointAt(wx, wy);
+        if (!snap.snapped) _warnUnsnapped();
+        point = { x: snap.x, y: snap.y, z: snap.z, strategy: 'fastest' };
+      }
     } else {
       const x = Math.round(wx * 10) / 10;
       const y = Math.round(wy * 10) / 10;
@@ -817,7 +841,11 @@
     if (!actor || !path?.[idx]) return;
 
     let patch;
-    if (type === 'route') {
+    // A 'shortest' route waypoint drags as freely as a trajectory vertex — it is
+    // driven exactly where it is put, so snapping it would defeat the strategy
+    // it was given. Only a 'fastest' one re-snaps, for the reason in
+    // _addPathPoint: the router will project it whether we do or not.
+    if (type === 'route' && path[idx].strategy !== 'shortest') {
       const snap = _routeWaypointAt(wx, wy);
       patch = { x: snap.x, y: snap.y, z: snap.z };
     } else {
@@ -833,12 +861,50 @@
     )));
   }
 
+  /* Waypoint 1 IS the vehicle: it is seeded on the actor's pose and tracks it
+   * (AppState.updateById), so deleting it would leave a path whose first point
+   * is a place the actor is not. For a route that is also load-bearing rather
+   * than tidy — waypoint 0 is what makes ChangeActorWaypoints bind its route
+   * seed on the i == 0 pass, so a route whose first waypoint is 'shortest'
+   * kills the run with an UnboundLocalError on stock ScenarioRunner. Keeping
+   * the seed is what keeps waypoint 0 'fastest' and exports portable.
+   *
+   * Silent rather than a toast: Entf walks the path by design (the mark moves
+   * to the point that took the deleted one's place), so this fires on the last
+   * keypress of an ordinary gesture and a warning there would be noise. */
   function deletePathPoint(actorId, type, idx, eventId = null) {
+    if (idx === 0) return;
     const actor = _findActor(actorId);
     const path = actor ? _eventPath(actor, eventId, type) : null;
     if (!actor || !path) return;
     // Copy rather than splice the live array — see _addPathPoint.
     _setEventPath(actor, eventId, type, path.filter((_, i) => i !== idx));
+  }
+
+  /* Flip one route waypoint between the two strategies.
+   *
+   * Going to 'fastest' re-snaps: the point becomes a routing target, and an
+   * off-centre one is projected by map.get_waypoint() to a lane nobody chose.
+   * Going to 'shortest' leaves the point exactly where it is — a lane centre is
+   * a perfectly good straight-line target, and moving it would be a surprise.
+   *
+   * Waypoint 0 is refused: its leg runs from the actor's own pose to itself, so
+   * the choice means nothing, and 'shortest' there is the arrangement that
+   * crashes an unpatched ScenarioRunner (see deletePathPoint). */
+  function setPathPointStrategy(actorId, idx, strategy, eventId = null) {
+    if (idx === 0 || (strategy !== 'fastest' && strategy !== 'shortest')) return;
+    const actor = _findActor(actorId);
+    const path = actor ? _eventPath(actor, eventId, 'route') : null;
+    if (!actor || !path?.[idx]) return;
+    let patch = { strategy };
+    if (strategy === 'fastest') {
+      const snap = _routeWaypointAt(path[idx].x, path[idx].y);
+      if (!snap.snapped) _warnUnsnapped();
+      patch = { ...patch, x: snap.x, y: snap.y, z: snap.z };
+    }
+    _setEventPath(actor, eventId, 'route', path.map((pt, i) => (
+      i === idx ? { ...pt, ...patch } : pt
+    )));
   }
 
   function setPathPointVelocity(actorId, type, idx, velocity, eventId = null) {
@@ -865,10 +931,15 @@
     moveTriggerPoint,
     movePathPoint,
     deletePathPoint,
+    setPathPointStrategy,
     setPathPointVelocity,
     clearPath,
     groundZAt,
     surfaceZFor: _surfaceZFor,
+    // AppState.updateById snaps a moving actor's seed waypoint with this, for
+    // the same reason placement does: waypoint 0 is a routing seed and an
+    // off-centre one gets projected onto a lane nobody chose.
+    routeWaypointAt: _routeWaypointAt,
     // Exposed for simulate.js's lane-follow preview: same projection used for
     // placement/yaw, now also needed to snap an actor onto its spawn lane and
     // to test for a same-direction neighbour lane (lane_change feasibility).

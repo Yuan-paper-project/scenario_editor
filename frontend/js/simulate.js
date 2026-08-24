@@ -592,6 +592,22 @@
 
     for (const wp of rawPoints) {
       const toRef = _resolveLaneRef(wp.x, wp.y, wp.z);
+
+      // A waypoint's strategy governs the leg that ENDS at it. 'shortest' is
+      // appended verbatim — ChangeActorWaypoints does `route.append(element)`
+      // outside the routed branch, so neither the >1 m dedup nor the heading
+      // filter applies to it, and the actor drives the straight line as drawn.
+      //
+      // The next 'fastest' leg still starts HERE: CARLA seeds it from
+      // carla_route_elements[i - 1] whatever that element's own strategy was,
+      // which is exactly what makes an off-lane 'shortest' point before a
+      // 'fastest' one a routing seed rather than a free excursion.
+      if (wp.strategy === 'shortest') {
+        route.push({ x: wp.x, y: wp.y, z: wp.z !== undefined ? wp.z : 0.2 });
+        if (toRef) fromRef = toRef;
+        continue;
+      }
+
       // No lane under this waypoint, or no path to it: CARLA's NetworkXNoPath
       // branch appends the raw authored point and moves on, rather than
       // abandoning the whole route.

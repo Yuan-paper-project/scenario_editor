@@ -71,7 +71,77 @@ with sync_playwright() as p:
           f"{wps[-1]} lane_y={target['laneY']:.2f}")
     check("...and carries a derived z, not a flat default",
           len(wps) == 2 and isinstance(wps[1].get("z"), (int, float)), str(wps[-1]))
+    # ── Shift+click places a 'shortest' waypoint, unsnapped ─────────────────
+    #
+    # A waypoint's strategy governs the leg that ENDS at it. 'shortest' is
+    # appended to the route verbatim and driven as the straight line it is drawn
+    # as, so it must NOT be snapped — going where lanes do not is the point of
+    # choosing it. Shift already means "do not snap to the lane" for props.
+    sx, sy = assert_on_screen(page, target["offX"] - 12, target["offY"])
+    page.keyboard.down("Shift")
+    page.mouse.click(sx, sy)
+    page.keyboard.up("Shift")
+    wps = page.evaluate("AppState.ego.events[0].action.waypoints")
+    check("Shift+click adds a 'shortest' waypoint",
+          len(wps) == 3 and wps[2]["strategy"] == "shortest", str(wps[-1]))
+    check("...left where it was clicked, NOT snapped to the lane centre",
+          len(wps) == 3 and abs(wps[2]["y"] - target["laneY"]) > 1.5,
+          f"{wps[-1]} lane_y={target['laneY']:.2f}")
+    check("...while a plain click stays 'fastest'", wps[1]["strategy"] == "fastest")
     page.click("#traj-done-btn")
+
+    check("a 'shortest' marker is turned 45 degrees on the map",
+          page.evaluate("() => {const el = document.querySelector("
+                        "'.path-waypoint[data-wp-idx=\"2\"] .wp-dot');"
+                        "return !!el && (el.getAttribute('transform')||'').includes('rotate(45');}"))
+
+    # ── The card's toggle flips it back, and re-snaps ────────────────────────
+    before = page.evaluate("AppState.ego.events[0].action.waypoints[2]")
+    page.click('.waypoint-item[data-wp-idx="2"] .wp-strategy')
+    after = page.evaluate("AppState.ego.events[0].action.waypoints[2]")
+    check("the card's toggle flips a waypoint to 'fastest'",
+          after["strategy"] == "fastest", str(after))
+    check("...and re-snaps it, because it is now a routing target",
+          abs(after["y"] - target["laneY"]) < 0.6,
+          f"{before} -> {after} lane_y={target['laneY']:.2f}")
+    page.click('.waypoint-item[data-wp-idx="2"] .wp-strategy')
+    check("...and flipping back to 'Gerade' leaves the point where it is",
+          page.evaluate("AppState.ego.events[0].action.waypoints[2].strategy") == "shortest"
+          and abs(page.evaluate("AppState.ego.events[0].action.waypoints[2].y")
+                  - after["y"]) < 0.01)
+
+    # The route-geometry cache keys on the strategy as well as the position —
+    # toggling leaves the coordinates untouched, so without that the map keeps
+    # drawing the lane-following line it no longer is.
+    check("toggling the strategy redraws the route line",
+          page.evaluate("""() => {
+              const pts = () => document.querySelector('.route-line')
+                                        .getAttribute('points').trim().split(/\\s+/).length;
+              const straight = pts();
+              document.querySelector('.waypoint-item[data-wp-idx="2"] .wp-strategy').click();
+              const routed = pts();
+              document.querySelector('.waypoint-item[data-wp-idx="2"] .wp-strategy').click();
+              return routed !== straight;
+          }"""))
+
+    # ── Waypoint 0 must route: the client-side half of the backend's 400 ─────
+    check("ScenarioRules chips a route whose first waypoint is 'Gerade'",
+          page.evaluate("""() => {
+              const ev = {id: 'x', trigger: {type: 'simulation_time', value: 0},
+                          action: {type: 'assign_route', waypoints: [
+                              {x: 1, y: 2, strategy: 'shortest'},
+                              {x: 3, y: 4, strategy: 'fastest'}]}};
+              const p = ScenarioRules.eventProblem({type: 'car'}, ev, [ev]);
+              return !!p && p.code === 'route_starts_straight';
+          }"""))
+    check("...and does not chip one that starts 'Spur'",
+          page.evaluate("""() => {
+              const ev = {id: 'x', trigger: {type: 'simulation_time', value: 0},
+                          action: {type: 'assign_route', waypoints: [
+                              {x: 1, y: 2, strategy: 'fastest'},
+                              {x: 3, y: 4, strategy: 'shortest'}]}};
+              return ScenarioRules.eventProblem({type: 'car'}, ev, [ev]) === null;
+          }"""))
 
     # ── The drawn line follows the lanes ─────────────────────────────────────
     geom = page.evaluate("""() => {
@@ -212,9 +282,48 @@ with sync_playwright() as p:
     ego_after = page.evaluate("({x: AppState.ego.x, y: AppState.ego.y})")
     check("grabbing the selected vehicle where waypoint 1 sits still MOVES the car",
           abs(ego_after["y"] - ego_before["y"]) > 1.0, f"{ego_before} -> {ego_after}")
-    check("...rather than dragging waypoint 1 out from under it",
-          abs(page.evaluate("AppState.ego.events[0].action.waypoints[0].y") - ego_before["y"]) < 0.2,
-          str(page.evaluate("AppState.ego.events[0].action.waypoints[0]")))
+    check("...rather than grabbing waypoint 1, which is not interactive at all",
+          page.evaluate("() => !document.querySelector("
+                        "'.path-waypoint[data-wp-idx=\"0\"].waypoint-interactive')"))
+
+    # ── Waypoint 1 is the vehicle ────────────────────────────────────────────
+    #
+    # It is seeded on the actor's pose and TRACKS it, so a route can never start
+    # by driving back to somewhere the car has since left. That is also what
+    # keeps waypoint 0 'fastest': ChangeActorWaypoints binds its route seed on
+    # the i == 0 pass, and a route whose first waypoint is 'shortest' dies with
+    # an UnboundLocalError on stock ScenarioRunner. So the seed is not
+    # deletable, not draggable, and carries no strategy toggle.
+    #
+    # The target is an existing waypoint, which the checks above already proved
+    # sits on a lane centre — a hand-picked coordinate would be one more thing
+    # that has to stay true of Town03.
+    tracked = page.evaluate("""() => {
+        const path = AppState.ego.events[0].action.waypoints;
+        const before = {...path[0]};
+        const target = path[path.length - 1];
+        AppState.updateById('obj-1', {x: target.x, y: target.y});
+        const wp = AppState.ego.events[0].action.waypoints[0];
+        return {before, wp, ego: {x: AppState.ego.x, y: AppState.ego.y},
+                moved: Math.hypot(wp.x - before.x, wp.y - before.y),
+                gap: Math.hypot(wp.x - AppState.ego.x, wp.y - AppState.ego.y)};
+    }""")
+    check("moving the actor takes waypoint 1 with it",
+          tracked["moved"] > 5.0, str(tracked))
+    check("...landing on the lane centre under the car", tracked["gap"] < 3.0, str(tracked))
+    check("...and it stays 'fastest'",
+          page.evaluate("AppState.ego.events[0].action.waypoints[0].strategy") == "fastest")
+    check("the seed move rides in the SAME undo entry as the actor move",
+          page.evaluate("""() => {
+              const y = AppState.ego.y;
+              UndoStack.seal();
+              AppState.updateById('obj-1', {x: AppState.ego.x, y: y + 12});
+              UndoStack.seal();
+              UndoStack.undo();
+              const wp = AppState.ego.events[0].action.waypoints[0];
+              return Math.abs(AppState.ego.y - y) < 0.01
+                  && Math.abs(wp.y - AppState.ego.y) < 3.0;
+          }"""))
 
     handle = page.evaluate("""() => {
         const h = document.querySelector('#layer-actors-top .yaw-handle');
@@ -236,9 +345,26 @@ with sync_playwright() as p:
     # ── The card's row locates the point, Backspace deletes it ───────────────
     page.evaluate("AppState.selectWaypoint(null)")
     page.click('.waypoint-item[data-wp-idx="0"]')
+    check("clicking the seed's row locates it but does not mark it",
+          page.evaluate("AppState.selectedWaypoint") is None,
+          str(page.evaluate("AppState.selectedWaypoint")))
+    check("...and the seed's row offers no delete button",
+          page.evaluate("() => !document.querySelector("
+                        "'.waypoint-item[data-wp-idx=\"0\"] button.wp-delete')"))
+    check("...nor a strategy toggle, its leg being the actor's pose to itself",
+          page.evaluate("() => !document.querySelector("
+                        "'.waypoint-item[data-wp-idx=\"0\"] .wp-strategy')"))
+    check("deletePathPoint refuses index 0 even when called directly",
+          page.evaluate("""(id) => {
+              const n = AppState.ego.events[0].action.waypoints.length;
+              ObjectsManager.deletePathPoint('obj-1', 'route', 0, id);
+              return AppState.ego.events[0].action.waypoints.length === n;
+          }""", ev_id))
+
+    page.click('.waypoint-item[data-wp-idx="1"]')
     mark = page.evaluate("AppState.selectedWaypoint")
     check("clicking a waypoint row marks that waypoint",
-          bool(mark) and mark["index"] == 0, str(mark))
+          bool(mark) and mark["index"] == 1, str(mark))
 
     n_before = page.evaluate("AppState.ego.events[0].action.waypoints.length")
     page.evaluate("document.activeElement.blur()")

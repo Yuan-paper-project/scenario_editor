@@ -18,7 +18,24 @@ def _ensure_llmgen_on_path():
         sys.path.insert(0, llmgen_str)
 
 
-def _normalize_waypoints(points, include_velocity: bool = False) -> list[dict]:
+# A route waypoint's strategy governs the LEG THAT ENDS AT IT, not the point:
+# ChangeActorWaypoints routes from waypoint i-1 to waypoint i using waypoint i's
+# strategy. "shortest" appends the authored point verbatim (a straight line, and
+# exactly what FollowTrajectoryAction becomes — its parser tags every vertex
+# "shortest"); anything else routes the leg through the GlobalRoutePlanner.
+#
+# Only those two are offered. The XSD also allows "leastIntersections" and
+# "random", but ScenarioRunner treats everything that is not "shortest" as the
+# planner, so folding them into "fastest" changes the file without changing what
+# CARLA does — and stops the file claiming a strategy nothing implements.
+ROUTE_STRATEGIES = {"fastest", "shortest"}
+
+
+def _normalize_waypoints(
+    points,
+    include_velocity: bool = False,
+    default_strategy: str | None = None,
+) -> list[dict]:
     if not isinstance(points, list):
         return []
     normalized = []
@@ -32,6 +49,9 @@ def _normalize_waypoints(points, include_velocity: bool = False) -> list[dict]:
         }
         if include_velocity:
             wp["velocity"] = max(0.0, float(point.get("velocity", 10.0)))
+        if default_strategy is not None:
+            strategy = point.get("strategy", default_strategy)
+            wp["strategy"] = strategy if strategy in ROUTE_STRATEGIES else default_strategy
         normalized.append(wp)
     return normalized
 
@@ -174,15 +194,42 @@ def _normalize_structured_event(
                 f"{where}: assign_route is not available for actor type "
                 f"'{actor_type}' — only vehicles may be routed"
             )
-        waypoints = _normalize_waypoints(action.get("waypoints"))
+        route_strategy = action.get("route_strategy", "fastest")
+        if route_strategy not in ROUTE_STRATEGIES:
+            route_strategy = "fastest"
+        waypoints = _normalize_waypoints(
+            action.get("waypoints"), default_strategy=route_strategy)
         if len(waypoints) < 2:
             raise ValueError(
                 f"{where}: assign_route needs at least 2 waypoints, got "
                 f"{len(waypoints)} — the event would be dropped from the file"
             )
+        # Waypoint 0 must be "fastest". Its leg runs from the actor's own pose to
+        # itself, so on an editor-built route -- where waypoint 0 IS the actor --
+        # the choice is meaningless and this costs nothing. What it buys is that
+        # ChangeActorWaypoints.initialise binds its `ego_next_wp` seed on the
+        # i == 0 pass; a route whose first waypoint is "shortest" and whose
+        # second is "fastest" reaches the heading filter's fallback with that
+        # variable unbound and dies on an UnboundLocalError, killing the run.
+        # Stock 0.9.15 has the same bug, so honouring this keeps exports running
+        # on an unpatched ScenarioRunner.
+        #
+        # Rejected rather than coerced, the same policy as an unknown prop id or
+        # a dangling entity_ref: a payload the editor did not build (LLM,
+        # hand-written, tests/carla_cases.py) may have no waypoint on the actor
+        # at all, and silently rewriting its first leg from a straight line into
+        # a routed one would hand back a different scenario than the one asked
+        # for.
+        if waypoints[0]["strategy"] != "fastest":
+            raise ValueError(
+                f"{where}: the first assign_route waypoint must use the "
+                f"'fastest' strategy, got '{waypoints[0]['strategy']}' — "
+                f"ScenarioRunner cannot seed a route that starts with a "
+                f"straight-line leg"
+            )
         event["action"] = {
             "type": "assign_route",
-            "route_strategy": action.get("route_strategy", "fastest"),
+            "route_strategy": route_strategy,
             "waypoints": waypoints,
         }
         event["trigger"] = {"type": "simulation_time", "value": 0.0}

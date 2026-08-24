@@ -397,6 +397,19 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
   background: none; border: none; color: var(--danger);
   cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px;
 }
+/* Waypoint 1 keeps the column open without offering the action — it is the
+   vehicle's own position and cannot be deleted. */
+.waypoint-item .wp-delete-spacer { visibility: hidden; }
+/* A route waypoint's strategy, for the leg that ENDS at it: 'Spur' routes it
+   through the lane graph, 'Gerade' drives the straight line as drawn. Orange is
+   --accent2, the same colour the map draws a 'Gerade' leg in. */
+.waypoint-item .wp-strategy {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 3px;
+  color: var(--text-dim); cursor: pointer; font-size: 10px;
+  padding: 1px 5px; flex-shrink: 0;
+}
+.waypoint-item .wp-strategy:hover { border-color: var(--text-dim); color: var(--text); }
+.waypoint-item .wp-strategy.is-shortest { color: var(--accent2); border-color: var(--accent2); }
 
 /* Event editor */
 .event-section {
