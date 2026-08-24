@@ -182,7 +182,8 @@ Its entity name is `hero`; an NPC's is `adversary`/`adversaryN`.
 
 - **Actions** (5): `follow_trajectory`, `assign_route`, `set_speed`, `set_distance`, `lane_change`
 - **Triggers** (4): `simulation_time`, `distance_to_ego`, `distance_to_point`, `after_event`
-  — `distance_to_ego` is **not offered for the ego itself** (see below).
+  — `distance_to_ego` is **not offered for the ego itself** (see below), and
+  `after_event` may name an event on **any** actor, not just its own (see below).
 
 Adding or changing one means editing all three layers:
 
@@ -190,7 +191,7 @@ Adding or changing one means editing all three layers:
 |---|---|---|
 | UI | `frontend/js/eventPanel.js` | `EVENT_ACTIONS` / `EVENT_TRIGGERS` lists + per-action form rendering |
 | Validation | `backend/scenario_io.py` | `_normalize_structured_event` (per-event) / `_normalize_actor` (per-actor) — whitelists, clamps, defaults |
-| Emission | `../llm-scenario-gen/generator/event_builders.py` | the actual OpenSCENARIO XML |
+| Emission | `../llm-scenario-gen/generator/event_builders.py` | the actual OpenSCENARIO XML (two-phase across actors — see the cross-actor `after_event` section) |
 
 The `EVENT_ACTIONS` / `EVENT_TRIGGERS` **labels are German while the keys stay the
 snake_case OpenSCENARIO-side names** — only the keys travel to the other two layers.
@@ -226,15 +227,102 @@ Silent behaviours worth knowing when debugging "my event did nothing":
 
 - Unknown action/trigger strings are **silently coerced** to `follow_trajectory` / `simulation_time` rather than raising. The coercion is still silent, but its usual consequence no longer is: a typo'd action name coerces to a `follow_trajectory` with no waypoints, which is now a hard 400 (see "An event the emitter would drop" below) instead of an event that vanished.
 - An `assign_route` action forces its own trigger to `simulation_time @ 0` (`backend/scenario_io.py`, mirrored in `frontend/js/scenarioIO.js`).
-- An `after_event` trigger pointing at an `assign_route` event is rewritten to `distance_to_ego @ 400`.
-- A `distance_to_ego` trigger on an **ego-owned** event is rewritten to `simulation_time @ 0` — a distance from hero to itself is always 0, so the condition would fire on tick 1 regardless of the configured value. This coercion runs in `_normalize_actor` **after** the `after_event`→`assign_route` rewrite above, so a rewritten trigger on an ego event is caught too. `eventPanel.js` additionally omits the option from the trigger dropdown when the actor is the ego, and `event_builders.py`'s `build_start_event` / `_add_custom_event_start_trigger` fall back to `simulation_time` for `entity_name == 'hero'` as a third, defensive layer.
+- An `after_event` trigger pointing at an `assign_route` event is rewritten to `distance_to_ego @ 400` — **on whichever actor owns the route**, see the cross-actor section below.
+- A `distance_to_ego` trigger on an **ego-owned** event is rewritten to `simulation_time @ 0` — a distance from hero to itself is always 0, so the condition would fire on tick 1 regardless of the configured value. This coercion runs in `_normalize_after_event_chains` **after** the `after_event`→`assign_route` rewrite above, so a rewritten trigger on an ego event is caught too. `eventPanel.js` additionally omits the option from the trigger dropdown when the actor is the ego, and `event_builders.py`'s `build_start_event` / `_add_custom_event_start_trigger` fall back to `simulation_time` for `entity_name == 'hero'` as a third, defensive layer.
 - **An event the emitter would drop is a hard 400, and the editor will not let you build one.** `_add_follow_trajectory_action` / `_add_assign_route_action` return `False` under 2 waypoints (and the latter also for a non-vehicle type), `build_custom_event_chain` then skips the whole event, and anything chained onto it with `after_event` is left pointing at a `storyboardElementRef` that is not in the file. Four layers now close that off, and the frontend three share one predicate — `ScenarioRules` in `frontend/js/app.js` (`actionEmits` / `eventProblem` / `problemsOf`), which `eventPanel.js` (warning chip + the `#event-warn` count), `scenarioIO.js` (`_validateScenario`) and `simulate.js` all call:
   - a path event is still **seeded with one waypoint on the actor's own pose** (`startPathMode`), so the *first* map click already completes a usable 2-point path — but it now **deletes itself** when draw mode ends still under 2 (`_discardIncompletePath`, `frontend/js/objects.js`, hung off the `AppState.on('change')` mode transition rather than the *Fertig* button, because Esc clears the flags directly in `mapView.js`). The seed alone was the old failure: below the emitter's minimum, invisible on the map (`mapView` skips a path under 2 points), and reported by the card as „Pfad gezeichnet".
   - **`Route zuweisen` is `disabled` for `pedestrian`/`child`/`cyclist`** — `AssignRouteAction` is vehicle-only (`_ROUTE_ACTION_TYPES`), and the grid used to offer it to everyone.
   - `validate_scenario_params` raises on both cases. `_ROUTE_ACTOR_TYPES` (`backend/scenario_io.py`) is a third copy of that type list and **must include the aliases that resolve to a routable type** (`lorry`, `moped`) — the emitter runs `_TYPE_ALIASES` first, so without them the backend rejects payloads the emitter accepts.
-  - `build_custom_event_chain` builds its `event_name_by_id` from the events that **actually got appended** (two passes: actions first, then triggers), so a chained `after_event` whose target was skipped now falls back to a plain `simulation_time` start instead of dangling. This was the long-standing `KNOWN` entry in `test_events_e2e.py`.
+  - `build_custom_event_chain` builds its name table from the events that **actually got appended** (two passes: actions first, then triggers), so a chained `after_event` whose target was skipped now falls back to a plain `simulation_time` start instead of dangling. This was the long-standing `KNOWN` entry in `test_events_e2e.py`.
 - **A `distance_to_point` trigger is never point-less.** Choosing it in the panel places the point on the acting actor immediately (`ObjectsManager.defaultTriggerPoint`) with a **5 m** radius (`DEFAULT_POINT_RADIUS`, `eventPanel.js` — a fresh radius rather than the outgoing trigger's value, which is a delay in seconds or a 400 m ego distance and means nothing here). A missing point used to be defaulted to `(0, 0, 0.2)` in `_normalize_structured_event` — the map origin, which a 3-D `DistanceCondition` can never reach — so that is now a 400 too; and in the emitter it fell through to `simulation_time(value)`, reading the radius in metres as a delay in seconds (a 20 m radius became `t > 20 s`). Both fixed. (The `?? 20` fallbacks left in the frontend and `_normalize_structured_event`'s `trigger.get("value", 20.0)` are for a payload carrying no value at all, and still agree with each other — only the *creation* default is 5.)
 - **The point is moved by dragging its map marker; there is no picking mode.** `layer-trigger-points` is appended **after** `layer-actors` (`renderMap`, `mapView.js`, last of the three top layers — `layer-paths-top` and `layer-actors-top` go before it) rather than under the trajectory layer, because a point seeded on its own actor would otherwise be drawn *and hit-tested* under the vehicle rectangle. The marker carries an invisible 2.2 m hit circle (`.trigger-point-control`) — the drawn one is 0.7 m and sub-pixel at town zoom — and its drag writes x/y per mousemove but re-derives z once, on mouseup, via `ObjectsManager.moveTriggerPoint` (`_nearestLaneProjection` is a full lane scan; same reasoning as an actor's z). The mouseup also **expires** `_suppressNextClick` on a timer: the marker is re-rendered mid-drag, so the element the drag started on is detached by mouseup and the browser may dispatch no click at all — a permanently-set flag then swallows an unrelated map click much later.
+### `after_event` may name another actor's event, and may never form a loop
+
+An `after_event` trigger carries `event_id` **plus an optional `actor_ref`**.
+An absent `actor_ref` means the event's own actor, which is why every save file,
+template, `tests/carla_cases.py` case and LLM payload written before this
+existed resolves exactly as it always did — that default is the compatibility
+contract and is implemented identically in all four layers.
+
+**It works in CARLA because the lookup was never per-Act.** ScenarioRunner turns
+a `StoryboardElementStateCondition` into `OSCStartEndCondition`, which reads a
+**global** `py_trees` blackboard key — `(EVENT)<name>-END`, written by
+`StoryElementStatusToBlackboard.terminate`. Every Act starts on
+`SimulationTime > 0` and holds its events in a `Parallel(SUCCESS_ON_ALL)`, so
+every event's start condition is already ticking when any other actor's event
+completes, and `OSCStartEndCondition`'s `element_start_time >= self._start_time`
+test is satisfied. Nothing in ScenarioRunner had to change; the constraint was
+entirely ours.
+
+- **The emitter builds in two phases across ALL actors.** `build_custom_event_chain`
+  (`../llm-scenario-gen/generator/event_builders.py`) used to resolve its own
+  triggers from a name table keyed by `event_id` and scoped to one actor. It now
+  takes a shared `event_names` dict keyed by **`(entity_name, event_id)`** and a
+  shared `pending_triggers` list; `build_xosc` threads both through
+  `_inject_npcs` and `_inject_hero_behavior`, then calls
+  `resolve_custom_event_triggers` once. **The hero's Act is built last**, so a
+  reference from `adversary` to a `hero` event is a forward reference and only
+  resolves because the trigger pass is deferred — resolving per actor found no
+  name and degraded silently to a `simulation_time` start. Deferring is safe
+  against the XSD (an Event wants its `<Action>`s before its `<StartTrigger>`)
+  because the actions are appended in phase one. Called without those two
+  arguments the function still resolves its own triggers, same-actor only —
+  that is the LLM path.
+- **Event ids are unique only within an actor**, so every actor's first event
+  tends to be `evt-1`. Anything matching a reference must compare the actor too:
+  `_deleteEvent`'s own re-point sweep carries an explicit `!trigger.actor_ref`
+  guard for exactly this, or deleting this actor's `evt-2` would re-point a
+  trigger naming *another* actor's `evt-2`.
+- **The three scenario-wide `after_event` rules live in one place**,
+  `_normalize_after_event_chains` (`backend/scenario_io.py`), called from
+  `validate_scenario_params` **after** every `_normalize_actor`. The
+  assign_route rewrite and the hero self-distance coercion used to be the tail
+  of `_normalize_actor`, which was correct only while a reference could not
+  leave its actor. Order inside it still matters and is unchanged: route
+  rewrite → cycle check → hero coercion.
+- **A cycle is a hard 400**, and the editor cannot author one. Every event on a
+  loop waits for a `completeState` that never arrives, so none of them ever
+  fires — a clean file that silently does nothing, the same failure shape as a
+  dangling `entity_ref`. Each event has exactly one trigger, so the reference
+  graph is a **functional graph** (≤1 outgoing edge per node) and a plain
+  forward walk finds any cycle without an SCC pass — that is what both
+  `_normalize_after_event_chains` and `frontend/js/app.js`'s `_afterEventReach`
+  do. `ScenarioRules.canWaitFor` is the frontend predicate, and `eventPanel.js`
+  omits every failing candidate from the dropdown, so the 400 only ever has to
+  catch a save file or an LLM payload. `ScenarioRules.afterEventCycles` chips
+  such an event („Auslöser wartet im Kreis") and the export gate refuses it.
+- **The UI is one grouped dropdown, not an actor picker plus an event picker.**
+  The `Nach Event` select carries `<optgroup>`s — `Dieser Akteur` first, then one
+  per other actor labelled with `AppState.actorLabel(a, { short: true })` — and
+  each option's value is `${actorId}::${eventId}` (`_splitAfterEventValue`,
+  `_afterEventTrigger`). **A foreign event's owner is named in the option text
+  itself as well as in its group heading** (`_afterEventOptionLabel` →
+  `Geschw. setzen 1 (CAR 2)`), because a closed native select shows only the
+  selected option's text: the group heading — the one thing saying whose event
+  it is — vanishes the moment the dropdown closes. The actor's own events stay
+  unsuffixed, where naming it on every row would say nothing; that is the same
+  rule the collapsed card's summary line follows. Two kinds of event are missing from every group on
+  purpose: an `assign_route`, whose own trigger is discarded at export so
+  "after the route" states something the file does not contain, and anything
+  that already waits on this event. A trigger loaded from a file that names an
+  event the dropdown will not offer gets an extra `Aktuell` group holding it, so
+  the select shows what the trigger actually says while the chip says why it
+  will not export — it is never silently repointed.
+- **Deleting an event sweeps every actor**, inside one `UndoStack.group` so it
+  stays one undo entry. A foreign reference falls back to *the referencing
+  actor's* `_defaultFirstTrigger`, not the owner's — an ego-owned event must not
+  land on `distance_to_ego`. **Deleting a whole ACTOR is deliberately not
+  swept**: there is no sensible event to fall back to, so the references are
+  left dangling and the „Auslöser feuert nie — Event fehlt" chip plus the export
+  gate say so.
+- **The preview snapshots cross-actor completions once per tick**
+  (`_tickCompleted`, `simulate.js`), same reasoning as `_tickSpeeds`: reading
+  another actor's live `fired` map would resolve differently depending on which
+  actor `_stepActor` reached first. A **same-actor** reference still reads
+  `sim.fired` live — one behaviour tree ticking its own events has no ordering
+  ambiguity to remove. `_normalizeEventsForSim` sets `watchActorId` on the
+  trigger when the reference leaves the actor, and `neverFires` for a cycle.
+
 ### Path waypoints: snapped, editable, and drawn as they will be driven
 
 - **A `fastest` route waypoint is snapped to the nearest driving-lane centreline; a `shortest` one and every `follow_trajectory` vertex are not.** `_routeWaypointAt` (`frontend/js/objects.js`, `ROUTE_SNAP_LANE_TYPES` = driving + bidirectional, `ROUTE_SNAP_MAX_DIST` 25 m) runs at placement, on the seed waypoint, on the map drag **and** when a waypoint is toggled to `fastest`, so a dragged point can never end up somewhere a clicked one could not. The reason is not tidiness: a `fastest` waypoint is never driven to as authored — `AssignRouteAction` hands it to `GlobalRoutePlanner`, which projects it with `map.get_waypoint()` and routes to whichever lane came out, so a point between two lanes silently becomes one of them, and when that is the oncoming carriageway the vehicle drives away from the route and loops back to reach it. A `shortest` waypoint and a trajectory vertex are the opposite case: they are driven literally, and going where lanes do not (a crossing, a swerve, a cyclist bending out) is the whole purpose. Out of reach of any lane the raw point is kept and a toast says so, once per 4 s rather than once per click.
@@ -387,11 +475,13 @@ concluding the field is broken.
 
 ### Entity refs are the exception to the coercion rule
 
-Three fields name another actor by the editor's internal `obj-N` id and must be
+Four fields name another actor by the editor's internal `obj-N` id and must be
 remapped to an OSC entity name before export: `trigger.entity_ref`
-(`distance_to_point` only), `action.target.entity_ref` (`set_speed` relative)
-and `action.entity_ref` (`set_distance`). Nothing else does —
-`after_event`'s `event_id` is a *storyboard element* name, and `distance_to_ego`
+(`distance_to_point` only), `trigger.actor_ref` (`after_event` only — **which
+actor owns the referenced event**, see the cross-actor section below),
+`action.target.entity_ref` (`set_speed` relative) and `action.entity_ref`
+(`set_distance`). Nothing else does — `after_event`'s `event_id` beside it is a
+*storyboard element* name and stays verbatim, and `distance_to_ego`
 has no field because the emitter hardcodes `hero`. `lane_change` carries an
 `entity_ref` in the emitted XML (`_add_lane_change_action`) but it is decorative:
 `openscenario_parser.py` reads only `RelativeTargetLane/@value` and discards
@@ -649,8 +739,9 @@ from earlier in the session and resurrected that actor, while the drag stood.
 
 The Play/Pause/Stop preview is a per-tick kinematic re-implementation of the real controllers
 (`SimpleVehicleControl` / `PedestrianControl`), not an idealisation of the authored events — it
-evaluates all 4 real triggers (including the `distance_to_ego` 60 s OR-fallback and the
-`assign_route`/`after_event` trigger rewrites `backend/scenario_io.py` applies at export), and
+evaluates all 4 real triggers (including the `distance_to_ego` 60 s OR-fallback, the
+`assign_route`/`after_event` trigger rewrites `backend/scenario_io.py` applies at export, and
+an `after_event` naming another actor's event), and
 mirrors real termination semantics (an instant speed step that persists past its duration, a
 4 m/1 m waypoint-acceptance radius, a dead stop on `_reached_goal`). `set_distance` is
 deliberately not simulated (badge only) — see the plan below for why.
@@ -901,7 +992,7 @@ bash run.sh 9090                 # terminal 1
 bash tests/run_tests.sh          # terminal 2 (EDITOR_URL overrides the target)
 ```
 
-That runs `test_normalization.py` (108 checks, no browser or server needed), then `compare_xodr_lane_graph.py` (also no browser/server/CARLA — validates `backend/lane_graph_builder.py` against the 8 committed probed graphs), then the ten Playwright suites: props (54), prop yaw (23), templates (159), events (60), ego events (75), actor types (260, grows with the catalogue), elevation (33), route fidelity (9), undo (44), waypoints (67). All but the first two drive a real browser against a real server and a real export. **Restart the editor first if you changed `../llm-scenario-gen`** — otherwise the frontend shows new catalogue data while the backend exports the old, which looks like a test bug and is not one.
+That runs `test_normalization.py` (123 checks, no browser or server needed — the last three build a real `.xosc` through the sibling repo to pin cross-actor `after_event` name resolution), then `compare_xodr_lane_graph.py` (also no browser/server/CARLA — validates `backend/lane_graph_builder.py` against the 8 committed probed graphs), then the ten Playwright suites: props (54), prop yaw (23), templates (159), events (60), ego events (75), actor types (260, grows with the catalogue), elevation (33), route fidelity (9), undo (44), waypoints (67). All but the first two drive a real browser against a real server and a real export. **Restart the editor first if you changed `../llm-scenario-gen`** — otherwise the frontend shows new catalogue data while the backend exports the old, which looks like a test bug and is not one.
 
 `test_ego_events_e2e.py` is kept separate from `test_events_e2e.py` rather than folded in: the older suite's `EGO` fixture and every one of its assertions assume an inert ego (no events), which was true before the ego became a controllable actor and is the entire premise the new suite tests against.
 

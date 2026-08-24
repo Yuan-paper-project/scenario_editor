@@ -83,9 +83,18 @@
     // proximity to the point is measured, and eventPanel defaults it to the ego
     // id. Same obj-N → OSC ref remap as actions; without it the .xosc gets a
     // dangling <EntityRef entityRef="obj-N"/> and the condition never fires.
-    const resolveTrigger = (trigger) => {
+    const resolveTrigger = (trigger, owner) => {
       if (trigger?.type === 'distance_to_point') {
         return { ...trigger, entity_ref: entityRef(trigger.entity_ref) };
+      }
+      // after_event's `event_id` is a storyboard element name and stays as it
+      // is, but `actor_ref` names WHICH actor owns that event and needs the
+      // same obj-N → OSC remap: the emitter keys its cross-actor name table on
+      // (entity, event_id). Absent means the acting actor, so it is filled in
+      // here rather than left out — the emitter would default it to the acting
+      // entity anyway, and sending it makes the payload say what it means.
+      if (trigger?.type === 'after_event') {
+        return { ...trigger, actor_ref: entityRef(trigger.actor_ref || owner.id) };
       }
       return trigger;
     };
@@ -105,7 +114,7 @@
         id: ev.id, name: ev.name,
         trigger: ev.action?.type === 'assign_route'
           ? { type: 'simulation_time', value: 0 }
-          : resolveTrigger(ev.trigger),
+          : resolveTrigger(ev.trigger, actor),
         action: resolveAction(ev.action),
       })),
     });

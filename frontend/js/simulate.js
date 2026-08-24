@@ -47,6 +47,13 @@
   let _originals  = new Map();  // actorId → {x, y, z, yaw}, to restore on stop
   let _simActors  = new Map();  // actorId → sim actor record (see _makeSimActor)
   let _tickSpeeds = new Map();  // actorId → speed, snapshotted once per tick
+  // `actorId::eventId` → completedAt, snapshotted once per tick. Same reasoning
+  // as _tickSpeeds: a cross-actor after_event that read another actor's live
+  // fired-map would resolve differently depending on which actor _stepActor
+  // reached first, and CARLA's own blackboard reads are not ordered either.
+  // A SAME-actor reference still reads sim.fired live — that is one behaviour
+  // tree ticking its own events and has no ordering ambiguity to remove.
+  let _tickCompleted = new Map();
   let _layerSimBadges = null;   // our own SVG layer, appended into #world
 
   // ── Tunables mirroring the real controllers ─────────────────────────────────
@@ -187,11 +194,13 @@
       if (action.type === 'assign_route') ev.trigger = { type: 'simulation_time', value: 0 };
     }
 
-    const assignRouteIds = new Set(
-      events.filter(e => e.action.type === 'assign_route').map(e => String(e.id))
-    );
+    // Scenario-wide, exactly like _normalize_after_event_chains: an after_event
+    // may name an event on ANOTHER actor, so "does the target assign a route"
+    // cannot be answered from this actor's own list.
     for (const ev of events) {
-      if (ev.trigger.type === 'after_event' && assignRouteIds.has(String(ev.trigger.event_id))) {
+      if (ev.trigger.type !== 'after_event') continue;
+      const target = ScenarioRules.afterEventTarget(actor, ev.trigger);
+      if (target && (target.event.action || {}).type === 'assign_route') {
         ev.trigger = { type: 'distance_to_ego', value: 400 };
       }
     }
@@ -206,13 +215,19 @@
     // reaches the .xosc (a <2-point path, or a route on a non-routable type)
     // can never fire there either — the KNOWN defect in
     // build_custom_event_chain (see CLAUDE.md / test_events_e2e.py). Flagging
-    // it here rather than pretending the chain proceeds.
-    const byId = new Map(events.map(e => [String(e.id), e]));
+    // it here rather than pretending the chain proceeds. A cycle is the same
+    // thing arrived at differently: nothing on it ever completes, so nothing on
+    // it ever fires. The export gate refuses both, so this only ever sees them
+    // in a loaded save file — which is exactly when a preview is what you reach
+    // for.
     for (const ev of events) {
       if (ev.trigger.type !== 'after_event') continue;
-      const target = byId.get(String(ev.trigger.event_id));
-      if (!target || !_actionEmits(target.action, actor.type)) {
+      const target = ScenarioRules.afterEventTarget(actor, ev.trigger);
+      if (!target || !_actionEmits(target.event.action, target.actor.type) ||
+          ScenarioRules.afterEventCycles(actor, ev)) {
         ev.trigger.neverFires = true;
+      } else if (target.actor.id !== actor.id) {
+        ev.trigger.watchActorId = target.actor.id;
       }
     }
 
@@ -260,6 +275,15 @@
       }
       case 'after_event': {
         if (trigger.neverFires) return false;
+        // watchActorId is set by _normalizeEventsForSim only when the reference
+        // leaves this actor. ScenarioRunner resolves storyboardElementRef
+        // through a global blackboard, so which Act owns the event is
+        // irrelevant there — but here the completion record lives on the other
+        // sim actor, and is read from the tick snapshot rather than live.
+        if (trigger.watchActorId) {
+          const completedAt = _tickCompleted.get(`${trigger.watchActorId}::${trigger.event_id}`);
+          return completedAt != null && completedAt <= simTime;
+        }
         const rec = sim.fired.get(trigger.event_id);
         return !!rec && rec.completedAt != null && rec.completedAt <= simTime;
       }
@@ -1088,13 +1112,20 @@
 
   function _snapshotSpeeds() {
     _tickSpeeds.clear();
-    for (const sim of _simActors.values()) _tickSpeeds.set(sim.id, sim.speed);
+    _tickCompleted.clear();
+    for (const sim of _simActors.values()) {
+      _tickSpeeds.set(sim.id, sim.speed);
+      for (const [eventId, rec] of sim.fired) {
+        if (rec.completedAt != null) _tickCompleted.set(`${sim.id}::${eventId}`, rec.completedAt);
+      }
+    }
   }
 
   function _prepareSimulation() {
     _originals.clear();
     _simActors.clear();
     _tickSpeeds.clear();
+    _tickCompleted.clear();
     _scenarioEnded = false;
     _egoId = null;
 

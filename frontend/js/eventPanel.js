@@ -471,8 +471,14 @@
     if (_eventAction(ev).type === 'assign_route') return 'startet sofort (fest)';
     const trigger = _eventTrigger(ev);
     if (trigger.type === 'after_event') {
-      const refIndex = events.findIndex(other => other.id === trigger.event_id);
-      return refIndex >= 0 ? `Nach ${_eventDisplayName(events[refIndex], refIndex)}` : 'Nach Event';
+      const target = ScenarioRules.afterEventTarget(actor, trigger, events);
+      if (!target) return 'Nach Event';
+      const name = _eventDisplayName(target.event, target.index);
+      // The owning actor is named only when it is not this one — on the common
+      // same-actor chain it would be on every card and say nothing.
+      return target.actor.id === actor.id
+        ? `Nach ${name}`
+        : `Nach ${name} (${AppState.actorLabel(target.actor, { short: true })})`;
     }
     const pointTarget = trigger.entity_ref || _defaultPointTriggerActorId(actor);
     const triggerLabels = {
@@ -529,6 +535,82 @@
     return actionLabels[action.type];
   }
 
+  // ── after_event references ──────────────────────────────────────────────────
+
+  /** Split `${actorId}::${eventId}`, the value the ref dropdown carries. */
+  function _splitAfterEventValue(value) {
+    const at = String(value || '').indexOf('::');
+    return at < 0 ? { actorId: null, eventId: String(value || '') }
+                  : { actorId: value.slice(0, at), eventId: value.slice(at + 2) };
+  }
+
+  /** The trigger patch for "wait for `candidate` on `owner`".
+   *  actor_ref is omitted for the actor's own event: absent means self
+   *  everywhere (app.js, scenario_io.py, event_builders.py), so a self-
+   *  reference keeps saving exactly as it did before cross-actor refs. */
+  function _afterEventTrigger(actor, ownerId, eventId) {
+    const trigger = { type: 'after_event', event_id: eventId };
+    if (ownerId && ownerId !== actor.id) trigger.actor_ref = ownerId;
+    return trigger;
+  }
+
+  /**
+   * The 'Nach Event' dropdown's contents, grouped by actor — this actor first,
+   * then every other scenario actor. Two events are left out of every group:
+   *
+   *  - an assign_route, whose own trigger is discarded at export and whose
+   *    dependents are rewritten to distance_to_ego@400, so "after the route"
+   *    is a start condition the file never contains;
+   *  - anything that already waits on `ev`, directly or down a chain
+   *    (ScenarioRules.canWaitFor). Omitting those is what makes a loop
+   *    unauthorable rather than merely reported — the backend's 400 then only
+   *    has to catch a save file or an LLM payload.
+   */
+  function _afterEventGroups(actor, ev, events) {
+    const groups = [];
+    const addGroup = (owner, ownerEvents, label, isOwn) => {
+      const options = ownerEvents
+        .map((other, index) => ({ other, index }))
+        .filter(({ other }) => _eventAction(other).type !== 'assign_route')
+        .filter(({ other }) => ScenarioRules.canWaitFor(actor, ev, owner, other))
+        .map(({ other, index }) => [
+          ScenarioRules.afterEventKey(owner.id, other.id),
+          _afterEventOptionLabel(owner, other, index, isOwn),
+        ]);
+      if (options.length) groups.push({ label, options });
+    };
+    addGroup(actor, events, 'Dieser Akteur', true);
+    [AppState.ego, ...(AppState.npcs || [])]
+      .filter(other => other && other.id !== actor.id)
+      .forEach(other => addGroup(other, other.events || [],
+                                 AppState.actorLabel(other, { short: true }), false));
+    return groups;
+  }
+
+  /**
+   * One option's text in the 'Nach Event' dropdown.
+   *
+   * A foreign event's owner is named in the option ITSELF, not only in its
+   * <optgroup> label: a closed native select shows the selected option's text
+   * and nothing else, so the group heading — the only thing saying whose event
+   * this is — disappears the moment the dropdown closes. The owning actor's own
+   * events stay unsuffixed, where naming it on every row would say nothing.
+   * Same rule as the collapsed card's summary line (_eventTriggerSummary).
+   */
+  function _afterEventOptionLabel(owner, other, index, isOwn) {
+    const name = _eventDisplayName(other, index);
+    return isOwn ? name : `${name} (${AppState.actorLabel(owner, { short: true })})`;
+  }
+
+  /** The first option in `groups`, or null — the default when an after_event
+   *  trigger is chosen or its target disappears. */
+  function _firstAfterEventOption(groups) {
+    for (const group of groups) {
+      if (group.options.length) return _splitAfterEventValue(group.options[0][0]);
+    }
+    return null;
+  }
+
   // ── Trigger Controls ────────────────────────────────────────────────────────
 
   /** Fills the card's `.event-trigger-block` — the WENN half, rendered above
@@ -540,8 +622,13 @@
     const triggerSelect = _select(triggerOptions, trigger.type || 'simulation_time');
     triggerSelect.addEventListener('change', e => {
       if (e.target.value === 'after_event') {
-        const ref = events.find(other => other.id !== ev.id && _eventAction(other).type !== 'assign_route');
-        _updateEvent(actor, ev.id, { trigger: { type: 'after_event', event_id: ref ? ref.id : '' } });
+        // The first offered option, own actor first — _afterEventGroups has
+        // already dropped the assign_routes and anything that would loop.
+        const ref = _firstAfterEventOption(_afterEventGroups(actor, ev, events));
+        _updateEvent(actor, ev.id, {
+          trigger: ref ? _afterEventTrigger(actor, ref.actorId, ref.eventId)
+                       : { type: 'after_event', event_id: '' },
+        });
       } else if (e.target.value === 'distance_to_point') {
         // The point is placed on the actor straight away rather than left null:
         // a null point used to reach the backend and be silently defaulted to
@@ -569,14 +656,33 @@
     block.appendChild(_row('Auslöser', triggerSelect, { primary: true }));
 
     if ((trigger.type || 'simulation_time') === 'after_event') {
-      const refs = events
-        .map((other, otherIndex) => ({ other, otherIndex }))
-        .filter(({ other }) => other.id !== ev.id && _eventAction(other).type !== 'assign_route')
-        .map(({ other, otherIndex }) => [other.id, _eventDisplayName(other, otherIndex)]);
-      const refSelect = _select(refs.length ? refs : [['', 'Kein Event']], trigger.event_id || '');
-      refSelect.disabled = refs.length === 0;
+      const groups = _afterEventGroups(actor, ev, events);
+      const selected = ScenarioRules.afterEventKey(trigger.actor_ref || actor.id, trigger.event_id || '');
+      // A trigger loaded from a save file may name an event this dropdown does
+      // not offer — one that has since been deleted, or (in an LLM payload) one
+      // that closes a loop. Neither is silently repointed: the option is added
+      // so the select shows what the trigger actually says, and the card's
+      // warning chip says why it will not export.
+      const known = groups.some(g => g.options.some(([value]) => value === selected));
+      if (!known) {
+        const target = ScenarioRules.afterEventTarget(actor, trigger, events);
+        groups.unshift({
+          label: 'Aktuell',
+          options: [[selected, target
+            ? _afterEventOptionLabel(target.actor, target.event, target.index,
+                                     target.actor.id === actor.id)
+            : 'Unbekanntes Event']],
+        });
+      }
+      const refSelect = groups.length
+        ? _groupedSelect(groups, selected)
+        : _select([['', 'Kein Event']], '');
+      refSelect.disabled = groups.length === 0;
+      refSelect.title = 'Events anderer Akteure sind nach Akteur gruppiert; '
+        + 'Events, die bereits auf dieses warten, fehlen absichtlich (sonst Endlosschleife)';
       refSelect.addEventListener('change', e => {
-        _updateEvent(actor, ev.id, { trigger: { type: 'after_event', event_id: e.target.value } });
+        const { actorId, eventId } = _splitAfterEventValue(e.target.value);
+        _updateEvent(actor, ev.id, { trigger: _afterEventTrigger(actor, actorId, eventId) });
       });
       block.appendChild(_row('Nach Event', refSelect));
     } else if ((trigger.type || 'simulation_time') === 'distance_to_point') {
@@ -693,6 +799,24 @@
       option.value = value;
       option.textContent = label;
       select.appendChild(option);
+    });
+    select.value = selectedValue;
+    return select;
+  }
+
+  /** _select with <optgroup>s: groups is [{label, options: [[value, text]]}]. */
+  function _groupedSelect(groups, selectedValue) {
+    const select = document.createElement('select');
+    groups.forEach(({ label, options }) => {
+      const group = document.createElement('optgroup');
+      group.label = label;
+      options.forEach(([value, text]) => {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = text;
+        group.appendChild(option);
+      });
+      select.appendChild(group);
     });
     select.value = selectedValue;
     return select;
@@ -1197,12 +1321,16 @@
         _eventTrigger(ev).type === 'distance_to_ego' ? _eventTrigger(ev).value : null
       ),
     });
+    // `!trigger.actor_ref` is load-bearing: event ids are only unique within an
+    // actor, so every actor's second event is `evt-2`. Without it, deleting
+    // this actor's evt-2 would re-point a trigger that names ANOTHER actor's
+    // evt-2 — at an event on the wrong vehicle.
     const events = currentEvents
       .filter(ev => ev.id !== eventId)
       .map(ev => {
         const trigger = _eventTrigger(ev);
-        if (trigger.type === 'after_event' && trigger.event_id === eventId) {
-          return previousEvent && _eventAction(previousEvent).type !== 'assign_route'
+        if (trigger.type === 'after_event' && !trigger.actor_ref && trigger.event_id === eventId) {
+          return _canChainOnto(currentActor, ev, currentActor, previousEvent)
             ? { ...ev, trigger: { type: 'after_event', event_id: previousEvent.id } }
             : firstEventTriggerPatch(ev);
         }
@@ -1218,7 +1346,56 @@
         activePathEventId: null,
       });
     }
-    AppState.updateById(currentActor.id, { events });
+    // Another actor may be waiting for the event being deleted, so the
+    // re-point sweep cannot stop at this actor's own list. Each actor is its
+    // own updateById call, hence the group: deleting one event is one undo
+    // entry however many actors it touches.
+    UndoStack.group('Event gelöscht', () => {
+      AppState.updateById(currentActor.id, { events });
+      _repointForeignReferences(currentActor, eventId, previousEvent);
+    });
+  }
+
+  /**
+   * Re-point every OTHER actor's after_event trigger that named the event just
+   * deleted from `owner`. Same rule as the owner's own list — fall back to the
+   * event before it, or to that actor's default first trigger — except the
+   * fallback is derived from the referencing actor, not the owner: an
+   * ego-owned event must not land on distance_to_ego (a distance from hero to
+   * itself is always 0), which _defaultFirstTrigger already knows.
+   *
+   * Deleting a whole ACTOR is deliberately not swept: there is no sensible
+   * event to fall back to, so the references are left dangling and the card's
+   * „Auslöser feuert nie — Event fehlt" chip (plus the export gate) says so.
+   */
+  /** May `ev` be re-pointed at `candidate` — is it a real, non-route event
+   *  that does not already wait on `ev`? Shared by both halves of the delete
+   *  sweep, so neither can close a loop while repairing one. */
+  function _canChainOnto(actor, ev, owner, candidate) {
+    return !!candidate
+      && _eventAction(candidate).type !== 'assign_route'
+      && ScenarioRules.canWaitFor(actor, ev, owner, candidate);
+  }
+
+  function _repointForeignReferences(owner, deletedEventId, previousEvent) {
+    for (const other of [AppState.ego, ...(AppState.npcs || [])]) {
+      if (!other || other.id === owner.id || !(other.events || []).length) continue;
+      let touched = false;
+      const events = other.events.map(ev => {
+        const trigger = _eventTrigger(ev);
+        if (trigger.type !== 'after_event' ||
+            trigger.actor_ref !== owner.id ||
+            String(trigger.event_id) !== String(deletedEventId)) return ev;
+        touched = true;
+        return {
+          ...ev,
+          trigger: _canChainOnto(other, ev, owner, previousEvent)
+            ? _afterEventTrigger(other, owner.id, previousEvent.id)
+            : _defaultFirstTrigger(other, null),
+        };
+      });
+      if (touched) AppState.updateById(other.id, { events });
+    }
   }
 
   // ── Export ──────────────────────────────────────────────────────────────────

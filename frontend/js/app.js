@@ -1013,8 +1013,91 @@
     return !!point && Number.isFinite(Number(point.x)) && Number.isFinite(Number(point.y));
   }
 
+  // ── after_event: cross-actor references and the cycles they make possible ──
+  //
+  // An after_event trigger names `event_id` plus an optional `actor_ref`; an
+  // absent actor_ref means the event's own actor, so every save file, template
+  // and payload written before cross-actor references existed still resolves
+  // the same way. The backend resolves actor_ref to an OSC entity name at
+  // export (scenario_io.py) and the emitter keys its name table on
+  // (entity, event_id), because ScenarioRunner's storyboardElementRef lookup
+  // goes through a global blackboard and does not care which Act wrote it.
+  //
+  // Each event has exactly one trigger, so the reference graph is a functional
+  // graph: at most one outgoing edge per node. Walking forward from a node
+  // therefore finds any cycle it is part of without a full SCC pass.
+
+  const _afterEventKey = (actorId, eventId) => `${actorId}::${eventId}`;
+
+  /** The actor that owns the event an after_event trigger points at. */
+  function _afterEventOwner(actor, trigger) {
+    const ref = trigger && trigger.actor_ref;
+    if (!ref || ref === actor.id) return actor;
+    return AppState.findById(ref) || null;
+  }
+
+  /** The event an after_event trigger points at, as {actor, event, index}. */
+  function _afterEventTarget(actor, trigger, events) {
+    const owner = _afterEventOwner(actor, trigger);
+    if (!owner) return null;
+    const list = (owner === actor && events) ? events : (owner.events || []);
+    const index = list.findIndex(o => String(o.id) === String(trigger.event_id));
+    return index >= 0 ? { actor: owner, event: list[index], index } : null;
+  }
+
+  /**
+   * Every node reachable by following after_event edges forward from one
+   * event, as a Set of keys. Stops at a missing target, a non-after_event
+   * trigger, or a repeat — so it terminates on a cycle instead of spinning.
+   * The start node is included only when the walk comes back to it, which is
+   * exactly the test for "this event is on a cycle".
+   */
+  function _afterEventReach(startActor, startEvent) {
+    const seen = new Set();
+    let actor = startActor, ev = startEvent;
+    for (;;) {
+      const trigger = (ev && ev.trigger) || {};
+      if (trigger.type !== 'after_event') return seen;
+      const target = _afterEventTarget(actor, trigger);
+      if (!target) return seen;
+      const key = _afterEventKey(target.actor.id, target.event.id);
+      if (seen.has(key)) return seen;
+      seen.add(key);
+      actor = target.actor;
+      ev = target.event;
+    }
+  }
+
   window.ScenarioRules = {
     ROUTE_ACTION_TYPES,
+
+    afterEventKey: _afterEventKey,
+
+    /** The {actor, event, index} an after_event trigger names, or null. */
+    afterEventTarget(actor, trigger, events) {
+      if (!actor || !trigger || trigger.type !== 'after_event') return null;
+      return _afterEventTarget(actor, trigger, events);
+    },
+
+    /** Is `ev` itself on an after_event cycle? */
+    afterEventCycles(actor, ev) {
+      if (!actor || !ev || (ev.trigger || {}).type !== 'after_event') return false;
+      return _afterEventReach(actor, ev).has(_afterEventKey(actor.id, ev.id));
+    },
+
+    /**
+     * May `ev` (on `actor`) wait for `candidate` (on `candidateActor`)?
+     *
+     * False when the candidate already depends on `ev`, directly or through a
+     * chain: pointing at it would close a loop on which no event ever fires.
+     * eventPanel.js omits such an option from the dropdown, which is what makes
+     * a cycle unauthorable rather than merely reported.
+     */
+    canWaitFor(actor, ev, candidateActor, candidate) {
+      if (!actor || !ev || !candidateActor || !candidate) return false;
+      if (candidateActor.id === actor.id && String(candidate.id) === String(ev.id)) return false;
+      return !_afterEventReach(candidateActor, candidate).has(_afterEventKey(actor.id, ev.id));
+    },
 
     /** Mirrors _add_*_action's own return value: false ⇒ the event is dropped. */
     actionEmits(action, actorType) {
@@ -1085,7 +1168,10 @@
         };
       }
       if (trigger.type === 'after_event') {
-        const target = (events || []).find(o => String(o.id) === String(trigger.event_id));
+        // The reference may leave this actor, so the target is resolved through
+        // AppState rather than looked up in `events` — which holds only the
+        // owning actor's own list.
+        const target = _afterEventTarget(actor, trigger, events);
         if (!target) {
           return {
             code: 'dangling_after_event',
@@ -1093,10 +1179,23 @@
             message: 'der Auslöser verweist auf ein Event, das es nicht gibt',
           };
         }
+        // A loop: every event on it waits for one that never completes, so none
+        // of them ever fires. The dropdown cannot build one (canWaitFor), and
+        // the backend rejects it with a 400 — this catches a loaded save file
+        // or an LLM payload, and names the card at fault before the export gate
+        // refuses the whole scenario.
+        if (this.afterEventCycles(actor, ev)) {
+          return {
+            code: 'cyclic_after_event',
+            short: 'Auslöser wartet im Kreis',
+            message: 'der Auslöser hängt in einem Kreis von Events, die aufeinander warten',
+          };
+        }
         // Pointing at an assign_route is fine: the backend rewrites that trigger
         // to distance_to_ego @ 400 rather than leaving it dangling.
-        const targetAction = target.action || {};
-        if (targetAction.type !== 'assign_route' && !this.actionEmits(targetAction, type)) {
+        const targetAction = target.event.action || {};
+        if (targetAction.type !== 'assign_route' &&
+            !this.actionEmits(targetAction, target.actor.type)) {
           return {
             code: 'dangling_after_event',
             short: 'Auslöser feuert nie — Vorgänger unvollständig',

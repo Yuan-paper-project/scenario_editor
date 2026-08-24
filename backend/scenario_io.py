@@ -138,6 +138,15 @@ def _normalize_structured_event(
     event["trigger"] = {"type": trigger_kind}
     if trigger_kind == "after_event":
         event["trigger"]["event_id"] = str(trigger.get("event_id", ""))
+        # Which actor owns the referenced event. An omitted/blank actor_ref is
+        # the acting entity itself, so every payload written before cross-actor
+        # references existed resolves exactly as it did. Resolved to an entity
+        # name here (obj-N -> hero/adversaryN), like every other entity ref, so
+        # the emitter's name table can be keyed on (entity, event_id).
+        event["trigger"]["actor_ref"] = _entity_ref(
+            trigger.get("actor_ref"), actor_refs, valid_refs, where,
+            self_ref or default_entity_ref,
+        )
     elif trigger_kind == "distance_to_point":
         point = trigger.get("point") if isinstance(trigger.get("point"), dict) else None
         # A missing point used to be defaulted to (0, 0, 0.2) — the map origin.
@@ -333,21 +342,83 @@ def _normalize_actor(
             actor_type=str(actor.get("type", "car")),
         )
 
-    assign_route_ids = {
-        str(event.get("id"))
-        for event in actor["events"]
-        if isinstance(event, dict) and event.get("action", {}).get("type") == "assign_route"
+
+def _after_event_target(trigger: dict, owner_entity: str) -> tuple[str, str]:
+    """The (entity_name, event_id) an after_event trigger points at.
+
+    _normalize_structured_event always fills actor_ref in, but this also has to
+    read a trigger it has already rewritten, and the ego rewrite drops the key.
+    """
+    return (str(trigger.get("actor_ref") or owner_entity), str(trigger.get("event_id", "")))
+
+
+def _normalize_after_event_chains(actors: list[tuple[dict, str, str]]) -> None:
+    """The two silent after_event rewrites, plus cycle rejection — all three
+    scenario-wide, because an after_event trigger may name an event on ANOTHER
+    actor.
+
+    `actors` is [(actor, entity_name, where)] over the ego and every NPC.
+
+    These used to run per actor at the end of _normalize_actor. That was
+    correct only while a reference could not leave its own actor: a trigger
+    chained onto another actor's assign_route would otherwise keep a start
+    condition the file does not contain.
+    """
+    events_by_ref: dict[tuple[str, str], dict] = {}
+    for actor, entity_name, _where in actors:
+        for event in actor["events"]:
+            events_by_ref[(entity_name, str(event.get("id")))] = event
+
+    # An assign_route's own trigger is forced to simulation_time@0, so "after
+    # the route" names a start condition that is discarded — the reference is
+    # rewritten to an ego-distance instead of left pointing at it.
+    route_refs = {
+        ref for ref, event in events_by_ref.items()
+        if event.get("action", {}).get("type") == "assign_route"
     }
-    for event in actor["events"]:
+    for ref, event in events_by_ref.items():
         trigger = event.get("trigger", {})
-        if trigger.get("type") == "after_event" and str(trigger.get("event_id")) in assign_route_ids:
+        if trigger.get("type") != "after_event":
+            continue
+        if _after_event_target(trigger, ref[0]) in route_refs:
             event["trigger"] = {"type": "distance_to_ego", "value": 400.0}
 
-    # Must run LAST, after the after_event rewrite above: the ego cannot gate
+    # A cycle is not a smaller scenario, it is a dead one: every event on the
+    # loop waits for a completeState that can never arrive, with nothing in the
+    # file or the run log to say why. The editor's own dropdown cannot build
+    # one (ScenarioRules.afterEventCycleKeys, frontend/js/app.js), so this
+    # catches a save file, a hand-written payload or an LLM one. Each event has
+    # exactly one trigger, hence at most one outgoing edge — a plain walk finds
+    # the loop without a full SCC pass.
+    for start_ref, start_event in events_by_ref.items():
+        chain = [start_ref]
+        ref, event = start_ref, start_event
+        while True:
+            trigger = event.get("trigger", {})
+            if trigger.get("type") != "after_event":
+                break
+            target_ref = _after_event_target(trigger, ref[0])
+            target = events_by_ref.get(target_ref)
+            if target is None:
+                break
+            if target_ref in chain:
+                loop = " -> ".join(
+                    f"{ent}.{eid}" for ent, eid in (*chain[chain.index(target_ref):], target_ref)
+                )
+                raise ValueError(
+                    f"after_event triggers form a cycle ({loop}) — every event on "
+                    f"it waits for one that never completes"
+                )
+            chain.append(target_ref)
+            ref, event = target_ref, target
+
+    # Must run LAST, after the assign_route rewrite above: the ego cannot gate
     # on its own distance to itself (always 0, fires on tick 1), so any
     # distance_to_ego trigger it ends up with — direct or rewritten — becomes
     # a plain simulation_time start instead.
-    if entity_name == "hero":
+    for actor, entity_name, _where in actors:
+        if entity_name != "hero":
+            continue
         for event in actor["events"]:
             if event.get("trigger", {}).get("type") == "distance_to_ego":
                 event["trigger"] = {"type": "simulation_time", "value": 0.0}
@@ -487,10 +558,16 @@ def validate_scenario_params(params: dict) -> dict:
 
     _normalize_actor(ego, "hero", actor_refs, valid_refs, "ego")
 
+    scenario_actors = [(ego, "hero", "ego")]
     for npc_idx, npc in enumerate(params["npcs"]):
         npc.setdefault("type", "car")
         npc_name = "adversary" if npc_idx == 0 else f"adversary{npc_idx}"
         _normalize_actor(npc, npc_name, actor_refs, valid_refs, f"npcs[{npc_idx}]")
+        scenario_actors.append((npc, npc_name, f"npcs[{npc_idx}]"))
+
+    # Scenario-wide, so it must come after every actor is normalised: an
+    # after_event trigger may point at another actor's event.
+    _normalize_after_event_chains(scenario_actors)
 
     # An actor with no events gets no <Act> at all (xml_builder._build_actor_act),
     # so a scenario in which nothing has events emits a <Story> with zero Acts:

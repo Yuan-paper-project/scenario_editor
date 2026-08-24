@@ -670,4 +670,185 @@ check("a traffic-signal event alone is enough",
       })))
 
 
+# ── Cross-actor after_event references, and the cycles they make possible ────
+#
+# An after_event trigger names `event_id` plus an optional `actor_ref`. Absent
+# actor_ref means the event's own actor, so everything above this block — every
+# save file, template and CARLA case predating the feature — resolves as it
+# always did. Everything scenario-wide about after_event lives in
+# _normalize_after_event_chains, which runs once after every actor is
+# normalised; that ordering is what the cross-actor rewrites below pin down.
+
+def _spd(eid, trigger):
+    return {"id": eid, "trigger": trigger,
+            "action": {"type": "set_speed",
+                       "target": {"mode": "absolute", "value": 10},
+                       "dynamics": {"dimension": "time", "value": 5}}}
+
+
+def _route(eid):
+    return {"id": eid, "trigger": {"type": "simulation_time", "value": 0},
+            "action": {"type": "assign_route",
+                       "waypoints": [{"x": 1, "y": 2}, {"x": 3, "y": 4}]}}
+
+
+def _scene(ego_events, *npc_events):
+    """One ego (obj-1) plus one NPC per events list (obj-2, obj-3, ...)."""
+    return {
+        "map": "Town01",
+        "ego": {"id": "obj-1", "type": "car", "x": 0.0, "y": 0.0, "events": ego_events},
+        "npcs": [
+            {"id": f"obj-{idx + 2}", "type": "car", "x": 10.0 * (idx + 1), "y": 0.0,
+             "events": list(events)}
+            for idx, events in enumerate(npc_events)
+        ],
+    }
+
+
+out = validate_scenario_params(_scene(
+    [_spd("a", {"type": "simulation_time", "value": 1})],
+    [_spd("b", {"type": "after_event", "event_id": "a", "actor_ref": "obj-1"})],
+))
+trig = out["npcs"][0]["events"][0]["trigger"]
+check("after_event actor_ref is remapped obj-N -> entity name",
+      trig == {"type": "after_event", "event_id": "a", "actor_ref": "hero"}, str(trig))
+
+out = validate_scenario_params(_scene(
+    [_spd("a", {"type": "simulation_time", "value": 1})],
+    [_spd("b", {"type": "after_event", "event_id": "a"})],
+))
+trig = out["npcs"][0]["events"][0]["trigger"]
+check("an omitted actor_ref resolves to the event's own actor",
+      trig == {"type": "after_event", "event_id": "a", "actor_ref": "adversary"},
+      str(trig))
+
+# Event ids are unique only within an actor, so every actor's first event tends
+# to be 'evt-1'. The reference must resolve by (actor, event), not by id alone.
+out = validate_scenario_params(_scene(
+    [_spd("evt-1", {"type": "simulation_time", "value": 1})],
+    [_spd("evt-1", {"type": "after_event", "event_id": "evt-1", "actor_ref": "obj-1"})],
+    [_spd("evt-1", {"type": "after_event", "event_id": "evt-1", "actor_ref": "obj-2"})],
+))
+refs = [npc["events"][0]["trigger"]["actor_ref"] for npc in out["npcs"]]
+check("a colliding event id across actors resolves per actor, not by id",
+      refs == ["hero", "adversary"], str(refs))
+
+# The assign_route rewrite is scenario-wide now: it used to run per actor at the
+# end of _normalize_actor, where a reference to ANOTHER actor's route was
+# invisible and survived as an after_event naming a start condition the file
+# discards.
+out = validate_scenario_params(_scene(
+    [_route("r")],
+    [_spd("b", {"type": "after_event", "event_id": "r", "actor_ref": "obj-1"})],
+))
+trig = out["npcs"][0]["events"][0]["trigger"]
+check("after_event onto ANOTHER actor's assign_route becomes distance_to_ego@400",
+      trig == {"type": "distance_to_ego", "value": 400.0}, str(trig))
+
+# ... and the hero self-distance coercion still runs after it, cross-actor too.
+out = validate_scenario_params(_scene(
+    [_spd("a", {"type": "after_event", "event_id": "r", "actor_ref": "obj-2"})],
+    [_route("r")],
+))
+trig = out["ego"]["events"][0]["trigger"]
+check("ego: after_event onto an NPC's assign_route lands on simulation_time@0",
+      trig == {"type": "simulation_time", "value": 0.0}, str(trig))
+
+check("an actor_ref naming no entity raises",
+      raises(lambda: validate_scenario_params(_scene(
+          [_spd("a", {"type": "simulation_time", "value": 1})],
+          [_spd("b", {"type": "after_event", "event_id": "a", "actor_ref": "obj-99"})]))))
+
+# Cycles. Every event on one waits for a completeState that never arrives, so
+# none of them fires — a clean file that silently does nothing, which is the
+# same reason a dangling entity_ref is rejected rather than coerced.
+check("a same-actor after_event cycle raises",
+      raises(lambda: validate_scenario_params(_scene(
+          [_spd("a", {"type": "simulation_time", "value": 0})],
+          [_spd("e1", {"type": "after_event", "event_id": "e2"}),
+           _spd("e2", {"type": "after_event", "event_id": "e1"})]))))
+
+check("a two-actor after_event cycle raises",
+      raises(lambda: validate_scenario_params(_scene(
+          [_spd("a", {"type": "after_event", "event_id": "b", "actor_ref": "obj-2"})],
+          [_spd("b", {"type": "after_event", "event_id": "a", "actor_ref": "obj-1"})]))))
+
+check("a three-actor after_event cycle raises",
+      raises(lambda: validate_scenario_params(_scene(
+          [_spd("a", {"type": "after_event", "event_id": "b", "actor_ref": "obj-2"})],
+          [_spd("b", {"type": "after_event", "event_id": "c", "actor_ref": "obj-3"})],
+          [_spd("c", {"type": "after_event", "event_id": "a", "actor_ref": "obj-1"})]))))
+
+# An event pointing at itself is the degenerate one-node cycle, and the walk
+# has to catch it on the first hop rather than looping.
+check("an after_event pointing at its own event raises",
+      raises(lambda: validate_scenario_params(_scene(
+          [_spd("a", {"type": "simulation_time", "value": 0})],
+          [_spd("e1", {"type": "after_event", "event_id": "e1"})]))))
+
+# A chain is not a cycle, however long, and a diamond (two events waiting on the
+# same one) must not be mistaken for one — the walk visits shared nodes twice.
+check("a three-actor chain is accepted",
+      not raises(lambda: validate_scenario_params(_scene(
+          [_spd("a", {"type": "simulation_time", "value": 1})],
+          [_spd("b", {"type": "after_event", "event_id": "a", "actor_ref": "obj-1"})],
+          [_spd("c", {"type": "after_event", "event_id": "b", "actor_ref": "obj-2"})]))))
+
+check("two events waiting on the same event is accepted",
+      not raises(lambda: validate_scenario_params(_scene(
+          [_spd("a", {"type": "simulation_time", "value": 1})],
+          [_spd("b", {"type": "after_event", "event_id": "a", "actor_ref": "obj-1"})],
+          [_spd("c", {"type": "after_event", "event_id": "a", "actor_ref": "obj-1"})]))))
+
+
+# ── The emitted .xosc resolves a cross-actor reference by name ───────────────
+#
+# The only assertion here that needs the sibling repo's emitter. It is what the
+# whole cross-actor feature reduces to at runtime: ScenarioRunner looks
+# storyboardElementRef up on a GLOBAL py_trees blackboard key
+# ('(EVENT)<name>-END'), so an Event in one actor's Act may name an Event in
+# another's — provided the emitter can resolve the name at all. It could not
+# until build_custom_event_chain grew its shared registry: each actor resolved
+# its own triggers in isolation, and a reference leaving the actor found no
+# name and degraded silently to a simulation_time start.
+
+def _xosc_event_refs(params):
+    import tempfile
+    import xml.etree.ElementTree as ET
+
+    from generator.xml_builder import build_xosc  # noqa: E402  (needs _ensure_llmgen_on_path)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "cross_actor.xosc")
+        build_xosc(validate_scenario_params(params), path)
+        root = ET.parse(path).getroot()
+    waits = {}
+    for event in root.iter("Event"):
+        cond = event.find(".//StoryboardElementStateCondition")
+        if cond is not None and cond.get("storyboardElementType") == "event":
+            waits[event.get("name")] = cond.get("storyboardElementRef")
+    names = {event.get("name") for event in root.iter("Event")}
+    return waits, names
+
+
+from backend.scenario_io import _ensure_llmgen_on_path  # noqa: E402
+
+_ensure_llmgen_on_path()
+
+# hero <- adversary <- adversary1: the hero's Act is built LAST, so the first
+# link is a forward reference and only resolves because the trigger pass is
+# deferred until every actor's actions exist.
+waits, names = _xosc_event_refs(_scene(
+    [_spd("evt-1", {"type": "simulation_time", "value": 2})],
+    [_spd("evt-1", {"type": "after_event", "event_id": "evt-1", "actor_ref": "obj-1"})],
+    [_spd("evt-1", {"type": "after_event", "event_id": "evt-1", "actor_ref": "obj-2"})],
+))
+check("a cross-actor after_event names the OTHER actor's event in the .xosc",
+      waits.get("adversary_SpeedEvent0") == "hero_SpeedEvent0", str(waits))
+check("a forward cross-actor reference resolves too (hero's Act is built last)",
+      waits.get("adversary1_SpeedEvent0") == "adversary_SpeedEvent0", str(waits))
+check("no storyboardElementRef in the .xosc dangles",
+      set(waits.values()) <= names, str(set(waits.values()) - names))
+
+
 sys.exit(check.report())
