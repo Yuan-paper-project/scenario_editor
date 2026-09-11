@@ -8,9 +8,11 @@ Endpoints:
   GET  /api/maps/{town}/render     → road polygon + spawn point JSON (MAP_CACHE)
   GET  /api/maps/{town}/lane_graph → cached CARLA routing graph, if probed (LANE_GRAPH_CACHE)
   GET  /api/maps/{town}/preview    → serve town thumbnail image
+  GET  /api/special_buildings      → landmark reference points, all towns (maps/special_buildings.csv)
   POST /api/export                 → generate .xosc and return as download
 """
 
+import csv
 import json
 import os
 from pathlib import Path
@@ -35,6 +37,7 @@ from backend.scenario_io import export_to_xosc, export_route_xml
 _HERE        = Path(__file__).resolve().parent
 _FRONTEND    = _HERE.parent / "frontend"
 _UPLOADS_DIR = _HERE.parent / "maps" / "_uploaded"   # persisted user maps
+_BUILDINGS_CSV = _HERE.parent / "maps" / "special_buildings.csv"
 
 # ── App ────────────────────────────────────────────────────────────────────────
 
@@ -175,6 +178,57 @@ async def get_map_preview(town: str):
     if thumb and thumb.exists():
         return FileResponse(str(thumb), media_type="image/jpeg")
     raise HTTPException(status_code=404, detail=f"No preview image for '{town}'")
+
+
+@app.get("/api/special_buildings")
+async def get_special_buildings():
+    """
+    Landmark reference points for the bundled towns, from maps/special_buildings.csv.
+
+    Read per request rather than cached at startup on purpose: the file is ~130
+    rows, and caching it would add one more "edit takes effect only after a
+    restart" trap next to MAP_CACHE and LANE_GRAPH_CACHE. Edit the CSV, reload
+    the browser tab.
+
+    Coordinates are CARLA world coordinates — the same frame the render JSON and
+    every actor pose already use — so the frontend plots x/y verbatim with no
+    Y-flip of its own. A missing or unreadable file yields an empty list rather
+    than a 404: the overlay is reference decoration, and the editor works fine
+    without it.
+    """
+    return {"buildings": _read_special_buildings()}
+
+
+def _read_special_buildings() -> list[dict]:
+    if not _BUILDINGS_CSV.exists():
+        return []
+    out: list[dict] = []
+    try:
+        with _BUILDINGS_CSV.open(newline="", encoding="utf-8-sig") as fh:
+            for row in csv.DictReader(fh):
+                town = (row.get("town") or "").strip()
+                btype = (row.get("building_type") or "").strip()
+                if not town or not btype:
+                    continue
+                try:
+                    x = float(row["x"])
+                    y = float(row["y"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                try:
+                    z = float(row.get("z") or 0.0)
+                except ValueError:
+                    z = 0.0
+                out.append({
+                    "town": town,
+                    "type": btype,
+                    "name": (row.get("carla_name") or "").strip(),
+                    "x": x, "y": y, "z": z,
+                })
+    except OSError as exc:
+        print(f"[buildings] {_BUILDINGS_CSV}: {exc}")
+        return []
+    return out
 
 
 @app.post("/api/maps/upload")

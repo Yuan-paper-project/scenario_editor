@@ -86,6 +86,12 @@
     map:      null,       // selected town name string
     mapData:  null,       // road render JSON from /api/maps/{town}/render
     laneGraph: null,      // cached CARLA routing graph from /api/maps/{town}/lane_graph, or null if unprobed
+    // Landmark reference points from maps/special_buildings.csv, ALL towns at
+    // once — the map draws only the rows whose `town` matches AppState.map.
+    // Pure map reference data: never part of the scenario, so it is absent from
+    // toJSON()/loadJSON(), from SCENARIO_KEYS (hence records no undo entry) and
+    // from the export payload.
+    specialBuildings: [],
 
     // ── Scenario ─────────────────────────────────────────────
     ego: null,            // {id, type:'ego', x, y, z, yaw, initial_speed, events} or null

@@ -674,10 +674,26 @@ input[type="range"]::-webkit-slider-thumb {
 .sel-mark-casing { stroke: #fff; stroke-width: 5px; }
 .sel-mark-line   { stroke: #000; stroke-width: 2.2px; }
 
-/* Map labels below the legibility floor (mapView.js LABEL_MIN_PX). The marker
-   itself keeps its true world size — only the text goes. */
-.actor-label { transition: opacity .12s linear; }
-#map-svg.map-labels-hidden .actor-label { opacity: 0; }
+/* Object labels below the legibility floor (mapView.js LABEL_MIN_PX). The marker
+   itself keeps its true world size — only the text goes.
+   `.map-label` is every object's name on the map — an actor's, a prop's, a
+   landmark's, a trigger point's. One class, so the legibility floor applies to
+   all of them at once and none can drift out of step. Per-label styling
+   (`.actor-label`, `.building-label`) rides alongside it. */
+.map-label {
+  transition: opacity .12s linear;
+  /* Every object label is cased: the map runs from a near-white verge to a
+     near-black carriageway and no single text colour survives both. The stroke
+     is painted UNDER the glyphs (paint-order), so it reads as an outline rather
+     than thickening the letterform. Default is white text over a dark casing;
+     a variant with dark text inverts the stroke colour and nothing else.
+     This is not cosmetic at the current size — the labels are bigger and hold
+     further out than they used to, i.e. they now spend real time over the
+     light-coloured verges where plain white text disappeared. */
+  stroke: rgba(20, 24, 40, .85); stroke-width: .8; paint-order: stroke;
+  stroke-linejoin: round;
+}
+#map-svg.map-labels-hidden .map-label { opacity: 0; }
 
 /* Locating an object from the scene list brightens it, holds for 0.5s, then
    fades back — a quiet "it is right here" that ends on its own. It is the
@@ -693,7 +709,7 @@ input[type="range"]::-webkit-slider-thumb {
 @media (prefers-reduced-motion: reduce) {
   /* Hold the brightness flat for the same window instead of easing it out. */
   .actor-glow .actor-body { animation: none; filter: brightness(1.4); }
-  .actor-label { transition: none; }
+  .map-label { transition: none; }
 }
 
 .spawn-dot { fill: rgba(255,255,255,.15); }
@@ -730,6 +746,18 @@ input[type="range"]::-webkit-slider-thumb {
 @media (prefers-reduced-motion: reduce) {
   .wp-locating .wp-dot { animation: none; filter: brightness(1.4); }
 }
+/* Landmark reference dots (maps/special_buildings.csv). Never hit-tested: a
+   grab target here would swallow clicks aimed at the road underneath it, and
+   there is nothing to select or move. The white casing under the dot is the
+   same trick the selection crop marks use — the map runs from a near-white
+   verge to a near-black carriageway and no single colour survives both. */
+.special-building { pointer-events: none; }
+.building-dot-casing { fill: #ffffff; opacity: .9; }
+.building-dot        { fill: #7b3fe4; stroke: #ffffff; stroke-width: .18; }
+/* Dark text, so it inverts `.map-label`'s casing to white — the same pairing
+   the violet dot below it uses. Everything else (size, casing width, the hide
+   rule) is `.map-label`'s. */
+.building-label { fill: #4a1f96; font-weight: 600; stroke: #ffffff; }
 .trigger-point { pointer-events: none; }
 .trigger-radius-control { pointer-events: stroke; cursor: ew-resize; }
 .trigger-radius-handle { pointer-events: all; cursor: ew-resize; }

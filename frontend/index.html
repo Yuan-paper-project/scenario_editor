@@ -51,6 +51,10 @@
           <input type="checkbox" id="toggle-props" checked>
           <span class="layer-toggle-icon" style="color:#e8801a;">&#9650;</span> Requisiten
         </label>
+        <label class="layer-toggle" title="Sonderorte (Haltestellen, Parks, Geschäfte …) ein-/ausblenden">
+          <input type="checkbox" id="toggle-buildings" checked>
+          <span class="layer-toggle-icon" style="color:#7b3fe4;">&#9679;</span> Sonderorte
+        </label>
         <label class="layer-toggle" title="Spurmarkierungen ein-/ausblenden">
           <input type="checkbox" id="toggle-markings" checked>
           <span class="layer-toggle-icon" style="color:#e0a800;">&#8212;</span> Markierungen
@@ -598,6 +602,7 @@
 <script src="/static/js/scenarioIO.js"></script>
 <script src="/static/js/laneGraph.js"></script>  <!-- before simulate.js: its only consumer -->
 <script src="/static/js/simulate.js"></script>
+<script src="/static/js/specialBuildings.js"></script>  <!-- landmark dots from maps/special_buildings.csv; mapView.js draws them -->
 <script src="/static/js/mapImport.js"></script>
 <script src="/static/js/welcome.js"></script>
 

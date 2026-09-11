@@ -30,6 +30,10 @@
   let layerTrafficLights = null;
   let layerRoadDir       = null;   // road direction arrows
   let layerTriggerPoints = null;
+  // Landmark dots from maps/special_buildings.csv. A map-detail layer like the
+  // crosswalks, not a scenario layer: it sits below the actors, is never
+  // hit-tested, and holds nothing the user can select or move.
+  let layerBuildings     = null;
   // The selected actor's own paths, above layer-actors: a path drawn under the
   // other vehicles is both hard to read and, now that its waypoints are
   // draggable, hard to reach.
@@ -57,13 +61,23 @@
   const ZOOM_STEP_COARSE = 1.40;   // Shift: the same traversal in ~9
   const ZOOM_TO_SPAN     = 90;     // metres across the view when framing a selection
 
-  // An actor's map label is drawn 2.2 world metres tall, which is ~4 px at the
-  // whole-town view — illegible, and dense enough over a cluster of actors to
-  // read as noise. It is HIDDEN below the floor rather than scaled up: markers
-  // are drawn at true world size on purpose, and a label that grew as you zoomed
-  // out would be the one thing on the map lying about scale.
-  const ACTOR_LABEL_M = 2.2;   // must match the label's font-size in _renderActor
-  const LABEL_MIN_PX  = 7;     // below this the label is hidden
+  // ONE size for every object label on the map — an actor's, a prop's, a
+  // landmark's, a trigger point's. They are the same kind of thing (the name of
+  // the object under them) and used to be three sizes across four call sites,
+  // so a prop's name was visibly smaller than the car's beside it.
+  //
+  // Drawn in world metres, and HIDDEN below the legibility floor rather than
+  // scaled up: markers are drawn at true world size on purpose, and a label that
+  // grew as you zoomed out would be the one thing on the map lying about scale.
+  // The floor is a screen size, so it is what actually decides how far out a
+  // label survives — at 3.2 m / 6 px labels hold to ~1.9 px per world metre,
+  // against ~3.2 before, i.e. roughly 1.7x further out.
+  //
+  // Anything that is NOT an object's name keeps its own size: waypoint numbers
+  // and per-waypoint velocities, the ruler's distance readout, the preview's
+  // status badges. Those annotate a measurement, not an object.
+  const MAP_LABEL_M  = 3.2;   // every object label's font-size, in world metres
+  const LABEL_MIN_PX = 6;     // below this on screen, every object label is hidden
 
 
   const _clampZoom = z => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
@@ -122,7 +136,7 @@
   function _updateLabelVisibility() {
     const pxPerMetre = _pxPerMetre();
     if (pxPerMetre == null) return;
-    svg.classList.toggle('map-labels-hidden', pxPerMetre * ACTOR_LABEL_M < LABEL_MIN_PX);
+    svg.classList.toggle('map-labels-hidden', pxPerMetre * MAP_LABEL_M < LABEL_MIN_PX);
   }
 
   function _applyTransform() {
@@ -174,6 +188,7 @@
     if (layerTrafficLights) layerTrafficLights.remove();
     if (layerRoadDir)       layerRoadDir.remove();
     if (layerTriggerPoints) layerTriggerPoints.remove();
+    if (layerBuildings)     layerBuildings.remove();
     if (layerPathsTop)      layerPathsTop.remove();
     if (layerActorsTop)     layerActorsTop.remove();
     // Cached route geometry is lane geometry, i.e. specific to the town that
@@ -184,12 +199,14 @@
     layerTrafficLights = _svgEl('g', { id: 'layer-trafficlights' });
     layerRoadDir       = _svgEl('g', { id: 'layer-roaddir' });
     layerTriggerPoints = _svgEl('g', { id: 'layer-trigger-points' });
+    layerBuildings     = _svgEl('g', { id: 'layer-buildings' });
     layerPathsTop      = _svgEl('g', { id: 'layer-paths-top' });
     layerActorsTop     = _svgEl('g', { id: 'layer-actors-top' });
     const layerTrajEl  = document.getElementById('layer-trajectories');
     worldGroup.insertBefore(layerRoadDir,       layerTrajEl);
     worldGroup.insertBefore(layerCrosswalks,    layerTrajEl);
     worldGroup.insertBefore(layerTrafficLights, layerTrajEl);
+    worldGroup.insertBefore(layerBuildings,     layerTrajEl);
     // These three go last, i.e. above layer-actors, and in this order: the
     // selected actor's path sits over the other vehicles, the actor itself sits
     // over its own path, and its trigger points sit over everything. Paint
@@ -289,6 +306,10 @@
       _renderTrafficLight(tl);
     }
     console.log(`[MapView] layer-trafficlights children: ${layerTrafficLights.children.length}`);
+
+    // Landmarks for whichever town this is. renderMap replaces the layer
+    // wholesale, so this has to run here as well as on the fetch completing.
+    _renderSpecialBuildings();
 
     // Fit the map to screen
     _fitToView(bounds, pad);
@@ -727,9 +748,10 @@
       _attachTriggerPointDrag(marker, actor.id, ev.id);
       g.appendChild(marker);
       const label = _svgEl('text', {
-        x: '0', y: '-4',
+        x: '0', y: '-4.5',
         'text-anchor': 'middle',
-        'font-size': '2.2',
+        'font-size': String(MAP_LABEL_M),
+        class: 'map-label',
         fill: '#fff',
         style: 'pointer-events:none',
       });
@@ -749,6 +771,51 @@
       g.appendChild(handle);
       layerTriggerPoints.appendChild(g);
     });
+  }
+
+  /**
+   * Landmark dots for the current town (maps/special_buildings.csv, fetched by
+   * specialBuildings.js into AppState.specialBuildings — every town's rows at
+   * once, so this filters).
+   *
+   * The CSV's x/y are CARLA world coordinates, i.e. exactly the frame the render
+   * JSON and every actor pose are already in — the single Y flip happens in
+   * backend/map_renderer.py and nothing downstream repeats it. Plot verbatim.
+   *
+   * Drawn like the trigger point's centre marker (a small dot) but with a white
+   * casing under it, because the map runs from a near-white verge to a near-black
+   * carriageway and no single colour survives both. Nothing here is hit-testable:
+   * a landmark is reference decoration, and a hit target here would swallow
+   * clicks aimed at the road under it.
+   */
+  function _renderSpecialBuildings() {
+    if (!layerBuildings) return;
+    while (layerBuildings.firstChild) layerBuildings.removeChild(layerBuildings.firstChild);
+    const town = AppState.map;
+    if (!town) return;
+    for (const b of (AppState.specialBuildings || [])) {
+      if (b.town !== town) continue;
+      const g = _svgEl('g', {
+        class: 'special-building',
+        transform: `translate(${_formatSvgNumber(b.x)},${_formatSvgNumber(b.y)})`,
+      });
+      g.appendChild(_svgEl('circle', { cx: '0', cy: '0', r: '1.5', class: 'building-dot-casing' }));
+      g.appendChild(_svgEl('circle', { cx: '0', cy: '0', r: '1.0', class: 'building-dot' }));
+      const label = _svgEl('text', {
+        x: '0', y: '-2.8',
+        'text-anchor': 'middle',
+        'font-size': String(MAP_LABEL_M),
+        class: 'map-label building-label',
+      });
+      label.textContent = b.type;
+      g.appendChild(label);
+      // Not a tooltip the user can hover for (the group is pointer-events:none)
+      // — it is there for anyone reading the DOM, and costs nothing.
+      const title = _svgEl('title', {});
+      title.textContent = b.name ? `${b.type} — ${b.name}` : b.type;
+      g.appendChild(title);
+      layerBuildings.appendChild(g);
+    }
   }
 
   function _formatSvgNumber(value) {
@@ -899,13 +966,12 @@
     g.appendChild(_buildSelectionMarks(
       size.w, WALKER_TYPES.has(actor.type) ? size.w : size.h));
 
-    // Label. `.actor-label` is what _updateLabelVisibility hides below the
-    // legibility floor — the font-size here must stay in step with
-    // ACTOR_LABEL_M, which is the metre value that check is computed from.
+    // Label. `.map-label` is what _updateLabelVisibility hides below the
+    // legibility floor; `.actor-label` carries nothing but this one's styling.
     const label = _svgEl('text', {
-      x: 0, y: -Math.max(size.w, size.h) / 2 - 1.5,
-      'text-anchor': 'middle', 'font-size': String(ACTOR_LABEL_M),
-      class: 'actor-label',
+      x: 0, y: -Math.max(size.w, size.h) / 2 - 2.0,
+      'text-anchor': 'middle', 'font-size': String(MAP_LABEL_M),
+      class: 'map-label actor-label',
       fill: '#fff', style: 'pointer-events:none'
     });
     label.textContent = _actorMapLabel(actor);
@@ -974,7 +1040,8 @@
     // and one label per cone buries the glyphs it is meant to annotate.
     if (sel) {
       const label = _svgEl('text', {
-        x: 0, y: -size / 2 - 1.2, 'text-anchor': 'middle', 'font-size': '1.8',
+        x: 0, y: -size / 2 - 1.8, 'text-anchor': 'middle',
+        'font-size': String(MAP_LABEL_M), class: 'map-label',
         fill: '#fff', style: 'pointer-events:none',
       });
       label.textContent = _actorMapLabel(prop);
@@ -1659,6 +1726,7 @@
       { id: 'toggle-markings',       layer: layerMarkings },
       { id: 'toggle-roaddir',        get layer() { return layerRoadDir; } },
       { id: 'toggle-props',          layer: layerProps },
+      { id: 'toggle-buildings',      get layer() { return layerBuildings; } },
     ];
 
     for (const p of pairs) {
@@ -1904,6 +1972,11 @@
     const sel = AppState.selectedWaypoint;
     if (sel) showPath(sel.actorId, sel.eventId, sel.pathType);
     MapView.renderAllActors();
+  });
+  // specialBuildings arrives once, asynchronously, and may land before or after
+  // the first map render — hence both this and the call inside renderMap.
+  AppState.on('change', patch => {
+    if ('specialBuildings' in patch) _renderSpecialBuildings();
   });
   AppState.on('trafficSignalSelected', () => _renderTrafficLights());
   AppState.on('trafficSignalUpdated', () => _renderTrafficLights());

@@ -27,6 +27,17 @@
       return res.json();
     },
 
+    // Landmark reference points for every town at once (maps/special_buildings.csv
+    // via the backend). Small enough to fetch once at page load and filter
+    // client-side by town, so switching maps costs no request. Any failure
+    // resolves to an empty list — the overlay is decoration, never a blocker.
+    async getSpecialBuildings() {
+      const res = await fetch('/api/special_buildings');
+      if (!res.ok) throw new Error(`getSpecialBuildings failed: ${res.status}`);
+      const data = await res.json();
+      return data.buildings || [];
+    },
+
     async exportScenario(params) {
       const res = await fetch('/api/export', {
         method:  'POST',

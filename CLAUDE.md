@@ -28,7 +28,7 @@ bash run.sh 8080     # custom port
 - Always start from the repo root — the app is imported as `backend.main`, so `uvicorn main:app` from inside `backend/` will not work. `run.sh` handles this with `cd "$(dirname "$0")"`.
 - **`.vscode/launch.json` passes no `--host`/`--port`**, so debugger runs land on uvicorn's default **8000** and bind loopback only, while `run.sh` uses **9090** on `0.0.0.0`. On a remote/SSH box the debugger's server is unreachable without a forwarded port — a hung browser tab usually means this, not a broken app.
 - **There is no linter and no CI**, and no unit tests. Automated coverage is `tests/test_normalization.py` (pure Python) plus ten Playwright end-to-end suites that need a running editor, and `tests/run_carla_cases.py`, which needs a running CARLA (see Verification). Everything else is verified manually.
-- All map geometry is parsed once at startup into `MAP_CACHE` (`backend/main.py:41-68`). Changes to `map_renderer.py` only take effect on restart — `--reload` does this automatically on save.
+- All map geometry is parsed once at startup into `MAP_CACHE` (`preload_maps`, `backend/main.py`). Changes to `map_renderer.py` only take effect on restart — `--reload` does this automatically on save.
 - **`--reload` only watches this repo.** Editing `../llm-scenario-gen` — including `prop_catalog.yaml`, which `xml_builder` reads once at import — requires a **manual restart**. Frontend files are read per request, so a catalogue edit appears instantly in the UI while the backend still serves the old data. That asymmetry is easy to misread as a bug.
 
 ## The sibling-repo dependency (read this first)
@@ -606,11 +606,11 @@ out; props carry a separate invisible hit circle, so clickability is not the blo
 
 ## Frontend conventions
 
-**No build step, no bundler, no npm.** Each `frontend/js/*.js` is an IIFE attaching one global: `AppState`, `Api`, `MapView`, `ObjectsManager`, `EventPanel`, `TrafficSignals`, `ScenarioTemplates`, `PropCatalog`, `LaneGraph`, `Dropdown`, plus `Toast` / `Confirm` / `UndoStack` / `UIUtils` / `ScenarioRules` from `app.js`. `Simulate` also exports `routeGeometry(actor, ev)` — the lane-following route `mapView.js` draws. Two globals exist only as test hooks and are called by no UI code: `Simulate.routeForTesting` (`tests/test_route_fidelity_e2e.py`, asserts on a computed route without running the animation) and `ScenarioIO.buildParamsForTesting` (`tests/test_events_e2e.py`, builds the export payload without the click, so a payload the client-side gate refuses can still be handed to the backend). Several files (`toolbar.js`, `properties.js`, `weather.js`, `mapImport.js`, `welcome.js`, `layerMenu.js`) export nothing else and simply bind DOM listeners on load.
+**No build step, no bundler, no npm.** Each `frontend/js/*.js` is an IIFE attaching one global: `AppState`, `Api`, `MapView`, `ObjectsManager`, `EventPanel`, `TrafficSignals`, `ScenarioTemplates`, `PropCatalog`, `LaneGraph`, `Dropdown`, `SpecialBuildings`, plus `Toast` / `Confirm` / `UndoStack` / `UIUtils` / `ScenarioRules` from `app.js`. `Simulate` also exports `routeGeometry(actor, ev)` — the lane-following route `mapView.js` draws. Two globals exist only as test hooks and are called by no UI code: `Simulate.routeForTesting` (`tests/test_route_fidelity_e2e.py`, asserts on a computed route without running the animation) and `ScenarioIO.buildParamsForTesting` (`tests/test_events_e2e.py`, builds the export payload without the click, so a payload the client-side gate refuses can still be handed to the backend). Several files (`toolbar.js`, `properties.js`, `weather.js`, `mapImport.js`, `welcome.js`, `layerMenu.js`) export nothing else and simply bind DOM listeners on load.
 
 - **Script order in `frontend/index.html` (the `<script>` block near the end) is load-bearing** — `app.js` first, dependents after; `propCatalog.js` must precede `toolbar.js`, which renders the prop tiles from it. A new module must be added there or it never runs.
 - **The header's two dropdowns share one mechanism.** `dropdown.js` (global `Dropdown`) owns toggle-on-button, close-on-outside-click and close-on-Esc; the Esc handler is on the **capture phase** and `stopPropagation`s, so closing a menu does not also cancel a path being drawn in `mapView`. A menu needs no module of its own — `dropdown.js` auto-binds any `[data-dropdown]` wrapper holding a `[data-dropdown-button]` and a `[data-dropdown-panel]` (this is how **Datei** works), and a row marked `data-menu-item` closes the menu after its own handler runs. A menu with extra behaviour calls `Dropdown.bind()` itself instead; **Ebenen** does, and must therefore *not* also carry `data-dropdown` or it binds twice. Shared classes are `.menu` / `.menu-btn` / `.menu-panel` / `.menu-item`; `.menu-panel-right` right-aligns a panel near the window edge.
-- **The six map-layer checkboxes live in the Ebenen dropdown** (`#layer-toggles` → `#layer-menu-btn` + `#layer-menu-panel`, "Ebenen N/6"). Ownership is split: `layerMenu.js` owns only the count pill and `Alle`/`Keine`, while `mapView.js`'s `_setupLayerToggles` still binds each `#toggle-*` checkbox to its SVG layer by id, exactly as when they were inline in the header. Keep those ids: they are the contract between the two files (and `tests/test_props_e2e.py` asserts `#toggle-props` exists). `Alle`/`Keine` set `.checked` directly, which fires **no** event, so it dispatches a synthetic `change` per box — drop that and the pill updates while the map does not. `#layer-toggles` itself stays `hidden` until a map loads (`mapImport.js`, `_setupLayerToggles`).
+- **The seven map-layer checkboxes live in the Ebenen dropdown** (`#layer-toggles` → `#layer-menu-btn` + `#layer-menu-panel`, "Ebenen N/7"). Ownership is split: `layerMenu.js` owns only the count pill and `Alle`/`Keine`, while `mapView.js`'s `_setupLayerToggles` still binds each `#toggle-*` checkbox to its SVG layer by id, exactly as when they were inline in the header. Keep those ids: they are the contract between the two files (and `tests/test_props_e2e.py` asserts `#toggle-props` exists). `Alle`/`Keine` set `.checked` directly, which fires **no** event, so it dispatches a synthetic `change` per box — drop that and the pill updates while the map does not. `#layer-toggles` itself stays `hidden` until a map loads (`mapImport.js`, `_setupLayerToggles`).
 - **The Datei menu holds `#btn-save` / `#btn-load-input` / `#btn-export-route`, and their ids are unchanged** — `scenarioIO.js` binds them by id and does not care that they now live in a popup. `#btn-export` deliberately stays a top-level primary button: it is the app's goal, and `tests/_harness.py` clicks it directly and waits on its `.disabled`.
 - **The simulation controls are not in the header.** `simulate.js` injects `#sim-controls` into `#map-bottom-stack`, a click-through (`pointer-events: none`, children `auto`) bottom-centre overlay inside `#map-container` that also holds `#traj-banner`. They are **stacked in a flex column, not given fixed `bottom` offsets** — either can be hidden without the other having to know. The ids `#sim-play` / `#sim-stop` (`tests/test_route_fidelity_e2e.py`) and `#traj-banner` (`tests/test_ego_events_e2e.py`) are unchanged by the move.
 - **`#map-status` carries the road count only** ("122 Straßen") — the town name is `#map-select`'s job, and every path that writes the count (`toolbar.js` select-change and `stateLoaded`, `mapImport.js`) also sets `mapSelect.value`, so the name is never lost. Transient and failure states ("Lade …", "Import fehlgeschlagen") still take over the badge text.
@@ -624,7 +624,13 @@ out; props carry a separate invisible hit circle, so clickability is not the blo
 
 - **`MapView.focusActor(id)` frames an actor *without* selecting it**, sharing `_frameActor` with `zoomToSelection`, then calls `glowActor(id)`. The glow is the **object's own body brightening** — the same `filter` it gets when hovered directly on the map, **no ring**, nothing appended to the actor group at render time. It brightens, holds ~0.5 s, then fades: `GLOW_MS` (900) must stay in step with the `actor-glow-fade` keyframes (brightness held to 55% of the timeline), or the class outlives the animation and leaves the object sitting bright. It is fired on the scene list's **click**, never on hover — hovering a list to read it must not set things flashing on the map. Both work for props: they carry `.actor-group` too. Flying the view *is* the feature — markers are drawn at true world size, so an actor at the town view is a few pixels and no amount of highlighting would find it for you.
 
-- **Actors are drawn at true world size and their labels are hidden, never scaled.** An actor's map label is `ACTOR_LABEL_M` (2.2 world metres) tall — about **4 px** at the whole-town view, illegible and dense enough over a cluster to read as noise. `_updateLabelVisibility` (called from `_applyTransform`) toggles `map-labels-hidden` on the `<svg>` when `pxPerMetre * ACTOR_LABEL_M < LABEL_MIN_PX` (7), and CSS fades `.actor-label` out. **Do not "fix" small markers by scaling them up**: the markers being true-size is what makes the map trustworthy, and a label that grew as you zoomed out would be the one thing on it lying about scale — `MapView.focusActor` is the way to reach a small actor. The check is driven off the live CTM (`_pxPerMetre`, shared with the scale ruler) and **not** off `_zoom`, because `_zoom` is relative to a viewBox that is the town's own bounds: the same `_zoom` is a different number of pixels per metre on Town01 and Town04. The `font-size` in `_renderActor` and `ACTOR_LABEL_M` are the same number written twice and must stay in step. Prop labels are exempt — they already render only while selected.
+- **Every object label on the map is one size and one hide rule.** An object label is the *name of the object under it* — an actor's, a prop's, a landmark's, a trigger point's. All four are drawn at `MAP_LABEL_M` (3.2 world metres), all four carry the class **`.map-label`**, and `_updateLabelVisibility` (called from `_applyTransform`) hides the lot by toggling `map-labels-hidden` on the `<svg>` when `pxPerMetre * MAP_LABEL_M < LABEL_MIN_PX` (6). They were three sizes across four call sites before (2.2 / 2.2 / 1.8 / 1.8), and only the actor's was ever hidden, so a prop's name was visibly smaller than the car's next to it and a trigger point's stayed on screen as a smear at any zoom. **A new object label must carry `.map-label` and `String(MAP_LABEL_M)`** or it silently reintroduces exactly that.
+  - **What is deliberately *not* a `.map-label`**: waypoint numbers and per-waypoint velocities, the ruler's distance readout, the preview's status badges. Those annotate a measurement rather than name an object, and they keep their own smaller sizes.
+  - **The floor is a screen size, so it — not the metre value — is what decides how far out labels survive.** At 3.2 m / 6 px they hold to ~1.9 px per world metre, against ~3.2 before, i.e. roughly **1.7× further out**; Town10HD and Town02 now keep their labels at the whole-town view where they used to lose them. Raising `MAP_LABEL_M` alone widens that range too, since the threshold is their ratio.
+  - **Do not "fix" small markers by scaling them up**: the markers being true-size is what makes the map trustworthy, and a label that grew as you zoomed out would be the one thing on it lying about scale — `MapView.focusActor` is the way to reach a small actor. The `font-size` at each call site and `MAP_LABEL_M` are the same number written several times and must stay in step.
+  - **The check is driven off the live CTM** (`_pxPerMetre`, shared with the scale ruler) and **not** off `_zoom`, because `_zoom` is relative to a viewBox that is the town's own bounds: the same `_zoom` is a different number of pixels per metre on Town01 and Town04.
+  - **Every object label is cased** — the stroke is painted *under* the glyphs (`paint-order: stroke` on `.map-label`), white text over a dark casing by default, and `.building-label` inverts to dark text over a white one. This is not decoration at the current size: the map runs from a near-white verge to a near-black carriageway, and now that labels are bigger and hold further out they spend real time over the light verges, where plain white text vanished. A new label variant sets `stroke` (the colour) and nothing else.
+  - Prop labels are still drawn **only while the prop is selected** — a six-cone taper with one name per cone buries the glyphs it annotates — but when drawn they are now the same size as everything else.
 - Cross-module communication goes through `AppState`. `set()` / `updateById()` / `removeById()` / `select()` emit `change`, `actorUpdated`, `actorRemoved`, `selectionChanged`, `stateLoaded`, `trafficSignalSelected`, `trafficSignalUpdated`. Subscribe via `AppState.on(...)`; never reach into another module's DOM.
 - **The no-selection overview panel re-renders off an allow-list, not off every `change`.** `properties.js`'s `change` handler calls `_renderOverviewPanel()` for `weather`, `time`, `map`, `mapData` — and for an **empty patch**, which is this codebase's signal that one of the state arrays was mutated in place (`AppState.npcs = [...]; AppState.set({})`). `map`/`mapData` are in there because the summary prints the town name and otherwise sat on “Karte: None” from load until an unrelated event forced a render — which reads as intermittent rather than broken. The empty patch is in there for the scene list: **placing a prop is the one placement that does not select what it placed**, so the overview stays on screen and would otherwise keep showing the pre-placement counts. A new summary field sourced from `AppState` needs its key added here too.
 
@@ -732,8 +738,54 @@ from earlier in the session and resurrected that actor, while the drag stood.
 ## Maps
 
 - Bundled towns live in `maps/<Town>/<Town>.xodr` (plus optional `.jpg` thumbnail and `_summary.json`), auto-discovered by `_scan_xodr_paths` at import time.
-- Uploaded maps persist to `maps/_uploaded/*.xodr` and are re-parsed into `MAP_CACHE` on every startup (`backend/main.py:44-68`); a bad file logs a failure for that town without taking down the server.
+- Uploaded maps persist to `maps/_uploaded/*.xodr` and are re-parsed into `MAP_CACHE` on every startup (`preload_maps`, `backend/main.py`); a bad file logs a failure for that town without taking down the server.
 - `maps/` is **not** gitignored — uploads land in the working tree.
+
+### Landmark overlay (`maps/special_buildings.csv`)
+
+A bundled table of ~130 reference points (bus stops, parks, shops, …) drawn as
+violet dots with the raw `building_type` above each one. **Reference decoration
+only** — it is not scenario data, so it never reaches `AppState.toJSON()`, the
+export payload, `SCENARIO_KEYS` (hence no undo entry) or the `.xosc`, and there
+is no import UI: edit the CSV.
+
+- Columns are `town,building_type,carla_name,x,y,z`. **`x`/`y` are CARLA world
+  coordinates** — the same frame the render JSON and every actor pose already
+  use — so the frontend plots them verbatim. Do **not** re-flip Y here; the
+  single flip lives in `backend/map_renderer.py`. (Checked against the `.xodr`
+  bounds when the file was added: Town01's rows span y 2…331 against a CARLA
+  y-range of 0…328.6, which only fits the unflipped frame.) `z` is carried but
+  unused — the map is 2-D.
+- The `town` column matches the `maps/` directory names, `Town10HD` included.
+  **`Town10` (the georeferenced VectorZero map) has no rows** and draws nothing;
+  a row naming a town that is not loaded is simply never drawn.
+- `GET /api/special_buildings` (`backend/main.py`, `_read_special_buildings`)
+  **re-reads the file per request** rather than caching it at startup —
+  deliberately, so it is not one more `MAP_CACHE`-style "restart to see your
+  edit" trap. Edit the CSV, reload the browser tab. A missing or malformed file
+  yields `{"buildings": []}`, never a 404; rows with no town/type or an
+  unparseable x/y are skipped individually.
+- `frontend/js/specialBuildings.js` (global `SpecialBuildings`) fetches **all
+  towns at once** on load — the file is small, so switching maps costs no
+  request — and publishes them to `AppState.specialBuildings`. A failed fetch is
+  a `console.warn`, not a toast.
+- `mapView.js` owns the drawing: `layer-buildings`, created in `renderMap()`
+  alongside the other map-detail layers and inserted **before**
+  `layer-trajectories`, so actors, props and paths all draw over it.
+  `_renderSpecialBuildings` filters by `AppState.map` and runs from two places —
+  inside `renderMap` (which replaces the layer wholesale) and off a `change`
+  patch carrying `specialBuildings` (the fetch can land either side of the first
+  render). The group is `pointer-events: none` throughout: a hit target here
+  would swallow clicks aimed at the road under it.
+- The label is an ordinary object label: `font-size: MAP_LABEL_M`, class
+  `map-label building-label` — see "Every object label on the map is one size and
+  one hide rule" under Frontend conventions. `.building-label` adds only its
+  colour (dark violet text, white casing, inverting `.map-label`'s default). The
+  dots stay at every zoom; only the text goes.
+- The **`Sonderorte`** checkbox (`#toggle-buildings`) is the 7th entry in the
+  Ebenen menu — the pill now reads `N/7` — wired in `_setupLayerToggles` by id
+  like the other six, through a getter because the layer is recreated per
+  `renderMap`.
 
 ## The in-editor preview (`frontend/js/simulate.js`) and the cached CARLA lane graph
 
@@ -944,7 +996,7 @@ phase 2 (this section) are both implemented; `set_distance` remains out of scope
 
 - `README_UPDATED.md` is a second, newer README coexisting with `README.md`. Check both before assuming docs are stale.
 - `generate_pptx.py` and `frontend/presentation.html` are the project slide deck, served by `GET /api/presentation.pptx` (which shells out to the script). Unrelated to editor functionality.
-- Exports are written to `/tmp/` and removed by a `BackgroundTask` after the response is sent (`backend/main.py:154-159`).
+- Exports are written to `/tmp/` and removed by a `BackgroundTask` after the response is sent (both export endpoints, `backend/main.py`).
 
 ## Verification
 
