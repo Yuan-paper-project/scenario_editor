@@ -587,6 +587,9 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
   font-weight: 800; letter-spacing: .5px; text-transform: uppercase;
 }
 .event-fixed-trigger-text { color: var(--text-dim); font-size: 11px; font-style: italic; }
+/* A stated fact inside the action half of a card (Spurversatz' "dauerhaft"),
+   laid out on .event-row's label column but addressing no control. */
+.event-fixed-row-label { color: var(--text-dim); font-size: 11px; }
 .event-collapse,
 .event-delete {
   background: none; border: none; cursor: pointer;

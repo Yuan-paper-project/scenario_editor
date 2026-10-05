@@ -443,6 +443,20 @@ def _action_of(event):
             "relative_to": target.get("entityRef") if target is not None else None,
         }
 
+    offset = pa.find("./LateralAction/LaneOffsetAction")
+    if offset is not None:
+        dyn = offset.find("LaneOffsetActionDynamics")
+        absolute = offset.find("./LaneOffsetTarget/AbsoluteTargetLaneOffset")
+        return {
+            "kind": "lane_offset",
+            "continuous": offset.get("continuous"),
+            "shape": dyn.get("dynamicsShape") if dyn is not None else None,
+            # Signed metres, positive to the RIGHT of travel — the opposite
+            # convention to lane_change's RelativeTargetLane, where right is -1
+            # because that value is an OpenDRIVE lane-id delta.
+            "value": float(absolute.get("value")) if absolute is not None else None,
+        }
+
     traj = pa.find("./RoutingAction/FollowTrajectoryAction")
     if traj is not None:
         return {

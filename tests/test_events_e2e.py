@@ -98,10 +98,10 @@ with sync_playwright() as p:
     labels = page.evaluate(
         "[...document.querySelectorAll('#event-action-grid .event-action-button')]"
         ".map(b => b.textContent)")
-    check("event panel offers 5 actions", len(labels) == 5, str(labels))
+    check("event panel offers 6 actions", len(labels) == 6, str(labels))
     check("action grid lists the documented actions",
           labels == ["Trajektorie folgen", "Route zuweisen", "Geschw. setzen",
-                     "Abstand halten", "Spurwechsel"], str(labels))
+                     "Abstand halten", "Spurwechsel", "Spurversatz"], str(labels))
 
     # One path-producing event per actor: once a trajectory or route exists,
     # both path buttons stay in the grid but go disabled — hiding them reflowed
@@ -113,9 +113,9 @@ with sync_playwright() as p:
     labels = page.evaluate(
         "[...document.querySelectorAll('#event-action-grid .event-action-button')]"
         ".map(b => b.textContent)")
-    check("all 5 actions stay listed once one path event exists",
+    check("all 6 actions stay listed once one path event exists",
           labels == ["Trajektorie folgen", "Route zuweisen", "Geschw. setzen",
-                     "Abstand halten", "Spurwechsel"], str(labels))
+                     "Abstand halten", "Spurwechsel", "Spurversatz"], str(labels))
     disabled = page.evaluate(
         "[...document.querySelectorAll('#event-action-grid .event-action-button')]"
         ".filter(b => b.disabled).map(b => b.textContent)")
@@ -288,6 +288,196 @@ with sync_playwright() as p:
     # and the run hangs with an orphaned scenario_runner. The floor is the guard.
     check("a rate of 0 is floored before export",
           ev["action"]["dynamics_value"] == 0.1, str(ev["action"]["dynamics_value"]))
+
+    # ── lane_offset ──────────────────────────────────────────────────────────
+    # Emitted continuous="true" and nothing else: with an
+    # AbsoluteTargetLaneOffset, ChangeActorLaneOffset's continuous="false" branch
+    # compares the actor's live offset against _current_target_offset, which the
+    # atomic only writes in its RELATIVE branch — so it stays 0, the test passes
+    # on the first tick while the actor is still centred, and terminate() puts
+    # the offset straight back. A valid file that does nothing.
+    seed(page, [{"id": "e1", "trigger": {"type": "simulation_time", "value": 2.0},
+                 "action": {"type": "lane_offset", "direction": "left", "offset": 1.5}}])
+    xml = H.export_xosc(page)
+    ev = H.parse_events(xml, entity="adversary")[0]
+    check("lane_offset exports a LaneOffsetAction",
+          ev["action"]["kind"] == "lane_offset", str(ev["action"]))
+    # Positive is RIGHT of travel (SimpleVehicleControl._offset_waypoint uses
+    # get_right_vector), which is the OPPOSITE of lane_change's
+    # RelativeTargetLane, where right is -1 because that is a lane-id delta.
+    check("a left lane_offset exports a negative value",
+          ev["action"]["value"] == -1.5, str(ev["action"]["value"]))
+    check("lane_offset is always continuous",
+          ev["action"]["continuous"] == "true", str(ev["action"]["continuous"]))
+    check("lane_offset carries the XSD-required dynamics shape",
+          ev["action"]["shape"] == "linear", str(ev["action"]["shape"]))
+    check("lane_offset keeps its own trigger, unlike assign_route",
+          ev["trigger"]["kind"] == "simulation_time" and ev["trigger"]["value"] == 2.0,
+          str(ev["trigger"]))
+
+    seed(page, [{"id": "e1", "trigger": {"type": "simulation_time", "value": 0},
+                 "action": {"type": "lane_offset", "direction": "right", "offset": 40.0}}])
+    xml = H.export_xosc(page)
+    ev = H.parse_events(xml, entity="adversary")[0]
+    check("a right lane_offset exports a positive value, clamped to 10 m",
+          ev["action"]["value"] == 10.0, str(ev["action"]["value"]))
+
+    # "Drift back to the centre" is a SECOND lane_offset of 0 — the only way to
+    # end one, since a second offset command sets the first atomic's
+    # _overwritten flag and so skips its terminate reset. -0.0 is falsy, hence
+    # the emitter's `or 0.0`: without it this writes value="-0".
+    seed(page, [{"id": "e1", "trigger": {"type": "simulation_time", "value": 0},
+                 "action": {"type": "lane_offset", "direction": "left", "offset": 0}}])
+    xml = H.export_xosc(page)
+    check("a zero lane_offset writes 0, never -0",
+          'AbsoluteTargetLaneOffset value="0"' in xml,
+          [l for l in xml.splitlines() if "AbsoluteTargetLaneOffset" in l])
+
+    # PedestrianControl stores the controller offset and never reads it, so the
+    # action is barred at the UI, in ScenarioRules and in the backend — a wider
+    # set than assign_route's, since a cyclist is a <Vehicle> and does honour it.
+    seed(page, [], npc_type="pedestrian")
+    page.evaluate("AppState.select('obj-2')")
+    disabled = page.evaluate(
+        "[...document.querySelectorAll('#event-action-grid .event-action-button')]"
+        ".filter(b => b.disabled).map(b => b.textContent)")
+    check("Spurversatz is disabled for a pedestrian",
+          "Spurversatz" in disabled, str(disabled))
+    check("...and so is Route zuweisen, for a different reason",
+          "Route zuweisen" in disabled, str(disabled))
+    seed(page, [], npc_type="cyclist")
+    page.evaluate("AppState.select('obj-2')")
+    disabled = page.evaluate(
+        "[...document.querySelectorAll('#event-action-grid .event-action-button')]"
+        ".filter(b => b.disabled).map(b => b.textContent)")
+    check("Spurversatz IS offered to a cyclist, unlike Route zuweisen",
+          "Spurversatz" not in disabled and "Route zuweisen" in disabled, str(disabled))
+
+    seed(page, [{"id": "e1", "trigger": {"type": "simulation_time", "value": 0},
+                 "action": {"type": "lane_offset", "direction": "left", "offset": 1.0}}],
+         npc_type="pedestrian")
+    params = _params(page)
+    check("a pedestrian lane_offset is a 400, not a silent no-op",
+          H.export_status(page, params) == 400, str(H.export_status(page, params)))
+
+    # A lane_offset never completes on its own, so it is left out of the
+    # 'Nach Event' dropdown entirely — the same treatment assign_route gets.
+    seed(page, [{"id": "e1", "trigger": {"type": "simulation_time", "value": 0},
+                 "action": {"type": "lane_offset", "direction": "left", "offset": 1.0}},
+                speed_event("e2", {"type": "simulation_time", "value": 5})])
+    page.evaluate("AppState.select('obj-2')")
+    page.evaluate("""() => {
+        const card = [...document.querySelectorAll('.event-card')][1];
+        card.querySelector('select').value = 'after_event';
+        card.querySelector('select').dispatchEvent(new Event('change', {bubbles: true}));
+    }""")
+    page.wait_for_timeout(200)
+    options = page.evaluate("""() => {
+        const card = [...document.querySelectorAll('.event-card')][1];
+        return [...card.querySelectorAll('option')].map(o => o.textContent);
+    }""")
+    check("the Nach-Event dropdown never offers a Spurversatz",
+          not any("Spurversatz" in o for o in options), str(options))
+
+    # Adding an event after a Spurversatz must not default to waiting on it —
+    # the dropdown already refused it, but the new-event default did not, so a
+    # second Spurversatz arrived pre-chained onto the first. Through the real
+    # button, the way it was reported.
+    seed(page, [{"id": "e1", "trigger": {"type": "simulation_time", "value": 0},
+                 "action": {"type": "lane_offset", "direction": "left", "offset": 1.0}}])
+    page.evaluate("AppState.select('obj-2')")
+    page.click('.event-action-button:has-text("Spurversatz")')
+    page.wait_for_timeout(200)
+    added = page.evaluate("AppState.findById('obj-2').events[1].trigger")
+    check("a second Spurversatz does not default to waiting on the first",
+          added.get("type") != "after_event", str(added))
+    page.click('.event-action-button:has-text("Geschw. setzen")')
+    page.wait_for_timeout(200)
+    added = page.evaluate("AppState.findById('obj-2').events[2].trigger")
+    check("...nor does any other action added after one",
+          added.get("type") != "after_event", str(added))
+
+    # Deleting the event between a Spurversatz and its successor re-points the
+    # successor onto the event before — which must not be the Spurversatz.
+    seed(page, [{"id": "e1", "trigger": {"type": "simulation_time", "value": 0},
+                 "action": {"type": "lane_offset", "direction": "left", "offset": 1.0}},
+                speed_event("e2", {"type": "simulation_time", "value": 3}),
+                speed_event("e3", {"type": "after_event", "event_id": "e2"})])
+    page.evaluate("AppState.select('obj-2')")
+    page.wait_for_timeout(200)
+    page.locator(".event-card").nth(1).locator(".event-delete").click()
+    page.wait_for_timeout(200)
+    if page.evaluate("Confirm.isOpen"):
+        page.keyboard.press("Enter")
+        page.wait_for_timeout(200)
+    events = page.evaluate("AppState.findById('obj-2').events")
+    survivor = next((e for e in events if e["id"] == "e3"), None)
+    check("deleting the middle event does not re-point onto a Spurversatz",
+          survivor is not None and not (survivor["trigger"].get("type") == "after_event"
+                                        and survivor["trigger"].get("event_id") == "e1"),
+          str(survivor and survivor["trigger"]))
+
+    # A loaded file that names one anyway: the card chips it and the export
+    # gate refuses — even with a second offset that would supersede the first
+    # in CARLA. The ban is blanket by decision.
+    seed(page, [{"id": "e1", "trigger": {"type": "simulation_time", "value": 0},
+                 "action": {"type": "lane_offset", "direction": "left", "offset": 1.0}},
+                {"id": "e2", "trigger": {"type": "simulation_time", "value": 4},
+                 "action": {"type": "lane_offset", "direction": "left", "offset": 0.0}},
+                speed_event("e3", {"type": "after_event", "event_id": "e1"})])
+    page.evaluate("AppState.select('obj-2')")
+    page.wait_for_timeout(200)
+    chips = page.evaluate(
+        "[...document.querySelectorAll('.event-problem')].map(c => c.textContent)")
+    check("an after_event on a Spurversatz is chipped",
+          any("Spurversatz endet nicht" in c for c in chips), str(chips))
+    check("...and the export gate refuses it", _export_blocked(page))
+    check("...and the backend 400s it",
+          H.export_status(page, _params(page)) == 400)
+
+    # ── lane_offset in the preview ───────────────────────────────────────────
+    # simulate.js keeps sim.x/sim.y on the driven centreline and adds the offset
+    # when the pose is written back (_pose), mirroring _offset_waypoint: the
+    # controller displaces the point it AIMS at and leaves its waypoint list
+    # alone. Town01 road 1 runs due east-west, so "across the road" is world y.
+    page.evaluate("""() => AppState.loadJSON({
+        map: 'Town01', weather: {}, time: 'daytime',
+        ego: {id: 'obj-1', type: 'ego', x: 300.631, y: -2.025, z: 0.2, yaw: 180,
+              initial_speed: 0, events: [{id: 'k1',
+                trigger: {type: 'simulation_time', value: 0},
+                action: {type: 'set_speed',
+                         dynamics: {shape: 'step', dimension: 'time', value: 5},
+                         target: {mode: 'absolute', value: 0}}}]},
+        npcs: [{id: 'obj-2', type: 'car', x: 265.364, y: 1.967, z: 0.2, yaw: 180,
+                initial_speed: 8, events: [
+          {id: 'e1', trigger: {type: 'simulation_time', value: 0.4},
+           action: {type: 'lane_offset', direction: 'left', offset: 2.0}},
+          {id: 'e2', trigger: {type: 'simulation_time', value: 2.5},
+           action: {type: 'lane_offset', direction: 'right', offset: 2.0}}]}],
+        staticObjects: [], trafficSignals: [],
+    })""")
+    page.wait_for_timeout(200)
+    centre_y = page.evaluate("AppState.findById('obj-2').y")
+    page.click("#sim-play")
+    page.wait_for_timeout(1400)
+    left_y = page.evaluate("AppState.findById('obj-2').y")
+    # Left of an east-bound vehicle is -y: the editor's frame IS CARLA's, which
+    # is left-handed, so right is +y and get_right_vector() takes the positive
+    # sign. Getting this backwards is invisible in the .xosc and obvious here.
+    check("a left lane_offset displaces the previewed actor to -y",
+          abs((left_y - centre_y) + 2.0) < 0.3, f"{centre_y} -> {left_y}")
+    page.wait_for_timeout(2400)
+    right_y = page.evaluate("AppState.findById('obj-2').y")
+    check("a second lane_offset replaces the first rather than stacking",
+          abs((right_y - centre_y) - 2.0) < 0.3, f"{centre_y} -> {right_y}")
+    badge = page.evaluate(
+        "document.querySelector('#layer-sim-badges text')?.textContent || ''")
+    check("the preview badges the standing offset", "Spurversatz" in badge, badge)
+    page.click("#sim-stop")
+    page.wait_for_timeout(300)
+    check("Stop restores the authored pose, offset and all",
+          abs(page.evaluate("AppState.findById('obj-2').y") - centre_y) < 1e-6,
+          str(page.evaluate("AppState.findById('obj-2').y")))
 
     # ── follow_trajectory ────────────────────────────────────────────────────
     traj = [{"x": 265.0, "y": 1.9, "z": 0.2, "velocity": 8.0},

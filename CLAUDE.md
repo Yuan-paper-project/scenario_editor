@@ -129,8 +129,13 @@ Unlike events, an unknown NPC type is a **hard 400**, not a coercion
 `xml_builder`. Same reasoning as props: the string is free-form, and every
 downstream lookup would otherwise turn a typo into a Lincoln MKZ.
 
-`mapView.js` `WALKER_TYPES` and `xml_builder` `_PEDESTRIAN_TYPES` are the same
-split maintained twice — keep them in step. `_template_for` picks the base
+`mapView.js` `WALKER_TYPES`, `xml_builder` `_PEDESTRIAN_TYPES`, `event_builders`
+`_WALKER_ACTION_TYPES` and `backend/scenario_io.py` `_WALKER_ACTOR_TYPES` are the
+same split maintained **four** times — keep them in step. The last two gate
+`lane_offset`, which is available to every `<Vehicle>` and therefore to a
+**wider** set than `assign_route`: a `cyclist` aliases to `bike`, so the route
+planner will not route it but `simple_vehicle_control` honours its offset
+perfectly well. Do not "simplify" either one into `_ROUTE_ACTION_TYPES`. `_template_for` picks the base
 `.xosc` from the **first** NPC's type, so a walker in slot 0 is the only
 arrangement that selects `pedestrian.xosc`.
 
@@ -180,7 +185,7 @@ the same backend normalizer (`_normalize_actor` in `backend/scenario_io.py`),
 and the same emitter path (`_build_actor_act` in `xml_builder.py`) as every NPC.
 Its entity name is `hero`; an NPC's is `adversary`/`adversaryN`.
 
-- **Actions** (5): `follow_trajectory`, `assign_route`, `set_speed`, `set_distance`, `lane_change`
+- **Actions** (6): `follow_trajectory`, `assign_route`, `set_speed`, `set_distance`, `lane_change`, `lane_offset`
 - **Triggers** (4): `simulation_time`, `distance_to_ego`, `distance_to_point`, `after_event`
   — `distance_to_ego` is **not offered for the ego itself** (see below), and
   `after_event` may name an event on **any** actor, not just its own (see below).
@@ -428,6 +433,78 @@ Things that only make sense once you have read `ChangeActorTargetSpeed`:
   `time` event. Every other template, and every
   hand-written `tests/carla_cases.py` chain, stays on `time`.
 - **`rate` is a local ScenarioRunner patch, not upstream.** See the Verification section.
+
+### `lane_offset`: a lateral displacement that has no end
+
+`LaneOffsetAction` / `AbsoluteTargetLaneOffset` → `ChangeActorLaneOffset`, which
+writes the controller's `_offset`; `SimpleVehicleControl._offset_waypoint`
+displaces the waypoint it **aims at** along `transform.get_right_vector()` and
+leaves its waypoint list untouched. The action state is `{type, direction, offset}`
+— an **unsigned** magnitude plus a side, the same shape `lane_change` uses — and
+the sign is applied at emission, never stored.
+
+- **Positive is RIGHT of travel. That is the OPPOSITE of `lane_change`**, whose
+  `RelativeTargetLane` writes `-1` for right because that value is an OpenDRIVE
+  lane-id delta and not a distance. Same German „Links | Rechts" in the card,
+  inverted sign one layer down.
+- **It is always emitted `continuous="true"`, and that is not a default.** With an
+  `AbsoluteTargetLaneOffset`, the `continuous="false"` branch compares the actor's
+  live lateral offset against `_current_target_offset` — which the atomic only ever
+  writes in its **relative** branch, so for an absolute target it stays `0`. The
+  test therefore passes on the atomic's first tick (the actor is still centred),
+  the Event reports SUCCESS, and `terminate()` puts the offset straight back to 0:
+  a clean, XSD-valid file that does nothing at all. **Identical in stock 0.9.15 and
+  both local checkouts** — upstream, not a local divergence, and the reason no
+  `continuous` control is offered.
+- **So the Event never completes on its own**, and the card states that as a fixed
+  fact (`Dauer: dauerhaft (fest)`, `_fixedFactRow`) exactly as an `assign_route`
+  states its fixed trigger. It does **not** hang the run: every Act carries
+  `MaxSimTime > 60` in its StopTrigger.
+- **"Drift back to the centre" is a SECOND `lane_offset` of 0**, and that is the
+  only way to end one. It works because a second offset command sets the first
+  atomic's `_overwritten` flag, so its `terminate()` skips the reset and the new
+  value stands. `-0.0` is falsy, hence the emitter's `or 0.0` — without it a
+  left-hand 0 writes `value="-0"`.
+- **Starting an offset ends a running route, but does not stop the driving.**
+  `ActorControl.update_offset` stamps `_last_waypoint_command` as well as its own
+  slot, so a running `ChangeActorWaypoints`/`ChangeActorLateralMotion` reports
+  SUCCESS immediately — but `update_waypoints()` is never called, so the
+  controller keeps driving the list it already has, now offset. The visible
+  consequence: **an `after_event` waiting on that route fires the moment the
+  offset starts**, not at route end. The reverse also holds — a later route,
+  trajectory or lane change ends the offset *without* `_overwritten`, so it
+  re-centres.
+- **An `after_event` may never name a `lane_offset`** — a blanket ban, by
+  decision. The runtime *would* complete one that a later offset or waypoint
+  action supersedes, but that was judged too conditional to author against.
+  Enforced in four places: `_afterEventGroups` omits it from the dropdown —
+  and so do the new-event default (`_defaultEvent`) and the delete re-point
+  (`_canChainOnto`), all three through one predicate, `_isChainTarget`
+  (`eventPanel.js`). They drifted once already: the dropdown learned about
+  `lane_offset` and the default did not, so a second Spurversatz arrived
+  pre-chained onto the first.
+  `ScenarioRules.eventProblem` chips a loaded file's reference
+  (`after_lane_offset`, which also blocks the export), `_normalize_after_event_chains`
+  raises a **400** (not a rewrite like `assign_route` gets — there is no stand-in
+  trigger that means the same thing), and the preview marks it `neverFires`.
+  Chain onto an offset by giving the next event its own time or distance trigger.
+- **Vehicle-only, but a WIDER set than `assign_route`** — see the actor-types
+  section. `PedestrianControl` inherits `update_offset` from `BasicControl` and
+  never reads `_offset`, so a walker would get a valid file in which it simply
+  never moves sideways; a 400, not a coercion. A `cyclist` is a `<Vehicle>` and is
+  allowed.
+- `LaneOffsetActionDynamics/@dynamicsShape` is **required by the XSD and read by
+  nothing** (`openscenario_parser`'s branch says so outright), so the emitter writes
+  a fixed `linear` rather than carrying a dead value through three layers. There is
+  no UI for it and `maxLateralAcc` is omitted entirely.
+- **The preview simulates it** (`simulate.js`): `sim.x`/`sim.y` stay on the driven
+  centreline and the offset is added when the pose is written back (`_pose`), which
+  is what the controller does. Storing the displaced position back into `sim.x/y`
+  would be wrong — `_walkDirLine` walks from the position it is handed toward the
+  next centreline point, so the actor would converge back onto the centreline over
+  a few ticks and quietly eat the offset. `_pose` is also what the two distance
+  triggers measure from. The supersede rules above are mirrored in
+  `_supersedeLaneOffset` / `_supersedeWaypointEvents`.
 
 ### Initial speed (`initial_speed`) — the one thing that happens *before* the storyboard
 
@@ -795,7 +872,9 @@ evaluates all 4 real triggers (including the `distance_to_ego` 60 s OR-fallback,
 `assign_route`/`after_event` trigger rewrites `backend/scenario_io.py` applies at export, and
 an `after_event` naming another actor's event), and
 mirrors real termination semantics (an instant speed step that persists past its duration, a
-4 m/1 m waypoint-acceptance radius, a dead stop on `_reached_goal`). `set_distance` is
+4 m/1 m waypoint-acceptance radius, a dead stop on `_reached_goal`). `lane_offset`
+is simulated too — see its own section above for the centreline/`_pose` split and
+why storing the displaced position would eat the offset. `set_distance` is
 deliberately not simulated (badge only) — see the plan below for why.
 
 **A relative `set_speed` tracks its reference continuously, it does not sample once.**
@@ -1044,7 +1123,7 @@ bash run.sh 9090                 # terminal 1
 bash tests/run_tests.sh          # terminal 2 (EDITOR_URL overrides the target)
 ```
 
-That runs `test_normalization.py` (123 checks, no browser or server needed — the last three build a real `.xosc` through the sibling repo to pin cross-actor `after_event` name resolution), then `compare_xodr_lane_graph.py` (also no browser/server/CARLA — validates `backend/lane_graph_builder.py` against the 8 committed probed graphs), then the ten Playwright suites: props (54), prop yaw (23), templates (159), events (60), ego events (75), actor types (260, grows with the catalogue), elevation (33), route fidelity (9), undo (44), waypoints (67). All but the first two drive a real browser against a real server and a real export. **Restart the editor first if you changed `../llm-scenario-gen`** — otherwise the frontend shows new catalogue data while the backend exports the old, which looks like a test bug and is not one.
+That runs `test_normalization.py` (132 checks, no browser or server needed — the last three build a real `.xosc` through the sibling repo to pin cross-actor `after_event` name resolution), then `compare_xodr_lane_graph.py` (also no browser/server/CARLA — validates `backend/lane_graph_builder.py` against the 8 committed probed graphs), then the ten Playwright suites: props (54), prop yaw (23), templates (159), events (82), ego events (75), actor types (260, grows with the catalogue), elevation (33), route fidelity (9), undo (44), waypoints (67). All but the first two drive a real browser against a real server and a real export. **Restart the editor first if you changed `../llm-scenario-gen`** — otherwise the frontend shows new catalogue data while the backend exports the old, which looks like a test bug and is not one.
 
 `test_ego_events_e2e.py` is kept separate from `test_events_e2e.py` rather than folded in: the older suite's `EGO` fixture and every one of its assertions assume an inert ego (no events), which was true before the ego became a controllable actor and is the entire premise the new suite tests against.
 

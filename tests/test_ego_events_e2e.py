@@ -72,9 +72,9 @@ with sync_playwright() as p:
     ego_labels = page.evaluate(
         "[...document.querySelectorAll('#event-action-grid .event-action-button')]"
         ".map(b => b.textContent)")
-    check("ego event panel offers the same 5 actions as an NPC",
+    check("ego event panel offers the same 6 actions as an NPC",
           ego_labels == ["Trajektorie folgen", "Route zuweisen", "Geschw. setzen",
-                         "Abstand halten", "Spurwechsel"], str(ego_labels))
+                         "Abstand halten", "Spurwechsel", "Spurversatz"], str(ego_labels))
     check("ego's event section is visible",
           not page.evaluate("document.getElementById('event-section').classList.contains('hidden')"))
 

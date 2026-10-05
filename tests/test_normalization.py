@@ -352,6 +352,64 @@ check("unknown set_distance axis coerces to longitudinal",
       out["npcs"][0]["events"][0]["action"]["axis"] == "longitudinal")
 
 
+# ── lane_offset ────────────────────────────────────────────────────────────────
+# The payload carries an UNSIGNED magnitude plus a side, the same shape
+# lane_change uses; the emitter applies the sign (positive = right of travel).
+
+def offset(action_extra, npc_type="car"):
+    return norm([{"id": "e1", "trigger": {"type": "simulation_time"},
+                  "action": {"type": "lane_offset", **action_extra}}],
+                npcs=[{"id": "obj-2", "type": npc_type, "x": 3.0, "y": 4.0,
+                       "events": [{"id": "e1", "trigger": {"type": "simulation_time"},
+                                   "action": {"type": "lane_offset", **action_extra}}]}])
+
+
+act = offset({})["npcs"][0]["events"][0]["action"]
+check("lane_offset defaults to 1 m left", act["direction"] == "left" and act["offset"] == 1.0,
+      str(act))
+
+act = offset({"direction": "sideways", "offset": 2.5})["npcs"][0]["events"][0]["action"]
+check("unknown lane_offset direction coerces to left", act["direction"] == "left", str(act))
+
+act = offset({"direction": "right", "offset": 40.0})["npcs"][0]["events"][0]["action"]
+check("a lane_offset magnitude is clamped to 10 m", act["offset"] == 10.0, str(act))
+
+act = offset({"direction": "right", "offset": -3.0})["npcs"][0]["events"][0]["action"]
+check("a negative lane_offset magnitude floors at 0", act["offset"] == 0.0, str(act))
+
+# PedestrianControl stores the controller offset and never reads it, so a walker
+# would get a valid file in which it simply never moves sideways — rejected for
+# the same reason assign_route is, rather than exported as a silent no-op.
+check("lane_offset on a pedestrian raises",
+      raises(lambda: offset({"direction": "left"}, npc_type="pedestrian")))
+# A lane_offset is emitted continuous="true" and never ends on its own, so it is
+# never a valid after_event target — rejected rather than rewritten, since there
+# is no stand-in trigger that means the same thing.
+check("an after_event waiting on a lane_offset raises",
+      raises(lambda: norm([
+          {"id": "e1", "trigger": {"type": "simulation_time"},
+           "action": {"type": "lane_offset", "direction": "left", "offset": 1.0}},
+          {"id": "e2", "trigger": {"type": "after_event", "event_id": "e1"},
+           "action": {"type": "set_speed"}}])))
+check("...even when a later lane_offset would supersede it",
+      raises(lambda: norm([
+          {"id": "e1", "trigger": {"type": "simulation_time"},
+           "action": {"type": "lane_offset", "direction": "left", "offset": 1.0}},
+          {"id": "e2", "trigger": {"type": "simulation_time", "value": 5},
+           "action": {"type": "lane_offset", "direction": "left", "offset": 0.0}},
+          {"id": "e3", "trigger": {"type": "after_event", "event_id": "e1"},
+           "action": {"type": "set_speed"}}])))
+
+check("lane_offset on a child raises",
+      raises(lambda: offset({"direction": "left"}, npc_type="child")))
+# Wider than the routable set on purpose: a cyclist aliases to 'bike', which is
+# a <Vehicle> on simple_vehicle_control, so it honours an offset even though the
+# route planner will not route it.
+check("lane_offset on a cyclist is allowed, unlike assign_route",
+      offset({"direction": "left"}, npc_type="cyclist")["npcs"][0]["events"][0]
+      ["action"]["type"] == "lane_offset")
+
+
 # ── Entity-ref mapping must match frontend buildScenarioParams() ─────────────
 # scenarioIO.js duplicates this mapping; the two have to agree or an event's
 # target silently points at the wrong actor.

@@ -24,6 +24,7 @@
     ['set_speed', 'Geschw. setzen'],
     ['set_distance', 'Abstand halten'],
     ['lane_change', 'Spurwechsel'],
+    ['lane_offset', 'Spurversatz'],
   ];
 
   // distance_to_ego is omitted for the ego itself — a distance from hero to
@@ -50,6 +51,16 @@
   ];
   const DEFAULT_SPEED_TIME = 5.0;
   const DEFAULT_SPEED_RATE = 2.5;
+
+  // Half a lane's width is a drift that reads clearly on the map and in CARLA
+  // without leaving the lane; the backend clamps the magnitude to 10 m.
+  const DEFAULT_LANE_OFFSET_M = 1.0;
+  const MAX_LANE_OFFSET_M = 10.0;
+
+  const FIXED_LANE_OFFSET_HINT =
+    'Ein Spurversatz gilt dauerhaft (continuous="true") — er endet erst, wenn '
+    + 'ein weiterer Spurversatz oder ein Pfad-Event den Akteur übernimmt. '
+    + 'Zurück zur Spurmitte: ein zweites Spurversatz-Event mit 0 m.';
 
   const FIXED_ROUTE_START_HINT =
     'Eine Route startet immer sofort (Simulationszeit 0) — der Auslöser ist nicht einstellbar.';
@@ -86,6 +97,12 @@
       // was silently dropped at export — along with anything chained onto it.
       const routeUnavailable = actionType === 'assign_route' &&
         !ScenarioRules.ROUTE_ACTION_TYPES.has(actor.type);
+      // ChangeActorLaneOffset writes the controller's _offset, which
+      // PedestrianControl stores and never reads — offering it to a Fußgänger
+      // would produce a valid file in which the actor simply never moves
+      // sideways.
+      const offsetUnavailable = actionType === 'lane_offset' &&
+        !ScenarioRules.honoursLaneOffset(actor.type);
 
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -94,11 +111,13 @@
       // The two path actions used to be *removed* once a path event existed,
       // reflowing the grid with nothing to explain where they went. Keeping
       // them disabled states the rule instead of hiding its consequence.
-      if (routeUnavailable || (isPathAction && hasPathEvent)) {
+      if (routeUnavailable || offsetUnavailable || (isPathAction && hasPathEvent)) {
         btn.disabled = true;
         btn.title = routeUnavailable
           ? 'Eine Route ist nur für Fahrzeuge möglich — für Personen die Trajektorie verwenden'
-          : 'Pro Akteur ist nur ein Pfad-Event erlaubt';
+          : offsetUnavailable
+            ? 'Ein Spurversatz wirkt nur auf Fahrzeuge — Personen ignorieren ihn'
+            : 'Pro Akteur ist nur ein Pfad-Event erlaubt';
         eventActionGrid.appendChild(btn);
         return;
       }
@@ -235,6 +254,8 @@
         _appendDistanceActionControls(card, actor, ev, action);
       } else if (actionType === 'lane_change') {
         _appendLaneChangeControls(card, actor, ev, action);
+      } else if (actionType === 'lane_offset') {
+        _appendLaneOffsetControls(card, actor, ev, action);
       } else {
         _appendEventPathControls(card, actor, ev);
         const pathList = document.createElement('div');
@@ -453,6 +474,81 @@
     card.appendChild(UIUtils.paramRow('Strecke', durationInput, 'm'));
   }
 
+  /**
+   * Spurversatz: which side, how far, and the standing fact that it does not end.
+   *
+   * Shaped like the Spurwechsel card above it — a Richtung row, then one value
+   * row — but Richtung is a segmented toggle rather than a <select>, matching
+   * the Modus/Dynamik/Richtung toggles the rest of the panel uses for a
+   * two-way choice.
+   */
+  function _appendLaneOffsetControls(card, actor, ev, action) {
+    card.appendChild(_row('Richtung', _lateralDirectionToggle(actor, ev)));
+
+    const offsetInput = document.createElement('input');
+    offsetInput.type = 'number';
+    offsetInput.min = '0';
+    offsetInput.max = String(MAX_LANE_OFFSET_M);
+    offsetInput.step = '0.1';
+    offsetInput.value = UIUtils.fmt(action.offset ?? DEFAULT_LANE_OFFSET_M);
+    offsetInput.addEventListener('change', e => {
+      const parsed = parseFloat(e.target.value);
+      _patchEventAction(actor, ev, {
+        offset: Math.min(MAX_LANE_OFFSET_M, Math.max(0, Number.isFinite(parsed) ? parsed : 0)),
+      });
+    });
+    offsetInput.title = 'Seitlicher Abstand zur Spurmitte; 0 m bedeutet zurück in die Mitte';
+    card.appendChild(UIUtils.paramRow('Versatz', offsetInput, 'm'));
+
+    // The one thing about this action that no control states: it has no end.
+    // Same role as the assign_route card's fixed-trigger row — a fact, not a
+    // control — and worth a row of its own, because it is what decides whether
+    // anything can be chained after it.
+    card.appendChild(_fixedFactRow('Dauer', 'dauerhaft (fest)', FIXED_LANE_OFFSET_HINT));
+  }
+
+  /** Links | Rechts, for an action whose direction is a side of the lane. */
+  function _lateralDirectionToggle(actor, ev) {
+    const current = _eventAction(ev).direction === 'right' ? 'right' : 'left';
+    const wrap = document.createElement('div');
+    wrap.className = 'event-toggle';
+
+    [
+      ['left', 'Links'],
+      ['right', 'Rechts'],
+    ].forEach(([value, label]) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = label;
+      btn.className = value === current ? 'active' : '';
+      btn.addEventListener('click', () => {
+        if (value === current) return;
+        _patchEventAction(actor, ev, { direction: value });
+      });
+      wrap.appendChild(btn);
+    });
+    return wrap;
+  }
+
+  /** A card row that states something fixed, styled like the assign_route
+   *  trigger block's label/text pair rather than like an editable row. */
+  function _fixedFactRow(labelText, text, hint) {
+    const row = document.createElement('div');
+    row.className = 'event-row event-fixed-row';
+    // A <span>, not a <label>: there is no control here to address, and
+    // UIUtils.bindLabel would have nothing to point `for` at.
+    const label = document.createElement('span');
+    label.className = 'event-fixed-row-label';
+    label.textContent = labelText;
+    const value = document.createElement('span');
+    value.className = 'event-fixed-trigger-text';
+    value.textContent = text;
+    value.title = hint;
+    row.appendChild(label);
+    row.appendChild(value);
+    return row;
+  }
+
   // ── Summaries And Labels ────────────────────────────────────────────────────
 
   function _eventActionLabel(actionType) {
@@ -531,6 +627,12 @@
         : `${UIUtils.fmt(target.value ?? 10)} m/s ${speedDynamicsSummary}`,
       set_distance: `${action.axis === 'lateral' ? 'Lateral' : 'Longitudinal'} ${UIUtils.fmt(action.value ?? 10)} m relativ zu ${_eventActorLabel(distanceTarget)}`,
       lane_change: `${action.direction === 'right' ? 'Rechts' : 'Links'} innerhalb ${UIUtils.fmt(dynamics.value ?? 12)} m`,
+      // 'dauerhaft' is half the meaning of the action, so it belongs in the one
+      // line a collapsed card gets — an offset of 0 reads 'zurück zur Spurmitte'
+      // because naming a side there would say nothing.
+      lane_offset: (action.offset ?? DEFAULT_LANE_OFFSET_M) > 0
+        ? `${action.direction === 'right' ? 'Rechts' : 'Links'} ${UIUtils.fmt(action.offset ?? DEFAULT_LANE_OFFSET_M)} m, dauerhaft`
+        : 'Zurück zur Spurmitte, dauerhaft',
     };
     return actionLabels[action.type];
   }
@@ -556,11 +658,16 @@
 
   /**
    * The 'Nach Event' dropdown's contents, grouped by actor — this actor first,
-   * then every other scenario actor. Two events are left out of every group:
+   * then every other scenario actor. Three kinds of event are left out of every
+   * group:
    *
    *  - an assign_route, whose own trigger is discarded at export and whose
    *    dependents are rewritten to distance_to_ego@400, so "after the route"
    *    is a start condition the file never contains;
+   *  - a lane_offset, which is emitted continuous="true" and so never ends on
+   *    its own. It is never a valid target: a save file that names one keeps
+   *    it (the 'Aktuell' group below) so the select shows what the trigger
+   *    says, ScenarioRules chips it, and the export refuses it;
    *  - anything that already waits on `ev`, directly or down a chain
    *    (ScenarioRules.canWaitFor). Omitting those is what makes a loop
    *    unauthorable rather than merely reported — the backend's 400 then only
@@ -571,7 +678,7 @@
     const addGroup = (owner, ownerEvents, label, isOwn) => {
       const options = ownerEvents
         .map((other, index) => ({ other, index }))
-        .filter(({ other }) => _eventAction(other).type !== 'assign_route')
+        .filter(({ other }) => _isChainTarget(other))
         .filter(({ other }) => ScenarioRules.canWaitFor(actor, ev, owner, other))
         .map(({ other, index }) => [
           ScenarioRules.afterEventKey(owner.id, other.id),
@@ -1227,10 +1334,9 @@
     const events = actor.events || [];
     const idx = UIUtils.nextIndexedId(events, 'evt');
     const previous = events[events.length - 1];
-    const previousActionType = previous ? _eventAction(previous).type : null;
     const trigger = actionType === 'assign_route'
       ? { type: 'simulation_time', value: 0 }
-      : events.length > 0 && !forceFirst && previousActionType !== 'assign_route'
+      : events.length > 0 && !forceFirst && _isChainTarget(previous)
         ? { type: 'after_event', event_id: previous.id }
         : _defaultFirstTrigger(actor);
     return {
@@ -1254,6 +1360,16 @@
         type: 'lane_change',
         direction: 'left',
         dynamics: { shape: 'linear', value: 12.0 },
+      };
+    }
+    if (actionType === 'lane_offset') {
+      // No dynamics: LaneOffsetActionDynamics is required by the XSD and read
+      // by nothing, so the emitter writes a fixed shape rather than carrying a
+      // value through three layers that never means anything.
+      return {
+        type: 'lane_offset',
+        direction: 'left',
+        offset: DEFAULT_LANE_OFFSET_M,
       };
     }
     if (actionType === 'assign_route') {
@@ -1371,9 +1487,19 @@
   /** May `ev` be re-pointed at `candidate` — is it a real, non-route event
    *  that does not already wait on `ev`? Shared by both halves of the delete
    *  sweep, so neither can close a loop while repairing one. */
+  /** May an after_event wait on `ev` at all? Two actions never qualify: an
+   *  assign_route, whose own trigger is discarded at export, and a lane_offset,
+   *  which never completes. The dropdown, the new-event default and the delete
+   *  re-point all go through this — they drifted apart once already, when the
+   *  dropdown learned about lane_offset and the default did not. */
+  function _isChainTarget(ev) {
+    const type = _eventAction(ev).type;
+    return type !== 'assign_route' && type !== 'lane_offset';
+  }
+
   function _canChainOnto(actor, ev, owner, candidate) {
     return !!candidate
-      && _eventAction(candidate).type !== 'assign_route'
+      && _isChainTarget(candidate)
       && ScenarioRules.canWaitFor(actor, ev, owner, candidate);
   }
 

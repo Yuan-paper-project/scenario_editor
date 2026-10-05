@@ -22,6 +22,13 @@
  * event never fires) — mirrored here so the preview matches the .xosc that
  * export would actually produce, not the raw authored event.
  *
+ * lane_offset IS simulated: the actor's path-following maths keeps running on
+ * the driven centreline and the offset is added when the pose is written back
+ * (_pose), which is what SimpleVehicleControl does — it displaces the waypoint
+ * it aims at and never touches its waypoint list. The atomic's supersede rules
+ * are mirrored exactly, because they decide whether the offset survives the
+ * next action (_supersedeLaneOffset).
+ *
  * set_distance is deliberately NOT simulated (badge only) — its real
  * semantics (a 100 m/s speed spike, then a gap measured in OpenDRIVE `s` or a
  * planned route length) need the same road graph `assign_route` does, and
@@ -130,6 +137,32 @@
     return Math.hypot(a.x - b.x, a.y - b.y, (a.z ?? 0) - (b.z ?? 0));
   }
 
+  /**
+   * Where the actor actually IS, as opposed to where its path-following maths
+   * is: `sim.x`/`sim.y` stay on the driven centreline and a lane offset is
+   * added here.
+   *
+   * The split is not tidiness. SimpleVehicleControl offsets the waypoint it
+   * AIMS at (`_offset_waypoint`) and leaves its waypoint list alone, and
+   * `_walkDirLine` walks from the position it is handed toward the next
+   * centreline point — so storing the displaced position back into sim.x/y
+   * would make the actor converge back onto the centreline over the next few
+   * ticks and quietly eat the offset.
+   *
+   * Right of travel is positive, matching `transform.get_right_vector()`: the
+   * editor's frame IS CARLA's (the single Y flip happens in the .xodr parser),
+   * so forward is (cos yaw, sin yaw) and right is (−sin yaw, cos yaw).
+   */
+  function _pose(sim) {
+    if (!sim || !sim.laneOffset) return sim;
+    const rad = (sim.yaw || 0) * Math.PI / 180;
+    return {
+      x: sim.x - sim.laneOffset * Math.sin(rad),
+      y: sim.y + sim.laneOffset * Math.cos(rad),
+      z: sim.z,
+    };
+  }
+
   function _angleDiffDeg(a, b) {
     return Math.abs(((a - b + 180) % 360 + 360) % 360 - 180);
   }
@@ -174,7 +207,8 @@
   // just-rewritten case — the ego self-distance rewrite.
 
   const TRIGGER_TYPES = new Set(['simulation_time', 'distance_to_ego', 'distance_to_point', 'after_event']);
-  const ACTION_TYPES  = new Set(['follow_trajectory', 'assign_route', 'set_speed', 'set_distance', 'lane_change']);
+  const ACTION_TYPES  = new Set(['follow_trajectory', 'assign_route', 'set_speed',
+                                 'set_distance', 'lane_change', 'lane_offset']);
 
   // The emitter's own "does this action produce XML" rule, shared with the
   // panel's warning chips and the export gate (ScenarioRules, app.js).
@@ -223,7 +257,10 @@
     for (const ev of events) {
       if (ev.trigger.type !== 'after_event') continue;
       const target = ScenarioRules.afterEventTarget(actor, ev.trigger);
+      // A lane_offset target is refused by the export gate (it never ends on
+      // its own), so the preview does not pretend the chain can proceed either.
       if (!target || !_actionEmits(target.event.action, target.actor.type) ||
+          (target.event.action || {}).type === 'lane_offset' ||
           ScenarioRules.afterEventCycles(actor, ev)) {
         ev.trigger.neverFires = true;
       } else if (target.actor.id !== actor.id) {
@@ -263,7 +300,7 @@
         // any scenario that runs that long.
         if (simTime > DISTANCE_TO_EGO_FALLBACK_S) return true;
         if (!egoPrevPos) return false;
-        return _dist3(sim, egoPrevPos) < (trigger.value ?? 400);
+        return _dist3(_pose(sim), egoPrevPos) < (trigger.value ?? 400);
       }
       case 'distance_to_point': {
         const point = trigger.point;
@@ -271,7 +308,7 @@
         // The triggering entity is whoever entity_ref names (default hero) —
         // NOT necessarily the actor that owns this event.
         const triggerActor = _resolveSimRef(trigger.entity_ref) || _simActors.get(_egoId) || sim;
-        return _dist3(triggerActor, { x: point.x, y: point.y, z: point.z ?? 0.2 }) < (trigger.value ?? 20);
+        return _dist3(_pose(triggerActor), { x: point.x, y: point.y, z: point.z ?? 0.2 }) < (trigger.value ?? 20);
       }
       case 'after_event': {
         if (trigger.neverFires) return false;
@@ -711,6 +748,14 @@
       waypoints: null,
       activeLaneChangeEventId: null,
       laneChange: null,
+      // ChangeActorLaneOffset — metres right of the driven path's centreline
+      // (negative is left), and the event currently holding it. The offset is
+      // applied when the pose is written back, NOT to sim.x/sim.y, so the
+      // path-following maths keeps running on the centreline exactly as
+      // SimpleVehicleControl's own waypoint list does — the controller offsets
+      // its aim point, it does not re-plan around the displaced position.
+      laneOffset: 0,
+      activeLaneOffsetEventId: null,
       laneFollow: null,            // {lane, dirLine, idx} anchor while path-less
       badge: null,
       traveled: 0,
@@ -753,6 +798,45 @@
     sim.speedRampTarget = 0;
   }
 
+  /** A lateral/waypoint command lands while a lane offset is running.
+   *
+   * ChangeActorLaneOffset.update() ends on EITHER of two mismatches, and which
+   * one decides whether the offset survives:
+   *  - another lane offset (`get_last_lane_offset_command()`) sets `_overwritten`
+   *    and returns SUCCESS, so `terminate()` skips its reset and the NEW offset
+   *    stands. That is what makes "drift out, then a second event back to 0"
+   *    work at all;
+   *  - any other waypoint command (a route, a trajectory, a lane change) returns
+   *    SUCCESS with `_overwritten` still false, so `terminate()` puts the offset
+   *    back to 0.
+   */
+  function _supersedeLaneOffset(sim, simTime, { reset }) {
+    if (sim.activeLaneOffsetEventId) {
+      const prev = sim.fired.get(sim.activeLaneOffsetEventId);
+      if (prev && prev.completedAt == null) prev.completedAt = simTime;
+      sim.activeLaneOffsetEventId = null;
+    }
+    if (reset) sim.laneOffset = 0;
+  }
+
+  /** The mirror of the rule above, in the other direction: ActorControl's
+   * update_offset() stamps `_last_waypoint_command` as well as its own slot, so
+   * starting a lane offset makes a running ChangeActorWaypoints /
+   * ChangeActorLateralMotion report SUCCESS immediately.
+   *
+   * It does NOT call update_waypoints(), so the controller keeps driving the
+   * list it already has — only the atomic ends. That is why the waypoints and
+   * the lane-change plan are deliberately left untouched here: the visible
+   * consequence is that an after_event waiting on that route fires the moment
+   * the offset starts rather than when the route finishes. */
+  function _supersedeWaypointEvents(sim, simTime) {
+    for (const id of [sim.activePathEventId, sim.activeLaneChangeEventId]) {
+      if (!id) continue;
+      const rec = sim.fired.get(id);
+      if (rec && rec.completedAt == null) rec.completedAt = simTime;
+    }
+  }
+
   function _applyEventAction(sim, ev, simTime) {
     sim.fired.set(ev.id, { firedAt: simTime, completedAt: null });
     const action = ev.action;
@@ -791,6 +875,7 @@
       const isRoute = action.type === 'assign_route';
       const rawPoints = isRoute ? (action.waypoints || []) : (action.trajectory || []);
       if (!_actionEmits(action, sim.type)) return; // dropped at export — never applies
+      _supersedeLaneOffset(sim, simTime, { reset: true });
       sim.activePathEventId = ev.id;
       sim.pathKind = action.type;
 
@@ -828,8 +913,12 @@
       }
 
     } else if (action.type === 'lane_change') {
+      _supersedeLaneOffset(sim, simTime, { reset: true });
       sim.activeLaneChangeEventId = ev.id;
       _startLaneChange(sim, action, simTime);
+
+    } else if (action.type === 'lane_offset') {
+      _startLaneOffset(sim, ev, action, simTime);
 
     } else if (action.type === 'set_distance') {
       // Deliberately not simulated — see file header. Never completes, so any
@@ -838,6 +927,37 @@
       // same lane graph assign_route needs.
       sim.badge = { icon: '−', text: 'set_distance wird in der Vorschau nicht simuliert' };
     }
+  }
+
+  /**
+   * ChangeActorLaneOffset with an AbsoluteTargetLaneOffset, always
+   * continuous="true" — the only mode the emitter writes, and the only one that
+   * does anything (see _add_lane_offset_action). So this event never completes
+   * on its own; it ends only when something supersedes it, which is exactly what
+   * _supersedeLaneOffset models.
+   *
+   * Positive is right of travel. The editor's payload carries an unsigned
+   * `offset` plus a `direction`, the same shape lane_change uses, and the sign
+   * is applied here and in the emitter rather than stored.
+   */
+  function _startLaneOffset(sim, ev, action, simTime) {
+    if (!_actionEmits(action, sim.type)) {
+      // A walker: PedestrianControl stores the controller offset and never
+      // reads it. The backend rejects this payload outright, so it can only
+      // arrive in a loaded save file — badge it rather than move the actor
+      // sideways in a way CARLA never would.
+      sim.badge = { icon: '⚠', text: 'Spurversatz wirkt nicht — nur Fahrzeuge folgen ihm' };
+      return;
+    }
+    _supersedeLaneOffset(sim, simTime, { reset: false });
+    _supersedeWaypointEvents(sim, simTime);
+
+    const magnitude = Math.max(0, action.offset ?? 1.0);
+    sim.laneOffset = action.direction === 'right' ? magnitude : -magnitude;
+    sim.activeLaneOffsetEventId = ev.id;
+    sim.badge = magnitude > 0
+      ? { icon: '⇥', text: `Spurversatz ${UIUtils.fmt(magnitude)} m ${action.direction === 'right' ? 'rechts' : 'links'} (dauerhaft)` }
+      : { icon: '⇥', text: 'Zurück zur Spurmitte' };
   }
 
   function _startLaneChange(sim, action, simTime) {
@@ -1246,7 +1366,7 @@
     // snapshotted for the same reason — CarlaDataProvider's velocity map is
     // refilled once per world tick, not read live off the other actor.
     const egoSim = _egoId ? _simActors.get(_egoId) : null;
-    const egoPrevPos = egoSim ? { x: egoSim.x, y: egoSim.y, z: egoSim.z } : null;
+    const egoPrevPos = egoSim ? { ..._pose(egoSim), z: egoSim.z } : null;
     _snapshotSpeeds();
 
     for (const sim of _simActors.values()) {
@@ -1262,7 +1382,8 @@
     }
 
     for (const sim of _simActors.values()) {
-      AppState.updateById(sim.id, { x: sim.x, y: sim.y, z: sim.z, yaw: sim.yaw });
+      const pose = _pose(sim);
+      AppState.updateById(sim.id, { x: pose.x, y: pose.y, z: sim.z, yaw: sim.yaw });
     }
     _renderBadges();
 

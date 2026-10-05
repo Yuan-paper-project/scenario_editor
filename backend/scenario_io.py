@@ -117,6 +117,26 @@ _ROUTE_ACTOR_TYPES = {
     "police", "ambulance", "firetruck", "ego",
     "lorry", "moped",
 }
+# ChangeActorLaneOffset writes through to the controller's `_offset`, which only
+# SimpleVehicleControl and NpcVehicleControl read — PedestrianControl stores it
+# and never looks at it again, so a walker would get a valid file in which it
+# simply never moves sideways.
+#
+# Deliberately NOT _ROUTE_ACTOR_TYPES, which is narrower: that set is limited by
+# the GlobalRoutePlanner and leaves out 'cyclist', which aliases to 'bike' and is
+# a <Vehicle> on simple_vehicle_control — it honours an offset perfectly well.
+# The rule here is exactly "is this a <Pedestrian>", so it is stated as an
+# exclusion. No alias in _TYPE_ALIASES resolves TO a walker, so unlike the route
+# set this one needs no alias entries.
+#
+# Same split as xml_builder._PEDESTRIAN_TYPES and mapView.js's WALKER_TYPES.
+_WALKER_ACTOR_TYPES = {"pedestrian", "child"}
+
+# A lane is ~3.5 m wide, so 10 m covers an oncoming-lane overtake with room to
+# spare while still rejecting a value that would put the actor off the road
+# entirely. The magnitude is unsigned in the payload — `direction` carries the
+# side, exactly as it does for lane_change — and the emitter applies the sign.
+_MAX_LANE_OFFSET_M = 10.0
 
 
 def _normalize_structured_event(
@@ -177,7 +197,8 @@ def _normalize_structured_event(
     if not isinstance(action, dict):
         action = {}
     action_kind = action.get("type", "follow_trajectory")
-    if action_kind not in {"follow_trajectory", "assign_route", "set_speed", "set_distance", "lane_change"}:
+    if action_kind not in {"follow_trajectory", "assign_route", "set_speed",
+                           "set_distance", "lane_change", "lane_offset"}:
         action_kind = "follow_trajectory"
 
     # A path action the emitter cannot build is not a smaller scenario, it is a
@@ -289,6 +310,21 @@ def _normalize_structured_event(
             ),
             "value": float(action.get("value", 10.0)),
         }
+    elif action_kind == "lane_offset":
+        # Rejected rather than dropped, the same policy as assign_route on a
+        # walker: PedestrianControl ignores the controller offset entirely, so
+        # the file would be valid and the actor would simply never move
+        # sideways — indistinguishable from a badly chosen offset.
+        if actor_type in _WALKER_ACTOR_TYPES:
+            raise ValueError(
+                f"{where}: lane_offset is not available for actor type "
+                f"'{actor_type}' — only vehicles honour a lane offset"
+            )
+        event["action"] = {
+            "type": "lane_offset",
+            "direction": "right" if action.get("direction") == "right" else "left",
+            "offset": max(0.0, min(_MAX_LANE_OFFSET_M, float(action.get("offset", 1.0)))),
+        }
     else:
         dynamics = action.get("dynamics") if isinstance(action.get("dynamics"), dict) else {}
         event["action"] = {
@@ -382,6 +418,27 @@ def _normalize_after_event_chains(actors: list[tuple[dict, str, str]]) -> None:
             continue
         if _after_event_target(trigger, ref[0]) in route_refs:
             event["trigger"] = {"type": "distance_to_ego", "value": 400.0}
+
+    # A lane_offset is always emitted continuous="true" (the only mode that does
+    # anything with an AbsoluteTargetLaneOffset), so its Event never completes
+    # on its own and "after the Spurversatz" is not a start condition the editor
+    # offers at all. Rejected outright rather than rewritten: unlike a route
+    # there is no stand-in trigger that says the same thing.
+    offset_refs = {
+        ref for ref, event in events_by_ref.items()
+        if event.get("action", {}).get("type") == "lane_offset"
+    }
+    for ref, event in events_by_ref.items():
+        trigger = event.get("trigger", {})
+        if trigger.get("type") != "after_event":
+            continue
+        target_ref = _after_event_target(trigger, ref[0])
+        if target_ref in offset_refs:
+            raise ValueError(
+                f"{ref[0]}.{ref[1]}: after_event waits for lane_offset "
+                f"{target_ref[0]}.{target_ref[1]}, which never completes — "
+                f"use a simulation_time or distance trigger instead"
+            )
 
     # A cycle is not a smaller scenario, it is a dead one: every event on the
     # loop waits for a completeState that can never arrive, with nothing in the

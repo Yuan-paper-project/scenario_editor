@@ -1014,6 +1014,20 @@
     'police', 'ambulance', 'firetruck', 'ego',
   ]);
 
+  /* ChangeActorLaneOffset writes through to the controller's `_offset`, and only
+   * SimpleVehicleControl and NpcVehicleControl ever read it — PedestrianControl
+   * stores it and never looks at it again, so a walker gets a valid file in
+   * which it simply never moves sideways.
+   *
+   * Deliberately NOT ROUTE_ACTION_TYPES, which is narrower: that set is limited
+   * by the route planner and leaves 'cyclist' out, but a cyclist aliases to
+   * 'bike' and is a <Vehicle> on simple_vehicle_control — it honours an offset
+   * perfectly well. The rule is exactly "is this a <Pedestrian>", so it is
+   * stated as the exclusion it is. Same split as mapView.js's WALKER_TYPES and
+   * xml_builder._PEDESTRIAN_TYPES; keep all three in step. */
+  const WALKER_ACTION_TYPES = new Set(['pedestrian', 'child']);
+
+
   /** A trigger point is only usable once it actually carries coordinates. */
   function _isTriggerPoint(point) {
     return !!point && Number.isFinite(Number(point.x)) && Number.isFinite(Number(point.y));
@@ -1077,6 +1091,12 @@
   window.ScenarioRules = {
     ROUTE_ACTION_TYPES,
 
+    /** Does this actor type's controller read the lane offset at all? */
+    honoursLaneOffset(actorType) {
+      return !WALKER_ACTION_TYPES.has(actorType);
+    },
+
+
     afterEventKey: _afterEventKey,
 
     /** The {actor, event, index} an after_event trigger names, or null. */
@@ -1112,6 +1132,7 @@
       if (action.type === 'assign_route') {
         return (action.waypoints || []).length >= 2 && ROUTE_ACTION_TYPES.has(actorType);
       }
+      if (action.type === 'lane_offset') return this.honoursLaneOffset(actorType);
       return true;   // set_speed / set_distance / lane_change never fail to emit
     },
 
@@ -1166,6 +1187,14 @@
         return null;
       }
 
+      if (action.type === 'lane_offset' && !this.honoursLaneOffset(type)) {
+        return {
+          code: 'offset_not_vehicle',
+          short: 'Spurversatz nur für Fahrzeuge möglich',
+          message: 'ein Spurversatz wirkt nur auf Fahrzeuge — Personen ignorieren ihn',
+        };
+      }
+
       if (trigger.type === 'distance_to_point' && !_isTriggerPoint(trigger.point)) {
         return {
           code: 'no_trigger_point',
@@ -1199,6 +1228,17 @@
         }
         // Pointing at an assign_route is fine: the backend rewrites that trigger
         // to distance_to_ego @ 400 rather than leaving it dangling.
+        // A lane_offset is emitted continuous="true", so its Event never
+        // completes on its own — it is never a valid after_event target. The
+        // dropdown never offers one and the backend rejects it with a 400; this
+        // catches a save file or an LLM payload before the export does.
+        if ((target.event.action || {}).type === 'lane_offset') {
+          return {
+            code: 'after_lane_offset',
+            short: 'Auslöser feuert nie — Spurversatz endet nicht',
+            message: 'der Auslöser wartet auf einen Spurversatz, der dauerhaft gilt und nie endet',
+          };
+        }
         const targetAction = target.event.action || {};
         if (targetAction.type !== 'assign_route' &&
             !this.actionEmits(targetAction, target.actor.type)) {
