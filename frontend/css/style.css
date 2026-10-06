@@ -146,6 +146,39 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
 .map-view-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .map-view-btn svg { width: 14px; height: 14px; display: block; }
 
+/* ── Base-map switch (Vektor | Luftbild | Beides) ────────── */
+/* Top-left of the map, mirroring the zoom cluster top-right. */
+.map-base-toggle {
+  position: absolute; top: 12px; left: 12px; z-index: 6;
+  display: flex; padding: 2px; gap: 2px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(26, 30, 46, .14);
+}
+.map-base-toggle.hidden { display: none; }
+.map-base-btn {
+  font: inherit; font-size: 11px; padding: 4px 9px; cursor: pointer;
+  color: var(--text-dim); background: transparent; border: 0; border-radius: 4px;
+}
+.map-base-btn:hover:not(:disabled):not(.active) { color: var(--accent); }
+.map-base-btn.active { color: #fff; background: var(--accent); }
+.map-base-btn:disabled { opacity: .4; cursor: not-allowed; }
+.map-base-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* The modes are classes on #map-svg rather than style.display, so they never
+   fight the Ebenen checkboxes, which write style.display on these same layers.
+   Luftbild: the photo replaces everything the vector map paints for the road
+   itself. Beides: lane outlines over the photo, fills nearly clear. */
+#map-svg.base-aerial #layer-roads,
+#map-svg.base-aerial #layer-markings,
+#map-svg.base-aerial #layer-crosswalks,
+#map-svg.base-aerial #layer-intersections,
+#map-svg.base-both #layer-crosswalks,
+#map-svg.base-both #layer-intersections { display: none; }
+#map-svg.base-both #layer-roads polygon {
+  fill-opacity: .08; stroke: rgba(255, 255, 255, .75); stroke-width: .15;
+}
+#layer-aerial { pointer-events: none; }   /* no native image drag; clicks belong to the map */
+
 /* ── Left toolbar ────────────────────────────────────────── */
 #toolbar {
   width: var(--toolbar-w); background: var(--panel);

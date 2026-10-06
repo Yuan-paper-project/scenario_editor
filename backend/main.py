@@ -8,6 +8,8 @@ Endpoints:
   GET  /api/maps/{town}/render     → road polygon + spawn point JSON (MAP_CACHE)
   GET  /api/maps/{town}/lane_graph → cached CARLA routing graph, if probed (LANE_GRAPH_CACHE)
   GET  /api/maps/{town}/preview    → serve town thumbnail image
+  GET  /api/maps/{town}/aerial     → aerial pyramid meta.json (404 if never captured)
+  GET  /api/maps/{town}/aerial/{level}/{col}_{row}.jpg → one aerial tile
   GET  /api/special_buildings      → landmark reference points, all towns (maps/special_buildings.csv)
   POST /api/export                 → generate .xosc and return as download
 """
@@ -178,6 +180,38 @@ async def get_map_preview(town: str):
     if thumb and thumb.exists():
         return FileResponse(str(thumb), media_type="image/jpeg")
     raise HTTPException(status_code=404, detail=f"No preview image for '{town}'")
+
+
+# Aerial image pyramid written by tests/capture_carla_aerial.py. Read from disk
+# per request rather than cached at startup, like special_buildings: a re-capture
+# shows up on a browser reload, not only after a server restart.
+def _aerial_dir(town: str) -> Path:
+    if town not in MAP_CACHE:
+        raise HTTPException(status_code=404, detail=f"Town '{town}' not found")
+    return _HERE.parent / "maps" / town / "aerial"
+
+
+@app.get("/api/maps/{town}/aerial")
+async def get_aerial_meta(town: str):
+    meta = _aerial_dir(town) / "meta.json"
+    if not meta.exists():
+        # Normal for Town10 and uploaded maps — there is no CARLA asset to photograph.
+        raise HTTPException(status_code=404, detail=f"No aerial image for '{town}'")
+    data = json.loads(meta.read_text())
+    # Tiles are served with a 1 h max-age, so a re-capture would otherwise be
+    # invisible until the browser cache expires. The frontend appends this to
+    # every tile URL; the capture rewrites meta.json, which moves it.
+    data["version"] = int(meta.stat().st_mtime)
+    return JSONResponse(content=data, headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/api/maps/{town}/aerial/{level:int}/{col:int}_{row:int}.jpg")
+async def get_aerial_tile(town: str, level: int, col: int, row: int):
+    tile = _aerial_dir(town) / str(level) / f"{col}_{row}.jpg"
+    if not tile.exists():
+        raise HTTPException(status_code=404, detail="No such tile")
+    return FileResponse(str(tile), media_type="image/jpeg",
+                        headers={"Cache-Control": "public, max-age=3600"})
 
 
 @app.get("/api/special_buildings")

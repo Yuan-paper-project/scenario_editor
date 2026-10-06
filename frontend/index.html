@@ -230,6 +230,18 @@
          MIN_ZOOM/MAX_ZOOM begrenzt; "Ansicht zurücksetzen" ist der Weg zurück
          aus einer Ansicht, die die Karte nicht mehr enthält — den gab es nicht.
          Bleibt versteckt, bis eine Karte geladen ist (_setupLayerToggles). -->
+    <!-- Grundkarte: gezeichnete OpenDRIVE-Karte, CARLA-Luftbild oder beides.
+         aerialMap.js owns it; it stays hidden until a map is loaded and the
+         two image modes are disabled for a town with no capture. -->
+    <div id="map-base-toggle" class="map-base-toggle hidden" role="group"
+         aria-label="Grundkarte">
+      <button type="button" class="map-base-btn" data-base-mode="vector"
+              title="Gezeichnete Karte aus der OpenDRIVE-Datei">Vektor</button>
+      <button type="button" class="map-base-btn" data-base-mode="aerial"
+              title="Luftbild aus CARLA (zeigt, was die Simulation rendert)">Luftbild</button>
+      <button type="button" class="map-base-btn" data-base-mode="both"
+              title="Luftbild mit den Fahrspuren der OpenDRIVE-Datei darüber">Beides</button>
+    </div>
     <div id="map-view-controls" class="map-view-controls hidden" role="group"
          aria-label="Kartenansicht">
       <button type="button" id="btn-zoom-in" class="map-view-btn"
@@ -591,6 +603,7 @@
 <script src="/static/js/trafficSignals.js"></script>
 <script src="/static/js/templates.js"></script>
 <script src="/static/js/propCatalog.js"></script>  <!-- before toolbar.js: renders the prop tiles -->
+<script src="/static/js/aerialMap.js"></script>  <!-- before mapView.js: renderMap/_applyTransform call into it -->
 <script src="/static/js/mapView.js"></script>
 <script src="/static/js/toolbar.js"></script>
 <script src="/static/js/dropdown.js"></script>  <!-- before layerMenu.js: auto-binds [data-dropdown] menus -->

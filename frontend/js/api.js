@@ -27,6 +27,15 @@
       return res.json();
     },
 
+    // Aerial image pyramid meta (tests/capture_carla_aerial.py). 404 is the
+    // normal answer for Town10 and uploaded maps, so it resolves to null.
+    async getAerialMeta(town) {
+      const res = await fetch(`/api/maps/${encodeURIComponent(town)}/aerial`);
+      if (res.status === 404) return null;
+      if (!res.ok) throw new Error(`getAerialMeta(${town}) failed: ${res.status}`);
+      return res.json();
+    },
+
     // Landmark reference points for every town at once (maps/special_buildings.csv
     // via the backend). Small enough to fetch once at page load and filter
     // client-side by town, so switching maps costs no request. Any failure

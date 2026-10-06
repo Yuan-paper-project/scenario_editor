@@ -401,3 +401,17 @@ python tests/probe_carla_lane_graph.py Town03 Town05 # just these
 Re-run it whenever a bundled `.xodr` changes or the CARLA build is upgraded —
 there is no staleness check, the backend just loads whatever
 `maps/<Town>/lane_graph.json` happens to be on disk at startup.
+
+`capture_carla_aerial.py` renders the aerial image behind the editor's
+`Luftbild` / `Beides` base-map modes into `maps/<Town>/aerial/` (see CLAUDE.md,
+"Aerial image"). It also calls `load_world` per town, so it defaults to
+**port 2050** — a private instance, never run.sh's 2010:
+
+```bash
+cd ~/yungloon/fail2drive/f2d_carla && ./CarlaUE4.sh -carla-port=2050 -RenderOffScreen -nosound &
+/home/dellpro2/Antonio/carla-venv/bin/python tests/capture_carla_aerial.py              # all 8 CARLA towns, ~2 min
+/home/dellpro2/Antonio/carla-venv/bin/python tests/capture_carla_aerial.py Town03       # just this one
+```
+
+Re-run it after a CARLA build upgrade or a `.xodr` change; the backend reads
+the tiles per request, so a browser reload picks the new ones up.

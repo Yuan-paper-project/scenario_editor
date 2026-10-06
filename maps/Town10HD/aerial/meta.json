@@ -1,0 +1,13 @@
+{
+  "ppm": 10.0,
+  "x0": -210,
+  "y0": -160,
+  "width": 5120,
+  "height": 4096,
+  "tileSize": 512,
+  "levels": 5,
+  "source": "carla",
+  "fov": 8.0,
+  "sunAltitude": 80.0,
+  "captured": "2026-10-05"
+}

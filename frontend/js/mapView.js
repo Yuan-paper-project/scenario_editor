@@ -145,6 +145,7 @@
     );
     _updateScaleRuler();
     _updateLabelVisibility();
+    AerialMap.update();
   }
 
   // ── Coordinate conversion ────────────────────────────────────────────────────
@@ -310,6 +311,10 @@
     // Landmarks for whichever town this is. renderMap replaces the layer
     // wholesale, so this has to run here as well as on the fetch completing.
     _renderSpecialBuildings();
+
+    // Aerial image under everything (aerialMap.js); fetched async, a town
+    // without a capture simply stays on the vector map.
+    AerialMap.load(AppState.map);
 
     // Fit the map to screen
     _fitToView(bounds, pad);
