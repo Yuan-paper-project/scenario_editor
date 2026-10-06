@@ -333,7 +333,7 @@
 
   function _laneAnchor(x, y) {
     return ObjectsManager.nearestLaneProjection(
-      x, y, new Set(['driving', 'bidirectional']), LANE_SEARCH_MAX_DIST_M
+      x, y, new Set(['driving']), LANE_SEARCH_MAX_DIST_M
     );
   }
 
@@ -375,7 +375,7 @@
 
     for (const lane of near.road.lanes || []) {
       if (lane === near.lane) continue;
-      if (lane.type !== 'driving' && lane.type !== 'bidirectional') continue;
+      if (lane.type !== 'driving') continue;
       const dirLine = lane.directionLine;
       if (!dirLine || dirLine.length < 2) continue;
 

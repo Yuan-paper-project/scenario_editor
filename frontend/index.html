@@ -63,6 +63,14 @@
           <input type="checkbox" id="toggle-roaddir" checked>
           <span class="layer-toggle-icon" style="color:var(--text-dim);">&#9654;</span> Richtung
         </label>
+        <label class="layer-toggle" title="Stopp- und Vorfahrt-gewähren-Schilder ein-/ausblenden">
+          <input type="checkbox" id="toggle-signs" checked>
+          <span class="layer-toggle-icon" style="color:#d42020;">&#9724;</span> Schilder
+        </label>
+        <label class="layer-toggle" title="Tempolimit-Schilder (km/h; nur Town01–05 haben welche) ein-/ausblenden">
+          <input type="checkbox" id="toggle-speeds">
+          <span class="layer-toggle-icon" style="color:#d42020;">&#9711;</span> Tempolimits
+        </label>
       </div>
     </div>
   </div>
@@ -214,7 +222,14 @@
     <svg id="map-svg" xmlns="http://www.w3.org/2000/svg">
       <!-- Trajectory arrow markers are created per actor at runtime by
            mapView.js `_ensureArrowMarker`, which appends into this <defs>. -->
-      <defs></defs>
+      <defs>
+        <!-- Diagonal "do not drive" hatching for median / border / restricted
+             lanes (mapView.js BLOCKED_LANE_TYPES). World units: 1.2 m period. -->
+        <pattern id="hatch-blocked" patternUnits="userSpaceOnUse" width="1.2" height="1.2"
+                 patternTransform="rotate(45)">
+          <rect width="0.45" height="1.2" fill="rgba(255,255,255,.55)"/>
+        </pattern>
+      </defs>
       <rect id="map-background" fill="transparent"/>
       <g id="world">
         <g id="layer-roads"></g>

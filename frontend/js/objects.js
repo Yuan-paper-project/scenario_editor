@@ -315,7 +315,7 @@
    * literally, vertex by vertex, and its whole purpose is going where lanes do
    * not — a pedestrian crossing, a cyclist bending out, a reversing curve.
    */
-  const ROUTE_SNAP_LANE_TYPES = new Set(['driving', 'bidirectional']);
+  const ROUTE_SNAP_LANE_TYPES = new Set(['driving']);   // CARLA's get_waypoint default; Town03's 'bidirectional' is a wall
   const ROUTE_SNAP_MAX_DIST   = 25;   // how far to reach for a lane to snap onto
 
   /**

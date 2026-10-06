@@ -34,6 +34,9 @@
   // crosswalks, not a scenario layer: it sits below the actors, is never
   // hit-tested, and holds nothing the user can select or move.
   let layerBuildings     = null;
+  // Stop/Yield signs and speed-limit roundels (map detail, never hit-tested).
+  let layerSigns         = null;
+  let layerSpeeds        = null;
   // The selected actor's own paths, above layer-actors: a path drawn under the
   // other vehicles is both hard to read and, now that its waypoints are
   // draggable, hard to reach.
@@ -190,6 +193,8 @@
     if (layerRoadDir)       layerRoadDir.remove();
     if (layerTriggerPoints) layerTriggerPoints.remove();
     if (layerBuildings)     layerBuildings.remove();
+    if (layerSigns)         layerSigns.remove();
+    if (layerSpeeds)        layerSpeeds.remove();
     if (layerPathsTop)      layerPathsTop.remove();
     if (layerActorsTop)     layerActorsTop.remove();
     // Cached route geometry is lane geometry, i.e. specific to the town that
@@ -201,6 +206,8 @@
     layerRoadDir       = _svgEl('g', { id: 'layer-roaddir' });
     layerTriggerPoints = _svgEl('g', { id: 'layer-trigger-points' });
     layerBuildings     = _svgEl('g', { id: 'layer-buildings' });
+    layerSigns         = _svgEl('g', { id: 'layer-signs' });
+    layerSpeeds        = _svgEl('g', { id: 'layer-speeds' });
     layerPathsTop      = _svgEl('g', { id: 'layer-paths-top' });
     layerActorsTop     = _svgEl('g', { id: 'layer-actors-top' });
     const layerTrajEl  = document.getElementById('layer-trajectories');
@@ -208,6 +215,8 @@
     worldGroup.insertBefore(layerCrosswalks,    layerTrajEl);
     worldGroup.insertBefore(layerTrafficLights, layerTrajEl);
     worldGroup.insertBefore(layerBuildings,     layerTrajEl);
+    worldGroup.insertBefore(layerSpeeds,        layerTrajEl);
+    worldGroup.insertBefore(layerSigns,         layerTrajEl);
     // These three go last, i.e. above layer-actors, and in this order: the
     // selected actor's path sits over the other vehicles, the actor itself sits
     // over its own path, and its trigger points sit over everything. Paint
@@ -218,6 +227,9 @@
     worldGroup.appendChild(layerTriggerPoints);
 
     const { bounds, roads, spawnPoints, intersections, trafficLights, crosswalks, grassColor } = mapData;
+    const signs         = mapData.signs || [];
+    const parkingSpaces = mapData.parkingSpaces || [];
+    const speedSigns    = mapData.speedSigns || [];
     const w = bounds.xMax - bounds.xMin;
     const h = bounds.yMax - bounds.yMin;
     const pad = Math.max(w, h) * 0.03;
@@ -245,21 +257,35 @@
     for (const road of [...normal, ...junctions]) {
       for (const lane of road.lanes) {
         // Lane polygon with thin edge outline for visual definition
+        const points = _polyToPoints(lane.polygon);
         const poly = _svgEl('polygon', {
-          points: _polyToPoints(lane.polygon),
+          points,
           fill:   lane.color,
           stroke: _laneStrokeColor(lane.type),
           'stroke-width': '0.3',
           'stroke-linejoin': 'round',
+          class:  `lane lane-${lane.type}`,
         });
         layerRoads.appendChild(poly);
+        // A median/border is a separator, not a lane: hatch it so it reads as
+        // blocked in Vektor, and (CSS) instead of a white lane outline in Beides.
+        if (BLOCKED_LANE_TYPES.has(lane.type)) {
+          layerRoads.appendChild(_svgEl('polygon', {
+            points, fill: 'url(#hatch-blocked)', class: 'lane-hatch',
+          }));
+        }
       }
 
-      // Road markings + direction arrows (non-junction roads only)
+      // Road markings + direction arrows (non-junction roads only — CARLA
+      // paints next to nothing inside a junction, and connector edges drawn
+      // there criss-cross the whole box)
       if (road.junction === '-1' && road.centerline.length > 1) {
-        const hasDriving = road.lanes.some(l => l.type === 'driving' || l.type === 'bidirectional');
-        if (hasDriving) {
-          // Yellow dashed centerline
+        const hasDriving = road.lanes.some(l => l.type === 'driving');
+        if (road.marks && road.marks.length) {
+          _renderRoadMarks(road.marks);
+        } else if (hasDriving) {
+          // No <roadMark> data (render JSON from an older backend, or a map
+          // that states none): the old guessed yellow dashed centreline.
           const cl = _svgEl('polyline', {
             points: road.centerline.map(p => `${p[0]},${p[1]}`).join(' '),
             fill: 'none',
@@ -269,11 +295,18 @@
             'stroke-linecap': 'round',
           });
           layerMarkings.appendChild(cl);
+        }
+        for (const lane of road.lanes) {
+          if (lane.type === 'parking' && lane.directionLine && lane.directionLine.length > 1) {
+            _renderParkingGlyphs(lane.directionLine);
+          }
+        }
+        if (hasDriving) {
 
           // Per-lane direction arrows (each lane has its own directionLine
           // with correct travel direction — left lanes are reversed)
           for (const lane of road.lanes) {
-            if ((lane.type === 'driving' || lane.type === 'bidirectional') &&
+            if (lane.type === 'driving' &&
                 lane.directionLine && lane.directionLine.length > 1) {
               _renderRoadDirArrows(lane.directionLine);
             }
@@ -281,6 +314,10 @@
         }
       }
     }
+
+    for (const bay of parkingSpaces) _renderParkingSpace(bay);
+    for (const sign of signs)        _renderSign(sign);
+    for (const sp of speedSigns)     _renderSpeedSign(sp);
 
     // Spawn point dots
     for (const sp of spawnPoints) {
@@ -328,6 +365,95 @@
     requestAnimationFrame(() => _updateScaleRuler());
   }
 
+  // ── Road furniture from the .xodr: painted lines, parking, signs, limits ──
+
+  const MARK_COLORS = { white: 'rgba(242,242,242,0.85)', yellow: 'rgba(242,190,40,0.9)' };
+  const PARKING_GLYPH_EVERY_M = 20;
+
+  /** Painted lines from the road's <roadMark>s (backend _build_mark_polylines). */
+  function _renderRoadMarks(marks) {
+    for (const m of marks) {
+      const attrs = {
+        points: m.points.map(p => `${p[0]},${p[1]}`).join(' '),
+        fill: 'none',
+        stroke: MARK_COLORS[m.color] || MARK_COLORS.white,
+        'stroke-width': String(Math.max(m.width, 0.15)),
+        class: `road-mark road-mark-${m.type}`,
+      };
+      // CARLA paints broken lines 3 m on, 6 m off.
+      if (m.type === 'broken') attrs['stroke-dasharray'] = '3 6';
+      layerMarkings.appendChild(_svgEl('polyline', attrs));
+    }
+  }
+
+  /** A "P" every PARKING_GLYPH_EVERY_M along a parking lane's centre. */
+  function _renderParkingGlyphs(line) {
+    let acc = PARKING_GLYPH_EVERY_M / 2;
+    for (let i = 1; i < line.length; i++) {
+      const [x0, y0] = line[i - 1], [x1, y1] = line[i];
+      const seg = Math.hypot(x1 - x0, y1 - y0);
+      while (acc <= seg && seg > 0) {
+        const t = acc / seg;
+        const t2 = _svgEl('text', {
+          x: (x0 + (x1 - x0) * t).toFixed(2), y: (y0 + (y1 - y0) * t).toFixed(2),
+          class: 'parking-glyph', 'font-size': '1.8',
+          'text-anchor': 'middle', 'dominant-baseline': 'central',
+        });
+        t2.textContent = 'P';
+        layerMarkings.appendChild(t2);
+        acc += PARKING_GLYPH_EVERY_M;
+      }
+      acc -= seg;
+    }
+  }
+
+  /** One parking bay (<object type="parking">) as a white outline. */
+  function _renderParkingSpace(bay) {
+    layerMarkings.appendChild(_svgEl('rect', {
+      x: (-bay.length / 2).toFixed(2), y: (-bay.width / 2).toFixed(2),
+      width: bay.length, height: bay.width,
+      class: 'parking-bay',
+      transform: `translate(${bay.x},${bay.y}) rotate(${-bay.heading})`,
+    }));
+  }
+
+  /** Stop = red octagon, Yield = inverted white/red triangle. ~1.6 m across:
+   *  true-ish size like every other marker, so it is found by zooming in. */
+  function _renderSign(sign) {
+    const g = _svgEl('g', {
+      class: `map-sign map-sign-${sign.type}`,
+      transform: `translate(${sign.x},${sign.y})`,
+    });
+    if (sign.type === 'stop') {
+      const r = 0.8, pts = [];
+      for (let k = 0; k < 8; k++) {
+        const a = Math.PI / 8 + k * Math.PI / 4;
+        pts.push(`${(r * Math.cos(a)).toFixed(3)},${(r * Math.sin(a)).toFixed(3)}`);
+      }
+      g.appendChild(_svgEl('polygon', { points: pts.join(' '), class: 'sign-stop-body' }));
+      const t = _svgEl('text', { class: 'sign-stop-text', 'font-size': '0.42',
+                                  'text-anchor': 'middle', 'dominant-baseline': 'central' });
+      t.textContent = 'STOP';
+      g.appendChild(t);
+    } else {
+      g.appendChild(_svgEl('polygon', { points: '-0.9,-0.6 0.9,-0.6 0,0.95', class: 'sign-yield-body' }));
+    }
+    layerSigns.appendChild(g);
+  }
+
+  /** A speed-limit sign (backend _extract_speed_signs) as a km/h roundel at
+   *  the sign's own position — the signs, not the .xodr's per-road speed
+   *  records, are what sets a CARLA vehicle's limit. */
+  function _renderSpeedSign(sp) {
+    const g = _svgEl('g', { class: 'speed-limit', transform: `translate(${sp.x},${sp.y})` });
+    g.appendChild(_svgEl('circle', { r: '1.6', class: 'speed-limit-ring' }));
+    const t = _svgEl('text', { class: 'speed-limit-text', 'font-size': '1.3',
+                                'text-anchor': 'middle', 'dominant-baseline': 'central' });
+    t.textContent = String(sp.kmh);
+    g.appendChild(t);
+    layerSpeeds.appendChild(g);
+  }
+
   /** Render small direction-arrow chevrons along a road centerline. */
   function _renderRoadDirArrows(centerline) {
     // Place a small arrow every ~30m along the road
@@ -355,11 +481,21 @@
     }
   }
 
+  /** Lane types that are part of the road surface but not drivable.
+   *  'bidirectional' is here on purpose: its only occurrence in the bundled
+   *  maps is Town03's ring-highway separator (lane 1 of roads 0-4, 28, 29,
+   *  65-69), a concrete wall in CARLA, and CARLA's route planner never uses it
+   *  (lane_graph_builder.py _ROUTABLE_TYPES). */
+  const BLOCKED_LANE_TYPES = new Set(['median', 'border', 'restricted', 'bidirectional']);
+
   /** Return a subtle edge stroke colour for a given lane type. */
   function _laneStrokeColor(type) {
     switch (type) {
-      case 'driving':
-      case 'bidirectional': return '#3a3a3a';
+      case 'median':
+      case 'bidirectional': return '#7a756a';
+      case 'border':
+      case 'restricted':    return '#5a5752';
+      case 'driving':       return '#3a3a3a';
       case 'sidewalk':      return '#b0a07a';
       case 'shoulder':      return '#555555';
       default:              return '#444444';
@@ -1732,6 +1868,8 @@
       { id: 'toggle-roaddir',        get layer() { return layerRoadDir; } },
       { id: 'toggle-props',          layer: layerProps },
       { id: 'toggle-buildings',      get layer() { return layerBuildings; } },
+      { id: 'toggle-signs',          get layer() { return layerSigns; } },
+      { id: 'toggle-speeds',         get layer() { return layerSpeeds; } },
     ];
 
     for (const p of pairs) {

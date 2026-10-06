@@ -177,7 +177,29 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
 #map-svg.base-both #layer-roads polygon {
   fill-opacity: .08; stroke: rgba(255, 255, 255, .75); stroke-width: .15;
 }
-#layer-aerial { pointer-events: none; }   /* no native image drag; clicks belong to the map */
+/* A median/border is a separator, not a lane: no white lane outline over the
+   photo, only the hatching (amber, so it survives both concrete and asphalt). */
+#map-svg.base-both #layer-roads polygon.lane-median,
+#map-svg.base-both #layer-roads polygon.lane-border,
+#map-svg.base-both #layer-roads polygon.lane-restricted,
+#map-svg.base-both #layer-roads polygon.lane-bidirectional { stroke: none; fill-opacity: 0; }
+#map-svg.base-both #layer-roads polygon.lane-hatch { fill-opacity: 1; stroke: none; }
+#map-svg.base-both #hatch-blocked rect { fill: rgba(255, 170, 40, .7); }
+#layer-roads .lane-hatch { pointer-events: none; }
+#layer-aerial { pointer-events: none; }
+
+/* Road furniture from the .xodr (mapView.js _renderRoadMarks & co). */
+#layer-markings, #layer-signs, #layer-speeds { pointer-events: none; }
+.road-mark { stroke-linecap: butt; stroke-linejoin: round; }
+.parking-glyph { fill: rgba(170, 200, 255, .75); font-weight: 700; font-family: sans-serif; }
+.parking-bay { fill: none; stroke: rgba(235, 240, 255, .7); stroke-width: .12; }
+.sign-stop-body  { fill: #d42020; stroke: #fff; stroke-width: .1; }
+.sign-stop-text  { fill: #fff; font-weight: 800; font-family: sans-serif; }
+.sign-yield-body { fill: #fff; stroke: #d42020; stroke-width: .22; stroke-linejoin: round; }
+.speed-limit-ring { fill: #fff; stroke: #d42020; stroke-width: .35; }
+.speed-limit-text { fill: #111; font-weight: 700; font-family: sans-serif; }
+/* Roundels are read, not seen: gone with the labels at town zoom. */
+#map-svg.map-labels-hidden #layer-speeds { opacity: 0; }   /* no native image drag; clicks belong to the map */
 
 /* ── Left toolbar ────────────────────────────────────────── */
 #toolbar {

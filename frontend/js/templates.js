@@ -77,7 +77,7 @@
           actorType: 'car',
           placement: {
             snap: 'lane-center',
-            laneTypes: ['driving', 'bidirectional', 'parking', 'shoulder'],
+            laneTypes: ['driving', 'parking', 'shoulder'],
             maxDistance: 12,
           },
           events: [

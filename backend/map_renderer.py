@@ -8,6 +8,7 @@ Coordinate convention:
 """
 
 import math
+import re
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -54,13 +55,17 @@ THUMBNAIL_PATHS: dict[str, Path] = _scan_thumbnail_paths(_MAPS_DIR)
 
 LANE_COLORS: dict[str, str] = {
     "driving":       "#3d3d3d",      # dark asphalt
-    "bidirectional": "#3d3d3d",
+    "bidirectional": "#8f8a7e",      # Town03's only use: the highway separator wall
     "sidewalk":      "#a89878",      # warm tan
     "shoulder":      "#555555",
-    "parking":       "#606060",
+    "parking":       "#34486a",      # blue tint, like a painted parking zone
     "biking":        "#4a6a4a",
-    "border":        "#484848",
-    "restricted":    "#484848",
+    # Not drivable: drawn concrete/kerb-toned and hatched by mapView.js rather
+    # than in asphalt, or Town03's tunnel median reads as a lane.
+    "median":        "#8f8a7e",      # raised concrete separator
+    "border":        "#6b6862",
+    "restricted":    "#6b6862",
+    "curb":          "#6b6862",
 }
 DEFAULT_LANE_COLOR = "#484848"
 GRASS_COLOR        = "#1e4a1e"       # deeper green for contrast
@@ -141,29 +146,57 @@ def _eval_elevation(elevations: list[tuple], s_query: float) -> float:
 
 # ── Geometry sampling ──────────────────────────────────────────────────────────
 
+def _parse_geometry_segments(road_elem: ET.Element) -> list[tuple]:
+    """planView <geometry> records as (s0, x0, y0, hdg, length, curvature).
+
+    Only <line> and <arc> are modelled — every bundled town uses nothing else.
+    Anything else is treated as a line, as it always was.
+    """
+    plan_view = road_elem.find('planView')
+    if plan_view is None:
+        return []
+    segs: list[tuple] = []
+    for geom in plan_view.findall('geometry'):
+        arc = geom.find('arc')
+        segs.append((
+            float(geom.get('s', 0)),
+            float(geom.get('x', 0)),
+            float(geom.get('y', 0)),
+            float(geom.get('hdg', 0)),
+            float(geom.get('length', 0)),
+            float(arc.get('curvature', 0)) if arc is not None else 0.0,
+        ))
+    return segs
+
+
+def _curvature_at(geom_segs: list[tuple], s_query: float) -> float:
+    """Reference-line curvature at s (the earlier segment wins at a boundary,
+    matching _sample_geometry's own segment choice)."""
+    for i, (s0, _x, _y, _h, ln, curv) in enumerate(geom_segs):
+        if s0 - 1e-5 <= s_query <= s0 + ln + 1e-5 or i == len(geom_segs) - 1:
+            return curv
+    return 0.0
+
+
+# Angular step for arc sampling (rad). At the old flat 4 m a 6 m-radius bend was
+# two or three visible facets; this keeps every bend ~6° per vertex.
+ARC_SAMPLE_ANGLE_RAD = 0.1
+ARC_SAMPLE_MIN_M     = 0.25
+
+
 def _sample_geometry(
     road_elem: ET.Element,
     interval: float = 4.0,
     extra_s: list[float] | None = None,
 ) -> list[tuple]:
     """
-    Sample world positions along road planView at `interval` metres.
+    Sample world positions along road planView at `interval` metres (finer on
+    tight arcs — see ARC_SAMPLE_ANGLE_RAD).
     Returns list of (xodr_x, xodr_y, hdg_rad, s) in OpenDRIVE coordinates.
     """
-    plan_view = road_elem.find('planView')
-    if plan_view is None:
+    geom_segs = _parse_geometry_segments(road_elem)
+    if not geom_segs:
         return []
-
-    geom_segs: list[tuple] = []
-    for geom in plan_view.findall('geometry'):
-        s0  = float(geom.get('s', 0))
-        x0  = float(geom.get('x', 0))
-        y0  = float(geom.get('y', 0))
-        hdg = float(geom.get('hdg', 0))
-        ln  = float(geom.get('length', 0))
-        arc = geom.find('arc')
-        curv = float(arc.get('curvature', 0)) if arc is not None else 0.0
-        geom_segs.append((s0, x0, y0, hdg, ln, curv))
 
     def _eval(s_query: float) -> tuple | None:
         if s_query < 1e-6:
@@ -186,10 +219,13 @@ def _sample_geometry(
 
     s_vals: list[float] = []
     for s0, x0, y0, hdg, ln, curv in geom_segs:
+        step = interval
+        if curv != 0.0:
+            step = min(interval, max(ARC_SAMPLE_MIN_M, ARC_SAMPLE_ANGLE_RAD / abs(curv)))
         s = 0.0
         while s < ln:
             s_vals.append(s0 + s)
-            s += interval
+            s += step
         if ln > 0.0:
             s_vals.append(s0 + ln)
 
@@ -204,6 +240,43 @@ def _sample_geometry(
 
     samples = [pt for sv in deduped if (pt := _eval(sv)) is not None]
     return samples
+
+
+def _section_eval_s(sec_samples: list[tuple]) -> list[float]:
+    """The s at which to evaluate laneOffset and lane widths for each sample of
+    one lane section: its own s, except the section's LAST sample, which takes
+    the left limit (s_end − ε).
+
+    CARLA maps step the laneOffset at a lane-section boundary to make up for a
+    lane that starts or ends there (Town03 road 1566: −6.635 → −0.635 at s=2).
+    _eval_lane_offset(s_end) picks the record that STARTS at s_end, i.e. the
+    next section's, which threw section N's last vertex sideways by up to 6 m —
+    the spikes and long wedges at road joins. The next section's first sample
+    keeps s_start and correctly picks the new record up.
+    """
+    out = [sp[3] for sp in sec_samples]
+    if len(out) > 1:
+        out[-1] -= 1e-6
+    return out
+
+
+def _lateral_point(px: float, py: float, ph: float, d: float, curv: float) -> tuple[float, float]:
+    """Point at signed lateral distance d (left of travel positive) from the
+    reference line, returned in CARLA frame (x, −y).
+
+    On the concave side of an arc a lateral distance beyond the radius crosses
+    the arc centre and the offset curve folds back on itself (Town02 road 2:
+    7.5 m radius, sidewalk outer edge at 8.3 m) — the bow-tie corners at
+    junctions. d is clamped just short of the centre, so a folded edge collapses
+    into a corner point instead.
+    """
+    if curv > 0.0:
+        d = min(d, 0.999 / curv)
+    elif curv < 0.0:
+        d = max(d, -0.999 / -curv)
+    perp = ph + math.pi / 2.0
+    return px + d * math.cos(perp), -(py + d * math.sin(perp))
+
 
 # ── Lane Width Polynomial Engine ────────────────────────────────────────────────
 
@@ -244,9 +317,55 @@ def _get_lane_defs_from_section(ls_elem: ET.Element) -> list[dict]:
                 'id': lid,
                 'type': ltype,
                 'side': side_key,
-                'width_polys': width_polys
+                'width_polys': width_polys,
+                'marks': _get_road_marks(lane),
             })
     return result
+
+
+# roadMark types drawn as lines; everything else ('none', 'curb', 'grass',
+# 'botts dots', …) is either nothing or already visible as a lane edge.
+_DRAWN_MARK_TOKENS = {'solid', 'broken'}
+MARK_DOUBLE_GAP_M = 0.12   # half the spacing between the two lines of a double mark
+
+
+def _get_road_marks(lane_elem: ET.Element) -> list[dict]:
+    """<roadMark> records of one lane, sorted by sOffset (section-relative).
+
+    Per OpenDRIVE a lane's roadMark describes its OUTER border; the centre
+    lane's describes the reference line. A record holds until the next one.
+    """
+    marks = []
+    for rm in lane_elem.findall('roadMark'):
+        color = (rm.get('color') or 'standard').lower()
+        marks.append({
+            'sOffset': float(rm.get('sOffset', 0.0)),
+            'type': (rm.get('type') or 'none').lower(),
+            'color': 'yellow' if color == 'yellow' else 'white',
+            'width': float(rm.get('width', 0.15) or 0.15),
+        })
+    marks.sort(key=lambda m: m['sOffset'])
+    return marks
+
+
+def _get_center_marks(ls_elem: ET.Element) -> list[dict]:
+    lane = ls_elem.find('center/lane')
+    return _get_road_marks(lane) if lane is not None else []
+
+
+def _mark_lines(mark_type: str) -> list[tuple[str, float]]:
+    """('solid'|'broken', lateral shift) per drawn line of a roadMark type.
+
+    A double mark's first token is the line on the LEFT (in s direction, i.e.
+    +d), which is how 'broken solid' tells a driver which side may cross.
+    """
+    tokens = mark_type.split()
+    if len(tokens) == 1:
+        return [(tokens[0], 0.0)] if tokens[0] in _DRAWN_MARK_TOKENS else []
+    if len(tokens) == 2:
+        return [(tok, shift) for tok, shift in zip(tokens, (MARK_DOUBLE_GAP_M, -MARK_DOUBLE_GAP_M))
+                if tok in _DRAWN_MARK_TOKENS]
+    return []
 
 
 def _eval_lane_width(polys: list[dict], sec_s_query: float) -> float:
@@ -319,7 +438,8 @@ def _build_lane_polygon_dynamic(
     target_ld: dict,
     all_lane_defs: list[dict],
     sec_start_s: float,
-    offsets: list[tuple]
+    offsets: list[tuple],
+    geom_segs: list[tuple] | None = None,
 ) -> list[list[float]]:
     """Build a perfect closed ribbon polygon by tracking cumulative widths dynamically at every s."""
     sign = +1.0 if target_ld['side'] == 'L' else -1.0
@@ -328,13 +448,10 @@ def _build_lane_polygon_dynamic(
 
     side_lanes = [l for l in all_lane_defs if l['side'] == target_ld['side']]
 
-    for (px, py, ph, s) in samples:
-        sec_s = s - sec_start_s
-        offset_shift = _eval_lane_offset(offsets, s)
-        
-        ref_perp = ph + math.pi / 2.0
-        shifted_x = px + offset_shift * math.cos(ref_perp)
-        shifted_y = py + offset_shift * math.sin(ref_perp)
+    for (px, py, ph, s), s_eval in zip(samples, _section_eval_s(samples)):
+        sec_s = s_eval - sec_start_s
+        offset_shift = _eval_lane_offset(offsets, s_eval)
+        curv = _curvature_at(geom_segs, s) if geom_segs else 0.0
 
         inner_w = 0.0
         outer_w = 0.0
@@ -345,16 +462,73 @@ def _build_lane_polygon_dynamic(
             if abs(ld['id']) <= abs(target_ld['id']):
                 outer_w += w_val
 
-        lane_perp = ph + sign * math.pi / 2.0
-        ix = round(shifted_x + inner_w * math.cos(lane_perp), 2)
-        iy = round(-(shifted_y + inner_w * math.sin(lane_perp)), 2)
-        ox = round(shifted_x + outer_w * math.cos(lane_perp), 2)
-        oy = round(-(shifted_y + outer_w * math.sin(lane_perp)), 2)
-
-        fwd_inner.append([ix, iy])
-        fwd_outer.append([ox, oy])
+        ix, iy = _lateral_point(px, py, ph, offset_shift + sign * inner_w, curv)
+        ox, oy = _lateral_point(px, py, ph, offset_shift + sign * outer_w, curv)
+        fwd_inner.append([round(ix, 2), round(iy, 2)])
+        fwd_outer.append([round(ox, 2), round(oy, 2)])
 
     return fwd_inner + list(reversed(fwd_outer))
+
+
+def _build_mark_polylines(
+    sec_samples: list[tuple],
+    s_start: float,
+    s_end: float,
+    lane_defs: list[dict],
+    center_marks: list[dict],
+    offsets: list[tuple],
+    geom_segs: list[tuple],
+) -> list[dict]:
+    """Painted line polylines of one lane section, from its <roadMark>s.
+
+    Each lane's marks sit on its outer border, the centre lane's on the
+    reference line (+ laneOffset). Same lateral maths as the lane polygons —
+    left-limit at the range end (_section_eval_s) and the fold clamp
+    (_lateral_point) — so a line never drifts off the edge it belongs to.
+    """
+    # (marks, function: (s_eval, widths-by-id) -> signed lateral distance)
+    borders = [(center_marks, None)]
+    for ld in lane_defs:
+        if ld['marks']:
+            borders.append((ld['marks'], ld))
+
+    out = []
+    for marks, ld in borders:
+        if ld is not None:
+            sign = +1.0 if ld['side'] == 'L' else -1.0
+            inner_ids = [l for l in lane_defs
+                         if l['side'] == ld['side'] and abs(l['id']) <= abs(ld['id'])]
+        for i, mark in enumerate(marks):
+            lines = _mark_lines(mark['type'])
+            if not lines:
+                continue
+            r0 = s_start + mark['sOffset']
+            r1 = s_start + marks[i + 1]['sOffset'] if i + 1 < len(marks) else s_end
+            r1 = min(r1, s_end)
+            if r1 - r0 < 0.05:
+                continue
+            pts = [sp for sp in sec_samples if r0 - 1e-4 <= sp[3] <= r1 + 1e-4]
+            if len(pts) < 2:
+                continue
+            dists = []
+            for (px, py, ph, s), s_eval in zip(pts, _section_eval_s(pts)):
+                d = _eval_lane_offset(offsets, s_eval)
+                if ld is not None:
+                    d += sign * sum(_eval_lane_width(l['width_polys'], s_eval - s_start)
+                                    for l in inner_ids)
+                dists.append((px, py, ph, s, d))
+            for tok, shift in lines:
+                poly = []
+                for (px, py, ph, s, d) in dists:
+                    x, y = _lateral_point(px, py, ph, d + shift, _curvature_at(geom_segs, s))
+                    poly.append([round(x, 2), round(y, 2)])
+                out.append({
+                    'type': tok,
+                    'color': mark['color'],
+                    'width': round(mark['width'], 2),
+                    'points': poly,
+                })
+    return out
 
 
 # ── Traffic lights & crosswalks from xodr ─────────────────────────────────────
@@ -413,6 +587,105 @@ def _extract_traffic_lights(root: ET.Element) -> list[dict]:
                 'name': f"Traffic Light {len(results) + 1}",
                 'x': round(wx, 1),
                 'y': round(-wy, 1),
+            })
+    return results
+
+
+def _extract_signs(root: ET.Element) -> list[dict]:
+    """Static Stop (206) and Yield (205) signals — the German StVO codes CARLA
+    exports, matched by name as well since `country` is 'OpenDRIVE'."""
+    kinds = {'206': 'stop', '205': 'yield'}
+    results = []
+    for road in root.findall('road'):
+        for sig in road.findall('.//signal'):
+            if sig.get('dynamic', '') == 'yes':
+                continue
+            kind = kinds.get(sig.get('type', ''))
+            name = (sig.get('name') or '').lower()
+            if kind is None:
+                kind = 'stop' if 'stop' in name else 'yield' if 'yield' in name else None
+            if kind is None:
+                continue
+            s = float(sig.get('s', 0))
+            t = float(sig.get('t', 0))
+            res = _eval_geometry_at_s(road, s)
+            if res is None:
+                continue
+            px, py, ph = res
+            results.append({
+                'type': kind,
+                'x': round(px - t * math.sin(ph), 2),
+                'y': round(-(py + t * math.cos(ph)), 2),
+            })
+    return results
+
+
+_SPEED_SIGN_RE = re.compile(r'^speed_(\d+)$', re.IGNORECASE)
+
+
+def _extract_speed_signs(root: ET.Element) -> list[dict]:
+    """Speed-limit SIGNS (`<object|signal name="Speed_90">`, km/h).
+
+    These — not the per-road `<type><speed>` records — are what sets a CARLA
+    vehicle's speed limit: CARLA spawns a SpeedLimit actor per sign, while
+    MapBuilder::CreateRoadSpeed stores the road record's raw number with its
+    unit discarded and uses it only to size Stop/Yield trigger boxes. The
+    road records also say 55 mph on Town03's residential streets. Only
+    Town01–05 carry signs; the other towns get none drawn.
+    """
+    results = []
+    for road in root.findall('road'):
+        for el in list(road.iterfind('objects/object')) + list(road.iterfind('.//signal')):
+            m = _SPEED_SIGN_RE.match(el.get('name') or '')
+            if not m:
+                continue
+            s = float(el.get('s', 0))
+            t = float(el.get('t', 0))
+            res = _eval_geometry_at_s(road, s)
+            if res is None:
+                continue
+            px, py, ph = res
+            results.append({
+                'kmh': int(m.group(1)),
+                'x': round(px - t * math.sin(ph), 2),
+                'y': round(-(py + t * math.cos(ph)), 2),
+            })
+    return results
+
+
+def _extract_parking_spaces(root: ET.Element) -> list[dict]:
+    """<object type="parking"> bays as centre + heading + size, CARLA frame.
+
+    The object's local x axis is `length`, at `hdg` relative to the road; the
+    frontend draws the rectangle as given rather than guessing which side is
+    the bay's depth.
+    """
+    results = []
+    for road in root.findall('road'):
+        objects_elem = road.find('objects')
+        if objects_elem is None:
+            continue
+        for obj in objects_elem.findall('object'):
+            if (obj.get('type') or '').lower() != 'parking':
+                continue
+            length = float(obj.get('length', 0) or 0)
+            width = float(obj.get('width', 0) or 0)
+            if length <= 0.0 or width <= 0.0:
+                continue
+            s = float(obj.get('s', 0))
+            t = float(obj.get('t', 0))
+            res = _eval_geometry_at_s(road, s)
+            if res is None:
+                continue
+            px, py, ph = res
+            heading = ph + float(obj.get('hdg', 0) or 0)
+            results.append({
+                'x': round(px - t * math.sin(ph), 2),
+                'y': round(-(py + t * math.cos(ph)), 2),
+                # CARLA frame (y down): a heading turns the other way.
+                'heading': round(math.degrees(-heading) % 360.0, 1),
+                'length': round(length, 2),
+                'width': round(width, 2),
             })
     return results
 
@@ -552,7 +825,9 @@ def _build_spawn_points_from_render_geometry(root: ET.Element) -> list[dict]:
                 continue
 
             for ld in lane_defs:
-                if ld['type'] not in ('driving', 'bidirectional'):
+                # Driving only: CARLA spawns on Driving lanes, and Town03's
+                # 'bidirectional' lanes are its ring-highway separator wall.
+                if ld['type'] != 'driving':
                     continue
 
                 sign = +1.0 if ld['side'] == 'L' else -1.0
@@ -653,10 +928,20 @@ def _process_root_to_render_data(root: ET.Element, town_name: str, xodr_path: Pa
             if lo[0] > 0.0 and lo[0] not in boundary_s:
                 boundary_s.append(lo[0])
         boundary_s.append(length)
+        # Samples exactly where a painted line changes type, so broken→solid
+        # does not leave a gap the length of a sample interval.
+        center_marks_by_section = [_get_center_marks(ls)
+                                   for ls in road.find('lanes').findall('laneSection')]
+        for (s_start, _s_end, lane_defs), cmarks in zip(lane_sections, center_marks_by_section):
+            for m in cmarks + [m for ld in lane_defs for m in ld['marks']]:
+                if m['sOffset'] > 0.0:
+                    boundary_s.append(s_start + m['sOffset'])
 
         samples = _sample_geometry(road, road_interval, extra_s=boundary_s)
         if not samples:
             continue
+        geom_segs = _parse_geometry_segments(road)
+        road_marks: list[dict] = []
 
         lanes_out = []
         for section_id, (s_start, s_end, lane_defs) in enumerate(lane_sections):
@@ -666,12 +951,15 @@ def _process_root_to_render_data(root: ET.Element, town_name: str, xodr_path: Pa
             sec_samples = [sp for sp in samples if s_start - 1e-4 <= sp[3] <= s_end + 1e-4]
             if not sec_samples:
                 continue
+            road_marks.extend(_build_mark_polylines(
+                sec_samples, s_start, s_end, lane_defs,
+                center_marks_by_section[section_id], offsets, geom_segs))
 
             for ld in lane_defs:
                 if ld['type'] == 'none':
                     continue
 
-                poly  = _build_lane_polygon_dynamic(sec_samples, ld, lane_defs, s_start, offsets)
+                poly  = _build_lane_polygon_dynamic(sec_samples, ld, lane_defs, s_start, offsets, geom_segs)
                 color = LANE_COLORS.get(ld['type'], DEFAULT_LANE_COLOR)
 
                 lane_entry = {
@@ -695,12 +983,9 @@ def _process_root_to_render_data(root: ET.Element, town_name: str, xodr_path: Pa
                     lane_widths = []
                     side_lanes = [l for l in lane_defs if l['side'] == ld['side']]
 
-                    for (px, py, ph, s) in sec_samples:
-                        sec_s = s - s_start
-                        offset_shift = _eval_lane_offset(offsets, s)
-                        ref_perp = ph + math.pi / 2.0
-                        shifted_x = px + offset_shift * math.cos(ref_perp)
-                        shifted_y = py + offset_shift * math.sin(ref_perp)
+                    for (px, py, ph, s), s_eval in zip(sec_samples, _section_eval_s(sec_samples)):
+                        sec_s = s_eval - s_start
+                        offset_shift = _eval_lane_offset(offsets, s_eval)
 
                         inner_w = 0.0
                         this_w = 3.5
@@ -712,9 +997,9 @@ def _process_root_to_render_data(root: ET.Element, town_name: str, xodr_path: Pa
                                 this_w = w_val
 
                         center_offset = inner_w + (this_w / 2.0)
-                        lane_perp = ph + sign * math.pi / 2.0
-                        cx = round(shifted_x + center_offset * math.cos(lane_perp), 2)
-                        cy = round(-(shifted_y + center_offset * math.sin(lane_perp)), 2)
+                        cx, cy = _lateral_point(px, py, ph, offset_shift + sign * center_offset,
+                                                _curvature_at(geom_segs, s))
+                        cx, cy = round(cx, 2), round(cy, 2)
                         cz = round(_eval_elevation(elevations, s), 2)
                         # 4th element is s, the same backward-compatible trick
                         # already used for z — existing 3-element consumers
@@ -735,14 +1020,18 @@ def _process_root_to_render_data(root: ET.Element, town_name: str, xodr_path: Pa
 
         centreline = []
         for (px, py, ph, s) in samples:
-            offset_shift = _eval_lane_offset(offsets, s)
-            ref_perp = ph + math.pi / 2.0
-            cx = round(px + offset_shift * math.cos(ref_perp), 2)
-            cy = round(-(py + offset_shift * math.sin(ref_perp)), 2)
             cz = _eval_elevation(elevations, s)
             elev_min = cz if elev_min is None else min(elev_min, cz)
             elev_max = cz if elev_max is None else max(elev_max, cz)
-            centreline.append([cx, cy, round(cz, 2), round(s, 2)])
+            # At a laneOffset step (see _section_eval_s) emit the left limit as
+            # well, so the marking jogs at the boundary instead of slanting
+            # across the whole preceding sample interval.
+            s_evals = [s]
+            if s > 0.0 and abs(_eval_lane_offset(offsets, s - 1e-6) - _eval_lane_offset(offsets, s)) > 1e-3:
+                s_evals = [s - 1e-6, s]
+            for s_eval in s_evals:
+                cx, cy = _lateral_point(px, py, ph, _eval_lane_offset(offsets, s_eval), 0.0)
+                centreline.append([round(cx, 2), round(cy, 2), round(cz, 2), round(s, 2)])
 
         roads_out.append({
             'id':         road.get('id'),
@@ -751,11 +1040,15 @@ def _process_root_to_render_data(root: ET.Element, town_name: str, xodr_path: Pa
             'lanes':      lanes_out,
             'centerline': centreline,
             'link':       _get_road_link(road),
+            'marks':      road_marks,
         })
 
     spawn_points, intersections = _load_spawn_points(str(xodr_path))
     traffic_lights = _extract_traffic_lights(root)
     crosswalks     = _extract_crosswalks(root)
+    signs          = _extract_signs(root)
+    parking_spaces = _extract_parking_spaces(root)
+    speed_signs    = _extract_speed_signs(root)
 
     return {
         'town':          town_name,
@@ -771,6 +1064,9 @@ def _process_root_to_render_data(root: ET.Element, town_name: str, xodr_path: Pa
         'intersections': intersections,
         'trafficLights': traffic_lights,
         'crosswalks':    crosswalks,
+        'signs':         signs,
+        'parkingSpaces': parking_spaces,
+        'speedSigns':    speed_signs,
         'grassColor':    GRASS_COLOR,
     }
 
