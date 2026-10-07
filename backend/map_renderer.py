@@ -653,43 +653,6 @@ def _extract_speed_signs(root: ET.Element) -> list[dict]:
     return results
 
 
-def _extract_parking_spaces(root: ET.Element) -> list[dict]:
-    """<object type="parking"> bays as centre + heading + size, CARLA frame.
-
-    The object's local x axis is `length`, at `hdg` relative to the road; the
-    frontend draws the rectangle as given rather than guessing which side is
-    the bay's depth.
-    """
-    results = []
-    for road in root.findall('road'):
-        objects_elem = road.find('objects')
-        if objects_elem is None:
-            continue
-        for obj in objects_elem.findall('object'):
-            if (obj.get('type') or '').lower() != 'parking':
-                continue
-            length = float(obj.get('length', 0) or 0)
-            width = float(obj.get('width', 0) or 0)
-            if length <= 0.0 or width <= 0.0:
-                continue
-            s = float(obj.get('s', 0))
-            t = float(obj.get('t', 0))
-            res = _eval_geometry_at_s(road, s)
-            if res is None:
-                continue
-            px, py, ph = res
-            heading = ph + float(obj.get('hdg', 0) or 0)
-            results.append({
-                'x': round(px - t * math.sin(ph), 2),
-                'y': round(-(py + t * math.cos(ph)), 2),
-                # CARLA frame (y down): a heading turns the other way.
-                'heading': round(math.degrees(-heading) % 360.0, 1),
-                'length': round(length, 2),
-                'width': round(width, 2),
-            })
-    return results
-
-
 def _extract_crosswalk_objects(root: ET.Element) -> list[dict]:
     results = []
     for road in root.findall('road'):
@@ -1047,7 +1010,6 @@ def _process_root_to_render_data(root: ET.Element, town_name: str, xodr_path: Pa
     traffic_lights = _extract_traffic_lights(root)
     crosswalks     = _extract_crosswalks(root)
     signs          = _extract_signs(root)
-    parking_spaces = _extract_parking_spaces(root)
     speed_signs    = _extract_speed_signs(root)
 
     return {
@@ -1065,7 +1027,6 @@ def _process_root_to_render_data(root: ET.Element, town_name: str, xodr_path: Pa
         'trafficLights': traffic_lights,
         'crosswalks':    crosswalks,
         'signs':         signs,
-        'parkingSpaces': parking_spaces,
         'speedSigns':    speed_signs,
         'grassColor':    GRASS_COLOR,
     }

@@ -228,7 +228,6 @@
 
     const { bounds, roads, spawnPoints, intersections, trafficLights, crosswalks, grassColor } = mapData;
     const signs         = mapData.signs || [];
-    const parkingSpaces = mapData.parkingSpaces || [];
     const speedSigns    = mapData.speedSigns || [];
     const w = bounds.xMax - bounds.xMin;
     const h = bounds.yMax - bounds.yMin;
@@ -315,7 +314,6 @@
       }
     }
 
-    for (const bay of parkingSpaces) _renderParkingSpace(bay);
     for (const sign of signs)        _renderSign(sign);
     for (const sp of speedSigns)     _renderSpeedSign(sp);
 
@@ -405,16 +403,6 @@
       }
       acc -= seg;
     }
-  }
-
-  /** One parking bay (<object type="parking">) as a white outline. */
-  function _renderParkingSpace(bay) {
-    layerMarkings.appendChild(_svgEl('rect', {
-      x: (-bay.length / 2).toFixed(2), y: (-bay.width / 2).toFixed(2),
-      width: bay.length, height: bay.width,
-      class: 'parking-bay',
-      transform: `translate(${bay.x},${bay.y}) rotate(${-bay.heading})`,
-    }));
   }
 
   /** Stop = red octagon, Yield = inverted white/red triangle. ~1.6 m across:

@@ -192,7 +192,6 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
 #layer-markings, #layer-signs, #layer-speeds { pointer-events: none; }
 .road-mark { stroke-linecap: butt; stroke-linejoin: round; }
 .parking-glyph { fill: rgba(170, 200, 255, .75); font-weight: 700; font-family: sans-serif; }
-.parking-bay { fill: none; stroke: rgba(235, 240, 255, .7); stroke-width: .12; }
 .sign-stop-body  { fill: #d42020; stroke: #fff; stroke-width: .1; }
 .sign-stop-text  { fill: #fff; font-weight: 800; font-family: sans-serif; }
 .sign-yield-body { fill: #fff; stroke: #d42020; stroke-width: .22; stroke-linejoin: round; }
