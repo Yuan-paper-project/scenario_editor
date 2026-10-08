@@ -76,7 +76,7 @@ Every z the editor writes is `elev(s)` at the placement point plus a per-categor
   - `signs` — static Stop (`type="206"`) / Yield (`205`) signals → `#layer-signs` (`Schilder`). Town05/07/10HD only.
   - `speedSigns` — the `Speed_NN` objects (km/h) → `#layer-speeds` (`Tempolimits`, off by default, hidden with the labels when zoomed out). **Not the per-road `<type><speed>` records**: those say `mph`, but CARLA's `MapBuilder::CreateRoadSpeed` discards the unit and uses the raw number only to size Stop/Yield trigger boxes, while a vehicle's limit comes from the sign actors. Taken literally they put 89 km/h on Town03's residential streets. Only Town01–05 have signs.
 - The frontend entry points are `ObjectsManager.groundZAt(x, y)` (bare surface, 60 m search radius, `0` beyond that) and `ObjectsManager.surfaceZFor(type, x, y, prop)` (surface + the right clearance). **Anything that moves an object must call `surfaceZFor`** — placement, the drag `mouseup`, the X/Y fields, the prop-type swap.
-- `SPAWN_CLEARANCE` (`frontend/js/objects.js`): vehicles `0.5`, VRUs `0.6`, waypoints `0.5`, props none. **Always err high** — spawning below the surface fails hard in CARLA (`"collision at spawn position"`), while spawning above it is free because actors settle under physics within a tick. VRUs get more because the profile models the *reference line* and not kerbs or sidewalk height, and sidewalk lanes carry no `directionLine`, so a pedestrian on a kerb takes its z from the carriageway ~0.15 m below. A prop is a `<MiscObject>` with no settle behaviour, and its catalogue `z` is already a surface-relative offset.
+- `SPAWN_CLEARANCE` (`frontend/js/objects.js`): vehicles `0.5`, VRUs `0.6`, waypoints `0.5`, props none. **Always err high** — spawning below the surface fails hard in CARLA (`"collision at spawn position"`), while spawning above it is free because actors settle under physics within a tick. VRUs get more because the profile models the *reference line* and not kerbs or sidewalk height, and sidewalk lanes carry no `directionLine`, so a pedestrian on a kerb takes its z from the carriageway ~0.15 m below. A prop's catalogue `z` is a surface-relative offset, and for a prop it is **not** a clearance to err high on: it is the measured lift that puts a mesh with an off-base pivot onto the road — see "Static props".
 - **z recomputes on `mouseup`, not on `mousemove`** (`frontend/js/objects.js`). `_nearestLaneProjection` is a linear scan over every lane segment (~59k points on Town03), so per-frame recompute would stutter — and z has no visual effect in a top-down 2D view. A hand-typed z therefore survives until the object is next moved.
 - **`maps/Town10` uses an absolute geoid datum** (+50…+103 m; it is a georeferenced VectorZero map, *not* `Town10HD`). Actors placed there get those heights verbatim. The startup log flags it (`⚠ absolute datum?` from the per-town `elevation` range). Do not subtract a datum without first checking what CARLA reports for a waypoint on that map — if it builds the mesh from the same `.xodr`, the road really is up there and shifting it reintroduces the bug.
 - `backend/scenario_io.py` still defaults a missing z to `0.2` / `0.0`. That is now only a fallback for payloads the editor did not build (hand-written, LLM-generated); it is not the editor's behaviour.
@@ -611,16 +611,25 @@ per tick until the duration expires, not once.
 
 ## Static props (CARLA `static.prop.*`)
 
-16 curated props — cones, barriers, warning signs, debris, occluders — placeable on the map and
-exported as OpenSCENARIO `<MiscObject>`. They live in `AppState.staticObjects` as
-`{id, type:'prop', prop:'static.prop.*', x, y, z, yaw}` (`app.js:19`).
+79 curated props in six groups — Baustelle, Fahrbahn, Verlorene Ladung, Abfall & Container,
+Straßenmöbel, Garten & Freizeit — placeable on the map and exported as OpenSCENARIO `<MiscObject>`.
+The build has 109 `static.prop.*` blueprints; the 30 left out are deliberate: `mesh` (no mesh),
+`calibrator`/`screenshot1`/`screenshot2`/`autobahn` (test slabs), `brickwall` (a 4×3 m slab lying
+flat, not a wall), `busstoplb`/`haybale` (a rotated and a half-buried duplicate), the 0-height decals
+(`ampel`, `schild`, `graffiti`, `smiley`, `snow`, `stickers`, `dirt`), everything under ~0.2 m
+(`garbage01–06`, `brokentile01–04`, `colacan`, `mobile`, `wateringcan`, `platformgarbage01`) and
+`fountain` (wobbles and slides once physics is on). `walkingkid`/`walkingkidlarge` are flat too but
+kept: they are 3-D-illusion pavement paintings, a real phantom-pedestrian test case.
+`static.prop.bike helmet` has a **space in its blueprint id** — that is CARLA's spelling, and it works
+end to end. They live in `AppState.staticObjects` as
+`{id, type:'prop', prop:'static.prop.*', x, y, z, yaw}` (`AppState.staticObjects`, `app.js`).
 
 **The catalogue is split in two, deliberately mirroring the `vehicle_catalog.yaml` pattern.** The only
 shared column is the blueprint id; a mismatch fails loudly as a 400 at export, never silently.
 
 | File | Owns | Used by |
 |---|---|---|
-| `frontend/js/propCatalog.js` | label, group, glyph shapes, footprints, `facing`, `planRotate` | palette + map |
+| `frontend/js/propCatalog.js` | label, group, glyph shapes, footprints, `z` lift, `plan.off`, `facing`, `planRotate` | palette + map |
 | `../llm-scenario-gen/config/prop_catalog.yaml` | `category`, `mass`, `bbox`, `yaw_offset` | emitter + backend validator |
 
 `prop_spec()` (`../llm-scenario-gen/generator/xml_builder.py`) is the public accessor; `backend/scenario_io.py`
@@ -634,7 +643,7 @@ attribute sweep cannot rewrite prop values. Props get a teleport-only `<Private>
 `ControllerAction`** and never appear in a `ManeuverGroup` — they are not controllable and
 ScenarioRunner must not put them on the `ActorsWithController` blackboard.
 
-### Two traps that will silently produce the wrong scenario
+### Three traps that will silently produce the wrong scenario
 
 - **`miscObjectCategory` can override your blueprint.** ScenarioRunner maps category `barrier` →
   `static.prop.streetbarrier` and `guardRail` → `static.prop.chainbarrier`, *discarding* the `name`
@@ -645,6 +654,21 @@ ScenarioRunner must not put them on the `ActorsWithController` blackboard.
   (`h = radians(yaw + yaw_offset)`). An offline probe that photographed each mesh from two
   axis-aligned cameras got several props **180° wrong** by mistaking a back for a front. If a prop
   looks rotated in simulation, run it and fix the YAML — never compensate in the editor's yaw rules.
+  The sign convention is `yaw_offset = -(CARLA yaw the face points at h=0)`; every new oriented prop
+  was checked by spawning it at editor yaw 0 through ScenarioRunner's sequence and photographing it
+  from +X.
+- **ScenarioRunner runs every prop with physics ON, so a pivot above the mesh base drops it through
+  the world.** `CarlaDataProvider.request_new_actors` sends `SetSimulatePhysics(True)` for every
+  `misc` actor and `ActorTransformSetter` re-enables it after the Init teleport. (A bare
+  `spawn_actor` leaves physics off and the prop never moves, which is why a static probe hides
+  this.) `shoppingcart`, `travelcase`, `shoppingbag` and `shoppingtrolley` have their pivot at the
+  **top** of the mesh: at `z` 0 their collision starts ~1 m under the asphalt and they fall ~80 m to
+  the kill plane — the cart, in the catalogue since the start at `z: 0`, simply vanished in every
+  run. The per-prop `z` in `propCatalog.js` is the measured lift (cart 1.08 m), applied by
+  `surfaceZFor` at placement and on every move. A few props still settle slightly off because their
+  *collision* mesh differs from the visual one (`barrel` +0.25 m, `foodcart` sinks 0.53 m,
+  `haybalelb` rolls onto its end, `trafficcone02` topples at any z) — physics moves them back, so z
+  cannot fix it; each is noted in the YAML. `tests/probe_carla_props.py` re-measures all of this.
 
 ### Placement orientation is per-prop and per-lane
 
@@ -653,11 +677,16 @@ ScenarioRunner must not put them on the `ActorsWithController` blackboard.
 
 | Rule | Yaw | Props |
 |---|---|---|
-| `oncoming` | `laneYaw + 180` | barrier, warning trailer, both warning signs, billboard |
-| `along` | `laneYaw` | road plate |
+| `oncoming` | `laneYaw + 180` | barrier, chain barrier, warning trailer, both warning signs, billboard, the three `streetsign*` panels |
+| `along` | `laneYaw` | road plate, pavement paintings, benches, planters, clothes container, food cart |
 | `alongside` | `laneYaw` or `+180`, whichever turns the open side toward the road | bus stop, container |
-| `toward-road` | bearing to the nearest lane point | vending machine |
-| `none` | 0 | cones, barrel, bin, debris, cart |
+| `toward-road` | bearing to the nearest lane point | vending machine, ATM, mailbox, info board |
+| `none` | 0 | everything symmetric or with no front (cones, drums, boxes, luggage, bins, garden items) |
+
+The benches are `along`, not `alongside`, on purpose: which side the seat faces was not verifiable
+from the photos, and `along` only commits to the axis. The `streetsign*` meshes are **advertising /
+info panels, not traffic signs** — they were once dropped from the catalogue (along with
+`chainbarrier`) when filed under a „Verkehrsführung" group; they are back under accurate labels.
 
 This works because `map_renderer.py:639` **reverses `directionLine` for left-side lanes**, so
 `laneYaw` is true lane *travel* direction. Adjacent carriageways therefore yield yaws exactly 180°
@@ -684,10 +713,17 @@ applied to the body group alone, so the selection ring, hit target, yaw arrow an
 are all untouched.
 
 Footprints are real measured metres, taken from `bounding_box.extent` on the live meshes
-(`tests/probe_carla_mesh_dims.py`) — several were badly wrong before that: `container` is a ~1.9 m
+(`tests/probe_carla_props.py`, which supersedes `probe_carla_mesh_dims.py`) — several were badly wrong before that: `container` is a ~1.9 m
 skip, not a 6 m shipping container. Note the measured extents are in the **mesh** frame, so for any
 prop with a ±90 `yaw_offset` the axes must be swapped before use as `plan.len`/`plan.wid`, where +X
 means the facing.
+
+**Some meshes are not centred on their pivot**, and `plan.off` (`PropCatalog.planOffset`, editor
+frame, metres) says by how much: the container 1.1 m to one side, the slide 1.6 m, the shopping cart
+0.6 m. `_renderProp` shifts the body, its grab circle and its selection marks by it, while the group
+— the exported position and the rotation centre — stays on the pivot, so the yaw arrow does too.
+Drawing them centred put the marker beside where CARLA actually puts the object. Unlike the
+footprint, the offset is **not** scaled by `planSize`'s visibility clamp: it is a real position.
 
 `planSize()` clamps small footprints up to `MIN_PLAN_EXTENT` (1.2 m) so they stay visible.
 **Known limitation:** every prop below that floor draws at the floor, so the three cones
@@ -733,6 +769,7 @@ out; props carry a separate invisible hit circle, so clickability is not the blo
   - The summary above the list no longer prints `Ego-Fahrzeug` / `NPCs` / `Requisiten` counts or the NPC breakdown; the list is the same numbers with the objects reachable behind them. `Karte`, `Akteure mit Pfad` and the `Wetter` block stayed — the list cannot show those.
 - Modal editor state (`trajectoryMode`, `routeMode`, `activePathEventId`, `pendingTemplate`, `pendingProp`) lives on `AppState` and is what the `mapView.js` click handlers branch on.
 - The left toolbar is **tabbed** (`Akteure` | `Requisiten`, `data-toolbar-tab`). `toolbar.js` uses **event delegation** on `#toolbar`, not a load-time `.tool-btn` snapshot — prop tiles are rendered at runtime and a snapshot would silently miss them. Tab state is module-local, matching `_overviewPanelTab` in `properties.js`.
+- **The Requisiten tab is a search field over foldable group sections** (`PropCatalog.renderPanel`). At 79 props a flat two-column grid is a ~40-row scroll. Fold state is a per-viewer `localStorage` preference (`scenarioEditor.propSections`, a JSON array of folded group ids; not scenario state, not undo) and **defaults to everything past Baustelle and Fahrbahn folded**. A folded tile is still in the DOM but not visible, so **a test that clicks a tile outside those two groups must unfold it, search for it, or seed that key with `'[]'`** (`test_prop_yaw_e2e.py` does the last). While the search has text every section with a hit is shown open regardless of its fold state (`.searching`), and the fold state itself is left alone. The search's own `Esc` clears the field and `stopPropagation`s — otherwise it would also reach `mapView.js`'s `Esc` and disarm the prop tool just picked. Prop tile labels wrap to two lines rather than ellipsising.
 - Props reuse the `.actor-group` class (plus `.prop-group`), which gives them selection, body-drag and the `mapView.js` pan-exclusion list for free. If you add a new draggable map object, do the same rather than adding a class to three separate `closest()` checks.
 - Use `Toast.success/error/warn/info` for feedback (there are no `alert()` calls) and `await Confirm.show(msg)` for destructive actions. The dialog answers to **`Enter` = confirm, `Esc` = cancel** from anywhere, via a **capture-phase** `keydown` in `app.js` that `stopPropagation`s — without capture, `Esc` would also cancel the tool or the path being drawn *behind* the dialog, and `Enter` would reach the finish-path shortcut. `Confirm.isOpen` is there so other key handlers can stand down; `objects.js`'s `Enter` handler checks it.
 
@@ -1197,7 +1234,7 @@ bash run.sh 9090                 # terminal 1
 bash tests/run_tests.sh          # terminal 2 (EDITOR_URL overrides the target)
 ```
 
-That runs `test_normalization.py` (132 checks, no browser or server needed — the last three build a real `.xosc` through the sibling repo to pin cross-actor `after_event` name resolution), then `compare_xodr_lane_graph.py` (also no browser/server/CARLA — validates `backend/lane_graph_builder.py` against the 8 committed probed graphs), then the ten Playwright suites: props (54), prop yaw (23), templates (159), events (82), ego events (75), actor types (260, grows with the catalogue), elevation (33), route fidelity (9), undo (44), waypoints (67). All but the first two drive a real browser against a real server and a real export. **Restart the editor first if you changed `../llm-scenario-gen`** — otherwise the frontend shows new catalogue data while the backend exports the old, which looks like a test bug and is not one.
+That runs `test_normalization.py` (132 checks, no browser or server needed — the last three build a real `.xosc` through the sibling repo to pin cross-actor `after_event` name resolution), then `compare_xodr_lane_graph.py` (also no browser/server/CARLA — validates `backend/lane_graph_builder.py` against the 8 committed probed graphs), then the ten Playwright suites: props (72), prop yaw (23), templates (159), events (82), ego events (75), actor types (260, grows with the catalogue), elevation (33), route fidelity (9), undo (44), waypoints (67). All but the first two drive a real browser against a real server and a real export. **Restart the editor first if you changed `../llm-scenario-gen`** — otherwise the frontend shows new catalogue data while the backend exports the old, which looks like a test bug and is not one.
 
 `test_ego_events_e2e.py` is kept separate from `test_events_e2e.py` rather than folded in: the older suite's `EGO` fixture and every one of its assertions assume an inert ego (no events), which was true before the ego became a controllable actor and is the entire premise the new suite tests against.
 
@@ -1265,4 +1302,4 @@ Two measurement traps the bench cases added:
 - **A cross-street actor triggered at act start clears the junction before the ego arrives** (measured on Town05 junction 1863: adversary in at t=1.0 s, ego at t=5.9 s). The paths cross in space and never in time, and every speed and geometry check still passes. Trigger on `distance_to_ego` and assert `closest_approach`.
 - **Distance radii need margin for the corner a turning ego cuts.** A `distance_to_ego@35` missed by 0.6 m because a left-turning ego starts its swing before the junction centre; the condition never fired, the actor waited out the 60 s `TimeFallback`, and the run looked like a hang.
 
-`tests/` also holds two CARLA measurement probes. `probe_carla_mesh_dims.py` is reliable and is where the catalogue's measured footprints came from. `probe_carla_mesh_facing.py` **is not trustworthy for `yaw_offset`** — it got several props 180° wrong. Determine rotation by running the scenario and looking at it.
+`tests/` also holds CARLA measurement probes. `probe_carla_props.py` (private CARLA on 2050, `--all` for every blueprint in the build) is where the catalogue's footprints, pivot offsets and `z` lifts come from, and it reproduces ScenarioRunner's spawn-with-physics sequence; `probe_carla_mesh_dims.py` is its older, 16-prop predecessor. `probe_carla_mesh_facing.py` **is not trustworthy for `yaw_offset`** — it got several props 180° wrong. Determine rotation by running the scenario and looking at it.

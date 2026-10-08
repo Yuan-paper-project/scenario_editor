@@ -24,14 +24,27 @@ with sync_playwright() as p:
 
     check("no JS errors on load", not errors, str(errors[:3]))
     check("PropCatalog global exists", page.evaluate("!!window.PropCatalog"))
-    check("16 props in catalogue", page.evaluate("PropCatalog.ids().length") == 16,
-          str(page.evaluate("PropCatalog.ids().length")))
-    gone = page.evaluate("""() => ['chainbarrier','streetsign','streetsign01','dirtdebris02']
-        .filter(n => PropCatalog.get('static.prop.'+n) !== null)""")
-    check("removed props absent from catalogue", gone == [], str(gone))
+    n_props = page.evaluate("PropCatalog.ids().length")
+    check("79 props in catalogue", n_props == 79, str(n_props))
+    check("six prop groups", page.evaluate("PropCatalog.GROUPS.length") == 6)
+    check("every prop belongs to a declared group",
+          page.evaluate("""() => { const g = PropCatalog.GROUPS.map(x => x.id);
+              return PropCatalog.ids().every(i => g.includes(PropCatalog.get(i).group)); }"""))
     check("Verkehrsfuehrung group removed",
           page.evaluate("PropCatalog.GROUPS.filter(g=>g.id==='control').length") == 0)
+    # streetsign* are advertising / info panels, not traffic signs — the reason
+    # they were once dropped was a mislabel, so pin the label.
+    check("streetsign is not labelled as a traffic sign",
+          "Verkehr" not in page.evaluate("PropCatalog.label('static.prop.streetsign')"))
     check("dirtdebris01 kept", page.evaluate("!!PropCatalog.get('static.prop.dirtdebris01')"))
+    # No prop has physics: a pivot above the mesh base must be lifted by `z`.
+    check("shoppingcart lifted out of the road (measured 1.08 m)",
+          abs(page.evaluate("PropCatalog.defaultZ('static.prop.shoppingcart')") - 1.08) < 1e-9)
+    off = page.evaluate("PropCatalog.planOffset('static.prop.container')")
+    check("container carries its measured pivot offset",
+          abs(off["x"]) < 1e-9 and abs(off["y"] - 1.1) < 1e-9, str(off))
+    check("blueprint id with a space resolves",
+          page.evaluate("!!PropCatalog.get('static.prop.bike helmet')"))
 
     # every prop declares a known facing rule
     bad = page.evaluate("""() => { const ok=['none','oncoming','along','alongside','toward-road'];
@@ -41,7 +54,7 @@ with sync_playwright() as p:
     # ── Toolbar tabs ──────────────────────────────────────────────────────────
     n_tiles = page.evaluate(
         "document.querySelectorAll('[data-toolbar-panel=\"props\"] .tool-btn').length")
-    check("16 prop tiles rendered", n_tiles == 16, f"got {n_tiles}")
+    check("79 prop tiles rendered", n_tiles == 79, f"got {n_tiles}")
     check("props panel hidden initially",
           page.locator('[data-toolbar-panel="props"]').is_hidden())
     page.click('[data-toolbar-tab="props"]')
@@ -51,6 +64,32 @@ with sync_playwright() as p:
           page.locator('[data-toolbar-panel="actors"]').is_hidden())
     check("prop tiles have glyph svg",
           page.evaluate("!!document.querySelector('[data-toolbar-panel=\"props\"] .tool-btn svg')"))
+
+    # ── Sections fold, search filters across them ─────────────────────────────
+    vis = lambda pid: page.locator(f'.tool-btn[data-prop="{pid}"]').is_visible()
+    check("work-zone section open by default", vis("static.prop.trafficcone01"))
+    check("later sections folded by default", not vis("static.prop.container"))
+    page.click('.prop-section[data-group="waste"] .prop-section-head')
+    check("clicking a heading unfolds it", vis("static.prop.container"))
+    page.click('.prop-section[data-group="waste"] .prop-section-head')
+    check("clicking again folds it", not vis("static.prop.container"))
+    page.fill(".prop-search", "container")
+    check("search reaches a folded section", vis("static.prop.container"))
+    check("search hides non-matching tiles", not vis("static.prop.trafficcone01"))
+    check("search hides sections with no hit",
+          page.locator('.prop-section[data-group="workzone"]').is_hidden())
+    check("search matches the blueprint id too",
+          page.evaluate("""() => { const i = document.querySelector('.prop-search');
+              i.value = 'trashcan04'; i.dispatchEvent(new Event('input'));
+              return [...document.querySelectorAll('[data-toolbar-panel="props"] .tool-btn')]
+                .filter(b => !b.classList.contains('hidden')).map(b => b.dataset.prop); }""")
+          == ["static.prop.trashcan04"])
+    page.fill(".prop-search", "xyzzy")
+    check("empty-result note shown", page.locator(".prop-search-empty").is_visible())
+    page.focus(".prop-search")
+    page.keyboard.press("Escape")
+    check("Esc clears the search", page.input_value(".prop-search") == "")
+    check("cleared search restores fold state", not vis("static.prop.container"))
 
     # ── Map ───────────────────────────────────────────────────────────────────
     page.select_option("#map-select", "Town01")
@@ -104,9 +143,11 @@ with sync_playwright() as p:
     check("Escape disarms tool", page.evaluate("AppState.activeTool") is None)
     check("Escape clears pendingProp", page.evaluate("AppState.pendingProp") is None)
 
+    page.fill(".prop-search", "Container")
     page.click('.tool-btn[data-prop="static.prop.container"]')
     page.mouse.click(cx - 220, cy + 140)
     page.keyboard.press("Escape")
+    page.fill(".prop-search", "")
     check("container has yaw arrow (oriented)",
           page.evaluate("document.querySelectorAll('#layer-props .yaw-arrow').length") == 1)
 
@@ -119,7 +160,7 @@ with sync_playwright() as p:
     check("prop-type row visible", page.locator("#prop-type-row").is_visible())
     check("NPC section hidden for prop", page.locator("#props-npc-section").is_hidden())
     check("title uses prop label",
-          "KEGEL" in page.evaluate("document.getElementById('props-title').textContent").upper(),
+          "LEITFASS" in page.evaluate("document.getElementById('props-title').textContent").upper(),
           page.evaluate("document.getElementById('props-title').textContent"))
 
     page.fill("#prop-z", "0.1")
@@ -224,8 +265,13 @@ with sync_playwright() as p:
             return r.status;
         }""", prop_id)
 
-    check("export: removed prop id -> HTTP 400",
-          post_status("static.prop.chainbarrier") == 400)
+    # calibrator exists in CARLA but is deliberately left out of the catalogue
+    check("export: real-but-uncatalogued prop id -> HTTP 400",
+          post_status("static.prop.calibrator") == 400)
+    check("export: re-added chainbarrier -> HTTP 200",
+          post_status("static.prop.chainbarrier") == 200)
+    check("export: blueprint id with a space -> HTTP 200",
+          post_status("static.prop.bike helmet") == 200)
     check("export: unknown prop id -> HTTP 400",
           post_status("static.prop.nonexistent") == 400)
 

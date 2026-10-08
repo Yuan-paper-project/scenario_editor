@@ -1141,11 +1141,21 @@
     g.setAttribute('data-id', prop.id);
     g.setAttribute('transform', `translate(${prop.x},${prop.y}) rotate(${prop.yaw || 0})`);
 
+    // Some meshes are not centred on their pivot (the container sits 1.1 m to
+    // one side of it), so the body, its grab target and its selection marks
+    // are drawn shifted by the catalogue's measured offset. The group itself
+    // stays on the pivot — that is the exported position and the point the
+    // prop rotates about, which is why the yaw arrow is left outside.
+    const off = cat.planOffset(prop.prop);
+    const meshG = (off.x || off.y)
+      ? _svgEl('g', { transform: `translate(${off.x},${off.y})` })
+      : g;
+
     // Invisible grab target: a real cone is ~4 px wide at default zoom, too
     // small to click or drag reliably. Same trick as the yaw-arrow handle.
     // Named, because the yaw handle is placed clear of exactly this circle.
     const grabR = Math.max(size * 0.6, 1.2);
-    g.appendChild(_svgEl('circle', { r: grabR, fill: 'transparent' }));
+    meshG.appendChild(_svgEl('circle', { r: grabR, fill: 'transparent' }));
 
     // planRotate is cosmetic: for props whose yaw means "the way the face
     // points", the body sits ACROSS that direction (a barrier blocks the lane
@@ -1157,13 +1167,14 @@
       ...(spin ? { transform: `rotate(${spin})` } : {}),
     });
     cat.planShapes(prop.prop).forEach(s => body.appendChild(s));
-    g.appendChild(body);
+    meshG.appendChild(body);
 
     // The body is drawn spun by planRotate, which swaps its extent — frame what
     // is on screen, not the catalogue's unrotated footprint.
     const spun = Math.abs(spin % 180) === 90;
-    g.appendChild(_buildSelectionMarks(
+    meshG.appendChild(_buildSelectionMarks(
       spun ? fp.wid : fp.len, spun ? fp.len : fp.wid));
+    if (meshG !== g) g.appendChild(meshG);
 
     // Label only while selected: props are placed in runs (a six-cone taper),
     // and one label per cone buries the glyphs it is meant to annotate.

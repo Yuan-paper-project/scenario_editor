@@ -42,7 +42,7 @@ still exports the old — which reads as a test bug but is not one.
 
 | File | Checks | Covers |
 |---|---|---|
-| `test_props_e2e.py` | 54 | catalogue contents, toolbar tabs, sticky placement, Shift lane-snap, selection/properties, prop-type swap, drag without panning, save/load round-trip, `.xosc` export incl. `MiscObject` categories and `yaw_offset`, 400 on unknown/removed ids |
+| `test_props_e2e.py` | 72 | catalogue contents (79 props, measured `z` lift and pivot offset), toolbar tabs, Requisiten search and folding, sticky placement, Shift lane-snap, selection/properties, prop-type swap, drag without panning, save/load round-trip, `.xosc` export incl. `MiscObject` categories and `yaw_offset`, 400 on unknown/uncatalogued ids, 200 on an id with a space |
 | `test_prop_yaw_e2e.py` | 23 | per-prop facing rules on a **real two-way road** (Town01 road 8, lanes ±1 at exactly 180°), free-vs-Shift orientation, far-from-lane fallback, manual-override persistence |
 | `test_normalization.py` | 101 | `validate_scenario_params` in isolation: every silent coercion, both trigger rewrites, all clamps, the entity-ref mapping that `scenarioIO.js` duplicates, the actor-type whitelist, and the ego's shared `_normalize_actor` path (self-reference rejection, the `distance_to_ego`→`simulation_time` coercion, derived `route_waypoints`) |
 | `test_actor_types_e2e.py` | 260 | all 12 actor types — toolbar tile and German label, placement (spawn-snap vs road-facing), map marker shape/colour/footprint, and the entity each one exports: element kind, blueprint id, category, bounding box, `maxSpeed`, controller module; plus `assign_route` survival, the walker-first base-template fork, and the 400 on an unknown type |
@@ -352,6 +352,18 @@ python3 tests/bench/extract_bench.py bench.html tests/bench
 ```
 
 ## CARLA probes (not tests)
+
+`probe_carla_props.py` measures every catalogued prop the way ScenarioRunner
+spawns it — footprint, pivot offset, and where it settles with physics on,
+both at its catalogue `z` lift and at `z` 0 (a pivot-at-top prop falls through
+the world at 0). It calls `load_world`, so it targets a private CARLA on
+**port 2050** like `capture_carla_aerial.py`; `--all` covers every
+`static.prop.*` in the build instead of just the catalogue:
+
+```bash
+cd ~/yungloon/fail2drive/f2d_carla && ./CarlaUE4.sh -carla-port=2050 -RenderOffScreen -nosound &
+/home/dellpro2/Antonio/carla-venv/bin/python tests/probe_carla_props.py
+```
 
 `probe_carla_mesh_facing.py` and `probe_carla_mesh_dims.py` are one-off
 measurement tools, not assertions. They need a running CARLA on port 3000 and

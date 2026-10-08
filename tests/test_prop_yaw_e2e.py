@@ -27,6 +27,9 @@ def wrap(d):
 with sync_playwright() as p:
     b = p.chromium.launch()
     page = b.new_page(viewport={"width": 1600, "height": 900})
+    # Start with every Requisiten section unfolded: this suite places props
+    # from several groups and is about yaw, not about the panel's fold state.
+    page.add_init_script("localStorage.setItem('scenarioEditor.propSections', '[]')")
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
 

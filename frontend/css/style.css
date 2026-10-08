@@ -257,6 +257,39 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
   padding: 8px 6px 4px; text-align: center;
 }
 
+/* Requisiten: search + foldable group sections (propCatalog.renderPanel) */
+.prop-search {
+  width: calc(100% - 8px); margin: 2px 4px 4px; padding: 4px 6px;
+  font-size: 11px; border: 1px solid var(--border); border-radius: 5px;
+  background: var(--bg); color: var(--text);
+}
+.prop-search:focus { outline: none; border-color: var(--accent); }
+.prop-section { width: 100%; display: flex; flex-direction: column; align-items: center; }
+.prop-section-head {
+  display: flex; align-items: center; gap: 4px;
+  border: 0; border-left: 3px solid var(--group-color, var(--border));
+  background: transparent; cursor: pointer; padding: 6px 6px 3px;
+  text-align: left; font-family: inherit; box-sizing: border-box; width: 100%;
+}
+.prop-section-head:hover { color: var(--text); background: var(--panel2); }
+.prop-section-name { flex: 1; line-height: 1.25; }
+/* Prop labels are longer than the actor ones ("Kettensperre", "Pappe geknickt")
+   and the toolbar is two 64px tiles wide, so they wrap to two lines instead of
+   ellipsising — a truncated name is useless when the glyphs look alike. */
+.prop-section .tool-btn span {
+  white-space: normal; line-height: 1.15; text-align: center;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow-wrap: anywhere; hyphens: auto;
+}
+.prop-section .tool-grid { align-items: start; }
+.prop-section-count {
+  font-weight: 600; letter-spacing: 0; padding: 0 4px; border-radius: 6px;
+  background: var(--panel2);
+}
+.prop-section-caret { display: inline-block; transition: transform .15s; }
+.prop-section.collapsed:not(.searching) .prop-section-caret { transform: rotate(-90deg); }
+.prop-section.collapsed:not(.searching) .tool-grid { display: none; }
+
 /* ── Map container ───────────────────────────────────────── */
 #map-container {
   flex: 1; position: relative; overflow: hidden; background: #e8edf2;
