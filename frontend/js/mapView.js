@@ -81,6 +81,13 @@
   // status badges. Those annotate a measurement, not an object.
   const MAP_LABEL_M  = 3.2;   // every object label's font-size, in world metres
   const LABEL_MIN_PX = 6;     // below this on screen, every object label is hidden
+  // ...and above this it stops growing. A label is a name, not a measurement,
+  // so capping it when zoomed IN tells no lie about scale (the reverse of the
+  // floor above) — uncapped, 3.2 m reached ~60 px at lane zoom and a landmark's
+  // name sat across the vehicle being edited. Applied as a CSS font-size on
+  // `.map-label` via --map-label-size, which overrides every call site's
+  // font-size attribute at once.
+  const LABEL_MAX_PX = 15;
 
 
   const _clampZoom = z => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
@@ -99,7 +106,7 @@
   // ── Scale ruler ──────────────────────────────────────────────────────────────
   const _scaleBar   = document.querySelector('.scale-bar');
   const _scaleLabel = document.getElementById('scale-label');
-  const _NICE_DISTS = [5, 10, 20, 50, 100, 200, 500, 1000, 2000];
+  const _NICE_DISTS = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000];
   const _TARGET_PX  = 120;  // target bar width in screen pixels
 
   /** Screen pixels per world metre, or null before the map has a layout. */
@@ -140,6 +147,8 @@
     const pxPerMetre = _pxPerMetre();
     if (pxPerMetre == null) return;
     svg.classList.toggle('map-labels-hidden', pxPerMetre * MAP_LABEL_M < LABEL_MIN_PX);
+    const size = Math.min(MAP_LABEL_M, LABEL_MAX_PX / pxPerMetre);
+    svg.style.setProperty('--map-label-size', `${size.toFixed(3)}px`);
   }
 
   function _applyTransform() {
@@ -707,11 +716,15 @@
     const configured = (action?.events || []).length > 0;
     const lastEvent = configured ? action.events[action.events.length - 1] : null;
 
-    // Simplified traffic-light icon: a bright coloured dot with glow,
-    // large enough to be visible at the default zoom level.
+    // A compact signal head: dark housing, three lamps. Every lamp is dark until
+    // the scenario forces a state on this signal, and then exactly the states
+    // its events set are lit — the old marker was an 8 m red disc with a glow,
+    // red whether or not anything was configured, and at lane zoom it was the
+    // loudest thing on the map and sat over the crosswalk it belongs to.
+    const lit = new Set((action?.events || []).map(ev => ev.state || 'red'));
     const g = _svgEl('g', {
       transform: `translate(${x},${y})`,
-      class: `traffic-light${selected ? ' selected' : ''}`,
+      class: `traffic-light${selected ? ' selected' : ''}${configured ? ' configured' : ''}`,
       'data-traffic-light-id': id,
     });
     g.addEventListener('click', e => {
@@ -721,24 +734,31 @@
       TrafficSignals.select(id);
     });
 
-    // Selection marks, sized to the glyph's own r=4 glow below. Same helper as
-    // actors and props: one selection language for everything on the map.
-    g.appendChild(_buildSelectionMarks(8, 8));
+    // Invisible hit target, larger than the housing so it stays clickable at
+    // town zoom — the same trick props and trigger points use.
+    g.appendChild(_svgEl('circle', { cx: '0', cy: '0', r: '2.4', fill: 'transparent' }));
 
-    // Outer glow
-    g.appendChild(_svgEl('circle', {
-      cx: '0', cy: '0', r: '4',
-      class: 'traffic-light-glow',
-      fill: configured ? '#4488ff' : 'red', 'fill-opacity': '0.15',
+    const W = 1.5, H = 3.7;
+    g.appendChild(_svgEl('rect', {
+      x: String(-W / 2), y: String(-H / 2), width: String(W), height: String(H), rx: '0.45',
+      class: 'traffic-light-housing',
     }));
+    [['red', -1.1], ['yellow', 0], ['green', 1.1]].forEach(([state, cy]) => {
+      g.appendChild(_svgEl('circle', {
+        cx: '0', cy: String(cy), r: '0.46',
+        class: `traffic-light-lamp lamp-${state}${lit.has(state) ? ' lit' : ''}`,
+      }));
+    });
 
-    // Main circle dot — the most visible element
-    g.appendChild(_svgEl('circle', {
-      cx: '0', cy: '0', r: '2.2',
-      class: 'traffic-light-dot',
-      fill: configured ? '#4488ff' : 'red',
-      stroke: '#ffffff', 'stroke-width': '0.5',
-    }));
+    // Selection marks around the housing. Same helper as actors and props: one
+    // selection language for everything on the map.
+    g.appendChild(_buildSelectionMarks(W + 0.6, H + 0.6));
+
+    const title = _svgEl('title', {});
+    title.textContent = configured
+      ? `Ampel ${id} — ${action.events.length} Event${action.events.length === 1 ? '' : 's'}`
+      : `Ampel ${id} — klicken, um ihren Zustand im Szenario festzulegen`;
+    g.appendChild(title);
 
     layerTrafficLights.appendChild(g);
   }
@@ -949,12 +969,12 @@
         'font-size': String(MAP_LABEL_M),
         class: 'map-label building-label',
       });
-      label.textContent = b.type;
+      label.textContent = _landmarkLabel(b.type);
       g.appendChild(label);
       // Not a tooltip the user can hover for (the group is pointer-events:none)
       // — it is there for anyone reading the DOM, and costs nothing.
       const title = _svgEl('title', {});
-      title.textContent = b.name ? `${b.type} — ${b.name}` : b.type;
+      title.textContent = b.name ? `${_landmarkLabel(b.type)} — ${b.name}` : _landmarkLabel(b.type);
       g.appendChild(title);
       layerBuildings.appendChild(g);
     }
@@ -1110,14 +1130,8 @@
 
     // Label. `.map-label` is what _updateLabelVisibility hides below the
     // legibility floor; `.actor-label` carries nothing but this one's styling.
-    const label = _svgEl('text', {
-      x: 0, y: -Math.max(size.w, size.h) / 2 - 2.0,
-      'text-anchor': 'middle', 'font-size': String(MAP_LABEL_M),
-      class: 'map-label actor-label',
-      fill: '#fff', style: 'pointer-events:none'
-    });
-    label.textContent = _actorMapLabel(actor);
-    g.appendChild(label);
+    g.appendChild(_uprightLabel(_actorMapLabel(actor), actor.yaw,
+      Math.max(size.w, size.h) / 2 + 1.2, 'map-label actor-label'));
 
     // Yaw arrow (vehicles and pedestrians — not static objects). The radius
     // passed is the marker's own, so the rotate handle lands outside it.
@@ -1192,13 +1206,8 @@
     // Label only while selected: props are placed in runs (a six-cone taper),
     // and one label per cone buries the glyphs it is meant to annotate.
     if (sel) {
-      const label = _svgEl('text', {
-        x: 0, y: -size / 2 - 1.8, 'text-anchor': 'middle',
-        'font-size': String(MAP_LABEL_M), class: 'map-label',
-        fill: '#fff', style: 'pointer-events:none',
-      });
-      label.textContent = _actorMapLabel(prop);
-      g.appendChild(label);
+      g.appendChild(_uprightLabel(_actorMapLabel(prop), prop.yaw,
+        size / 2 + 1.0, 'map-label'));
     }
 
     // Only oriented props get a yaw handle — a cone or barrel has no heading.
@@ -1209,8 +1218,80 @@
     layerProps.appendChild(g);
   }
 
+  // ── Undo / redo ──────────────────────────────────────────────────────────────
+  // One path for Strg+Z / Strg+Y and the header's two buttons.
+  const _btnUndo = document.getElementById('btn-undo');
+  const _btnRedo = document.getElementById('btn-redo');
+
+  function _stepHistory(wantRedo) {
+    const step = wantRedo ? UndoStack.redo() : UndoStack.undo();
+    _refreshHistoryButtons();
+    if (!step) {
+      Toast.info(wantRedo ? 'Nichts zu wiederholen' : 'Nichts r\u00fcckg\u00e4ngig zu machen');
+      return;
+    }
+    const verb = wantRedo ? 'Wiederholt' : 'R\u00fcckg\u00e4ngig';
+    Toast.info(step.label ? `${verb}: ${step.label}` : verb);
+  }
+
+  // UndoStack has no event of its own, but every push happens inside one of
+  // AppState's mutators, which emit — so re-read the depths after any of them,
+  // once per frame however many fire.
+  let _historyRaf = 0;
+  function _refreshHistoryButtons() {
+    if (_historyRaf) return;
+    _historyRaf = requestAnimationFrame(() => {
+      _historyRaf = 0;
+      if (_btnUndo) _btnUndo.disabled = !UndoStack.length;
+      if (_btnRedo) _btnRedo.disabled = !UndoStack.redoLength;
+    });
+  }
+  _btnUndo?.addEventListener('click', () => _stepHistory(false));
+  _btnRedo?.addEventListener('click', () => _stepHistory(true));
+  ['change', 'actorUpdated', 'actorRemoved', 'stateLoaded', 'selectionChanged',
+   'trafficSignalUpdated'].forEach(ev => AppState.on(ev, _refreshHistoryButtons));
+
   function _actorMapLabel(actor) {
     return AppState.actorLabel(actor, { short: true });
+  }
+
+  /* An object's name, drawn inside its rotated group but counter-rotated so it
+   * always reads horizontally — it used to turn with the vehicle, so anything
+   * driving north–south was labelled sideways or upside down. It goes on the
+   * screen side the yaw arrow is NOT on (below when the nose points up), so
+   * the two never overlap; `gap` is the distance from the pivot to the near
+   * edge of the text, independent of the (zoom-capped) font size thanks to the
+   * baseline choice. */
+  function _uprightLabel(text, yaw, gap, cls) {
+    const deg = yaw || 0;
+    const below = Math.sin(deg * Math.PI / 180) < -0.2;
+    const wrap = _svgEl('g', { transform: `rotate(${-deg})`, style: 'pointer-events:none' });
+    const label = _svgEl('text', {
+      x: 0, y: below ? gap : -gap,
+      'text-anchor': 'middle', 'font-size': String(MAP_LABEL_M),
+      'dominant-baseline': below ? 'hanging' : 'auto',
+      class: cls, fill: '#fff',
+    });
+    label.textContent = text;
+    wrap.appendChild(label);
+    return wrap;
+  }
+
+  // German names for maps/special_buildings.csv's building_type. Anything not
+  // listed falls back to the raw key with underscores as spaces.
+  const LANDMARK_LABELS = {
+    bus_stop: 'Haltestelle', store: 'Geschäft', park: 'Park', restaurant: 'Restaurant',
+    parking: 'Parkplatz', farm: 'Bauernhof', playground: 'Spielplatz', cafe: 'Café',
+    hotel: 'Hotel', sports_facility: 'Sportplatz', gas_station: 'Tankstelle',
+    warehouse: 'Lager', supermarket: 'Supermarkt', shopping_mall: 'Einkaufszentrum',
+    museum: 'Museum', library: 'Bibliothek', lake: 'See', bakery: 'Bäckerei',
+    woods: 'Wald', university: 'Universität', train_station: 'Bahnhof',
+    theater: 'Theater', river: 'Fluss', house: 'Haus', factory: 'Fabrik',
+    cinema: 'Kino', church: 'Kirche', beach: 'Strand', atm: 'Geldautomat',
+    school: 'Schule', hospital: 'Krankenhaus', police: 'Polizei', bank: 'Bank',
+  };
+  function _landmarkLabel(type) {
+    return LANDMARK_LABELS[type] || String(type || '').replace(/_/g, ' ');
   }
 
   /* The selection mark: four corner brackets on the object's own box.
@@ -1797,24 +1878,14 @@
     // actor per entry and understood no other kind of edit.
     if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) {
       e.preventDefault();
-      const wantRedo = e.shiftKey;
-      const step = wantRedo ? UndoStack.redo() : UndoStack.undo();
-      if (!step) {
-        Toast.info(wantRedo ? 'Nichts zu wiederholen' : 'Nichts r\u00fcckg\u00e4ngig zu machen');
-        return;
-      }
-      const verb = wantRedo ? 'Wiederholt' : 'R\u00fcckg\u00e4ngig';
-      Toast.info(step.label ? `${verb}: ${step.label}` : verb);
+      _stepHistory(e.shiftKey);
       return;
     }
 
     // Ctrl+Y — redo, for the keyboards that expect it there.
     if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
       e.preventDefault();
-      const step = UndoStack.redo();
-      Toast.info(step
-        ? (step.label ? `Wiederholt: ${step.label}` : 'Wiederholt')
-        : 'Nichts zu wiederholen');
+      _stepHistory(true);
       return;
     }
 
@@ -1871,6 +1942,7 @@
     layerTogglesEl.classList.remove('hidden');
     // Same gate for the zoom cluster: neither means anything without a map.
     document.getElementById('map-view-controls')?.classList.remove('hidden');
+    document.getElementById('scale-ruler')?.classList.remove('hidden');
 
     const pairs = [
       { id: 'toggle-crosswalks',     get layer() { return layerCrosswalks; } },

@@ -100,12 +100,14 @@
 
   const controlsHtml = `
     <div id="sim-controls" class="sim-controls hidden">
-      <button id="sim-play"  class="btn btn-small btn-primary" title="Vorschau abspielen">Play</button>
-      <button id="sim-pause" class="btn btn-small btn-secondary hidden" title="Vorschau anhalten">Pause</button>
-      <button id="sim-stop"  class="btn btn-small btn-danger hidden" title="Vorschau beenden und zurücksetzen">Stop</button>
+      <button id="sim-play"  class="btn btn-small btn-primary" title="Vorschau abspielen (Leertaste)"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 1l7 4-7 4z"/></svg><span id="sim-play-text">Abspielen</span></button>
+      <button id="sim-pause" class="btn btn-small btn-secondary hidden" title="Vorschau anhalten (Leertaste)"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 1h2.2v8H2zM5.8 1H8v8H5.8z"/></svg>Pause</button>
+      <button id="sim-stop"  class="btn btn-small btn-danger hidden" title="Vorschau beenden und zurücksetzen (Esc)"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1.5 1.5h7v7h-7z"/></svg>Stopp</button>
+      <span class="sim-sep" aria-hidden="true"></span>
+      <label for="sim-speed" class="sim-speed-caption">Tempo</label>
       <input  id="sim-speed" type="range" min="0.25" max="4" step="0.25" value="1" title="Abspielgeschwindigkeit">
-      <span   id="sim-speed-label" class="sim-speed-label">1.0x</span>
-      <span   id="sim-time-label"  class="sim-time-label">0.0s</span>
+      <span   id="sim-speed-label" class="sim-speed-label">1×</span>
+      <span   id="sim-time-label"  class="sim-time-label" title="Simulierte Zeit">0.0 s</span>
       <div    id="sim-progress-bar" class="sim-progress-bar"><div id="sim-progress-fill" class="sim-progress-fill"></div></div>
     </div>`;
 
@@ -117,6 +119,7 @@
 
   const simControls  = document.getElementById('sim-controls');
   const btnPlay      = document.getElementById('sim-play');
+  const playText     = document.getElementById('sim-play-text');
   const btnPause     = document.getElementById('sim-pause');
   const btnStop      = document.getElementById('sim-stop');
   const speedSlider  = document.getElementById('sim-speed');
@@ -1318,7 +1321,7 @@
     _animId = null;
 
     btnPlay.classList.remove('hidden');
-    btnPlay.textContent = 'Resume';
+    playText.textContent = 'Fortsetzen';
     btnPause.classList.add('hidden');
   }
 
@@ -1342,10 +1345,10 @@
 
     document.body.classList.remove('simulating');
     btnPlay.classList.remove('hidden');
-    btnPlay.textContent = 'Play';
+    playText.textContent = 'Abspielen';
     btnPause.classList.add('hidden');
     btnStop.classList.add('hidden');
-    timeLabel.textContent = '0.0s';
+    timeLabel.textContent = '0.0 s';
     progressFill.style.width = '0%';
 
     // After the originals are back, so the restore is not recorded either.
@@ -1387,7 +1390,7 @@
     }
     _renderBadges();
 
-    timeLabel.textContent = `${_simTime.toFixed(1)}s`;
+    timeLabel.textContent = `${_simTime.toFixed(1)} s`;
     progressFill.style.width = `${Math.min(100, (_simTime / _horizon) * 100)}%`;
 
     _animId = requestAnimationFrame(_tick);
@@ -1446,7 +1449,8 @@
 
   speedSlider.addEventListener('input', () => {
     _speed = parseFloat(speedSlider.value);
-    speedLabel.textContent = `${_speed.toFixed(2)}x`;
+    // 0.25× / 0.5× / 1× / 1.75× — no trailing zeros, so the label stops jumping width.
+    speedLabel.textContent = `${parseFloat(_speed.toFixed(2))}×`;
   });
 
   // No click-to-seek: unlike the old pure-interpolation preview, this is a

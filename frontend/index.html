@@ -73,13 +73,66 @@
         </label>
       </div>
     </div>
+    <!-- Umgebung: time of day, weather presets and the raw sliders. It used to
+         be a full-width bar under the map; it is set rarely, and that bar cost
+         68 px of map height. weather.js binds the w-* / wv-* ids and fills the
+         summary + presets; dropdown.js does the open/close. -->
+    <div id="env-menu" class="menu" data-dropdown>
+      <button type="button" id="env-menu-btn" class="btn btn-secondary menu-btn"
+              data-dropdown-button title="Wetter und Tageszeit" aria-haspopup="true" aria-expanded="false">
+        <svg class="btn-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><span id="env-summary">Klar · Tagsüber</span> <span class="menu-caret">&#9662;</span>
+      </button>
+      <div id="env-menu-panel" class="menu-panel env-panel hidden" data-dropdown-panel
+           role="group" aria-label="Wetter und Tageszeit">
+        <div class="env-row">
+          <label for="w-time">Tageszeit</label>
+          <select id="w-time">
+            <option value="daytime">Tagsüber</option>
+            <option value="morning">Morgen</option>
+            <option value="noon">Mittag</option>
+            <option value="afternoon">Nachmittag</option>
+            <option value="dusk">Dämmerung</option>
+            <option value="nighttime">Nacht</option>
+          </select>
+        </div>
+        <div class="env-section-label">Voreinstellung</div>
+        <div id="env-presets" class="env-presets"></div>
+        <div class="env-section-label">Feinabstimmung</div>
+        <div class="env-sliders">
+          <div class="weather-item">
+            <label>Nebel <span class="w-val" id="wv-fog">0.0</span></label>
+            <input type="range" id="w-fog" min="0" max="1" step="0.05" value="0">
+          </div>
+          <div class="weather-item">
+            <label>Regen <span class="w-val" id="wv-rainy">0.0</span></label>
+            <input type="range" id="w-rainy" min="0" max="1" step="0.05" value="0">
+          </div>
+          <div class="weather-item">
+            <label>Wolken <span class="w-val" id="wv-cloudy">0.0</span></label>
+            <input type="range" id="w-cloudy" min="0" max="1" step="0.05" value="0">
+          </div>
+          <div class="weather-item">
+            <label>Sonne <span class="w-val" id="wv-sunny">0.0</span></label>
+            <input type="range" id="w-sunny" min="0" max="1" step="0.05" value="0">
+          </div>
+          <div class="weather-item">
+            <label>Nasse Str. <span class="w-val" id="wv-wet_road">0.0</span></label>
+            <input type="range" id="w-wet_road" min="0" max="1" step="0.05" value="0">
+          </div>
+          <div class="weather-item">
+            <label>Schnee <span class="w-val" id="wv-snowy">0.0</span></label>
+            <input type="range" id="w-snowy" min="0" max="1" step="0.05" value="0">
+          </div>
+          <div class="weather-item">
+            <label>Staub <span class="w-val" id="wv-dust_storm">0.0</span></label>
+            <input type="range" id="w-dust_storm" min="0" max="1" step="0.05" value="0">
+          </div>
+          </div>
+      </div>
+    </div>
   </div>
   <div class="header-right">
-    <button id="btn-help" class="btn btn-secondary" title="Anleitung anzeigen">? Hilfe</button>
-    <label id="btn-import-map-label" class="btn btn-secondary" title="CARLA-Karte (.xodr) importieren">
-      &#8853; Karte importieren
-      <input type="file" id="btn-import-map-input" accept=".xodr" style="display:none">
-    </label>
+    <button id="btn-help" class="btn btn-secondary btn-with-icon" title="Anleitung anzeigen"><svg class="btn-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M6.2 6.3a1.9 1.9 0 1 1 2.6 1.8c-.5.2-.8.6-.8 1.1v.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="11.6" r=".85" fill="currentColor"/></svg>Hilfe</button>
     <!-- Random scenario generator. The type rows are filled in by
          scenarioGenerator.js from its own TYPES table, so a new type needs no
          markup; the seed field reproduces a scenario exactly. -->
@@ -87,7 +140,7 @@
       <button type="button" id="gen-menu-btn" class="btn btn-secondary menu-btn"
               data-dropdown-button title="Zufälliges Szenario auf der geladenen Karte erzeugen"
               aria-haspopup="true" aria-expanded="false">
-        &#9861; Generieren <span class="menu-caret">&#9662;</span>
+        <svg class="btn-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.3" y="2.3" width="11.4" height="11.4" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="5.5" cy="5.5" r="1.1" fill="currentColor"/><circle cx="10.5" cy="10.5" r="1.1" fill="currentColor"/><circle cx="8" cy="8" r="1.1" fill="currentColor"/></svg>Generieren <span class="menu-caret">&#9662;</span>
       </button>
       <div id="gen-menu-panel" class="menu-panel menu-panel-right hidden" data-dropdown-panel
            role="menu" aria-label="Szenario generieren">
@@ -98,6 +151,14 @@
                  title="Leer lassen für ein neues Szenario; ein Seed erzeugt dasselbe Szenario erneut">
         </div>
       </div>
+    </div>
+    <!-- Undo / redo. Same path as Strg+Z / Strg+Y (mapView.js _stepHistory);
+         greyed out while the matching stack is empty. -->
+    <div class="history-btns" role="group" aria-label="Verlauf">
+      <button type="button" id="btn-undo" class="btn btn-secondary icon-btn" disabled
+              title="Rückgängig (Strg+Z)" aria-label="Rückgängig"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 3.5L2.5 6.5l3 3M2.8 6.5h6.7a3.5 3.5 0 0 1 0 7H7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <button type="button" id="btn-redo" class="btn btn-secondary icon-btn" disabled
+              title="Wiederholen (Strg+Y / Strg+Umschalt+Z)" aria-label="Wiederholen"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10.5 3.5l3 3-3 3M13.2 6.5H6.5a3.5 3.5 0 0 0 0 7H9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     </div>
     <!-- The secondary file actions, behind one menu. Their ids are unchanged —
          scenarioIO.js binds #btn-save / #btn-load-input / #btn-export-route by
@@ -119,6 +180,13 @@
           <span class="menu-item-icon">&#8613;</span> Laden
           <input type="file" id="btn-load-input" accept=".json" style="display:none">
         </label>
+        <div class="menu-sep" role="separator"></div>
+        <label id="btn-import-map-label" class="menu-item" data-menu-item role="menuitem"
+               title="CARLA-Karte (.xodr) importieren — oder die Datei auf die Karte ziehen">
+          <span class="menu-item-icon">&#8853;</span> Karte importieren (.xodr)
+          <input type="file" id="btn-import-map-input" accept=".xodr" style="display:none">
+        </label>
+        <div class="menu-sep" role="separator"></div>
         <button type="button" id="btn-export-route" class="menu-item" data-menu-item role="menuitem"
                 title="Ego-Route als XML exportieren (für Autoware/CARLA Planer)">
           <span class="menu-item-icon">&#8631;</span> Route exportieren
@@ -237,7 +305,13 @@
 
   <!-- ── MAP CANVAS ── -->
   <main id="map-container">
-    <div id="map-overlay-msg">Karte aus dem Dropdown oben auswählen, um zu beginnen</div>
+    <!-- Empty state. toolbar.js fills #map-quick-pick with one button per town
+         once the map list arrives; mapView.js hides the whole block on render. -->
+    <div id="map-overlay-msg">
+      <div class="map-empty-title">Karte wählen, um zu beginnen</div>
+      <div id="map-quick-pick" class="map-quick-pick"></div>
+      <div class="map-empty-sub">oder eine eigene <strong>.xodr</strong> hierher ziehen</div>
+    </div>
     <svg id="map-svg" xmlns="http://www.w3.org/2000/svg">
       <!-- Trajectory arrow markers are created per actor at runtime by
            mapView.js `_ensureArrowMarker`, which appends into this <defs>. -->
@@ -299,7 +373,7 @@
     </div>
 
     <!-- Maßstabsleiste -->
-    <div id="scale-ruler" class="scale-ruler">
+    <div id="scale-ruler" class="scale-ruler hidden">
       <div class="scale-bar"><div class="scale-bar-fill"></div></div>
       <span id="scale-label" class="scale-label">100 m</span>
     </div>
@@ -427,50 +501,6 @@
 
 </div><!-- /#main-area -->
 
-<!-- ═══════════════════════════ BOTTOM WEATHER BAR ════════════════════ -->
-<footer id="weather-bar">
-  <div class="weather-inner">
-    <div class="weather-item">
-      <label>Tageszeit</label>
-      <select id="w-time">
-        <option value="daytime">Tagsüber</option>
-        <option value="morning">Morgen</option>
-        <option value="noon">Mittag</option>
-        <option value="afternoon">Nachmittag</option>
-        <option value="dusk">Dämmerung</option>
-        <option value="nighttime">Nacht</option>
-      </select>
-    </div>
-    <div class="weather-item">
-      <label>Nebel <span class="w-val" id="wv-fog">0.0</span></label>
-      <input type="range" id="w-fog" min="0" max="1" step="0.05" value="0">
-    </div>
-    <div class="weather-item">
-      <label>Regen <span class="w-val" id="wv-rainy">0.0</span></label>
-      <input type="range" id="w-rainy" min="0" max="1" step="0.05" value="0">
-    </div>
-    <div class="weather-item">
-      <label>Wolken <span class="w-val" id="wv-cloudy">0.0</span></label>
-      <input type="range" id="w-cloudy" min="0" max="1" step="0.05" value="0">
-    </div>
-    <div class="weather-item">
-      <label>Sonne <span class="w-val" id="wv-sunny">0.0</span></label>
-      <input type="range" id="w-sunny" min="0" max="1" step="0.05" value="0">
-    </div>
-    <div class="weather-item">
-      <label>Nasse Str. <span class="w-val" id="wv-wet_road">0.0</span></label>
-      <input type="range" id="w-wet_road" min="0" max="1" step="0.05" value="0">
-    </div>
-    <div class="weather-item">
-      <label>Schnee <span class="w-val" id="wv-snowy">0.0</span></label>
-      <input type="range" id="w-snowy" min="0" max="1" step="0.05" value="0">
-    </div>
-    <div class="weather-item">
-      <label>Staub <span class="w-val" id="wv-dust_storm">0.0</span></label>
-      <input type="range" id="w-dust_storm" min="0" max="1" step="0.05" value="0">
-    </div>
-  </div>
-</footer>
 
 <!-- ── Toast container ── -->
 <div id="toast-container"></div>
@@ -506,7 +536,7 @@
         <div class="step-num">1</div>
         <div class="step-body">
           <strong>Karte auswählen</strong>
-          <span>Wählen Sie im Dropdown oben eine der 9 CARLA-Stadtkarten (Town01–Town10HD).</span>
+          <span>Eine CARLA-Stadtkarte direkt auf der leeren Karte anklicken (oder im Dropdown oben wählen) — oder eine eigene <strong>.xodr</strong> auf die Karte ziehen.</span>
         </div>
       </div>
       <div class="welcome-step">
@@ -519,22 +549,22 @@
       <div class="welcome-step">
         <div class="step-num">3</div>
         <div class="step-body">
-          <strong>Route des Ego zeichnen</strong>
-          <span>Wählen Sie das Ego auf der Karte → klicken Sie rechts auf <em>Zeichnen</em> → setzen Sie Wegpunkte durch Klicken → <em>Fertig</em>.</span>
+          <strong>Ego steuern</strong>
+          <span>Ego auswählen → rechts unter <em>Events</em> auf <em>Route zuweisen</em> (folgt den Fahrspuren) oder <em>Trajektorie folgen</em> klicken → Wegpunkte auf die Karte setzen → <kbd>Enter</kbd> oder <em>Fertig</em>.</span>
         </div>
       </div>
       <div class="welcome-step">
         <div class="step-num">4</div>
         <div class="step-body">
-          <strong>NPC-Akteure hinzufügen</strong>
-          <span>Werkzeuge: Auto, LKW, Bus, Motorrad, Fußgänger, Radfahrer. Gleiche Vorgehensweise wie beim Ego. NPCs erhalten Events wie das Ego.</span>
+          <strong>Verkehr und Hindernisse hinzufügen</strong>
+          <span>Fahrzeuge, Einsatzfahrzeuge, Fußgänger und Radfahrer platzieren und ihnen Events geben (WENN Auslöser → DANN Aktion). Fertige Abläufe unter <em>Templates</em> rechts, Leitkegel &amp; Co. im Tab <em>Requisiten</em> — oder <em>Generieren</em> erzeugt ein komplettes Testszenario.</span>
         </div>
       </div>
       <div class="welcome-step">
         <div class="step-num">5</div>
         <div class="step-body">
           <strong>Umgebung konfigurieren</strong>
-          <span>Nutzen Sie die Wetterleiste unten: Tageszeit, Nebel, Regen, Wolken, Sonne, nasse Straße, Schnee, Staub (je 0–1).</span>
+          <span>Im Menü <em>Umgebung</em> oben: Tageszeit, eine Wetter-Voreinstellung (Klar, Regen, Nebel …) oder Feinabstimmung per Regler (je 0–1).</span>
         </div>
       </div>
       <div class="welcome-step">

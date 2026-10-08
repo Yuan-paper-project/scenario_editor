@@ -93,10 +93,30 @@
         opt.textContent = name;
         mapSelect.appendChild(opt);
       });
+      _renderQuickPick(maps);
     } catch (e) {
       mapStatus.textContent = 'Fehler beim Laden der Karten';
       console.error(e);
     }
+  }
+
+  // One-click town buttons on the empty map — the same path as the dropdown,
+  // which stays the source of truth (it is what a loaded file writes back).
+  function _renderQuickPick(maps) {
+    const pick = document.getElementById('map-quick-pick');
+    if (!pick) return;
+    pick.innerHTML = '';
+    maps.forEach(name => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'map-quick-btn';
+      b.textContent = name;
+      b.addEventListener('click', () => {
+        mapSelect.value = name;
+        mapSelect.dispatchEvent(new Event('change'));
+      });
+      pick.appendChild(b);
+    });
   }
 
   mapSelect.addEventListener('change', async () => {
