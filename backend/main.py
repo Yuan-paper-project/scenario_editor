@@ -32,7 +32,7 @@ from backend.map_renderer import (
     THUMBNAIL_PATHS,
 )
 from backend.lane_graph_builder import build_lane_graph_from_xodr
-from backend.scenario_io import export_to_xosc, export_route_xml
+from backend.scenario_io import export_batch_zip, export_to_xosc, export_route_xml
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 
@@ -328,6 +328,26 @@ async def export_scenario(request: Request):
         media_type="application/xml",
         filename=filename,
         background=BackgroundTask(os.remove, tmp_path),
+    )
+
+
+@app.post("/api/export/batch")
+async def export_batch(request: Request):
+    """Zip of many generated scenarios (.xosc + .json + route XML each) plus a
+    manifest — the generator's "Mehrere generieren". See export_batch_zip."""
+    body = await request.json()
+    try:
+        zip_path, n_ok, n_failed = export_batch_zip(body.get("scenarios"))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Batch export failed: {e}")
+    return FileResponse(
+        zip_path,
+        media_type="application/zip",
+        filename=body.get("filename") or "scenarios.zip",
+        headers={"X-Scenarios-Ok": str(n_ok), "X-Scenarios-Failed": str(n_failed)},
+        background=BackgroundTask(os.remove, zip_path),
     )
 
 

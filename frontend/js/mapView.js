@@ -552,6 +552,19 @@
     return _centreOn(actor.x, actor.y, vb && vb.width ? vb.width / ZOOM_TO_SPAN : _zoom);
   }
 
+  /** Fit a set of world points [{x, y}] into the view with `marginM` metres
+   * to spare on every side. Used to show a whole generated scenario at once. */
+  function frameBounds(points, marginM = 20) {
+    const vb = svg.viewBox.baseVal;
+    if (!points?.length || !vb || !vb.width) return false;
+    const xs = points.map(p => p.x), ys = points.map(p => p.y);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    const zoom = Math.min(vb.width / (maxX - minX + 2 * marginM),
+                          vb.height / (maxY - minY + 2 * marginM));
+    return _centreOn((minX + maxX) / 2, (minY + maxY) / 2, zoom);
+  }
+
   /**
    * Frame an actor, WITHOUT selecting it.
    *
@@ -2059,6 +2072,7 @@
     resetView,
     zoomToSelection,
     zoomBy,
+    frameBounds,
     focusActor,
     glowActor,
     focusWaypoint,

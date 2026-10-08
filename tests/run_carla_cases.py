@@ -35,6 +35,10 @@ SCENARIO_DIR = os.path.join(SR_ROOT, "srunner/examples/scenario_tester")
 RECORDINGS = "/home/dellpro2/Antonio/recordings"
 ARTIFACTS = os.path.join(HERE, "artifacts")
 CARLA_PY = "/home/dellpro2/Antonio/carla-venv/bin/python"
+# The port run.sh starts (and reuses) CARLA on. The telemetry sidecar must
+# attach to the SAME server — its own default (3000) is a leftover from before
+# run.sh moved to 2010, and attaching there records nothing or someone else's.
+CARLA_PORT = 2010
 CARLA_ROOT = "/home/dellpro2/CC/carla_0.9.15"
 CARLA_PYTHONPATH = ":".join([
     f"{CARLA_ROOT}/PythonAPI/carla/dist/carla-0.9.15-cp310-cp310-linux_x86_64.egg",
@@ -258,7 +262,7 @@ def run_case(case, xosc_text, scenario, keep_video=True, timeout=180):
     # the whole world instead. Everything else keeps the narrow filter — the map
     # contributes hundreds of unnamed static meshes per tick.
     sidecar_cmd = [CARLA_PY, os.path.join(HERE, "carla_telemetry.py"),
-                   "--out", csv_path]
+                   "--out", csv_path, "--port", str(CARLA_PORT)]
     if not case.get("props"):
         sidecar_cmd.append("--vehicles-only")
     sidecar = subprocess.Popen(

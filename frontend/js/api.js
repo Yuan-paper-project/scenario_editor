@@ -73,6 +73,24 @@
       return res.blob();
     },
 
+    /** POST many generated scenarios; resolves to {blob, ok, failed}. */
+    async exportBatch(body) {
+      const res = await fetch('/api/export/batch', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const msg = await res.text();
+        throw new Error(`Batch export failed (${res.status}): ${msg}`);
+      }
+      return {
+        blob: await res.blob(),
+        ok: Number(res.headers.get('X-Scenarios-Ok') || 0),
+        failed: Number(res.headers.get('X-Scenarios-Failed') || 0),
+      };
+    },
+
     async uploadMap(file) {
       const form = new FormData();
       form.append('file', file, file.name);

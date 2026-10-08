@@ -80,6 +80,25 @@
       &#8853; Karte importieren
       <input type="file" id="btn-import-map-input" accept=".xodr" style="display:none">
     </label>
+    <!-- Random scenario generator. The type rows are filled in by
+         scenarioGenerator.js from its own TYPES table, so a new type needs no
+         markup; the seed field reproduces a scenario exactly. -->
+    <div class="menu" data-dropdown>
+      <button type="button" id="gen-menu-btn" class="btn btn-secondary menu-btn"
+              data-dropdown-button title="Zufälliges Szenario auf der geladenen Karte erzeugen"
+              aria-haspopup="true" aria-expanded="false">
+        &#9861; Generieren <span class="menu-caret">&#9662;</span>
+      </button>
+      <div id="gen-menu-panel" class="menu-panel menu-panel-right hidden" data-dropdown-panel
+           role="menu" aria-label="Szenario generieren">
+        <div id="gen-menu-types" class="gen-menu-types"></div>
+        <div class="gen-seed-row">
+          <label for="gen-seed">Seed</label>
+          <input type="number" id="gen-seed" min="1" step="1" placeholder="zufällig"
+                 title="Leer lassen für ein neues Szenario; ein Seed erzeugt dasselbe Szenario erneut">
+        </div>
+      </div>
+    </div>
     <!-- The secondary file actions, behind one menu. Their ids are unchanged —
          scenarioIO.js binds #btn-save / #btn-load-input / #btn-export-route by
          id and does not care where they sit. Export .xosc stays outside: it is
@@ -612,6 +631,47 @@
   </div>
 </div>
 
+<!-- Batch generator (scenarioGenerator.js). Opened from Generieren → "Mehrere
+     generieren …"; builds N scenarios off-screen and downloads one zip. -->
+<div id="gen-batch-overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="gen-batch-title">
+  <form id="gen-batch-form" class="gen-batch-card">
+    <h2 id="gen-batch-title">Mehrere Szenarien generieren</h2>
+    <p class="gen-batch-note">Das aktuelle Szenario bleibt unverändert. Ergebnis: eine ZIP mit
+      .xosc, .json und Routen-XML je Szenario plus <code>manifest.csv</code>.</p>
+    <div class="gen-batch-grid">
+      <label for="gen-batch-count">Anzahl</label>
+      <input type="number" id="gen-batch-count" min="1" max="1000" step="1" value="50" required>
+      <label for="gen-batch-type">Typ</label>
+      <select id="gen-batch-type"></select>
+      <label for="gen-batch-difficulty">Schwierigkeit</label>
+      <select id="gen-batch-difficulty">
+        <option value="alle">Alle (ohne triviale und unvermeidbare)</option>
+        <option value="mittel+">Mittel und schwer</option>
+        <option value="schwer">Nur schwer</option>
+      </select>
+      <label for="gen-batch-maps">Karten</label>
+      <select id="gen-batch-maps">
+        <option value="current">Nur aktuelle Karte</option>
+        <option value="carla">Alle CARLA-Karten</option>
+      </select>
+      <label for="gen-batch-seed">Start-Seed</label>
+      <input type="number" id="gen-batch-seed" min="1" step="1" placeholder="zufällig">
+    </div>
+    <label class="gen-batch-check"><input type="checkbox" id="gen-batch-balance" checked>
+      Typen gleichmäßig verteilen</label>
+    <label class="gen-batch-check"><input type="checkbox" id="gen-batch-weather" checked>
+      Wetter und Tageszeit variieren</label>
+    <div id="gen-batch-progress" class="gen-batch-progress hidden">
+      <div class="gen-batch-bar"><div id="gen-batch-bar-fill"></div></div>
+      <div id="gen-batch-status" class="gen-batch-status"></div>
+    </div>
+    <div class="confirm-actions">
+      <button type="button" id="gen-batch-cancel" class="btn btn-secondary">Abbrechen</button>
+      <button type="submit" id="gen-batch-start" class="btn btn-primary">Generieren &amp; herunterladen</button>
+    </div>
+  </form>
+</div>
+
 <!-- ── JS modules (load order matters) ── -->
 <script src="/static/js/app.js"></script>
 <script src="/static/js/api.js"></script>
@@ -630,6 +690,8 @@
 <script src="/static/js/scenarioIO.js"></script>
 <script src="/static/js/laneGraph.js"></script>  <!-- before simulate.js: its only consumer -->
 <script src="/static/js/simulate.js"></script>
+<script src="/static/js/scenarioGenerator.js"></script>  <!-- after simulate.js (routeGeometry), objects.js, propCatalog.js, dropdown.js -->
+
 <script src="/static/js/specialBuildings.js"></script>  <!-- landmark dots from maps/special_buildings.csv; mapView.js draws them -->
 <script src="/static/js/mapImport.js"></script>
 <script src="/static/js/welcome.js"></script>

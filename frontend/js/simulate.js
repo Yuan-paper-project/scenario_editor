@@ -1511,7 +1511,83 @@
     return orig ? { x: orig.x, y: orig.y, z: orig.z, yaw: orig.yaw } : null;
   }
 
+  /**
+   * The whole preview, run to completion in one call, with no rendering and
+   * no writes to AppState — the same _makeSimActor / _stepActor the Play
+   * button drives, at a fixed `dt`. Returns
+   *   { egoId, dt, times: [t…], tracks: {actorId: [{x, y, speed}…]},
+   *     fired: {actorId: {eventId: firedAt}}, ended: 'teardown'|'time'|'stopped' }
+   * or null while a live preview is running (the two share this module's
+   * tick state). scenarioGenerator.js measures conflicts off the tracks.
+   */
+  function runHeadless({ dt = 0.05, maxTime = 40, ego = AppState.ego, npcs = AppState.npcs } = {}) {
+    // `ego`/`npcs` default to the editor's scenario; the generator passes a
+    // candidate it has not loaded, so it can score one before committing it.
+    // _makeSimActor reads only the actor it is given, and cross-actor lookups
+    // go through _simActors, so nothing here needs the candidate in AppState.
+    if (_running) return null;
+    const actors = [ego, ...npcs].filter(Boolean);
+    if (!actors.length) return null;
+    const savedTime = _simTime;
+    _simActors.clear();
+    _tickSpeeds.clear();
+    _tickCompleted.clear();
+    _egoId = ego ? ego.id : null;
+    try {
+      for (const a of actors) _simActors.set(a.id, _makeSimActor(a, a.id === _egoId));
+      _snapshotSpeeds();
+      const egoSim = _egoId ? _simActors.get(_egoId) : null;
+      const times = [];
+      const tracks = {};
+      for (const id of _simActors.keys()) tracks[id] = [];
+      let ended = 'time';
+      let still = 0;
+      const frozenAt = {};
+      for (_simTime = 0; _simTime < maxTime;) {
+        _simTime += dt;
+        const egoPrevPos = egoSim ? { ..._pose(egoSim), z: egoSim.z } : null;
+        _snapshotSpeeds();
+        for (const sim of _simActors.values()) _stepActor(sim, dt, egoPrevPos, _simTime);
+        times.push(r3(_simTime));
+        let moving = false;
+        for (const sim of _simActors.values()) {
+          const p = _pose(sim);
+          tracks[sim.id].push({ x: p.x, y: p.y, speed: sim.speed });
+          if (sim.frozen && frozenAt[sim.id] == null) frozenAt[sim.id] = r3(_simTime);
+          if (Math.abs(sim.speed) > 0.05 && !sim.frozen && !sim.goalStopped) moving = true;
+        }
+        if (egoSim && egoSim.traveled >= ACT_TEARDOWN_DISTANCE_M) { ended = 'teardown'; break; }
+        // Everything has been standing still for 10 s and no event can still
+        // move it before the distance fallback — nothing more will happen.
+        still = moving ? 0 : still + dt;
+        if (still > 10 && _simTime > DISTANCE_TO_EGO_FALLBACK_S) { ended = 'stopped'; break; }
+      }
+      const fired = {};
+      const frozen = {};   // actorId -> the badge it froze with (lane ran out, no successor, …)
+      for (const sim of _simActors.values()) {
+        fired[sim.id] = {};
+        for (const [eventId, rec] of sim.fired) fired[sim.id][eventId] = r3(rec.firedAt);
+        if (sim.frozen) frozen[sim.id] = sim.badge ? sim.badge.text : 'frozen';
+      }
+      return { egoId: _egoId, dt, times, tracks, fired, frozen, frozenAt, ended };
+    } finally {
+      _simActors.clear();
+      _tickSpeeds.clear();
+      _tickCompleted.clear();
+      _egoId = null;
+      _simTime = savedTime;
+    }
+  }
+
+  const r3 = v => Math.round(v * 1000) / 1000;
+
   window.Simulate = {
+    runHeadless,
+    // The generator stops a running preview before it replaces the scenario:
+    // runHeadless refuses to run beside it, and the preview's Stop would then
+    // try to put back poses on actors that no longer exist.
+    get running() { return _running; },
+    stop() { if (_running) _stopSimulation(); },
     // routeForTesting exists purely for tests/test_route_fidelity_e2e.py: it
     // returns the route without running the animation. Asserting on the route
     // directly is deterministic, whereas sampling a moving actor can only ever

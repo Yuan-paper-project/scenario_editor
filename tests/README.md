@@ -15,6 +15,8 @@ one goes red tells you where the problem is:
 | `test_*_e2e.py` | editor on :9090 | UI wiring, the payload the frontend sends, the `.xosc` structure | whether CARLA honours the file |
 | `run_carla_cases.py` | CARLA on :3000 | whether triggers fire and actors actually move | anything it has no assertion for |
 | `probe_*.py` | CARLA on :3000 | measurements, not assertions | — |
+| `run_generated_carla.py` | CARLA on :2010 (run.sh's) + editor | whether a generated scenario's triggers fire and the actors meet in CARLA | nothing is asserted; it reports |
+| `probe_generated_spawns.py` | CARLA on :2010 + editor | generated actors CARLA refuses to spawn (scenery the `.xodr` lacks); `--zip/--out` filters a batch | anything after the spawn |
 
 ## Running
 

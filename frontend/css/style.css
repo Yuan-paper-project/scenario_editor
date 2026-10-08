@@ -73,6 +73,19 @@ html, body { height: 100%; overflow: hidden; font-family: 'Segoe UI', system-ui,
 .menu-item:hover { color: var(--text); background: var(--panel2); }
 .menu-item-icon  { font-size: 13px; line-height: 1; width: 13px; text-align: center; }
 
+/* ── Generator menu ─────────────────────────────────────────── */
+.gen-menu-types { display: flex; flex-direction: column; gap: 2px; }
+.gen-menu-types .menu-item.gen-any {
+  color: var(--text); font-weight: 600;
+  border-bottom: 1px solid var(--border); border-radius: 5px 5px 0 0; margin-bottom: 2px;
+}
+.gen-seed-row {
+  display: grid; grid-template-columns: max-content 1fr; align-items: center; gap: 8px;
+  padding: 6px 8px 2px; margin-top: 4px; border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--text-dim);
+}
+.gen-seed-row input { width: 100%; min-width: 0; font-size: 11px; padding: 3px 6px; }
+
 /* ── Layer menu extras ──────────────────────────────────────── */
 #layer-toggles { margin-left: 8px; }
 .layer-menu-icon { font-size: 12px; line-height: 1; }
@@ -950,6 +963,33 @@ body.dragging-actor, body.dragging-actor * { cursor: move !important; }
 .confirm-card p { margin-bottom: 16px; font-size: 13px; line-height: 1.5; }
 .confirm-actions { display: flex; gap: 10px; justify-content: center; }
 
+/* ── Batch generator dialog ──────────────────────────────── */
+#gen-batch-overlay {
+  position: fixed; inset: 0; z-index: 10000;
+  background: rgba(0,0,0,.6); backdrop-filter: blur(2px);
+  display: flex; align-items: center; justify-content: center;
+}
+#gen-batch-overlay.hidden { display: none !important; }
+.gen-batch-card {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+  padding: 20px 24px; width: min(440px, calc(100vw - 32px));
+  box-shadow: 0 8px 32px rgba(0,0,0,.5); display: flex; flex-direction: column; gap: 12px;
+}
+.gen-batch-card h2 { font-size: 15px; margin: 0; color: var(--text); }
+.gen-batch-note { font-size: 11px; color: var(--text-dim); line-height: 1.5; margin: 0; }
+.gen-batch-note code { font-size: 10.5px; }
+.gen-batch-grid {
+  display: grid; grid-template-columns: max-content 1fr; gap: 8px 12px; align-items: center;
+  font-size: 12px; color: var(--text-dim);
+}
+.gen-batch-grid input, .gen-batch-grid select { min-width: 0; font-size: 12px; padding: 4px 6px; }
+.gen-batch-check { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text); }
+.gen-batch-progress { display: flex; flex-direction: column; gap: 6px; }
+.gen-batch-progress.hidden { display: none; }
+.gen-batch-bar { height: 6px; background: var(--panel2); border-radius: 3px; overflow: hidden; }
+#gen-batch-bar-fill { height: 100%; width: 0; background: var(--accent); transition: width .15s; }
+.gen-batch-status { font-size: 11px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+
 /* ── Scenario summary (empty props panel) ────────────────── */
 .scenario-summary { padding: 8px 2px; }
 .scenario-summary h3 {
@@ -1273,3 +1313,6 @@ body.simulating #properties-panel { opacity: 0.5; pointer-events: none; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #555; }
+.gen-menu-types .menu-item.gen-batch-item {
+  border-top: 1px solid var(--border); border-radius: 0 0 5px 5px; margin-top: 2px; color: var(--accent);
+}

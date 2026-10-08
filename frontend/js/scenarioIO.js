@@ -219,7 +219,16 @@
   // the only way a test can hand the backend a payload the gate refuses, which
   // is exactly what a hand-written or LLM-generated payload does. Same shape of
   // hook as Simulate.routeForTesting; no UI code calls it.
-  window.ScenarioIO = { buildParamsForTesting: buildScenarioParams };
+  //
+  // `buildParams` / `validate` / `downloadBlob` are the same functions for the
+  // scenario generator's batch export (scenarioGenerator.js), which builds one
+  // payload per generated scenario without going through the button.
+  window.ScenarioIO = {
+    buildParamsForTesting: buildScenarioParams,
+    buildParams: buildScenarioParams,
+    validate: _validateScenario,
+    downloadBlob,
+  };
 
   btnExportRoute.addEventListener('click', async () => {
     if (!AppState.ego) {
