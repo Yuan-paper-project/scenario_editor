@@ -27,7 +27,7 @@ bash run.sh 8080     # custom port
 
 - Always start from the repo root — the app is imported as `backend.main`, so `uvicorn main:app` from inside `backend/` will not work. `run.sh` handles this with `cd "$(dirname "$0")"`.
 - **`.vscode/launch.json` passes no `--host`/`--port`**, so debugger runs land on uvicorn's default **8000** and bind loopback only, while `run.sh` uses **9090** on `0.0.0.0`. On a remote/SSH box the debugger's server is unreachable without a forwarded port — a hung browser tab usually means this, not a broken app.
-- **There is no linter and no CI**, and no unit tests. Automated coverage is `tests/test_normalization.py` (pure Python) plus eleven Playwright end-to-end suites that need a running editor, and `tests/run_carla_cases.py`, which needs a running CARLA (see Verification). Everything else is verified manually.
+- **There is no linter and no CI**, and no unit tests. Automated coverage is `tests/test_normalization.py` (pure Python) plus thirteen Playwright end-to-end suites that need a running editor, and `tests/run_carla_cases.py`, which needs a running CARLA (see Verification). Everything else is verified manually.
 - All map geometry is parsed once at startup into `MAP_CACHE` (`preload_maps`, `backend/main.py`). Changes to `map_renderer.py` only take effect on restart — `--reload` does this automatically on save.
 - **`--reload` only watches this repo.** Editing `../llm-scenario-gen` — including `prop_catalog.yaml`, which `xml_builder` reads once at import — requires a **manual restart**. Frontend files are read per request, so a catalogue edit appears instantly in the UI while the backend still serves the old data. That asymmetry is easy to misread as a bug.
 
@@ -195,9 +195,24 @@ and the same emitter path (`_build_actor_act` in `xml_builder.py`) as every NPC.
 Its entity name is `hero`; an NPC's is `adversary`/`adversaryN`.
 
 - **Actions** (6): `follow_trajectory`, `assign_route`, `set_speed`, `set_distance`, `lane_change`, `lane_offset`
-- **Triggers** (4): `simulation_time`, `distance_to_ego`, `distance_to_point`, `after_event`
-  — `distance_to_ego` is **not offered for the ego itself** (see below), and
-  `after_event` may name an event on **any** actor, not just its own (see below).
+- **Triggers** (6): `simulation_time`, `distance_to_ego`, `distance_to_point`, `ego_speed`,
+  `after_event`, `event_started` — `distance_to_ego` is **not offered for the ego itself**
+  (see below). `after_event` (fires on the named event's `completeState`) and
+  `event_started` (UI „Mit Start eines Events", fires on its `startTransition` — "when
+  X starts, also do Y") are the two **event references**; both may name an event on
+  **any** actor, except that **an NPC may never wait on an ego event** (see below).
+  `ego_speed` is `{rule: greaterThan|lessThan, value}` → a `SpeedCondition` on `hero`
+  (`TriggerVelocity`, the ego's *measured* speed — so `lessThan` is true at once for a
+  standing ego). It is one of the ways an NPC reacts to the ego now that it may not
+  wait on an ego event, alongside `distance_to_ego` and `distance_to_point` naming the ego.
+- **There is no trigger delay, by decision.** ScenarioRunner builds a `<Condition
+  delay="d">` as `Sequence(TimeOut(d), condition)` — it waits *before it starts
+  watching*, the reverse of the OpenSCENARIO meaning — in stock 0.9.15 and the local
+  checkout alike (`convert_condition_to_atomic`). For "after X + 3 s" that means the
+  condition starts watching at t = 3 s and `OSCStartEndCondition` then needs a START/END
+  newer than its own `initialise`: no delay at all if X ends later, never fires if X
+  ended during the wait. A correct delay needs a ScenarioRunner patch (condition first,
+  `TimeOut` after); it was offered and declined. Every emitter `delay` stays `'0'`.
 
 Adding or changing one means editing all three layers:
 
@@ -250,9 +265,17 @@ Silent behaviours worth knowing when debugging "my event did nothing":
   - `build_custom_event_chain` builds its name table from the events that **actually got appended** (two passes: actions first, then triggers), so a chained `after_event` whose target was skipped now falls back to a plain `simulation_time` start instead of dangling. This was the long-standing `KNOWN` entry in `test_events_e2e.py`.
 - **A `distance_to_point` trigger is never point-less.** Choosing it in the panel places the point on the acting actor immediately (`ObjectsManager.defaultTriggerPoint`) with a **5 m** radius (`DEFAULT_POINT_RADIUS`, `eventPanel.js` — a fresh radius rather than the outgoing trigger's value, which is a delay in seconds or a 400 m ego distance and means nothing here). A missing point used to be defaulted to `(0, 0, 0.2)` in `_normalize_structured_event` — the map origin, which a 3-D `DistanceCondition` can never reach — so that is now a 400 too; and in the emitter it fell through to `simulation_time(value)`, reading the radius in metres as a delay in seconds (a 20 m radius became `t > 20 s`). Both fixed. (The `?? 20` fallbacks left in the frontend and `_normalize_structured_event`'s `trigger.get("value", 20.0)` are for a payload carrying no value at all, and still agree with each other — only the *creation* default is 5.)
 - **The point is moved by dragging its map marker; there is no picking mode.** `layer-trigger-points` is appended **after** `layer-actors` (`renderMap`, `mapView.js`, last of the three top layers — `layer-paths-top` and `layer-actors-top` go before it) rather than under the trajectory layer, because a point seeded on its own actor would otherwise be drawn *and hit-tested* under the vehicle rectangle. The marker carries an invisible 2.2 m hit circle (`.trigger-point-control`) — the drawn one is 0.7 m and sub-pixel at town zoom — and its drag writes x/y per mousemove but re-derives z once, on mouseup, via `ObjectsManager.moveTriggerPoint` (`_nearestLaneProjection` is a full lane scan; same reasoning as an actor's z). The mouseup also **expires** `_suppressNextClick` on a timer: the marker is re-rendered mid-drag, so the element the drag started on is detached by mouseup and the browser may dispatch no click at all — a permanently-set flag then swallows an unrelated map click much later.
-### `after_event` may name another actor's event, and may never form a loop
+### Event references (`after_event`, `event_started`) may name another actor's event, and may never form a loop
 
-An `after_event` trigger carries `event_id` **plus an optional `actor_ref`**.
+Everything below applies to both reference kinds — `ScenarioRules.isEventRef`
+(`frontend/js/app.js`) and `_EVENT_REF_TRIGGERS` (`backend/scenario_io.py`) are the
+switch — except the `lane_offset` ban, which is about *completion* and so covers
+`after_event` only: a `lane_offset`'s START is well defined, and `event_started` may
+name one. `_isChainTarget(ev, triggerType)` is the dropdown/default/re-point predicate
+that carries that difference; `_canChainOnto` and the delete sweeps keep the
+referencing trigger's kind.
+
+An event-reference trigger carries `event_id` **plus an optional `actor_ref`**.
 An absent `actor_ref` means the event's own actor, which is why every save file,
 template, `tests/carla_cases.py` case and LLM payload written before this
 existed resolves exactly as it always did — that default is the compatibility
@@ -261,7 +284,11 @@ contract and is implemented identically in all four layers.
 **It works in CARLA because the lookup was never per-Act.** ScenarioRunner turns
 a `StoryboardElementStateCondition` into `OSCStartEndCondition`, which reads a
 **global** `py_trees` blackboard key — `(EVENT)<name>-END`, written by
-`StoryElementStatusToBlackboard.terminate`. Every Act starts on
+`StoryElementStatusToBlackboard.terminate`, or `(EVENT)<name>-START` (state
+`startTransition`), written by its `initialise` — i.e. on the tick the named event's
+own trigger succeeds, so an `event_started` fires on that tick or the next.
+Measured in CARLA (Town05): a same-actor and a cross-actor `event_started` both
+fired at 2.10 s, the tick of their target. Every Act starts on
 `SimulationTime > 0` and holds its events in a `Parallel(SUCCESS_ON_ALL)`, so
 every event's start condition is already ticking when any other actor's event
 completes, and `OSCStartEndCondition`'s `element_start_time >= self._start_time`
@@ -274,9 +301,9 @@ entirely ours.
   takes a shared `event_names` dict keyed by **`(entity_name, event_id)`** and a
   shared `pending_triggers` list; `build_xosc` threads both through
   `_inject_npcs` and `_inject_hero_behavior`, then calls
-  `resolve_custom_event_triggers` once. **The hero's Act is built last**, so a
-  reference from `adversary` to a `hero` event is a forward reference and only
-  resolves because the trigger pass is deferred — resolving per actor found no
+  `resolve_custom_event_triggers` once. Actors are built in order (NPCs, then the
+  hero last), so a reference from `adversary` to an `adversary1` event is a forward
+  reference and only resolves because the trigger pass is deferred — resolving per actor found no
   name and degraded silently to a `simulation_time` start. Deferring is safe
   against the XSD (an Event wants its `<Action>`s before its `<StartTrigger>`)
   because the actions are appended in phase one. Called without those two
@@ -287,15 +314,27 @@ entirely ours.
   `_deleteEvent`'s own re-point sweep carries an explicit `!trigger.actor_ref`
   guard for exactly this, or deleting this actor's `evt-2` would re-point a
   trigger naming *another* actor's `evt-2`.
-- **The three scenario-wide `after_event` rules live in one place**,
+- **The scenario-wide event-reference rules live in one place**,
   `_normalize_after_event_chains` (`backend/scenario_io.py`), called from
   `validate_scenario_params` **after** every `_normalize_actor`. The
   assign_route rewrite and the hero self-distance coercion used to be the tail
   of `_normalize_actor`, which was correct only while a reference could not
-  leave its actor. Order inside it still matters and is unchanged: route
-  rewrite → cycle check → hero coercion.
-- **A cycle is a hard 400**, and the editor cannot author one. Every event on a
-  loop waits for a `completeState` that never arrives, so none of them ever
+  leave its actor. Order inside it matters: route rewrite → NPC→ego ban →
+  `after_event`→`lane_offset` ban → cycle check → hero coercion.
+- **An NPC may not wait on an ego event — a hard 400, not a coercion.** The ego
+  may be driven by the AV under test, whose run carries no ego storyboard events
+  at all, so an NPC chained onto one would simply never move, in a file that looks
+  well formed. `ScenarioRules.mayWaitOnActor(actor, owner)` is the frontend
+  predicate: `_afterEventGroups` drops the whole ego group from an NPC's dropdown,
+  `_canChainOnto` refuses it for the delete re-point, `eventProblem` chips a loaded
+  file's reference (`npc_waits_on_ego`, blocks the export), and the preview marks it
+  `neverFires`. The ego may still wait on an NPC event. **A reference to the ego's
+  `assign_route` is not caught**: the route rewrite runs first and turns it into
+  `distance_to_ego @ 400`, which is no dependency at all — every layer checks the
+  route case before the ban, and must keep doing so.
+- **A cycle is a hard 400**, and the editor cannot author one. `after_event` and
+  `event_started` edges are walked alike — a loop of "starts with the other" never
+  fires either. Every event on a loop waits for a state change that never arrives, so none of them ever
   fires — a clean file that silently does nothing, the same failure shape as a
   dangling `entity_ref`. Each event has exactly one trigger, so the reference
   graph is a **functional graph** (≤1 outgoing edge per node) and a plain
@@ -329,8 +368,8 @@ entirely ours.
   swept**: there is no sensible event to fall back to, so the references are
   left dangling and the „Auslöser feuert nie — Event fehlt" chip plus the export
   gate say so.
-- **The preview snapshots cross-actor completions once per tick**
-  (`_tickCompleted`, `simulate.js`), same reasoning as `_tickSpeeds`: reading
+- **The preview snapshots cross-actor completions and starts once per tick**
+  (`_tickCompleted` / `_tickStarted`, `simulate.js`), same reasoning as `_tickSpeeds`: reading
   another actor's live `fired` map would resolve differently depending on which
   actor `_stepActor` reached first. A **same-actor** reference still reads
   `sim.fired` live — one behaviour tree ticking its own events has no ordering
@@ -489,14 +528,17 @@ the sign is applied at emission, never stored.
   Enforced in four places: `_afterEventGroups` omits it from the dropdown —
   and so do the new-event default (`_defaultEvent`) and the delete re-point
   (`_canChainOnto`), all three through one predicate, `_isChainTarget`
-  (`eventPanel.js`). They drifted once already: the dropdown learned about
+  (`eventPanel.js`). **`event_started` is exempt** — the ban is about completion,
+  and an offset's start is well defined, so a second Spurversatz or anything else can
+  start *with* one; that is the way to chain onto an offset. They drifted once already: the dropdown learned about
   `lane_offset` and the default did not, so a second Spurversatz arrived
   pre-chained onto the first.
   `ScenarioRules.eventProblem` chips a loaded file's reference
   (`after_lane_offset`, which also blocks the export), `_normalize_after_event_chains`
   raises a **400** (not a rewrite like `assign_route` gets — there is no stand-in
   trigger that means the same thing), and the preview marks it `neverFires`.
-  Chain onto an offset by giving the next event its own time or distance trigger.
+  Chain onto an offset with `event_started`, or by giving the next event its own
+  time or distance trigger.
 - **Vehicle-only, but a WIDER set than `assign_route`** — see the actor-types
   section. `PedestrianControl` inherits `update_offset` from `BasicControl` and
   never reads `_offset`, so a walker would get a valid file in which it simply
@@ -748,6 +790,8 @@ out; props carry a separate invisible hit circle, so clickability is not the blo
 - **Pan/zoom is clamped, and `F` is the way back.** `mapView.js` holds `MIN_ZOOM` (0.25) / `MAX_ZOOM` (200) around `_zoom`, which is `1.0` when the whole town fills the viewBox. The wheel derives `_pan` from the **clamped** zoom, not the requested one — deriving it from the request keeps translating the map at the limit, which walks it off screen as effectively as no clamp. Unbounded is what it used to be: 200 notches out reached `scale(0.0000087)` and nothing but `renderMap()` ever reset the view, so the only way back was a reload, which discards the scenario. The recovery path is `MapView.resetView()` / `zoomToSelection()` / `zoomBy(factor)`, bound to `#map-view-controls` (top-right of the map, unhidden by `_setupLayerToggles` alongside `#layer-toggles`) and to the `F` key — `F` frames the selection at `ZOOM_TO_SPAN` (90 m) and falls back to a full reset when nothing is selected. **Buttons zoom about the view centre (`zoomBy` → `_centreOn`), the wheel about the cursor**; scaling `_zoom` alone zooms about the viewBox origin. Shift on the wheel switches to `ZOOM_STEP_COARSE` (1.4 vs 1.12), which is a real ergonomic difference — 9 notches to lane scale instead of 26, and 50 before the base step was raised.
 
 - **Selection is four corner marks, and one helper draws them for everything.** `_buildSelectionMarks(w, h)` (`mapView.js`) builds a `.actor-select-marks` group of black-over-white crop marks on the object's box, called from `_renderActor`, `_renderProp` and `_renderTrafficLight` — actors, props and signals share one selection language, and `.actor-select-marks` is shown by both `.actor-selected` and `.traffic-light.selected`. It replaced a yellow ring per renderer, which failed on three counts worth not reintroducing: `#ffff00` is the map's *own* colour (lane paint, the `#ffee55` ruler, a `#ddaa00` bus body), so around a bus on a painted road the mark was ambiguous; one radius gave a 9 m bus and a 0.9 m cone the same circle, saying where but never what; and it drew through the actor's own label. Three details carry it — **`vector-effect: non-scaling-stroke`**, so the corners follow the box while the line keeps its screen width (a scaled 2 px line goes sub-pixel long before the cone it frames does); the **white casing under the black line**, because the map runs from a `#e8edf2` verge to a near-black carriageway and no single colour survives both; and **`pointer-events: none`**, because a 5 px casing would otherwise swallow clicks aimed at the object it frames. `w`/`h` are the **drawn** extent in the object's own rotated frame, which is not always the catalogue's: a walker is a circle of diameter `size.w` so its box is square, and a prop whose `planRotate` is ±90 has its extent swapped.
+- **A traffic light's properties panel shares `#props-content` with actors and props**, so `_renderTrafficSignalPanel` (`properties.js`) must hide every section they show — spawn, both type pickers, events, delete — or the previous selection's section leaks through (a light clicked after a car showed „Typ: Auto"). A new actor/prop section needs a hide line there too; `tests/test_signal_panel_e2e.py` pins it. Each signal event is a „Schaltung" card read WENN → DANN: „Ego näher als N m" (emitted as a `ReachPositionCondition` on `hero` with that tolerance around the pole) → state. It sets the light **once**; CARLA's cycle then carries on (a forced red lasted ~13 s in a Town05 run), which the panel says in its hint.
+- **Every map light carries `signalId`, `roads` (the connectors it governs), its road-surface `z`, and `inCarla`.** The emitter places the signal event's trigger point at that `z` (`xml_builder._append_traffic_signal_event`); it used to write z = 0, and since the condition is a 3-D distance, a short radius at an elevated light (Town03 has them 8 m up) never fired. `inCarla` comes from `maps/<town>/carla_traffic_lights.json`, written by `tests/probe_carla_traffic_lights.py` against a live CARLA: **Town10HD's `traffic_light_10`/`_11` exist in the `.xodr` but not in CARLA** (nearest actor 10.8 m away; they also govern no road), and a signal event on one makes ScenarioRunner abort with "Unknown traffic light" — a light is addressed as `pos=x,y` and resolved within 2 m. Such a light is drawn as a ghost (`.not-in-carla`), its panel says so and disables „+ Schaltung", the export gate refuses it, and `validate_scenario_params` raises a 400 (`_reject_phantom_signals`, which reads the same file). Town01–07 match CARLA within 0.85 m. A town with no probe file is not checked.
 - **A traffic light is drawn as a signal head** (`_renderTrafficLight`): dark housing, three lamps, all dark until a signal event forces a state, then exactly the states its events set are lit, plus an accent outline. It used to be an 8 m red disc with a glow, red whether or not anything was configured. The invisible r = 2.4 m circle is its hit target.
 - **Drag and rotate are two disjoint zones on the marker, and the gap between them is real.** The body drags; a handle out past the nose rotates. `_buildYawArrow` (`mapView.js`) takes the caller's **own hit radius** — half the marker for an actor, the prop's invisible grab circle for a prop — and derives `arrowLen = bodyRadius + YAW_HANDLE_GAP + handleR`, so the invariant *(handle inner edge is outside the body, always)* holds by construction at any size rather than by a tuned constant. It did not before: `max(w, 4.5) * 0.8` with a fixed `r = 1.5` grab circle put the handle's inner edge at 2.1 m on a car whose half-length is 2.25 m, and swallowed a small oriented prop whole (arrow 1.6 m out, `r` 1.5, body grab circle 1.2) — that prop could not be dragged at all, every grab rotated it. Two more pieces of the same fix: the shaft is `.yaw-shaft`, `pointer-events: none`, drawn from the body edge instead of from the actor's *centre* where it hit-tested as "rotate" straight across the marker; and `objects.js`'s mousedown matches the single class `.yaw-handle` instead of the old four-way string match on `[class*="arrow"]` and `style === 'cursor:grab'`. **A new part of the arrow is decoration unless it carries `.yaw-handle`.** The mode guard (`activeTool`/`trajectoryMode`/`routeMode`) is now shared by both branches at the top of the handler — the rotate branch had none, so with a tool armed the handle rotated while the body selected.
 - **The drag cursor is a class on `<body>`, not `:active` on the element.** `.actor-group` is `move`, `.yaw-handle` is `grab`, and mousedown adds `body.dragging-actor` / `body.rotating` (removed on mouseup) which force `move` / `grabbing` document-wide. `:active` cannot work here: every `updateById` re-renders the whole actor layer (`AppState.on('actorUpdated')`), so the element the drag started on is detached within a frame — the same reason the trigger-point drag re-derives its z on mouseup rather than trusting the element. `.yaw-handle-ring` draws the grab circle's own boundary on `.yaw-arrow:hover`, so the zone is findable *before* committing to a drag.
@@ -985,9 +1029,10 @@ is no import UI: edit the CSV.
 
 The Play/Pause/Stop preview is a per-tick kinematic re-implementation of the real controllers
 (`SimpleVehicleControl` / `PedestrianControl`), not an idealisation of the authored events — it
-evaluates all 4 real triggers (including the `distance_to_ego` 60 s OR-fallback, the
-`assign_route`/`after_event` trigger rewrites `backend/scenario_io.py` applies at export, and
-an `after_event` naming another actor's event), and
+evaluates all 6 real triggers (including the `distance_to_ego` 60 s OR-fallback, the
+`assign_route`/`after_event` trigger rewrites `backend/scenario_io.py` applies at export,
+an event reference naming another actor's event, and `ego_speed` off the per-tick speed
+snapshot), and
 mirrors real termination semantics (an instant speed step that persists past its duration, a
 4 m/1 m waypoint-acceptance radius, a dead stop on `_reached_goal`). `lane_offset`
 is simulated too — see its own section above for the centreline/`_pose` split and
@@ -1196,8 +1241,8 @@ phase 2 (this section) are both implemented; `set_distance` remains out of scope
 Header menu **Generieren** (`#gen-menu-btn`): one row per scenario type, `Beliebiger Typ`, a `Seed`
 field, and **Mehrere generieren …** (the batch dialog, `#gen-batch-overlay`). The goal is bulk test
 scenarios for a perception/planning or end-to-end stack, so **random means randomised parameters of
-a known conflict, never random actions**. Seven types: `lead_brake`, `cut_in`, `vru_crossing`,
-`junction_conflict`, `obstacle`, `oncoming_drift`, `cyclist_ahead`. Plan and history:
+a known conflict, never random actions**. Eight types: `lead_brake`, `cut_in`, `vru_crossing`,
+`junction_conflict`, `obstacle`, `oncoming_drift`, `cyclist_ahead`, `cut_out`. Plan and history:
 <https://claude.ai/artifact/GReE895gaqTjULAjrzN8Dm>.
 
 `generate(type, seed, {difficulty})` replaces the whole scenario as **one undo step**; `build(...)`
@@ -1220,25 +1265,74 @@ are not part of that — `nextId` keeps counting.
   thrown away; up to 150 attempts per scenario from one seeded RNG (mulberry32). `cut_in` and
   `oncoming_drift` start their corridor on a lane that has the neighbour they need — a random start
   finds one rarely.
-- **No signalized junction before the conflict** (`_signalBefore`, checked in `build` against each
-  type's `conflictD`). Every actor obeys reds and a four-way cycle holds one for up to ~40 s; in CARLA
-  the ego sat 44 s at a red and reached the crossing pedestrian only as every Act's 60 s stop trigger
-  ended the run. The preview models no lights, so it predicted a clean conflict. An AV waits there
-  too. The junction type's *own* junction is exempt (`conflictJunctionKey`, oncoming-only rule).
+- **Every light the ego meets before the conflict is forced green — a "green wave"** (`_greenWave`,
+  called in `build` with each type's `conflictD`; the result is the scenario's `trafficSignals`). The
+  ego obeys reds and a four-way cycle holds one for up to ~40 s: in CARLA the ego sat 44 s at a red
+  and reached the crossing pedestrian only as every Act's 60 s stop trigger ended the run, and the
+  preview models no lights. Corridors through signalized junctions used to be *rejected* outright
+  (`_signalBefore`); forcing them green instead took Town10HD's drift from ~7/12 to 10/10 seeds and
+  lets `junction_conflict` build **perpendicular red-light runners** at signalized junctions (the NPC
+  ignores lights, the ego gets green). Three details carry it:
+  - **Which light**: each junction connector road carries a `<signalReference>` to exactly one light
+    (`map_renderer._extract_traffic_lights` → `roads`). `_lightsFor` takes the light on the ego's
+    connector *plus* any on a connector sharing its entry point — a light's trigger volume covers
+    the approach lane, so an unreferenced turn still stops at its neighbour's red.
+  - **Re-asserted, not set once**: `TrafficLightStateSetter` is a bare `set_state` and the group
+    controller overwrites it at its next phase change, so each light gets a Schaltung at 55/38/24/13/5 m
+    before the stop line (`GREEN_WAVE_BEFORE_M`). `simple_vehicle_control` stops only for **red** and
+    only inside the trigger volume just before the line, so the 5 m one leaves no window.
+  - **3-D radii**: the condition is `location.distance()` from the ego to the pole, so each radius is
+    the 3-D distance from the pole (at its road z) to the corridor point.
+  Measured in CARLA (Town03 ×2, Town05): every forced event fired (7/7, 13/13, 12/12), the ego never
+  stopped at a light, and the conflicts happened (0.35 m — a truck running the red — 3.15 m, 3.27 m).
+  The lead in `lead_brake` / `cut_out` ignores lights: it reaches each light *before* the ego
+  switches it, and waiting at that red parked it there.
 - **A headway is a bumper gap; `distance_to_ego` is centre to centre** (`_centreDistance`).
   `simple_vehicle_control` follows at a 5 m bumper gap (`DEFAULT_STANDOFF_DISTANCE`), ~9.5 m between
   two car centres, so the lead's brake radius used to be unreachable whenever headway × speed came out
   under that — it fired only on the 60 s fallback. Same for the cyclist's swerve.
 - **Timing is solved against the ego at cruise speed, with a run-up of v²/(2·3 m/s²) + 15 m**. The
-  junction NPC waits on its route at speed 0 (a route alone does not move an actor) and is released
-  with a `set_speed` **`rate` 3.0**, not a `time` step, so preview and CARLA ramp identically.
+  junction NPC and the oncoming-drift NPC wait on their routes at speed 0 (a route alone does not
+  move an actor) and are released with a `set_speed` **`rate` 3.0**, not a `time` step, so preview
+  and CARLA ramp identically.
+- **Both conflict NPCs ignore lights and obstacles** (`_ignoresTraffic`: `obey_traffic_lights` /
+  `obey_obstacles` false). With them on, the junction car braked for the ego crossing in front of it
+  and the drifting car braked for the ego head-on in the lane it swings into — each defused the
+  conflict it exists to create. The ego keeps both on; its lights are forced green (above).
 - **Site rules that are not obvious:** a cut-in takes its neighbour from the lane graph's `left`/
   `right` (same-direction lanes only), checks the graph agrees in reverse, and needs room for the
   whole change on both lanes — `ChangeActorLateralMotion` never fails, it hangs. Town01/02/07 have no
-  such pair. At a **signalized** junction (any traffic light within 30 m of the crossing point) only
-  *oncoming* conflicts are used: every actor obeys reds. `oncoming_drift` needs the ego in lane ±1 of
-  a two-way road and drifts the other car with `lane_offset` **`left`** (the ego's lane is on the
-  oncoming driver's left); offsets under ~1.4 m only brush past. `cyclist_ahead` has no route (a
+  such pair. `oncoming_drift` needs the ego in lane ±1 of
+  a two-way road; offsets under ~1.4 m only brush past.
+- **`cut_out` (Euro NCAP CCRs cut-out)**: a lead in the ego's lane, a 0.9–2 s headway ahead at the
+  ego's speed, swerves into a same-direction neighbour (lane graph `left`/`right`, checked in
+  reverse) and uncovers a stopped vehicle. The swerve is a `lane_change` triggered by
+  `distance_to_point` on the lead's **own** entity — positional, and ego-relative through the
+  following itself. It starts as late as the lead can make it: 6 m same-lane run-in + 60% of the
+  lateral spread (where a 2.1 m car stops overlapping a 3.5 m lane) + both half-lengths + 1.5–10 m;
+  drawn generously the ego saw the obstacle 4–7 s out and every one scored leicht. The lead ignores
+  obstacles (its sensor would brake it for the car it is swerving round). 70% of stopped cars drive
+  off once the ego is right behind (a **9 m** bumper-gap radius — the scripted ego halts ~6.3 m back,
+  so 6 m was never reached and the car left only on the 60 s fallback), so the run does not stall. Criticality is
+  measured from the swerve (`res.revealedBy` → `assess`), with the lead as scenery. Town01/02/07 have
+  no lane pair.
+  Measured in CARLA (Town03/05/10HD): the lead swerved at the scripted point, cleared the stopped car
+  by ~3.5 m, and the scripted ego braked to a stop ~10.8 m (centre) behind it; with the drive-off it
+  then carried on.
+- **`oncoming_drift` is a route, not a `lane_offset`**: fastest legs along the car's own lane, then
+  a run of `shortest` waypoints every ~3 m tracing a half-cosine swing into the ego's lane, an
+  optional hold, a swing back, then a `fastest` waypoint 30–50 m on (`_walkForward`) so the route's
+  end — where the controller stops dead — is behind the ego. A `lane_offset` jumped the aim point
+  sideways in one tick. Three rules hold it together: **the swing ends exactly on its own lane
+  centre** before the next `fastest` waypoint (that leg is routed *from* it, and an off-lane seed
+  projects onto the ego's lane — the wrong way); **the first swing waypoint stays `fastest`** (its
+  leg is the routed run-up); and **each sample is projected onto the oncoming lane of the corridor
+  segment it falls in** (`oncAt`), so a swing may cross lane sections — Town10HD splits its two-way
+  roads into short ones, and requiring one lane found no site there. The drift point is drawn only
+  from junction-free two-way *stretches* where the whole swing fits; a uniform draw lost most of
+  Town03's attempts to junctions. Because the car starts from rest, the conflict sits further down
+  the corridor than the old meeting point did, past more lights the ego obeys, so Town10HD builds
+  ~7/12 seeds (the old drift ~10/12); Town06 has no two-way ±1 lanes and never built one. `cyclist_ahead` has no route (a
   cyclist is not routable), so its whole ride before the ego catches it must be junction-free.
 - **Crossing VRUs start and end on a `sidewalk` polygon only**, found by stepping across the road
   until it leaves every carriageway polygon (`_carriagewayEdges`) and then searching a kerb offset
@@ -1314,7 +1408,9 @@ its error, not a lost batch.
 - **Coverage is pairwise over town × type × weather × time** (`coveragePlan`, greedy AETG-style: each
   next combination is the one of 40 random candidates covering the most uncovered pairs). The full
   product is ~1000 combinations; pairs are where most failures hide. `Typen gleichmäßig verteilen`
-  off hands the type back to the generator's own pick.
+  off hands the type back to the generator's own pick. Ties on new pairs go to the
+  combination whose values are least used so far, so values spread evenly too: without it, once an
+  eighth type existed a 9-item all-maps batch covered only 6 of the 8 towns.
 - **Weather is a preset, not independent sliders** (`WEATHER_PRESETS`: klar, bewoelkt, regen,
   starkregen, nebel, nass) — rain without a wet road is not a condition anyone drives in. Snow and
   dust are left out (CARLA 0.9.15 renders neither). Times: daytime, morning, dusk, nighttime.
@@ -1405,7 +1501,7 @@ bash run.sh 9090                 # terminal 1
 bash tests/run_tests.sh          # terminal 2 (EDITOR_URL overrides the target)
 ```
 
-That runs `test_normalization.py` (132 checks, no browser or server needed — the last three build a real `.xosc` through the sibling repo to pin cross-actor `after_event` name resolution), then `compare_xodr_lane_graph.py` (also no browser/server/CARLA — validates `backend/lane_graph_builder.py` against the 8 committed probed graphs), then the eleven Playwright suites: props (72), prop yaw (23), templates (159), events (82), ego events (75), actor types (260, grows with the catalogue), elevation (33), route fidelity (9), undo (44), waypoints (67), generator (~1040: seven types × three seeds × three towns, plus batch, coverage and dialog checks). All but the first two drive a real browser against a real server and a real export. **Restart the editor first if you changed `../llm-scenario-gen`** — otherwise the frontend shows new catalogue data while the backend exports the old, which looks like a test bug and is not one.
+That runs `test_normalization.py` (155 checks, no browser or server needed — the last ten build a real `.xosc` through the sibling repo to pin cross-actor event-reference resolution, `startTransition`, the hero `SpeedCondition`, the `consider_*` properties and a signal trigger at the pole's road height), then `compare_xodr_lane_graph.py` (also no browser/server/CARLA — validates `backend/lane_graph_builder.py` against the 8 committed probed graphs), then the thirteen Playwright suites: props (72), prop yaw (23), templates (159), events (82), ego events (75), triggers (47), signal panel (31), actor types (260, grows with the catalogue), elevation (33), route fidelity (9), undo (44), waypoints (67), generator (~1300: eight types × three seeds × three towns, plus batch, coverage and dialog checks). All but the first two drive a real browser against a real server and a real export. **Restart the editor first if you changed `../llm-scenario-gen`** — otherwise the frontend shows new catalogue data while the backend exports the old, which looks like a test bug and is not one.
 
 `test_ego_events_e2e.py` is kept separate from `test_events_e2e.py` rather than folded in: the older suite's `EGO` fixture and every one of its assertions assume an inert ego (no events), which was true before the ego became a controllable actor and is the entire premise the new suite tests against.
 
@@ -1455,7 +1551,7 @@ Each case leaves `tests/artifacts/<case>/scenario.json` — `AppState.toJSON()` 
 
 **Any actor with `events: []` gets no Act and therefore never moves under its own storyboard, the ego included** — it holds its `initial_speed`, which every case here omits, so it stays put. This reverses the older behaviour, where the same actor fell back to a `constant_speed` chain: a "parked" car in a bench case covered 226 m before that was caught. An actor that *has* events but must stay put still needs an explicit `set_speed 0` — `_parked()` in `tests/carla_cases.py`.
 
-**Traffic lights are emittable *and* obeyed, but obeying is not switchable.** `AppState.trafficSignals` → `_inject_traffic_signals` emits a `TrafficSignalStateAction`, so a signal's state can be forced. Every `simple_vehicle_control` actor now carries hardcoded controller properties — `max_acceleration 3.0`, `max_deceleration 10.0`, `consider_trafficlights true`, `consider_obstacles true`, `proximity_threshold 25.0` — in the NPC controller block of `xml_builder.py` and, for the hero, in `templates/car.xosc` / `pedestrian.xosc` (template text, so a restart is needed after editing it). So the ego and NPCs stop at reds and queue behind obstacles; there is no per-actor toggle and no UI. **Two of those properties are only safe on the locally patched `simple_vehicle_control.py`** in `/home/dellpro2/Antonio/scenario_runner` (uncommitted working tree): on stock 0.9.15 `max_acceleration` collapses the ego to a crawl after its first turn and `consider_obstacles` latches a stale sensor reading and freezes the actor. Any CARLA case that relied on running a red (e.g. a turning-truck-runs-red scenario) or on actors ignoring each other was measured before this and must be re-checked.
+**Traffic lights are emittable *and* obeyed, and obeying is a per-vehicle toggle.** `AppState.trafficSignals` → `_inject_traffic_signals` emits a `TrafficSignalStateAction`, so a signal's state can be forced. Every `simple_vehicle_control` actor carries controller properties — `max_acceleration 3.0`, `max_deceleration 10.0`, `consider_trafficlights`, `consider_obstacles`, `proximity_threshold 25.0` — in the NPC controller block of `xml_builder.py` and, for the hero, in `templates/car.xosc` / `pedestrian.xosc` (template text, so a restart is needed after editing it). The two `consider_*` values come from the actor's **`obey_traffic_lights` / `obey_obstacles`** (properties panel, `#obey-row`: „Ampeln beachten" / „Hindernisse beachten", hidden for walkers and props — `PedestrianControl` reads neither). **Absent means `true` in every layer** (`_normalize_actor`, `_obeys` in `xml_builder.py`, the `dumpActor` allow-list, the checkboxes), which is what every export did before the toggle, so old saves, LLM payloads and `tests/carla_cases.py` are unchanged; only a literal `False` turns one off. The hero's are rewritten in place in the template text by `_inject_ego` (`_OBEY_PROPERTIES`), after the placeholder sweep. Measured A/B in CARLA (Town05): with obstacles on an NPC stopped 10.75 m centre-to-centre behind a parked car, with them off it drove into it at 7.9 m/s; with lights on an NPC held 5 s at a forced red, with them off it crossed the stop line at 8 m/s. The preview models neither. **Two of those properties are only safe on the locally patched `simple_vehicle_control.py`** in `/home/dellpro2/Antonio/scenario_runner` (uncommitted working tree): on stock 0.9.15 `max_acceleration` collapses the ego to a crawl after its first turn and `consider_obstacles` latches a stale sensor reading and freezes the actor. Any CARLA case that relied on running a red (e.g. a turning-truck-runs-red scenario) or on actors ignoring each other was measured before this and must be re-checked.
 
 Because of the above, `run_carla_cases.py` overrides a template-placed actor's yaw **only when the case sets `npc_yaw`**. The in-lane vehicle cases pin it to 180 (spawn-point yaw can face back up the road); the crossing cases deliberately omit it and keep what the editor computed. A blanket default there is what made all three crossing cases run parallel to the road while passing every check. `_crossed_the_road` now asserts the direction — Town01 road 1 runs due east-west, so along-the-road is world x and across is world y, and `A.lateral_offset` is the wrong tool (it projects into the actor's own frame, where a crossing reads as longitudinal).
 

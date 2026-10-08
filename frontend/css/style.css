@@ -477,6 +477,12 @@ label.btn { line-height: normal; }
 }
 .icon-btn-quiet:hover { color: var(--accent); border-color: var(--accent); }
 .props-hint { color: var(--text-dim); font-size: 11px; line-height: 1.35; margin-bottom: 12px; }
+.obey-row { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: -4px 0 12px; }
+.obey-toggle {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; color: var(--text); cursor: pointer; user-select: none;
+}
+.obey-toggle input { margin: 0; accent-color: var(--accent); cursor: pointer; }
 /* The panel is dense enough that a browser default focus ring gets lost in it. */
 #properties-panel :focus-visible {
   outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 3px;
@@ -679,27 +685,42 @@ label.btn { line-height: normal; }
 .event-toggle button.quiet-danger:hover {
   background: rgba(192, 57, 43, .08); border-color: var(--danger); color: var(--danger);
 }
-.traffic-signal-divider {
-  border-top: 1px solid var(--border);
-  margin: 4px 0 8px;
+.traffic-signal-meta {
+  color: var(--text-dim); font-size: 11px; margin: -6px 0 12px;
+  font-variant-numeric: tabular-nums;
 }
-.traffic-event-header {
-  grid-template-columns: 1fr 18px;
-  gap: 5px;
+.traffic-signal-titlebar {
+  border-top: 1px solid var(--border); padding-top: 8px; margin-bottom: 6px;
 }
-.traffic-state-picker {
-  display: grid; grid-template-columns: repeat(3, 24px); gap: 8px; align-items: center;
+.traffic-signal-hint { margin-top: 8px; }
+.traffic-when {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 5px; align-items: center;
+  color: var(--text-dim); font-size: 11px; white-space: nowrap;
 }
-.traffic-state-option {
-  width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--border);
-  justify-self: center; cursor: pointer; box-shadow: none;
+/* „Dann" mirrors „Wenn" so the card reads as one sentence top to bottom. */
+.traffic-event-card > .event-row > label {
+  color: var(--accent); font-weight: 800; letter-spacing: .5px; text-transform: uppercase;
 }
-.traffic-state-option.red { background: #ef4444; }
-.traffic-state-option.yellow { background: #facc15; }
-.traffic-state-option.green { background: #22c55e; }
-.traffic-state-option.active {
-  border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, .28);
+/* Title + delete: no collapse button on a signal's card. */
+.traffic-event-header { grid-template-columns: minmax(0, 1fr) 18px; }
+.traffic-event-header .event-title-text { padding-left: 2px; }
+.traffic-state-picker { grid-template-columns: repeat(3, 1fr); }
+.traffic-state-picker .traffic-state-option {
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
 }
+.traffic-state-lamp {
+  width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .25);
+}
+.traffic-state-option.red .traffic-state-lamp    { background: #ef4444; }
+.traffic-state-option.yellow .traffic-state-lamp { background: #facc15; }
+.traffic-state-option.green .traffic-state-lamp  { background: #22c55e; }
+/* The selected state takes its own colour rather than the generic toggle blue,
+   so the card reads as the light it sets. */
+.event-toggle .traffic-state-option.red.active    { background: #dc2626; border-color: #dc2626; color: #fff; }
+.event-toggle .traffic-state-option.yellow.active { background: #eab308; border-color: #eab308; color: #1f2937; }
+.event-toggle .traffic-state-option.green.active  { background: #16a34a; border-color: #16a34a; color: #fff; }
+.traffic-state-option.active .traffic-state-lamp { box-shadow: 0 0 0 1.5px #fff; }
 .event-speed-row {
   display: grid; grid-template-columns: auto minmax(54px, 1fr) auto auto minmax(54px, 1fr) auto;
   gap: 4px; align-items: center;
@@ -917,6 +938,8 @@ input[type="range"]::-webkit-slider-thumb {
 .traffic-light-lamp.lit.lamp-red    { fill: #ff3b30; }
 .traffic-light-lamp.lit.lamp-yellow { fill: #ffcc00; }
 .traffic-light-lamp.lit.lamp-green  { fill: #34c759; }
+.traffic-light.not-in-carla { opacity: .35; }
+.traffic-light.not-in-carla .traffic-light-housing { stroke-dasharray: .5 .4; }
 .traffic-light.configured .traffic-light-housing { stroke: var(--accent); stroke-width: .4; }
 .traffic-light:hover .traffic-light-housing { filter: brightness(1.5); }
 #map-svg.placing .traffic-light,

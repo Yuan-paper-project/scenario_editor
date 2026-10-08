@@ -27,6 +27,7 @@
           id: String(signal.id),
           x: signal.x,
           y: signal.y,
+          z: signal.z ?? 0,
           events: [],
         },
       ];

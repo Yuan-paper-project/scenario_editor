@@ -53,7 +53,8 @@ echo
 
 for t in tests/test_props_e2e.py tests/test_prop_yaw_e2e.py \
          tests/test_templates_e2e.py tests/test_events_e2e.py \
-         tests/test_ego_events_e2e.py \
+         tests/test_ego_events_e2e.py tests/test_triggers_e2e.py \
+         tests/test_signal_panel_e2e.py \
          tests/test_actor_types_e2e.py tests/test_elevation_e2e.py \
          tests/test_route_fidelity_e2e.py tests/test_undo_e2e.py \
          tests/test_waypoints_e2e.py tests/test_generator_e2e.py; do

@@ -138,6 +138,18 @@ _WALKER_ACTOR_TYPES = {"pedestrian", "child"}
 # side, exactly as it does for lane_change — and the emitter applies the sign.
 _MAX_LANE_OFFSET_M = 10.0
 
+# Triggers that name another storyboard event by (actor_ref, event_id).
+# after_event fires on the target's completeState, event_started on its
+# startTransition; ScenarioRunner writes both to the same global blackboard
+# ('(EVENT)<name>-END' / '-START'), so the two share every rule below except the
+# lane_offset ban, which is about completion only.
+_EVENT_REF_TRIGGERS = {"after_event", "event_started"}
+_TRIGGER_KINDS = {"simulation_time", "distance_to_ego", "distance_to_point",
+                  "ego_speed", *_EVENT_REF_TRIGGERS}
+# SpeedCondition rules offered for ego_speed. equalTo is valid OpenSCENARIO but
+# a measured speed is almost never exactly equal to anything.
+_EGO_SPEED_RULES = {"greaterThan", "lessThan"}
+
 
 def _normalize_structured_event(
     event: dict,
@@ -153,10 +165,10 @@ def _normalize_structured_event(
     if not isinstance(trigger, dict):
         trigger = {}
     trigger_kind = trigger.get("type", "simulation_time")
-    if trigger_kind not in {"simulation_time", "distance_to_ego", "distance_to_point", "after_event"}:
+    if trigger_kind not in _TRIGGER_KINDS:
         trigger_kind = "simulation_time"
     event["trigger"] = {"type": trigger_kind}
-    if trigger_kind == "after_event":
+    if trigger_kind in _EVENT_REF_TRIGGERS:
         event["trigger"]["event_id"] = str(trigger.get("event_id", ""))
         # Which actor owns the referenced event. An omitted/blank actor_ref is
         # the acting entity itself, so every payload written before cross-actor
@@ -189,6 +201,10 @@ def _normalize_structured_event(
             "y": float(point.get("y")),
             "z": float(point.get("z", 0.2)),
         }
+    elif trigger_kind == "ego_speed":
+        rule = trigger.get("rule", "greaterThan")
+        event["trigger"]["rule"] = rule if rule in _EGO_SPEED_RULES else "greaterThan"
+        event["trigger"]["value"] = max(0.0, min(100.0, float(trigger.get("value", 10.0))))
     else:
         default_value = 400.0 if trigger_kind == "distance_to_ego" else 0.0
         event["trigger"]["value"] = max(0.0, float(trigger.get("value", default_value)))
@@ -368,6 +384,14 @@ def _normalize_actor(
     actor.setdefault("initial_speed", 0.0)
     actor["initial_speed"] = max(0.0, min(100.0, float(actor["initial_speed"])))
 
+    # simple_vehicle_control's consider_trafficlights / consider_obstacles.
+    # Default True, which is what every export did before the per-actor
+    # toggles existed — so a payload that never mentions them (LLM, hand-
+    # written, tests/carla_cases.py) is unchanged. Only a literal False turns
+    # one off; a walker's are carried through and ignored by the emitter.
+    for key in ("obey_traffic_lights", "obey_obstacles"):
+        actor[key] = actor.get(key) is not False
+
     for idx, event in enumerate(actor["events"]):
         if not isinstance(event, dict):
             actor["events"][idx] = event = {}
@@ -380,7 +404,7 @@ def _normalize_actor(
 
 
 def _after_event_target(trigger: dict, owner_entity: str) -> tuple[str, str]:
-    """The (entity_name, event_id) an after_event trigger points at.
+    """The (entity_name, event_id) an event-reference trigger points at.
 
     _normalize_structured_event always fills actor_ref in, but this also has to
     read a trigger it has already rewritten, and the ego rewrite drops the key.
@@ -389,9 +413,10 @@ def _after_event_target(trigger: dict, owner_entity: str) -> tuple[str, str]:
 
 
 def _normalize_after_event_chains(actors: list[tuple[dict, str, str]]) -> None:
-    """The two silent after_event rewrites, plus cycle rejection — all three
-    scenario-wide, because an after_event trigger may name an event on ANOTHER
-    actor.
+    """The scenario-wide rules for triggers that name another event
+    (after_event and event_started): two silent rewrites, the NPC->ego ban,
+    the lane_offset ban and cycle rejection — all scenario-wide, because such a
+    trigger may name an event on ANOTHER actor.
 
     `actors` is [(actor, entity_name, where)] over the ego and every NPC.
 
@@ -405,25 +430,48 @@ def _normalize_after_event_chains(actors: list[tuple[dict, str, str]]) -> None:
         for event in actor["events"]:
             events_by_ref[(entity_name, str(event.get("id")))] = event
 
+    def is_ref(event):
+        return event.get("trigger", {}).get("type") in _EVENT_REF_TRIGGERS
+
     # An assign_route's own trigger is forced to simulation_time@0, so "after
-    # the route" names a start condition that is discarded — the reference is
-    # rewritten to an ego-distance instead of left pointing at it.
+    # the route" (or "when the route starts") names a start condition that is
+    # discarded — the reference is rewritten to an ego-distance instead of
+    # left pointing at it.
     route_refs = {
         ref for ref, event in events_by_ref.items()
         if event.get("action", {}).get("type") == "assign_route"
     }
     for ref, event in events_by_ref.items():
-        trigger = event.get("trigger", {})
-        if trigger.get("type") != "after_event":
+        if not is_ref(event):
             continue
-        if _after_event_target(trigger, ref[0]) in route_refs:
+        if _after_event_target(event["trigger"], ref[0]) in route_refs:
             event["trigger"] = {"type": "distance_to_ego", "value": 400.0}
+
+    # An NPC may not wait on an ego event. The ego may be driven by the AV
+    # under test, whose run has no ego storyboard events at all — an NPC
+    # chained onto one would never move, in a file that looks perfectly
+    # well formed. An NPC reacts to the ego through what the ego does
+    # (distance_to_ego, distance_to_point, ego_speed). Runs after the route
+    # rewrite: a reference to the ego's route is no longer a reference.
+    # Mirrored by ScenarioRules.mayWaitOnActor (frontend/js/app.js).
+    for ref, event in events_by_ref.items():
+        if not is_ref(event) or ref[0] == "hero":
+            continue
+        target_ref = _after_event_target(event["trigger"], ref[0])
+        if target_ref[0] == "hero":
+            raise ValueError(
+                f"{ref[0]}.{ref[1]}: {event['trigger']['type']} waits for the "
+                f"ego's event {target_ref[1]} — an NPC may not depend on an ego "
+                f"event (an AV-driven ego has none); use distance_to_ego, "
+                f"distance_to_point or ego_speed instead"
+            )
 
     # A lane_offset is always emitted continuous="true" (the only mode that does
     # anything with an AbsoluteTargetLaneOffset), so its Event never completes
     # on its own and "after the Spurversatz" is not a start condition the editor
     # offers at all. Rejected outright rather than rewritten: unlike a route
-    # there is no stand-in trigger that says the same thing.
+    # there is no stand-in trigger that says the same thing. Its START is well
+    # defined, so event_started may name one.
     offset_refs = {
         ref for ref, event in events_by_ref.items()
         if event.get("action", {}).get("type") == "lane_offset"
@@ -441,20 +489,20 @@ def _normalize_after_event_chains(actors: list[tuple[dict, str, str]]) -> None:
             )
 
     # A cycle is not a smaller scenario, it is a dead one: every event on the
-    # loop waits for a completeState that can never arrive, with nothing in the
+    # loop waits for a state change that can never arrive, with nothing in the
     # file or the run log to say why. The editor's own dropdown cannot build
-    # one (ScenarioRules.afterEventCycleKeys, frontend/js/app.js), so this
-    # catches a save file, a hand-written payload or an LLM one. Each event has
-    # exactly one trigger, hence at most one outgoing edge — a plain walk finds
-    # the loop without a full SCC pass.
+    # one (ScenarioRules.canWaitFor, frontend/js/app.js), so this catches a
+    # save file, a hand-written payload or an LLM one. Each event has exactly
+    # one trigger, hence at most one outgoing edge — a plain walk finds the loop
+    # without a full SCC pass. after_event and event_started edges are walked
+    # alike: "starts when the other starts" round a loop never fires either.
     for start_ref, start_event in events_by_ref.items():
         chain = [start_ref]
         ref, event = start_ref, start_event
         while True:
-            trigger = event.get("trigger", {})
-            if trigger.get("type") != "after_event":
+            if not is_ref(event):
                 break
-            target_ref = _after_event_target(trigger, ref[0])
+            target_ref = _after_event_target(event["trigger"], ref[0])
             target = events_by_ref.get(target_ref)
             if target is None:
                 break
@@ -463,8 +511,8 @@ def _normalize_after_event_chains(actors: list[tuple[dict, str, str]]) -> None:
                     f"{ent}.{eid}" for ent, eid in (*chain[chain.index(target_ref):], target_ref)
                 )
                 raise ValueError(
-                    f"after_event triggers form a cycle ({loop}) — every event on "
-                    f"it waits for one that never completes"
+                    f"event triggers form a cycle ({loop}) — every event on "
+                    f"it waits for one that never fires"
                 )
             chain.append(target_ref)
             ref, event = target_ref, target
@@ -553,6 +601,45 @@ def _normalize_static_objects(params: dict):
         })
 
 
+_MAPS_DIR = Path(__file__).resolve().parent.parent / "maps"
+
+
+def _carla_light_positions(town: str):
+    """CARLA's traffic-light actor positions for a bundled town, or None when
+    the town was never probed (tests/probe_carla_traffic_lights.py)."""
+    import json
+    probe = _MAPS_DIR / str(town) / "carla_traffic_lights.json"
+    if not probe.exists():
+        return None
+    try:
+        return [(float(l["x"]), float(l["y"])) for l in json.loads(probe.read_text())]
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def _reject_phantom_signals(params: dict):
+    """A signal event addresses its light as TrafficSignalStateAction
+    name="pos=x,y", which ScenarioRunner resolves to the CARLA actor within 2 m
+    (get_traffic_light_from_osc_name) — and raises "Unknown traffic light",
+    aborting the whole run, when there is none. The .xodr has lights the CARLA
+    build does not (Town10HD's traffic_light_10/11), so this is a 400 rather
+    than a run that dies at load. Skipped for an unprobed town and for a signal
+    that names its actor explicitly (traffic_signal_ref)."""
+    import math
+    carla_lights = _carla_light_positions(params.get("map"))
+    if carla_lights is None:
+        return
+    for signal in params["trafficSignals"]:
+        if not signal["events"] or signal.get("traffic_signal_ref"):
+            continue
+        if not any(math.hypot(cx - signal["x"], cy - signal["y"]) < 2.0 for cx, cy in carla_lights):
+            raise ValueError(
+                f"traffic signal '{signal['id']}' at ({signal['x']}, {signal['y']}) has no "
+                f"traffic light in CARLA's {params.get('map')} — ScenarioRunner would abort "
+                f"the run with 'Unknown traffic light'"
+            )
+
+
 def validate_scenario_params(params: dict) -> dict:
     """
     Validate and fill defaults for the scenario params dict.
@@ -583,6 +670,7 @@ def validate_scenario_params(params: dict) -> dict:
         signal["id"] = str(signal.get("id", f"signal_{idx + 1}"))
         signal["x"] = float(signal.get("x", 0.0))
         signal["y"] = float(signal.get("y", 0.0))
+        signal["z"] = float(signal.get("z", 0.0))
         raw_events = signal.get("events") if isinstance(signal.get("events"), list) else []
         signal["events"] = []
         for event_idx, event in enumerate(raw_events):
@@ -594,6 +682,7 @@ def validate_scenario_params(params: dict) -> dict:
             if event["state"] not in {"red", "yellow", "green"}:
                 event["state"] = "red"
             signal["events"].append(event)
+    _reject_phantom_signals(params)
 
     # NPCs
     params.setdefault("npcs", [])

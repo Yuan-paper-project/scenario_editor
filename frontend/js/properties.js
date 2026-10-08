@@ -20,6 +20,14 @@
   const trafficSignalPanel = document.getElementById('traffic-signal-panel');
   const btnAddTrafficEvent = document.getElementById('btn-add-traffic-event');
   const trafficSignalEventList = document.getElementById('traffic-signal-event-list');
+  const trafficSignalMeta = document.getElementById('traffic-signal-meta');
+  const trafficEventCount = document.getElementById('traffic-event-count');
+
+  const TRAFFIC_STATES = [
+    ['red', 'Rot'],
+    ['yellow', 'Gelb'],
+    ['green', 'Grün'],
+  ];
 
   const propX = document.getElementById('prop-x');
   const propY = document.getElementById('prop-y');
@@ -28,6 +36,9 @@
   const propZAuto = document.getElementById('prop-z-auto');
   const propInitSpeed      = document.getElementById('prop-init-speed');
   const propInitSpeedLabel = document.getElementById('prop-init-speed-label');
+  const obeyRow           = document.getElementById('obey-row');
+  const propObeyLights     = document.getElementById('prop-obey-lights');
+  const propObeyObstacles  = document.getElementById('prop-obey-obstacles');
 
   const npcSection     = document.getElementById('props-npc-section');
 
@@ -434,7 +445,16 @@
     propZ.value   = actor.z   != null ? actor.z.toFixed(2)    : '0.20';
     propYaw.value = actor.yaw != null ? Math.round(actor.yaw) : '0';
     propInitSpeed.value = (actor.initial_speed ?? 0).toFixed(1);
+    // Absent means on, in every layer — the value every vehicle was exported
+    // with before the toggles existed.
+    propObeyLights.checked    = actor.obey_traffic_lights !== false;
+    propObeyObstacles.checked = actor.obey_obstacles !== false;
     _syncing = false;
+
+    // Only simple_vehicle_control reads these; a walker is on
+    // PedestrianControl, which reads neither. Same split as lane_offset.
+    obeyRow.classList.toggle('hidden',
+      !isScenarioActor || !ScenarioRules.honoursLaneOffset(actor.type));
 
     // .props-group is a bare 2-column grid with no per-row wrapper, so the
     // label and the input have to be hidden individually.
@@ -457,11 +477,45 @@
     const action = TrafficSignals.actionById(tl.id);
     propsOverview.classList.add('hidden');
     propsContent.classList.remove('hidden');
-    propsTitle.textContent = `Ampel ${tl.id}`;
+    // 'traffic_light_2' is the map's id; the number is what tells two apart.
+    const num = String(tl.id).match(/(\d+)$/);
+    propsTitle.textContent = num ? `Ampel ${num[1]}` : `Ampel ${tl.id}`;
     if (propsDelete) propsDelete.classList.add('hidden');
+    // Every section an actor or a prop shows has to be hidden here explicitly:
+    // they share #props-content, and anything left out keeps whatever the
+    // previously selected object made visible (the type picker did exactly
+    // that — a light clicked after a car showed „Typ: Auto").
     document.getElementById('spawn-panel')?.classList.add('hidden');
+    document.getElementById('actor-type-row')?.classList.add('hidden');
+    document.getElementById('prop-type-row')?.classList.add('hidden');
     npcSection.classList.add('hidden');
     if (trafficSignalPanel) trafficSignalPanel.classList.remove('hidden');
+    if (trafficSignalMeta) {
+      trafficSignalMeta.textContent =
+        `${tl.id} · x ${UIUtils.fmt(tl.x)}, y ${UIUtils.fmt(tl.y)}`;
+    }
+    // The .xodr has lights CARLA does not (Town10HD's traffic_light_10/11);
+    // a Schaltung on one aborts the run with "Unknown traffic light". Adding
+    // is disabled, and any already there (a save file) are chipped — the
+    // export gate and the backend refuse them too.
+    const ghost = tl.inCarla === false;
+    if (btnAddTrafficEvent) {
+      btnAddTrafficEvent.disabled = ghost;
+      btnAddTrafficEvent.title = ghost
+        ? 'Diese Ampel gibt es in CARLA nicht — sie kann nicht geschaltet werden'
+        : 'Ampel umschalten, sobald das Ego sich nähert';
+    }
+    let chip = document.getElementById('traffic-signal-ghost');
+    if (ghost && !chip) {
+      chip = document.createElement('div');
+      chip.id = 'traffic-signal-ghost';
+      chip.className = 'event-problem';
+      chip.setAttribute('role', 'status');
+      chip.textContent = '⚠ Diese Ampel gibt es in CARLA nicht. Eine Schaltung würde den Lauf mit „Unknown traffic light" abbrechen.';
+      trafficSignalMeta?.after(chip);
+    } else if (!ghost && chip) {
+      chip.remove();
+    }
     _renderTrafficSignalEvents(tl, action);
   }
 
@@ -479,62 +533,100 @@
     if (!trafficSignalEventList) return;
     trafficSignalEventList.innerHTML = '';
     const events = action?.events || [];
+    if (trafficEventCount) trafficEventCount.textContent = String(events.length);
     if (events.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'event-empty';
-      empty.textContent = 'Noch keine Events definiert.';
+      empty.textContent = 'Keine Schaltung — die Ampel folgt ihrem normalen Zyklus.';
       trafficSignalEventList.appendChild(empty);
       return;
     }
 
-    events.forEach(ev => {
+    // Laid out like an actor's event card (eventPanel.js): header, then the
+    // WENN block, then the DANN row.
+    events.forEach((ev, i) => {
       const card = document.createElement('div');
       card.className = 'event-card traffic-event-card';
 
       const header = document.createElement('div');
       header.className = 'event-card-header traffic-event-header';
-
+      const title = document.createElement('div');
+      title.className = 'event-title-text';
+      title.textContent = `Schaltung ${i + 1}`;
       const deleteBtn = document.createElement('button');
       deleteBtn.className = 'event-delete';
       deleteBtn.type = 'button';
       deleteBtn.textContent = '×';
-      deleteBtn.title = 'Event löschen';
+      deleteBtn.title = 'Schaltung löschen';
+      deleteBtn.setAttribute('aria-label', deleteBtn.title);
       deleteBtn.addEventListener('click', () => _deleteTrafficSignalEvent(tl.id, ev.id));
-
-      header.appendChild(_trafficStatePicker(tl.id, ev));
+      header.appendChild(title);
       header.appendChild(deleteBtn);
       card.appendChild(header);
 
+      // WENN: emitted as a ReachPositionCondition on hero with this tolerance
+      // around the signal's pole (xml_builder._append_traffic_signal_event).
+      const trigger = document.createElement('div');
+      trigger.className = 'event-trigger-block';
       const distanceInput = document.createElement('input');
       distanceInput.type = 'number';
       distanceInput.min = '0';
       distanceInput.step = '1';
-      distanceInput.value = ev.trigger_distance ?? 40;
+      distanceInput.value = UIUtils.fmt(ev.trigger_distance ?? 40, 0);
+      distanceInput.title = 'Abstand des Ego zum Ampelmast';
       distanceInput.addEventListener('change', e => {
         _updateTrafficSignalEvent(tl.id, ev.id, {
           trigger_distance: Math.max(0, parseFloat(e.target.value) || 0),
         });
       });
-      card.appendChild(UIUtils.paramRow('Ego <=', distanceInput, 'm'));
+      // Same short accent eyebrow as an actor card's „Auslöser"; the
+      // condition itself reads as one inline phrase beside it.
+      const whenRow = document.createElement('div');
+      whenRow.className = 'event-row event-primary-row';
+      const whenLabel = document.createElement('label');
+      whenLabel.textContent = 'Wenn';
+      UIUtils.bindLabel(whenLabel, distanceInput);
+      const phrase = document.createElement('div');
+      phrase.className = 'traffic-when';
+      const pre = document.createElement('span');
+      pre.textContent = 'Ego näher als';
+      const unit = document.createElement('span');
+      unit.textContent = 'm';
+      phrase.append(pre, distanceInput, unit);
+      whenRow.append(whenLabel, phrase);
+      trigger.appendChild(whenRow);
+      card.appendChild(trigger);
+
+      // DANN
+      const thenRow = document.createElement('div');
+      thenRow.className = 'event-row';
+      const thenLabel = document.createElement('label');
+      thenLabel.textContent = 'Dann';
+      const picker = _trafficStatePicker(tl.id, ev);
+      UIUtils.bindLabel(thenLabel, picker);
+      thenRow.appendChild(thenLabel);
+      thenRow.appendChild(picker);
+      card.appendChild(thenRow);
 
       trafficSignalEventList.appendChild(card);
     });
   }
 
   function _trafficStatePicker(signalId, ev) {
-    const current = ['red', 'yellow', 'green'].includes(ev.state) ? ev.state : 'red';
+    const current = TRAFFIC_STATES.some(([s]) => s === ev.state) ? ev.state : 'red';
     const wrap = document.createElement('div');
-    wrap.className = 'traffic-state-picker';
-    [
-      ['red', 'Rot'],
-      ['yellow', 'Gelb'],
-      ['green', 'Grün'],
-    ].forEach(([state, title]) => {
+    wrap.className = 'event-toggle traffic-state-picker';
+    TRAFFIC_STATES.forEach(([state, label]) => {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = `traffic-state-option ${state}${state === current ? ' active' : ''}`;
       btn.dataset.state = state;
-      btn.title = title;
+      btn.setAttribute('aria-pressed', String(state === current));
+      const lamp = document.createElement('span');
+      lamp.className = 'traffic-state-lamp';
+      lamp.setAttribute('aria-hidden', 'true');
+      btn.appendChild(lamp);
+      btn.appendChild(document.createTextNode(label));
       btn.addEventListener('click', () => _updateTrafficSignalEvent(signalId, ev.id, { state }));
       wrap.appendChild(btn);
     });
@@ -609,6 +701,16 @@
   [propX, propY, propZ, propYaw].forEach(inp => {
     inp.addEventListener('change', _onPosChange);
   });
+
+  [[propObeyLights, 'obey_traffic_lights'], [propObeyObstacles, 'obey_obstacles']]
+    .forEach(([box, key]) => {
+      box.addEventListener('change', () => {
+        if (_syncing) return;
+        const id = AppState.selectedId;
+        if (!id || !AppState.findById(id)) return;
+        AppState.updateById(id, { [key]: box.checked });
+      });
+    });
 
   // z is normally derived from the elevation profile on every move, so a
   // hand-typed value is sticky until the object is next moved — with no way

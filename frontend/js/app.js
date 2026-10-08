@@ -1033,30 +1033,38 @@
     return !!point && Number.isFinite(Number(point.x)) && Number.isFinite(Number(point.y));
   }
 
-  // ── after_event: cross-actor references and the cycles they make possible ──
+  // ── Event references: cross-actor triggers and the cycles they make possible ──
   //
-  // An after_event trigger names `event_id` plus an optional `actor_ref`; an
-  // absent actor_ref means the event's own actor, so every save file, template
-  // and payload written before cross-actor references existed still resolves
-  // the same way. The backend resolves actor_ref to an OSC entity name at
-  // export (scenario_io.py) and the emitter keys its name table on
-  // (entity, event_id), because ScenarioRunner's storyboardElementRef lookup
-  // goes through a global blackboard and does not care which Act wrote it.
+  // Two triggers name another event: after_event (fires when it COMPLETES,
+  // completeState) and event_started (fires when it STARTS, startTransition).
+  // Both carry `event_id` plus an optional `actor_ref`; an absent actor_ref
+  // means the event's own actor, so every save file, template and payload
+  // written before cross-actor references existed still resolves the same way.
+  // The backend resolves actor_ref to an OSC entity name at export
+  // (scenario_io.py) and the emitter keys its name table on (entity, event_id),
+  // because ScenarioRunner's storyboardElementRef lookup goes through a global
+  // blackboard ('(EVENT)<name>-START' / '-END') and does not care which Act
+  // wrote it.
   //
   // Each event has exactly one trigger, so the reference graph is a functional
   // graph: at most one outgoing edge per node. Walking forward from a node
-  // therefore finds any cycle it is part of without a full SCC pass.
+  // therefore finds any cycle it is part of without a full SCC pass. Both
+  // trigger kinds are edges of the same graph — a loop of "starts when the
+  // other starts" never fires either.
+
+  const EVENT_REF_TRIGGERS = new Set(['after_event', 'event_started']);
+  const _isEventRef = trigger => !!trigger && EVENT_REF_TRIGGERS.has(trigger.type);
 
   const _afterEventKey = (actorId, eventId) => `${actorId}::${eventId}`;
 
-  /** The actor that owns the event an after_event trigger points at. */
+  /** The actor that owns the event an event-reference trigger points at. */
   function _afterEventOwner(actor, trigger) {
     const ref = trigger && trigger.actor_ref;
     if (!ref || ref === actor.id) return actor;
     return AppState.findById(ref) || null;
   }
 
-  /** The event an after_event trigger points at, as {actor, event, index}. */
+  /** The event an event-reference trigger points at, as {actor, event, index}. */
   function _afterEventTarget(actor, trigger, events) {
     const owner = _afterEventOwner(actor, trigger);
     if (!owner) return null;
@@ -1066,9 +1074,9 @@
   }
 
   /**
-   * Every node reachable by following after_event edges forward from one
-   * event, as a Set of keys. Stops at a missing target, a non-after_event
-   * trigger, or a repeat — so it terminates on a cycle instead of spinning.
+   * Every node reachable by following event-reference edges forward from one
+   * event, as a Set of keys. Stops at a missing target, a trigger that names no
+   * event, or a repeat — so it terminates on a cycle instead of spinning.
    * The start node is included only when the walk comes back to it, which is
    * exactly the test for "this event is on a cycle".
    */
@@ -1077,7 +1085,7 @@
     let actor = startActor, ev = startEvent;
     for (;;) {
       const trigger = (ev && ev.trigger) || {};
-      if (trigger.type !== 'after_event') return seen;
+      if (!_isEventRef(trigger)) return seen;
       const target = _afterEventTarget(actor, trigger);
       if (!target) return seen;
       const key = _afterEventKey(target.actor.id, target.event.id);
@@ -1099,15 +1107,33 @@
 
     afterEventKey: _afterEventKey,
 
-    /** The {actor, event, index} an after_event trigger names, or null. */
+    /** Does this trigger name another event (after_event / event_started)? */
+    isEventRef: _isEventRef,
+
+    /**
+     * May an event on `actor` wait on an event owned by `owner` at all?
+     *
+     * An NPC may not wait on an ego event. The ego may be driven by the AV
+     * under test, which carries no storyboard events — an NPC chained onto one
+     * would then simply never move. An NPC reacts to the ego through what the
+     * ego DOES instead: distance_to_ego, distance_to_point with the ego as the
+     * triggering entity, or ego_speed. The ego may still wait on an NPC event.
+     * Mirrored by _normalize_after_event_chains (backend/scenario_io.py) as a 400.
+     */
+    mayWaitOnActor(actor, owner) {
+      if (!actor || !owner) return false;
+      return actor.type === 'ego' || owner.type !== 'ego';
+    },
+
+    /** The {actor, event, index} an event-reference trigger names, or null. */
     afterEventTarget(actor, trigger, events) {
-      if (!actor || !trigger || trigger.type !== 'after_event') return null;
+      if (!actor || !_isEventRef(trigger)) return null;
       return _afterEventTarget(actor, trigger, events);
     },
 
-    /** Is `ev` itself on an after_event cycle? */
+    /** Is `ev` itself on an event-reference cycle? */
     afterEventCycles(actor, ev) {
-      if (!actor || !ev || (ev.trigger || {}).type !== 'after_event') return false;
+      if (!actor || !ev || !_isEventRef(ev.trigger)) return false;
       return _afterEventReach(actor, ev).has(_afterEventKey(actor.id, ev.id));
     },
 
@@ -1202,7 +1228,7 @@
           message: 'der Auslösepunkt wurde nie auf der Karte gesetzt',
         };
       }
-      if (trigger.type === 'after_event') {
+      if (_isEventRef(trigger)) {
         // The reference may leave this actor, so the target is resolved through
         // AppState rather than looked up in `events` — which holds only the
         // owning actor's own list.
@@ -1226,22 +1252,31 @@
             message: 'der Auslöser hängt in einem Kreis von Events, die aufeinander warten',
           };
         }
+        const targetAction = target.event.action || {};
         // Pointing at an assign_route is fine: the backend rewrites that trigger
-        // to distance_to_ego @ 400 rather than leaving it dangling.
+        // to distance_to_ego @ 400 rather than leaving it dangling — which is
+        // also why the ego ban below does not apply to it.
+        if (targetAction.type === 'assign_route') return null;
+        if (!this.mayWaitOnActor(actor, target.actor)) {
+          return {
+            code: 'npc_waits_on_ego',
+            short: 'NPC darf nicht auf Ego-Event warten',
+            message: 'ein NPC wartet auf ein Ego-Event — ein vom AV gefahrenes Ego hat keine Events',
+          };
+        }
         // A lane_offset is emitted continuous="true", so its Event never
-        // completes on its own — it is never a valid after_event target. The
-        // dropdown never offers one and the backend rejects it with a 400; this
-        // catches a save file or an LLM payload before the export does.
-        if ((target.event.action || {}).type === 'lane_offset') {
+        // completes on its own — it is never a valid after_event target. Its
+        // START is perfectly well defined, so event_started may name one. The
+        // dropdown never offers the former and the backend rejects it with a
+        // 400; this catches a save file or an LLM payload before the export does.
+        if (trigger.type === 'after_event' && targetAction.type === 'lane_offset') {
           return {
             code: 'after_lane_offset',
             short: 'Auslöser feuert nie — Spurversatz endet nicht',
             message: 'der Auslöser wartet auf einen Spurversatz, der dauerhaft gilt und nie endet',
           };
         }
-        const targetAction = target.event.action || {};
-        if (targetAction.type !== 'assign_route' &&
-            !this.actionEmits(targetAction, target.actor.type)) {
+        if (!this.actionEmits(targetAction, target.actor.type)) {
           return {
             code: 'dangling_after_event',
             short: 'Auslöser feuert nie — Vorgänger unvollständig',

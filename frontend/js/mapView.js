@@ -724,7 +724,11 @@
     const lit = new Set((action?.events || []).map(ev => ev.state || 'red'));
     const g = _svgEl('g', {
       transform: `translate(${x},${y})`,
-      class: `traffic-light${selected ? ' selected' : ''}${configured ? ' configured' : ''}`,
+      // A light the .xodr has but CARLA does not (tl.inCarla === false, from
+      // maps/<town>/carla_traffic_lights.json): still selectable, so the panel
+      // can say why it cannot be switched, but drawn as a ghost.
+      class: `traffic-light${selected ? ' selected' : ''}${configured ? ' configured' : ''}`
+        + `${tl.inCarla === false ? ' not-in-carla' : ''}`,
       'data-traffic-light-id': id,
     });
     g.addEventListener('click', e => {
@@ -755,7 +759,9 @@
     g.appendChild(_buildSelectionMarks(W + 0.6, H + 0.6));
 
     const title = _svgEl('title', {});
-    title.textContent = configured
+    title.textContent = tl.inCarla === false
+      ? `Ampel ${id} — existiert in CARLA nicht, nicht schaltbar`
+      : configured
       ? `Ampel ${id} — ${action.events.length} Event${action.events.length === 1 ? '' : 's'}`
       : `Ampel ${id} — klicken, um ihren Zustand im Szenario festzulegen`;
     g.appendChild(title);

@@ -7,6 +7,7 @@ Coordinate convention:
   Z is NOT flipped — OpenDRIVE and CARLA are both Z-up.
 """
 
+import json
 import math
 import re
 import sys
@@ -567,7 +568,30 @@ def _eval_geometry_at_s(road_elem: ET.Element, s_query: float):
     return None
 
 
-def _extract_traffic_lights(root: ET.Element) -> list[dict]:
+def _extract_traffic_lights(root: ET.Element, xodr_path: Path | None = None) -> list[dict]:
+    """Dynamic signals, i.e. traffic lights, at their pole position.
+
+    Each carries `signalId` (the .xodr id), `roads` — the junction connector
+    roads whose `<signalReference>` names it, i.e. the lanes it governs (every
+    connector in the bundled towns references at most one light) — and, when
+    `maps/<town>/carla_traffic_lights.json` exists (tests/probe_carla_traffic_lights.py),
+    `inCarla`: whether the CARLA build has an actor within 2 m. A signal event
+    on a light without one makes ScenarioRunner raise "Unknown traffic light"
+    and abort the run (Town10HD's traffic_light_10/11).
+    """
+    governs: dict[str, list[str]] = {}
+    for road in root.findall('road'):
+        for ref in road.findall('.//signalReference'):
+            governs.setdefault(ref.get('id'), []).append(road.get('id'))
+    carla_lights = None
+    if xodr_path is not None:
+        probe = Path(xodr_path).parent / 'carla_traffic_lights.json'
+        if probe.exists():
+            try:
+                carla_lights = json.loads(probe.read_text())
+            except (OSError, ValueError):
+                carla_lights = None
+
     results = []
     for road in root.findall('road'):
         for sig in road.findall('.//signal'):
@@ -582,12 +606,23 @@ def _extract_traffic_lights(root: ET.Element) -> list[dict]:
             wx = px - t * math.sin(ph)
             wy = py + t * math.cos(ph)
             editor_id = f"traffic_light_{len(results) + 1}"
-            results.append({
+            light = {
                 'id': editor_id,
                 'name': f"Traffic Light {len(results) + 1}",
                 'x': round(wx, 1),
                 'y': round(-wy, 1),
-            })
+                # Road-surface height at the pole. A signal event's trigger is a
+                # 3-D ReachPositionCondition around this point; the emitter used
+                # to write z = 0, so on an elevated junction a short radius
+                # could never be reached.
+                'z': round(_eval_elevation(_get_elevations(road), s), 2),
+                'signalId': sig.get('id'),
+                'roads': sorted(set(governs.get(sig.get('id'), [])), key=str),
+            }
+            if carla_lights is not None:
+                light['inCarla'] = any(
+                    math.hypot(c['x'] - light['x'], c['y'] - light['y']) < 2.0 for c in carla_lights)
+            results.append(light)
     return results
 
 
@@ -1007,7 +1042,7 @@ def _process_root_to_render_data(root: ET.Element, town_name: str, xodr_path: Pa
         })
 
     spawn_points, intersections = _load_spawn_points(str(xodr_path))
-    traffic_lights = _extract_traffic_lights(root)
+    traffic_lights = _extract_traffic_lights(root, xodr_path)
     crosswalks     = _extract_crosswalks(root)
     signs          = _extract_signs(root)
     speed_signs    = _extract_speed_signs(root)

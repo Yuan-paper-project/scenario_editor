@@ -15,8 +15,8 @@
  * that data, so it stops and badges rather than guessing a path it cannot
  * justify. See the "In-editor preview fidelity" plan for the full analysis.
  *
- * All 4 real event triggers (simulation_time, distance_to_ego,
- * distance_to_point, after_event) are evaluated, including the two rewrites
+ * All 6 real event triggers (simulation_time, distance_to_ego,
+ * distance_to_point, ego_speed, after_event, event_started) are evaluated, including the two rewrites
  * the backend applies at export time (assign_route forces its own trigger to
  * simulation_time@0; an after_event chained onto a dropped/assign_route
  * event never fires) — mirrored here so the preview matches the .xosc that
@@ -61,6 +61,8 @@
   // A SAME-actor reference still reads sim.fired live — that is one behaviour
   // tree ticking its own events and has no ordering ambiguity to remove.
   let _tickCompleted = new Map();
+  // `actorId::eventId` → firedAt, the event_started counterpart of the above.
+  let _tickStarted = new Map();
   let _layerSimBadges = null;   // our own SVG layer, appended into #world
 
   // ── Tunables mirroring the real controllers ─────────────────────────────────
@@ -209,7 +211,8 @@
   // after_event→assign_route rewrite, then — LAST, so it also catches the
   // just-rewritten case — the ego self-distance rewrite.
 
-  const TRIGGER_TYPES = new Set(['simulation_time', 'distance_to_ego', 'distance_to_point', 'after_event']);
+  const TRIGGER_TYPES = new Set(['simulation_time', 'distance_to_ego', 'distance_to_point',
+                                 'ego_speed', 'after_event', 'event_started']);
   const ACTION_TYPES  = new Set(['follow_trajectory', 'assign_route', 'set_speed',
                                  'set_distance', 'lane_change', 'lane_offset']);
 
@@ -235,7 +238,7 @@
     // may name an event on ANOTHER actor, so "does the target assign a route"
     // cannot be answered from this actor's own list.
     for (const ev of events) {
-      if (ev.trigger.type !== 'after_event') continue;
+      if (!ScenarioRules.isEventRef(ev.trigger)) continue;
       const target = ScenarioRules.afterEventTarget(actor, ev.trigger);
       if (target && (target.event.action || {}).type === 'assign_route') {
         ev.trigger = { type: 'distance_to_ego', value: 400 };
@@ -258,12 +261,17 @@
     // in a loaded save file — which is exactly when a preview is what you reach
     // for.
     for (const ev of events) {
-      if (ev.trigger.type !== 'after_event') continue;
+      if (!ScenarioRules.isEventRef(ev.trigger)) continue;
       const target = ScenarioRules.afterEventTarget(actor, ev.trigger);
-      // A lane_offset target is refused by the export gate (it never ends on
-      // its own), so the preview does not pretend the chain can proceed either.
+      // A lane_offset target is refused by the export gate for after_event (it
+      // never ends on its own) — event_started may name one, its start is
+      // well defined. An NPC waiting on an ego event is refused outright
+      // (ScenarioRules.mayWaitOnActor). In neither case does the preview
+      // pretend the chain can proceed.
       if (!target || !_actionEmits(target.event.action, target.actor.type) ||
-          (target.event.action || {}).type === 'lane_offset' ||
+          (ev.trigger.type === 'after_event' &&
+           (target.event.action || {}).type === 'lane_offset') ||
+          !ScenarioRules.mayWaitOnActor(actor, target.actor) ||
           ScenarioRules.afterEventCycles(actor, ev)) {
         ev.trigger.neverFires = true;
       } else if (target.actor.id !== actor.id) {
@@ -326,6 +334,24 @@
         }
         const rec = sim.fired.get(trigger.event_id);
         return !!rec && rec.completedAt != null && rec.completedAt <= simTime;
+      }
+      case 'event_started': {
+        // startTransition: ScenarioRunner writes '(EVENT)<name>-START' when the
+        // event's actions initialise, i.e. on the tick its own trigger fires.
+        if (trigger.neverFires) return false;
+        if (trigger.watchActorId) {
+          const firedAt = _tickStarted.get(`${trigger.watchActorId}::${trigger.event_id}`);
+          return firedAt != null && firedAt <= simTime;
+        }
+        const rec = sim.fired.get(trigger.event_id);
+        return !!rec && rec.firedAt <= simTime;
+      }
+      case 'ego_speed': {
+        // TriggerVelocity on hero: CarlaDataProvider's per-tick velocity map,
+        // hence the snapshot. No ego → 0, like get_velocity's own fallback.
+        const v = _tickSpeeds.get(_egoId) ?? 0;
+        const limit = trigger.value ?? 10;
+        return trigger.rule === 'lessThan' ? v < limit : v > limit;
       }
       default:
         return false;
@@ -1236,9 +1262,11 @@
   function _snapshotSpeeds() {
     _tickSpeeds.clear();
     _tickCompleted.clear();
+    _tickStarted.clear();
     for (const sim of _simActors.values()) {
       _tickSpeeds.set(sim.id, sim.speed);
       for (const [eventId, rec] of sim.fired) {
+        _tickStarted.set(`${sim.id}::${eventId}`, rec.firedAt);
         if (rec.completedAt != null) _tickCompleted.set(`${sim.id}::${eventId}`, rec.completedAt);
       }
     }
@@ -1249,6 +1277,7 @@
     _simActors.clear();
     _tickSpeeds.clear();
     _tickCompleted.clear();
+    _tickStarted.clear();
     _scenarioEnded = false;
     _egoId = null;
 
@@ -1536,6 +1565,7 @@
     _simActors.clear();
     _tickSpeeds.clear();
     _tickCompleted.clear();
+    _tickStarted.clear();
     _egoId = ego ? ego.id : null;
     try {
       for (const a of actors) _simActors.set(a.id, _makeSimActor(a, a.id === _egoId));
@@ -1578,6 +1608,7 @@
       _simActors.clear();
       _tickSpeeds.clear();
       _tickCompleted.clear();
+      _tickStarted.clear();
       _egoId = null;
       _simTime = savedTime;
     }

@@ -326,6 +326,17 @@
     };
   }
 
+  /** A conflict vehicle that must not defuse its own conflict: it runs reds
+   * and does not brake for what is ahead (simple_vehicle_control's
+   * consider_trafficlights / consider_obstacles, exported per actor). A
+   * crossing car that stops for the ego's car in front of it, or at a light
+   * the ego has green, is not cross traffic any more. */
+  function _ignoresTraffic(actor) {
+    actor.obey_traffic_lights = false;
+    actor.obey_obstacles = false;
+    return actor;
+  }
+
   /** An assign_route event whose waypoint 0 is the actor's own pose — the
    * seed objects.js places and the backend requires to be 'fastest'. */
   function _routeEvent(actor, waypoints, id = 'evt-1') {
@@ -428,6 +439,11 @@
     const hold = rng.range(3, 8);
 
     const lead = _vehicle(type, pose, vLead);
+    // The lights on the corridor are forced green by the EGO's approach
+    // (_greenWave), and the lead reaches each one first — waiting at a red the
+    // ego has not yet switched would park it there and fire its brake trigger
+    // early. So it drives through; there is no cross traffic to meet.
+    lead.obey_traffic_lights = false;
     const events = [
       _routeEvent(lead, _corridorWaypoints(c, gap0)),
       _speedEvent('evt-2', nearEgo(trigger), vEnd, 'rate', decel),
@@ -753,20 +769,93 @@
     return null;
   }
 
-  function _signalizedNear(x, y, radius = 30) {
-    return (AppState.mapData.trafficLights || []).some(tl => Math.hypot(tl.x - x, tl.y - y) < radius);
+  // ── Traffic lights: a green wave for the ego ─────────────────────────────────
+  //
+  // The ego obeys reds, and a four-way cycle holds one for up to ~40 s: in
+  // CARLA the ego sat 44 s at a red and reached the crossing pedestrian only as
+  // every Act's 60 s stop trigger ended the run. The preview models no lights,
+  // so it predicted a clean conflict. An AV under test waits there too.
+  //
+  // So every light the ego meets before the conflict is forced GREEN as it
+  // approaches, with the editor's own signal events (a Schaltung: ego within N m
+  // of the pole -> state). The light governing a connector lane comes straight
+  // from the .xodr — each junction connector carries a <signalReference> to
+  // exactly one light (map_renderer._extract_traffic_lights, `roads`).
+  //
+  // One forced state is not enough: TrafficLightStateSetter is a bare
+  // set_state, and the light's group controller overwrites it at its next
+  // phase change (a forced red lasted ~13 s in a Town05 run). simple_vehicle_
+  // control stops only for RED and only inside the light's trigger volume, just
+  // before the stop line — so the green is re-asserted at several distances,
+  // the last a few metres short of the line, leaving no window for a phase
+  // change to catch the ego there.
+  const GREEN_WAVE_BEFORE_M = [55, 38, 24, 13, 5];
+
+  /** Lights by the connector road they govern (CARLA lights only). */
+  function _lightIndex(net) {
+    if (net.lightByRoad) return net.lightByRoad;
+    net.lightByRoad = new Map();
+    for (const tl of AppState.mapData.trafficLights || []) {
+      if (tl.inCarla === false) continue;
+      for (const roadId of tl.roads || []) net.lightByRoad.set(String(roadId), tl);
+    }
+    return net.lightByRoad;
   }
 
-  /** True when the corridor passes a signalized junction before corridor
-   * distance `dLimit` (other than `exceptKey`'s). Every actor obeys reds, and a
-   * four-way cycle holds a red for up to ~40 s: measured in CARLA, the ego sat
-   * at one for 44 s and reached the crossing pedestrian only as every Act's
-   * 60 s stop trigger ended the run. An AV under test waits there too. */
-  function _signalBefore(c, dLimit, exceptKey = null) {
-    return c.segs.some(sg => sg.L.junction && sg.startD < dLimit && sg.key !== exceptKey && (() => {
-      const mid = _laneAt(sg.L, sg.L.length / 2);
-      return _signalizedNear(mid.x, mid.y);
-    })());
+  /** The lights an actor entering junction lane J has to obey: the one on J's
+   * own road, plus any on a connector sharing J's entry point. A light's
+   * trigger volume covers the approach lane, so a turn that is not itself
+   * referenced still stops at its neighbour's red. */
+  function _lightsFor(net, J) {
+    const idx = _lightIndex(net);
+    const entry = _laneAt(J, 0);
+    const out = new Map();
+    for (const C of net.byJunction.get(J.junctionId) || [J]) {
+      const e = _laneAt(C, 0);
+      if (C.key !== J.key && Math.hypot(e.x - entry.x, e.y - entry.y) > 2) continue;
+      const tl = idx.get(String(C.road.id));
+      if (tl) out.set(tl.id, tl);
+    }
+    return [...out.values()];
+  }
+
+  /** Does any light govern junction `junctionId` at all? */
+  function _junctionSignalized(net, junctionId) {
+    const idx = _lightIndex(net);
+    return (net.byJunction.get(junctionId) || []).some(C => idx.has(String(C.road.id)));
+  }
+
+  /** trafficSignals entries forcing every light on the corridor before
+   * `dLimit` green as the ego approaches. Each Schaltung's radius is the 3-D
+   * distance from the pole (at road height, z from the map) to the corridor
+   * point that many metres before the stop line: ReachPositionCondition is a
+   * plain location.distance(). */
+  function _greenWave(net, c, dLimit) {
+    const signals = new Map();
+    for (const sg of c.segs) {
+      if (!sg.L.junction || sg.startD >= dLimit) continue;
+      for (const tl of _lightsFor(net, sg.L)) {
+        const sig = signals.get(tl.id)
+          || { id: tl.id, x: tl.x, y: tl.y, z: tl.z ?? 0, events: [] };
+        for (const back of GREEN_WAVE_BEFORE_M) {
+          const d = sg.startD - back;
+          if (d < 0) continue;
+          const p = _corridorAt(c, d);
+          const r = Math.hypot(p.x - tl.x, p.y - tl.y, p.z - (tl.z ?? 0));
+          sig.events.push({
+            id: `traffic-event-${sig.events.length + 1}`,
+            state: 'green',
+            trigger_distance: r1(r + 0.3),
+          });
+        }
+        // An entry at the very start of the corridor gets at least one.
+        if (!sig.events.length) {
+          sig.events.push({ id: 'traffic-event-1', state: 'green', trigger_distance: 1000 });
+        }
+        signals.set(tl.id, sig);
+      }
+    }
+    return [...signals.values()];
   }
 
   /** Walk `dist` metres back from the start of lane `key` through
@@ -794,10 +883,11 @@
 
   /* Junction cross traffic. The ego's corridor crosses a junction; another
    * vehicle approaches on a connector that crosses the ego's, released so both
-   * reach the crossing point at about the same time. At a signalized junction
-   * only oncoming traffic is used (it shares the ego's green phase); every
-   * actor here obeys red lights, so a perpendicular conflict there would just
-   * be resolved by the signal. */
+   * reach the crossing point at about the same time. The NPC ignores lights
+   * and obstacles (_ignoresTraffic), so it neither waits at a red nor brakes
+   * for the ego crossing in front of it; the ego's own light is forced green
+   * by build() (_greenWave), so at a signalized junction a perpendicular
+   * conflict is a red-light runner. */
   function _junctionConflict(rng, net, vEgo) {
     const c = _buildCorridor(rng, net, rng.range(200, 300));
     if (!c) return null;
@@ -817,12 +907,14 @@
       if (Math.hypot(cStart.x - jStart.x, cStart.y - jStart.y) < 3) continue;   // same approach
       const approachDiff = Math.abs(_wrapDeg(cStart.yaw - jStart.yaw));
       if (approachDiff < 30) continue;
-      const signalized = _signalizedNear(X.x, X.y);
-      if (signalized && approachDiff < 150) continue;
-      options.push({ C, X, signalized, oncoming: approachDiff >= 150 });
+      options.push({ C, X, oncoming: approachDiff >= 150 });
     }
     if (!options.length) return null;
-    const { C, X, signalized, oncoming } = rng.pick(options);
+    const { C, X, oncoming } = rng.pick(options);
+    // At a signalized junction the ego gets a forced green (_greenWave) and
+    // the NPC ignores lights, so a perpendicular conflict there is a
+    // red-light runner — a real case, not an artefact.
+    const signalized = _junctionSignalized(net, J.junctionId);
 
     // From "waiting at the line, pulls out" (6 m) to "approaching from well
     // back" (55 m): the shorter the run-up, the less warning the ego gets.
@@ -845,6 +937,7 @@
 
     const type = rng.weighted([['car', 6], ['van', 2], ['truck', 1], ['motorcycle', 1], ['police', 0.5], ['ambulance', 0.5]]);
     const npc = _vehicle(type, npcPose, 0);
+    _ignoresTraffic(npc);
     npc.events = [
       _routeEvent(npc, [_routeWp(exitPose)]),
       // A rate ramp at the controller's own acceleration, so the preview's
@@ -854,8 +947,7 @@
     ];
     return {
       corridor: c, npcs: [npc], props: [],
-      // Its own junction may be signalized (oncoming conflicts only, above).
-      conflictD: dX, conflictJunctionKey: J.key,
+      conflictD: dX,
       params: {
         npc_type: type, junction: J.junctionId, signalized, oncoming,
         npc_speed: r1(vNpc), npc_run_up_m: r1(npcToX), arrival_offset_s: r2(dt), trigger_m: r1(sol.radius),
@@ -947,10 +1039,44 @@
     return net.lanes.get(`${sg.L.road.id}:${sg.L.lane.sectionId}:${-id}`) || null;
   }
 
+  /** Walk `dist` metres forward from (lane `key`, arc length `s`) through
+   * successors, ending on an ordinary road lane: a landing inside a junction
+   * is carried on to POST_JUNCTION_WP_M past its exit, where a route waypoint
+   * is unambiguous. Returns {L, s} or null at a dead end. */
+  function _walkForward(rng, net, key, s, dist) {
+    let L = net.lanes.get(key);
+    let left = dist;
+    for (let hop = 0; L && hop < 6; hop++) {
+      if (s + left <= L.length - 0.5 && !L.junction) return { L, s: s + left };
+      left = Math.max(L.junction ? POST_JUNCTION_WP_M : 0, left - (L.length - s));
+      const next = (net.succ.get(L.key) || []).map(k => net.lanes.get(k)).filter(Boolean);
+      if (!next.length) return null;
+      L = rng.pick(next);
+      s = 0;
+    }
+    return null;
+  }
+
   /* Oncoming drift. A car in the opposite lane drifts over the centre line
-   * toward the ego when they are a chosen time apart — an inattentive or
-   * overtaking driver. lane_offset, so it holds (see CLAUDE.md: an offset has
-   * no end; every Act's stop trigger ends it). */
+   * into the ego's lane and back — an inattentive or overtaking driver.
+   *
+   * The drift is a ROUTE, not a lane_offset: fastest legs along its own lane,
+   * then a run of 'shortest' waypoints tracing a smooth (half-cosine) swing
+   * out, a short hold, and a swing back, then fastest again. A shortest leg is
+   * driven verbatim, so the swing is as gradual as its samples — where a
+   * lane_offset jumps the controller's aim point sideways in one tick. The
+   * swing ends ON its own lane's centre before the next fastest waypoint,
+   * because that waypoint's leg is routed from the previous point and an
+   * off-lane seed projects onto whatever lane is nearest (CLAUDE.md,
+   * per-waypoint routeStrategy) — here, the ego's lane, the wrong way.
+   *
+   * A route is fixed in space, so the timing comes from the release: the car
+   * waits at 0 m/s on its lane and a set_speed ramp fires on distance_to_ego,
+   * solved so it reaches the swing's peak as the ego does (the junction
+   * conflict's pattern). Ego-relative, so an AV-driven ego still meets it.
+   * It ignores lights and obstacles: its obstacle sensor would otherwise see
+   * the ego head-on in the lane it is swinging into and brake out of the
+   * conflict it exists to create. */
   function _oncomingDrift(rng, net, vEgo) {
     // Start on an innermost lane of a two-way road, as cut-in starts on a
     // multi-lane one: a random corridor rarely puts the ego there.
@@ -963,55 +1089,225 @@
     const c = _buildCorridor(rng, net, rng.range(220, 320), undefined,
                              start, rng.range(0, Math.max(0.5, start.length - 60)));
     if (!c) return null;
-    const vNpc = rng.range(8, 14);
-    const runUp = _egoRunUp(vEgo) + 20;
-    const options = [];
-    for (const sg of c.segs) {
-      if (sg.L.junction) continue;
+    // The oncoming lane beside corridor distance d: the segment's own
+    // opposite lane, projected. The swing may run across several lane
+    // sections — Town10HD splits its two-way roads into short ones, and
+    // requiring the whole swing on one lane found no site there at all.
+    const oncAt = d => {
+      const sg = c.segs.find(g => d >= g.startD && d <= g.endD);
+      if (!sg || sg.L.junction) return null;
       const O = _oncomingLane(net, sg);
-      if (O && !O.junction) options.push({ sg, O });
-    }
-    if (!options.length) return null;
-    const { sg, O } = rng.pick(options);
+      if (!O || O.junction) return null;
+      const at = _corridorAt(c, d);
+      const p = _projectOnLane(O, at.x, at.y);
+      if (!p || p.d > 6) return null;
+      return { O, s: p.s, pose: _laneAt(O, p.s) };
+    };
 
-    // Both drive from t = 0, so they meet where their distances add up to the
-    // initial gap: d_meet = dNpc · vEgo / (vEgo + vNpc). The meeting has to be
-    // past the ego's run-up and on this two-way stretch.
-    const share = vEgo / (vEgo + vNpc);
-    const dMeetLo = Math.max(runUp, sg.startD + 15);
-    const dNpcLo = dMeetLo / share;
-    const dNpcHi = sg.endD - 5;
-    if (dNpcLo > dNpcHi) return null;
-    const dNpc = rng.range(dNpcLo, dNpcHi);
-    const dMeet = dNpc * share;
-    const at = _corridorAt(c, dNpc);
-    const onO = _projectOnLane(O, at.x, at.y);
-    if (!onO || onO.d > 6) return null;
-    // The NPC must still be on its lane, driving toward the ego, at the meeting.
-    if (onO.s + (dNpc - dMeet) + 10 > O.length) return null;
-
-    const ttc = rng.range(1.2, 3.5);                 // closing time when the drift starts
-    const trigger = (vEgo + vNpc) * ttc;
-    if (trigger > dNpc - 10) return null;             // would fire at spawn
+    const vNpc = rng.range(8, 14);
+    // The swing, in metres of travel.
+    const lenIn = vNpc * rng.range(1.0, 2.2);         // centre line -> peak
+    const lenHold = rng.range(0, 6);                  // at the peak
+    const lenOut = vNpc * rng.range(0.8, 1.8);        // back to its own lane
     // Metres toward the ego's lane. Under ~1.4 m (lane 3.5 m minus a 2.1 m
     // car) the two only brush past; most draws cross that.
     const offset = rng.range(1.2, 2.8);
+
+    // dX is the corridor distance of the peak. The oncoming car travels toward
+    // the ego, i.e. DOWN the corridor: it meets the swing's start at dX + lenIn
+    // and is back on its lane at dEnd. The whole swing (+5 m each end) has to
+    // sit on one junction-free two-way stretch, so dX is drawn only from where
+    // it fits — a uniform draw along the corridor landed next to a junction
+    // on most of Town03's attempts.
+    const stretches = [];
+    for (const sg of c.segs) {
+      const twoWay = !sg.L.junction && !!_oncomingLane(net, sg);
+      const last = stretches[stretches.length - 1];
+      if (twoWay && last && Math.abs(last.b - sg.startD) < 0.5) last.b = sg.endD;
+      else if (twoWay) stretches.push({ a: sg.startD, b: sg.endD });
+    }
+    const dMinX = _egoRunUp(vEgo) + vEgo * 3;
+    const fits = stretches
+      .map(st => ({ lo: Math.max(st.a + lenHold + lenOut + 5, dMinX), hi: Math.min(st.b, c.length) - lenIn - 5 }))
+      .filter(f => f.hi > f.lo);
+    if (!fits.length) return null;
+    const fit = rng.weighted(fits.map(f => [f, f.hi - f.lo]));
+    const dX = rng.range(fit.lo, fit.hi);
+    const dEnd = dX - lenHold - lenOut;
+    if (!_junctionFree(c, dEnd - 5, dX + lenIn + 5)) return null;
+    // Every sample has to find an oncoming lane, not just the ends.
+    const samples = [];
+    const nIn = Math.max(2, Math.round(lenIn / 3));
+    const nOut = Math.max(2, Math.round(lenOut / 3));
+    samples.push({ d: dX + lenIn, off: 0, strategy: 'fastest' });
+    for (let i = 1; i <= nIn; i++) {
+      samples.push({ d: dX + lenIn * (1 - i / nIn),
+                     off: offset * (1 - Math.cos(Math.PI * i / nIn)) / 2, strategy: 'shortest' });
+    }
+    if (lenHold > 1) samples.push({ d: dX - lenHold, off: offset, strategy: 'shortest' });
+    for (let i = 1; i <= nOut; i++) {
+      // Ends at exactly 0: the next leg is routed from this point.
+      samples.push({ d: dX - lenHold - lenOut * i / nOut,
+                     off: offset * (1 + Math.cos(Math.PI * i / nOut)) / 2, strategy: 'shortest' });
+    }
+    const onc = samples.map(sm => oncAt(sm.d));
+    if (onc.some(o => !o)) return null;
+    const swingStart = onc[0], swingEnd = onc[onc.length - 1];
+
+    // Spawn far enough back to reach cruise speed before the swing starts —
+    // and no further: the car waits at rest, so every metre here pushes the
+    // conflict further down the corridor.
+    const runUp = vNpc * vNpc / (2 * VEHICLE_ACCEL) + rng.range(5, 25);
+    let spawn;
+    if (swingStart.s - runUp >= 1) {
+      spawn = _laneAt(swingStart.O, swingStart.s - runUp);
+    } else {
+      const back = _walkBack(rng, net, swingStart.O.key, runUp - swingStart.s);
+      if (!back) return null;
+      spawn = _laneAt(back.L, back.s);
+    }
+    const toPeak = runUp + lenIn;
+
+    // Continue well past the swing, so the route's end — where the controller
+    // stops dead (_reached_goal) — is behind the ego, not in its lane.
+    const exit = _walkForward(rng, net, swingEnd.O.key, swingEnd.s, rng.range(30, 50));
+    if (!exit) return null;
+
+    // Ego arrives at the peak this much after the car does (negative: before).
+    const dt = rng.range(-0.4, 0.6);
+    const tNpc = _timeFromRest(toPeak, vNpc);
+    const sol = _solveTrigger(c, dX, tNpc + dt, vEgo, spawn);
+    if (!sol) return null;
+
+    // Left of the car's travel is negative in _lateral (right positive). The
+    // first sample is the swing's start on the lane centre and stays
+    // 'fastest' — its leg is the routed run from the spawn.
+    const swing = samples.map((sm, i) => {
+      const q = _lateral(onc[i].pose, -sm.off);
+      return _routeWp({ x: q.x, y: q.y, z: onc[i].pose.z }, sm.strategy);
+    });
+    const exitPose = _laneAt(exit.L, exit.s);
+
     const type = rng.weighted([['car', 6], ['van', 2], ['truck', 1], ['motorcycle', 1]]);
-    const npc = _vehicle(type, onO, vNpc);
-    npc.events = [{
-      id: 'evt-1', trigger: nearEgo(trigger),
-      // The ego's lane is on the oncoming driver's LEFT; positive offset is
-      // right of travel in lane_offset, so the side is stated, not the sign.
-      action: { type: 'lane_offset', direction: 'left', offset: r1(offset) },
-    }];
+    const npc = _vehicle(type, spawn, 0);
+    _ignoresTraffic(npc);
+    npc.events = [
+      _routeEvent(npc, [...swing, _routeWp(exitPose)]),
+      _speedEvent('evt-2', nearEgo(sol.radius), vNpc, 'rate', VEHICLE_ACCEL),
+    ];
     return {
       corridor: c, npcs: [npc], props: [],
-      conflictD: dMeet + 10,
+      conflictD: dX + 10,
       params: {
-        npc_type: type, npc_speed: r1(vNpc), spawn_ahead_m: r1(dNpc),
-        drift_ttc_s: r2(ttc), trigger_m: r1(trigger), offset_m: r1(offset),
+        npc_type: type, npc_speed: r1(vNpc), offset_m: r1(offset),
+        swing_in_m: r1(lenIn), hold_m: r1(lenHold), swing_out_m: r1(lenOut),
+        npc_run_up_m: r1(toPeak), arrival_offset_s: r2(dt), trigger_m: r1(sol.radius),
+      },
+      // The routed leg up to the swing must actually reach it.
+      routedNpcs: [{ actor: npc, passes: swingStart.pose }],
+      // The threat starts when the car leaves its lane, not when it is
+      // released ~100 m away.
+      onsets: new Map([[npc.id, swingStart.pose]]),
+    };
+  }
+
+  /* Cut-out (Euro NCAP CCRs cut-out). The ego follows a lead car in its lane;
+   * the lead swerves into a same-direction neighbour lane at the last moment
+   * and uncovers a stopped vehicle the ego could not see past it.
+   *
+   * Timing is ego-relative through the following itself: the lead drives at
+   * the ego's speed a time headway ahead, and its lane change fires on its own
+   * position (distance_to_point on its own entity — positional, like the
+   * walker that stops in the lane). An AV that follows closer or further back
+   * meets the reveal with a different time to the obstacle, which is the
+   * point. The lead ignores obstacles (its sensor would brake it for the
+   * stopped car it is meant to swerve around) and lights (it reaches each
+   * forced-green light before the ego switches it). */
+  function _cutOut(rng, net, vEgo) {
+    if (!net.multiLane) {
+      net.multiLane = net.startable.filter(L => L.length >= 90 && ['left', 'right'].some(side => {
+        const ref = L.record && L.record[side];
+        const N = ref && net.lanes.get(net.refKey(ref));
+        return N && !N.junction;
+      }));
+    }
+    if (!net.multiLane.length) return null;
+    const start = rng.pick(net.multiLane);
+    const c = _buildCorridor(rng, net, rng.range(220, 320), undefined,
+                             start, rng.range(0, Math.max(0.5, start.length - 120)));
+    if (!c) return null;
+    const candidates = [];
+    for (const sg of c.segs) {
+      if (sg.L.junction || !sg.L.record) continue;
+      for (const side of ['left', 'right']) {
+        const ref = sg.L.record[side];
+        const N = ref && net.lanes.get(net.refKey(ref));
+        if (!N || N.junction) continue;
+        const back = N.record && N.record[side === 'left' ? 'right' : 'left'];
+        if (back && net.refKey(back) === sg.key) candidates.push({ sg, N, side });
+      }
+    }
+    if (!candidates.length) return null;
+    const { sg, N, side } = rng.pick(candidates);
+
+    const type = rng.weighted(VEHICLE_MIX.filter(([t]) => t !== 'bus' && t !== 'motorcycle'));
+    const stoppedType = rng.weighted([['car', 4], ['van', 2], ['truck', 1]]);
+    const thw = rng.range(0.9, 2.0);                         // following headway, s
+    const gap0 = _centreDistance(thw * vEgo, type);           // lead ahead of the ego
+    const lcDist = rng.range(8, 14);                           // lateral move spread
+    // From the start of the swerve to the stopped car, as late as the lead can
+    // make it: the lane change runs 6 m in its own lane, then moves across
+    // over lcDist, and the two bodies stop overlapping about 60% of the way
+    // over (a 2.1 m car in a 3.5 m lane). Plus both half-lengths and a margin.
+    // Drawn generously the ego saw the obstacle 4-7 s out and every cut-out
+    // scored leicht.
+    const len = t => MapView.actorSize(t).w;
+    const cutDist = 6 + 0.6 * lcDist + (len(type) + len(stoppedType)) / 2 + rng.range(1.5, 10);
+    const dCut = rng.range(Math.max(sg.startD + 2, gap0 + 25), sg.endD - cutDist - 4);
+    if (!(dCut > sg.startD) || dCut + cutDist + 4 > sg.endD) return null;
+    const dObs = dCut + cutDist;
+    if (!_junctionFree(c, 0, dObs + 15)) return null;
+    // The swerve has to land on N with room for ChangeActorLateralMotion's
+    // 10 m driven in the target lane — it never fails, it hangs.
+    const cutPose = _corridorAt(c, dCut);
+    const onN = _projectOnLane(N, cutPose.x, cutPose.y);
+    if (!onN || onN.d > 6 || onN.s + 6 + lcDist + 25 > N.length) return null;
+
+    const vLead = vEgo * rng.range(0.92, 1.0);
+    const lead = _vehicle(type, _corridorAt(c, gap0), vLead);
+    lead.obey_traffic_lights = false;
+    lead.obey_obstacles = false;
+    lead.events = [{
+      id: 'evt-1',
+      trigger: { type: 'distance_to_point', value: 2.0, entity_ref: lead.id,
+                 point: { name: 'Point 1', x: r1(cutPose.x), y: r1(cutPose.y),
+                          z: r2(cutPose.z + WAYPOINT_CLEARANCE) } },
+      action: { type: 'lane_change', direction: side,
+                dynamics: { shape: 'linear', value: r1(lcDist) } },
+    }];
+
+    const stopped = _vehicle(stoppedType, _corridorAt(c, dObs), 0);
+    // Most stopped cars move off once the ego is right behind them: one that
+    // never does blocks the lane until every Act's 60 s stop trigger. The
+    // radius is a 9 m bumper gap: the scripted ego halts ~6.3 m behind (10.8 m
+    // centre to centre, measured on Town05), so a 6 m one was never reached
+    // and the car left only on the 60 s fallback.
+    const drivesOff = rng.chance(0.7);
+    stopped.events = drivesOff
+      ? [_speedEvent('evt-1', nearEgo(_centreDistance(9, stoppedType)), r1(rng.range(6, 10)), 'rate', 2.0)]
+      : [];
+    return {
+      corridor: c, npcs: [lead, stopped], props: [],
+      conflictD: dObs + 10,
+      params: {
+        lead_type: type, stopped_type: stoppedType, side, headway_s: r2(thw),
+        lead_speed: r1(vLead), lane_change_m: r1(lcDist), cut_to_obstacle_m: r1(cutDist),
+        stopped_drives_off: drivesOff,
       },
       routedNpcs: [],
+      // The lead is the reveal, not the conflict.
+      sceneryIds: new Set([lead.id]),
+      revealedBy: new Map([[stopped.id, { actorId: lead.id, eventId: 'evt-1' }]]),
     };
   }
 
@@ -1068,6 +1364,7 @@
     obstacle:          { label: 'Hindernis auf Spur',    build: _obstacle },
     oncoming_drift:    { label: 'Gegenverkehr driftet',  build: _oncomingDrift },
     cyclist_ahead:     { label: 'Radfahrer voraus',      build: _cyclistAhead },
+    cut_out:           { label: 'Ausscheren vor Stauende', build: _cutOut },
   };
 
   // ── Checks ───────────────────────────────────────────────────────────────────
@@ -1224,10 +1521,16 @@
       // A type can name the event that IS the threat (the cyclist's swerve,
       // not its riding at the kerb from t = 0); otherwise the first one.
       const threatId = cand.threats && cand.threats.get(o.a.id);
-      const trig = (o.a.events || [])
-        .filter(e => (threatId ? e.id === threatId : e.trigger?.type === 'distance_to_ego'))
-        .map(e => run.fired[o.a.id]?.[e.id]).filter(t => t != null);
-      const hasEvents = (o.a.events || []).length > 0;
+      // Or another actor's event is what exposes it: the stopped car a lead
+      // cuts out from in front of is a threat from the cut, not from t = 0
+      // and not from its own (much later) drive-off.
+      const rev = cand.revealedBy && cand.revealedBy.get(o.a.id);
+      const trig = rev
+        ? [run.fired[rev.actorId]?.[rev.eventId]].filter(t => t != null)
+        : (o.a.events || [])
+          .filter(e => (threatId ? e.id === threatId : e.trigger?.type === 'distance_to_ego'))
+          .map(e => run.fired[o.a.id]?.[e.id]).filter(t => t != null);
+      const hasEvents = !!rev || (o.a.events || []).length > 0;
       if (hasEvents && !trig.length) continue;   // never released: not this actor's conflict
       let t0 = trig.length ? Math.min(...trig) : 0;
       // Threat onset, where the type knows a better moment than the release:
@@ -1317,7 +1620,7 @@
       const vEgo = Math.round(rng.range(8, 14) * 2) / 2;
       const res = TYPES[key].build(rng, net, vEgo);
       if (!res) continue;
-      if (_signalBefore(res.corridor, res.conflictD ?? res.corridor.length, res.conflictJunctionKey)) continue;
+      const trafficSignals = _greenWave(net, res.corridor, res.conflictD ?? res.corridor.length);
 
       const c = res.corridor;
       // A type may end the ego's route short of the corridor, so an NPC that
@@ -1344,7 +1647,7 @@
 
       const criticality = assess({ ego, npcs: res.npcs, props: res.props,
                                    sceneryIds: res.sceneryIds, onsets: res.onsets,
-                                   threats: res.threats });
+                                   threats: res.threats, revealedBy: res.revealedBy });
       if (criticality.verdict !== 'ok') continue;
       if (!_difficultyOk(opts.difficulty, criticality.difficulty)) continue;
 
@@ -1352,7 +1655,8 @@
         seed, type: key, label: TYPES[key].label, town: AppState.map, attempts: attempt + 1,
         ego_speed: vEgo, route_m: r1(egoEnd), criticality, params: res.params,
       };
-      return { ego, npcs: res.npcs, props: res.props, info };
+      info.forced_green_lights = trafficSignals.length;
+      return { ego, npcs: res.npcs, props: res.props, trafficSignals, info };
     }
     return null;
   }
@@ -1376,7 +1680,7 @@
         ego: result.ego,
         npcs: result.npcs,
         staticObjects: result.props,
-        trafficSignals: [],
+        trafficSignals: result.trafficSignals,
       });
       // The overview panel re-renders off an allow-list that does not include
       // ego/npcs; an empty patch is the codebase's "arrays changed" signal it
@@ -1456,15 +1760,23 @@
       }
       return keys;
     };
+    // Ties on new pairs go to the combination whose values have been used
+    // least so far. Without it the plan covered pairs but not values: with
+    // eight scenario types a 9-item all-maps batch landed on only 6 of the 8
+    // towns, three of them twice.
+    const used = new Map();
+    const usage = combo => names.reduce((sum, nm) => sum + (used.get(`${nm}=${combo[nm]}`) || 0), 0);
     const plan = [];
     for (let k = 0; k < n; k++) {
-      let best = null, bestGain = -1;
+      let best = null, bestScore = -Infinity;
       for (let c = 0; c < 40; c++) {
         const combo = Object.fromEntries(names.map(nm => [nm, rng.pick(dims[nm])]));
         const gain = pairKeys(combo).filter(p => !covered.has(p)).length;
-        if (gain > bestGain) { best = combo; bestGain = gain; }
+        const score = gain * 1000 - usage(combo);
+        if (score > bestScore) { best = combo; bestScore = score; }
       }
       pairKeys(best).forEach(p => covered.add(p));
+      names.forEach(nm => used.set(`${nm}=${best[nm]}`, (used.get(`${nm}=${best[nm]}`) || 0) + 1));
       plan.push(best);
     }
     return plan;
@@ -1555,7 +1867,7 @@
         AppState.ego = r.ego;
         AppState.npcs = r.npcs;
         AppState.staticObjects = r.props;
-        AppState.trafficSignals = [];
+        AppState.trafficSignals = r.trafficSignals;
         if (item.weather !== '__keep') {
           AppState.weather = _weatherOf(item.weather);
           AppState.time = item.time;

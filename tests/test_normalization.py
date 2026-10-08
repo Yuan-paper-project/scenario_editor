@@ -723,7 +723,9 @@ check("a traffic-signal event alone is enough",
           "map": "Town01",
           "ego": {"id": "obj-1", "type": "car", "x": 0, "y": 0},
           "npcs": [],
-          "trafficSignals": [{"id": "sig1", "x": 0, "y": 0,
+          # traffic_light_1's pole: a signal must name a light CARLA has
+          # (_reject_phantom_signals), and (0, 0) is none.
+          "trafficSignals": [{"id": "sig1", "x": 348.8, "y": -4.5,
                               "events": [{"id": "t1", "state": "red"}]}],
       })))
 
@@ -764,12 +766,12 @@ def _scene(ego_events, *npc_events):
 
 
 out = validate_scenario_params(_scene(
+    [_spd("b", {"type": "after_event", "event_id": "a", "actor_ref": "obj-2"})],
     [_spd("a", {"type": "simulation_time", "value": 1})],
-    [_spd("b", {"type": "after_event", "event_id": "a", "actor_ref": "obj-1"})],
 ))
-trig = out["npcs"][0]["events"][0]["trigger"]
+trig = out["ego"]["events"][0]["trigger"]
 check("after_event actor_ref is remapped obj-N -> entity name",
-      trig == {"type": "after_event", "event_id": "a", "actor_ref": "hero"}, str(trig))
+      trig == {"type": "after_event", "event_id": "a", "actor_ref": "adversary"}, str(trig))
 
 out = validate_scenario_params(_scene(
     [_spd("a", {"type": "simulation_time", "value": 1})],
@@ -783,18 +785,20 @@ check("an omitted actor_ref resolves to the event's own actor",
 # Event ids are unique only within an actor, so every actor's first event tends
 # to be 'evt-1'. The reference must resolve by (actor, event), not by id alone.
 out = validate_scenario_params(_scene(
+    [_spd("evt-1", {"type": "after_event", "event_id": "evt-1", "actor_ref": "obj-3"})],
     [_spd("evt-1", {"type": "simulation_time", "value": 1})],
-    [_spd("evt-1", {"type": "after_event", "event_id": "evt-1", "actor_ref": "obj-1"})],
     [_spd("evt-1", {"type": "after_event", "event_id": "evt-1", "actor_ref": "obj-2"})],
 ))
-refs = [npc["events"][0]["trigger"]["actor_ref"] for npc in out["npcs"]]
+refs = [out["ego"]["events"][0]["trigger"]["actor_ref"],
+        out["npcs"][1]["events"][0]["trigger"]["actor_ref"]]
 check("a colliding event id across actors resolves per actor, not by id",
-      refs == ["hero", "adversary"], str(refs))
+      refs == ["adversary1", "adversary"], str(refs))
 
 # The assign_route rewrite is scenario-wide now: it used to run per actor at the
 # end of _normalize_actor, where a reference to ANOTHER actor's route was
 # invisible and survived as an after_event naming a start condition the file
-# discards.
+# discards. It also runs BEFORE the NPC->ego ban: once rewritten, an NPC's
+# reference to the ego's route is no longer a reference at all.
 out = validate_scenario_params(_scene(
     [_route("r")],
     [_spd("b", {"type": "after_event", "event_id": "r", "actor_ref": "obj-1"})],
@@ -826,16 +830,35 @@ check("a same-actor after_event cycle raises",
           [_spd("e1", {"type": "after_event", "event_id": "e2"}),
            _spd("e2", {"type": "after_event", "event_id": "e1"})]))))
 
+def _cycle_error(scene):
+    """The ValueError text, or '' — so a cycle test cannot pass on the NPC->ego
+    ban (or any other 400) by accident."""
+    try:
+        validate_scenario_params(scene)
+    except ValueError as exc:
+        return str(exc)
+    return ""
+
+
 check("a two-actor after_event cycle raises",
-      raises(lambda: validate_scenario_params(_scene(
-          [_spd("a", {"type": "after_event", "event_id": "b", "actor_ref": "obj-2"})],
-          [_spd("b", {"type": "after_event", "event_id": "a", "actor_ref": "obj-1"})]))))
+      "cycle" in _cycle_error(_scene(
+          [_spd("x", {"type": "simulation_time", "value": 0})],
+          [_spd("a", {"type": "after_event", "event_id": "b", "actor_ref": "obj-3"})],
+          [_spd("b", {"type": "after_event", "event_id": "a", "actor_ref": "obj-2"})])))
 
 check("a three-actor after_event cycle raises",
-      raises(lambda: validate_scenario_params(_scene(
-          [_spd("a", {"type": "after_event", "event_id": "b", "actor_ref": "obj-2"})],
+      "cycle" in _cycle_error(_scene(
+          [_spd("x", {"type": "simulation_time", "value": 0})],
+          [_spd("a", {"type": "after_event", "event_id": "b", "actor_ref": "obj-3"})],
+          [_spd("b", {"type": "after_event", "event_id": "c", "actor_ref": "obj-4"})],
+          [_spd("c", {"type": "after_event", "event_id": "a", "actor_ref": "obj-2"})])))
+
+check("a cycle through the ego (ego -> NPC -> ...) is still a cycle",
+      "cycle" in _cycle_error(_scene(
+          [_spd("a", {"type": "after_event", "event_id": "b", "actor_ref": "obj-2"}),
+           _spd("e2", {"type": "simulation_time", "value": 0})],
           [_spd("b", {"type": "after_event", "event_id": "c", "actor_ref": "obj-3"})],
-          [_spd("c", {"type": "after_event", "event_id": "a", "actor_ref": "obj-1"})]))))
+          [_spd("c", {"type": "event_started", "event_id": "b", "actor_ref": "obj-2"})])))
 
 # An event pointing at itself is the degenerate one-node cycle, and the walk
 # has to catch it on the first hop rather than looping.
@@ -848,15 +871,101 @@ check("an after_event pointing at its own event raises",
 # same one) must not be mistaken for one — the walk visits shared nodes twice.
 check("a three-actor chain is accepted",
       not raises(lambda: validate_scenario_params(_scene(
+          [_spd("x", {"type": "after_event", "event_id": "c", "actor_ref": "obj-4"})],
           [_spd("a", {"type": "simulation_time", "value": 1})],
-          [_spd("b", {"type": "after_event", "event_id": "a", "actor_ref": "obj-1"})],
-          [_spd("c", {"type": "after_event", "event_id": "b", "actor_ref": "obj-2"})]))))
+          [_spd("b", {"type": "after_event", "event_id": "a", "actor_ref": "obj-2"})],
+          [_spd("c", {"type": "after_event", "event_id": "b", "actor_ref": "obj-3"})]))))
 
 check("two events waiting on the same event is accepted",
       not raises(lambda: validate_scenario_params(_scene(
+          [_spd("x", {"type": "simulation_time", "value": 1})],
           [_spd("a", {"type": "simulation_time", "value": 1})],
-          [_spd("b", {"type": "after_event", "event_id": "a", "actor_ref": "obj-1"})],
-          [_spd("c", {"type": "after_event", "event_id": "a", "actor_ref": "obj-1"})]))))
+          [_spd("b", {"type": "after_event", "event_id": "a", "actor_ref": "obj-2"})],
+          [_spd("c", {"type": "after_event", "event_id": "a", "actor_ref": "obj-2"})]))))
+
+
+# ── An NPC may not wait on an ego event ─────────────────────────────────────
+#
+# The ego may be driven by the AV under test, whose run has no ego storyboard
+# events at all — an NPC chained onto one would never move. Both reference
+# kinds are refused; the ego may still wait on an NPC. Mirrors
+# ScenarioRules.mayWaitOnActor (frontend/js/app.js).
+
+for kind in ("after_event", "event_started"):
+    err = _cycle_error(_scene(
+        [_spd("a", {"type": "simulation_time", "value": 1})],
+        [_spd("b", {"type": kind, "event_id": "a", "actor_ref": "obj-1"})]))
+    check(f"an NPC {kind} naming an ego event raises",
+          "may not depend on an ego event" in err, err)
+
+check("the ego may wait on an NPC event (event_started)",
+      not raises(lambda: validate_scenario_params(_scene(
+          [_spd("a", {"type": "event_started", "event_id": "b", "actor_ref": "obj-2"})],
+          [_spd("b", {"type": "simulation_time", "value": 1})]))))
+
+
+# ── event_started ───────────────────────────────────────────────────────────
+
+out = validate_scenario_params(_scene(
+    [_spd("x", {"type": "simulation_time", "value": 0})],
+    [_spd("a", {"type": "distance_to_ego", "value": 30}),
+     _spd("b", {"type": "event_started", "event_id": "a"})],
+))
+trig = out["npcs"][0]["events"][1]["trigger"]
+check("event_started keeps event_id and resolves actor_ref like after_event",
+      trig == {"type": "event_started", "event_id": "a", "actor_ref": "adversary"}, str(trig))
+
+_offset = {"id": "o", "trigger": {"type": "distance_to_ego", "value": 30},
+           "action": {"type": "lane_offset", "direction": "left", "offset": 1.0}}
+check("event_started may name a lane_offset (its START is well defined)",
+      not raises(lambda: validate_scenario_params(_scene(
+          [_spd("x", {"type": "simulation_time", "value": 0})],
+          [_offset, _spd("b", {"type": "event_started", "event_id": "o"})]))))
+check("after_event still may not name a lane_offset",
+      raises(lambda: validate_scenario_params(_scene(
+          [_spd("x", {"type": "simulation_time", "value": 0})],
+          [_offset, _spd("b", {"type": "after_event", "event_id": "o"})]))))
+
+out = validate_scenario_params(_scene(
+    [_route("r")],
+    [_spd("b", {"type": "event_started", "event_id": "r", "actor_ref": "obj-1"})],
+))
+trig = out["npcs"][0]["events"][0]["trigger"]
+check("event_started onto an assign_route is rewritten like after_event",
+      trig == {"type": "distance_to_ego", "value": 400.0}, str(trig))
+
+check("an event_started pointing at itself raises",
+      "cycle" in _cycle_error(_scene(
+          [_spd("x", {"type": "simulation_time", "value": 0})],
+          [_spd("e1", {"type": "event_started", "event_id": "e1"})])))
+
+
+# ── ego_speed ───────────────────────────────────────────────────────────────
+
+out = validate_scenario_params(_scene(
+    [_spd("x", {"type": "simulation_time", "value": 0})],
+    [_spd("a", {"type": "ego_speed", "rule": "lessThan", "value": 4.5}),
+     _spd("b", {"type": "ego_speed", "rule": "equalTo", "value": -3}),
+     _spd("c", {"type": "ego_speed"})],
+))
+trigs = [ev["trigger"] for ev in out["npcs"][0]["events"]]
+check("ego_speed keeps a valid rule and value",
+      trigs[0] == {"type": "ego_speed", "rule": "lessThan", "value": 4.5}, str(trigs[0]))
+check("ego_speed coerces an unknown rule and clamps a negative value",
+      trigs[1] == {"type": "ego_speed", "rule": "greaterThan", "value": 0.0}, str(trigs[1]))
+check("ego_speed defaults to 'faster than 10 m/s'",
+      trigs[2] == {"type": "ego_speed", "rule": "greaterThan", "value": 10.0}, str(trigs[2]))
+
+
+# ── obey_traffic_lights / obey_obstacles ────────────────────────────────────
+
+scene = _scene([_spd("x", {"type": "simulation_time", "value": 0})], [], [])
+scene["npcs"][0].update({"obey_traffic_lights": False})
+scene["npcs"][1].update({"obey_obstacles": False, "obey_traffic_lights": "false"})
+out = validate_scenario_params(scene)
+flags = [(a["obey_traffic_lights"], a["obey_obstacles"]) for a in [out["ego"], *out["npcs"]]]
+check("obey flags default to True and only a literal False turns one off",
+      flags == [(True, True), (False, True), (True, False)], str(flags))
 
 
 # ── The emitted .xosc resolves a cross-actor reference by name ───────────────
@@ -893,20 +1002,111 @@ from backend.scenario_io import _ensure_llmgen_on_path  # noqa: E402
 
 _ensure_llmgen_on_path()
 
-# hero <- adversary <- adversary1: the hero's Act is built LAST, so the first
-# link is a forward reference and only resolves because the trigger pass is
-# deferred until every actor's actions exist.
+# hero -> adversary -> adversary1: NPCs are built in order, so adversary's
+# reference to adversary1 is a forward one and only resolves because the
+# trigger pass is deferred until every actor's actions exist.
 waits, names = _xosc_event_refs(_scene(
-    [_spd("evt-1", {"type": "simulation_time", "value": 2})],
-    [_spd("evt-1", {"type": "after_event", "event_id": "evt-1", "actor_ref": "obj-1"})],
     [_spd("evt-1", {"type": "after_event", "event_id": "evt-1", "actor_ref": "obj-2"})],
+    [_spd("evt-1", {"type": "after_event", "event_id": "evt-1", "actor_ref": "obj-3"})],
+    [_spd("evt-1", {"type": "simulation_time", "value": 2})],
 ))
 check("a cross-actor after_event names the OTHER actor's event in the .xosc",
-      waits.get("adversary_SpeedEvent0") == "hero_SpeedEvent0", str(waits))
-check("a forward cross-actor reference resolves too (hero's Act is built last)",
-      waits.get("adversary1_SpeedEvent0") == "adversary_SpeedEvent0", str(waits))
+      waits.get("hero_SpeedEvent0") == "adversary_SpeedEvent0", str(waits))
+check("a forward cross-actor reference resolves too (deferred trigger pass)",
+      waits.get("adversary_SpeedEvent0") == "adversary1_SpeedEvent0", str(waits))
 check("no storyboardElementRef in the .xosc dangles",
       set(waits.values()) <= names, str(set(waits.values()) - names))
 
+
+def _xosc_root(params):
+    import tempfile
+    import xml.etree.ElementTree as ET
+
+    from generator.xml_builder import build_xosc  # noqa: E402
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "scenario.xosc")
+        build_xosc(validate_scenario_params(params), path)
+        return ET.parse(path).getroot()
+
+
+root = _xosc_root(_scene(
+    [_spd("evt-1", {"type": "simulation_time", "value": 1})],
+    [_spd("evt-1", {"type": "distance_to_ego", "value": 30}),
+     _spd("evt-2", {"type": "event_started", "event_id": "evt-1"}),
+     _spd("evt-3", {"type": "after_event", "event_id": "evt-1"}),
+     _spd("evt-4", {"type": "ego_speed", "rule": "lessThan", "value": 3})],
+))
+events = {ev.get("name"): ev for ev in root.iter("Event")}
+cond = events["adversary_SpeedEvent1"].find(".//StoryboardElementStateCondition")
+check("event_started emits a startTransition on the named event",
+      cond is not None and cond.get("state") == "startTransition"
+      and cond.get("storyboardElementRef") == "adversary_SpeedEvent0",
+      str(cond.attrib if cond is not None else None))
+cond = events["adversary_SpeedEvent2"].find(".//StoryboardElementStateCondition")
+check("after_event still emits completeState",
+      cond is not None and cond.get("state") == "completeState", str(cond.attrib if cond is not None else None))
+ev4 = events["adversary_SpeedEvent3"]
+spd = ev4.find(".//SpeedCondition")
+ent = ev4.find(".//TriggeringEntities/EntityRef")
+check("ego_speed emits a SpeedCondition on hero",
+      spd is not None and spd.get("rule") == "lessThan" and float(spd.get("value")) == 3.0
+      and ent is not None and ent.get("entityRef") == "hero",
+      str((spd.attrib if spd is not None else None, ent.attrib if ent is not None else None)))
+
+
+def _consider(root, entity):
+    props = root.findall(f".//Private[@entityRef='{entity}']//Controller/Properties/Property")
+    return {p.get("name"): p.get("value") for p in props
+            if p.get("name") in ("consider_trafficlights", "consider_obstacles")}
+
+
+scene = _scene([_spd("evt-1", {"type": "simulation_time", "value": 1})], [], [])
+scene["ego"]["obey_obstacles"] = False
+scene["npcs"][0]["obey_traffic_lights"] = False
+root = _xosc_root(scene)
+check("hero template properties follow the ego's obey flags",
+      _consider(root, "hero") == {"consider_trafficlights": "true", "consider_obstacles": "false"},
+      str(_consider(root, "hero")))
+check("NPC controller properties follow its obey flags",
+      _consider(root, "adversary") == {"consider_trafficlights": "false", "consider_obstacles": "true"},
+      str(_consider(root, "adversary")))
+check("an NPC with no flags keeps both on",
+      _consider(root, "adversary1") == {"consider_trafficlights": "true", "consider_obstacles": "true"},
+      str(_consider(root, "adversary1")))
+
+
+# ── Traffic signals: phantom lights and the pole's height ───────────────────
+#
+# A signal event names its light by position ("pos=x,y"); ScenarioRunner
+# resolves that to the CARLA actor within 2 m and aborts the whole run when
+# there is none. maps/Town10HD/carla_traffic_lights.json (from
+# tests/probe_carla_traffic_lights.py) says which .xodr lights CARLA lacks.
+
+_HIGH_TL = (95.6, -124.7, 8.0)
+
+
+def _signal_scene(town, x, y, z=None):
+    sig = {"id": "tl", "x": x, "y": y, "events": [{"id": "e", "state": "green", "trigger_distance": 30}]}
+    if z is not None:
+        sig["z"] = z
+    return {"map": town, "ego": {"id": "obj-1", "x": 0, "y": 0,
+                                 "events": [_spd("a", {"type": "simulation_time", "value": 1})]},
+            "npcs": [], "trafficSignals": [sig]}
+
+
+check("a Schaltung on a light CARLA does not have is a 400 (Town10HD traffic_light_10)",
+      raises(lambda: validate_scenario_params(_signal_scene("Town10HD", -57.2, 135.1))))
+check("... while a real CARLA light validates",
+      not raises(lambda: validate_scenario_params(_signal_scene("Town10HD", -34.4, -50.7))))
+check("an unprobed town is not checked",
+      not raises(lambda: validate_scenario_params(_signal_scene("Town10", 1.0, 2.0))))
+
+# Town03's highest light: its road is 8 m up, where a z = 0 point put every
+# radius under ~8 m out of reach.
+root = _xosc_root(_signal_scene("Town03", _HIGH_TL[0], _HIGH_TL[1], z=_HIGH_TL[2]))
+wp = root.find(".//ReachPositionCondition//WorldPosition")
+check("the signal's trigger point sits at the pole's road height, not z = 0",
+      wp is not None and float(wp.get("z")) == _HIGH_TL[2], str(wp.attrib if wp is not None else None))
 
 sys.exit(check.report())

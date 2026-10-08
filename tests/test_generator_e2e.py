@@ -22,7 +22,8 @@ The other properties pinned here:
     restores the editor exactly (undo history included) and exports a zip
     with three files per scenario plus a manifest;
   * phase 3: the coverage plan covers every pair, the all-maps batch spans
-    the CARLA towns, and the two lane_offset types build.
+    the CARLA towns, and the oncoming drift is a
+    fastest/shortest route and both conflict NPCs ignore lights and obstacles.
 """
 import base64
 import csv
@@ -36,9 +37,9 @@ from playwright.sync_api import sync_playwright
 import _harness as H
 
 TYPES = ["lead_brake", "cut_in", "vru_crossing", "junction_conflict", "obstacle",
-         "oncoming_drift", "cyclist_ahead"]
+         "oncoming_drift", "cyclist_ahead", "cut_out"]
 # town -> types that map cannot host (no same-direction lane pair on Town01)
-TOWNS = {"Town03": set(), "Town05": set(), "Town01": {"cut_in"}}
+TOWNS = {"Town03": set(), "Town05": set(), "Town01": {"cut_in", "cut_out"}}
 SEEDS = [1, 2, 3]
 CONFLICT_M = 3.0      # centre-to-centre; a car is 4.5 m long, so this is a hit
 OBSTACLE_M = 2.5      # nearest prop to the ego's track
@@ -66,8 +67,22 @@ GEN_AND_MEASURE = ("""([t, s]) => {
     // 7 m truck is touching at 4.3 m. Never tighter than CONFLICT_M.
     const len = t => (MapView.actorSize(t) || {}).w || 4.5;
     const reach = Math.max(%CONFLICT%, (len('ego') + len(npc.type)) / 2);
+    // Where each 'shortest' run hands back to a 'fastest' leg: that leg is
+    // routed from the shortest point, so it must sit on a driving lane centre
+    // (an off-lane seed projects onto whatever lane is nearest).
+    const route = npc.events.find(e => e.action?.type === 'assign_route');
+    const wps = route ? route.action.waypoints : [];
+    const handoffs = wps.slice(0, -1).map((w, i) => [w, wps[i + 1]])
+      .filter(([w, nx]) => w.strategy === 'shortest' && nx.strategy !== 'shortest')
+      .map(([w]) => {
+        const lane = ObjectsManager.nearestLaneProjection(w.x, w.y, new Set(['driving']), 5);
+        return lane ? lane.dist : null;
+      });
     return { id: npc.id, type: npc.type, events: npc.events, hasEvents: npc.events.length > 0,
-             fired: t0 != null, min, reach };
+             fired: t0 != null, min, reach,
+             obeyLights: npc.obey_traffic_lights !== false, obeyObstacles: npc.obey_obstacles !== false,
+             strategies: wps.map(w => w.strategy), handoffs,
+             routeOk: !route || !!Simulate.routeGeometry(npc, route) };
   });
   let propMin = null;
   for (const p of AppState.staticObjects) for (const e of ego) {
@@ -76,7 +91,12 @@ GEN_AND_MEASURE = ("""([t, s]) => {
   }
   const problems = [AppState.ego, ...AppState.npcs]
     .flatMap(a => ScenarioRules.problemsOf(a).map(p => p.problem.code));
-  return { info, ego: AppState.ego, npcs, propMin, problems,
+  const lights = new Map((AppState.mapData.trafficLights || []).map(l => [l.id, l]));
+  const signals = AppState.trafficSignals.map(sig => ({
+    id: sig.id, events: sig.events, known: lights.has(sig.id),
+    inCarla: lights.get(sig.id)?.inCarla !== false,
+  }));
+  return { info, ego: AppState.ego, npcs, propMin, problems, signals,
            nProps: AppState.staticObjects.length };
 }""").replace("%CONFLICT%", str(CONFLICT_M))
 
@@ -132,6 +152,47 @@ def check_scenario(town, t, s, r, page):
                 C(f"{tag}: {n['type']} {ev['id']} chains within its own actor",
                   not ev["trigger"].get("actor_ref"))
 
+    # Forced greens for the ego (scenarioGenerator._greenWave): only on real
+    # CARLA lights, only green, several per light, all with a real radius.
+    for sig in r["signals"]:
+        C(f"{tag}: forced light {sig['id']} is a map light CARLA has",
+          sig["known"] and sig["inCarla"])
+        C(f"{tag}: forced light {sig['id']} only ever goes green, re-asserted",
+          sig["events"] and all(e["state"] == "green" and e["trigger_distance"] > 0
+                                for e in sig["events"]), sig["events"])
+    C(f"{tag}: info counts the forced lights",
+      r["info"].get("forced_green_lights") == len(r["signals"]))
+    if t == "cut_out":
+        lead, stopped = r["npcs"][0], r["npcs"][1]
+        lc = lead["events"][0]
+        C(f"{tag}: lead swerves on its own position",
+          lc["action"]["type"] == "lane_change" and lc["trigger"]["type"] == "distance_to_point"
+          and lc["trigger"]["entity_ref"] == lead["id"], json.dumps(lc)[:200])
+        C(f"{tag}: lead ignores obstacles (it would brake for the stopped car)",
+          not lead["obeyObstacles"])
+
+    # A conflict car must not defuse its own conflict: it runs reds and does
+    # not brake for the ego in front of it (scenarioGenerator._ignoresTraffic).
+    if t in ("junction_conflict", "oncoming_drift"):
+        for n in r["npcs"]:
+            if n["hasEvents"]:
+                C(f"{tag}: {n['type']} ignores lights and obstacles",
+                  not n["obeyLights"] and not n["obeyObstacles"])
+    if t == "oncoming_drift":
+        n = next((n for n in r["npcs"] if n["hasEvents"]), None)
+        st = n["strategies"] if n else []
+        C(f"{tag}: drift is a route: fastest legs around a run of >= 4 shortest",
+          len(st) >= 7 and st[0] == st[1] == st[-1] == "fastest"
+          and st[2:-1].count("shortest") >= 4 and "fastest" not in st[2:-1], st)
+        C(f"{tag}: drift route is routable in the preview", n and n["routeOk"])
+        C(f"{tag}: the drift hands back to 'fastest' on its own lane centre",
+          n and n["handoffs"] and all(d is not None and d < 0.3 for d in n["handoffs"]),
+          n and n["handoffs"])
+        ev = n["events"] if n else []
+        C(f"{tag}: drift car waits at 0 and is released by a ramp on ego distance",
+          len(ev) == 2 and ev[1]["trigger"]["type"] == "distance_to_ego"
+          and ev[1]["action"]["dynamics"]["dimension"] == "rate", json.dumps(ev)[-300:])
+
     if t == "obstacle":
         C(f"{tag}: obstacle sits on the ego's path",
           r["propMin"] is not None and r["propMin"] <= OBSTACLE_M
@@ -139,6 +200,11 @@ def check_scenario(town, t, s, r, page):
     else:
         active = [n for n in r["npcs"] if n["hasEvents"]]
         C(f"{tag}: has an NPC with events", len(active) >= 1)
+        if t == "cut_out":
+            # The lead's swerve is positional, not distance_to_ego, and the
+            # stopped car's drive-off fires only once the ego is right behind
+            # it — measured by the criticality gate above instead.
+            active = []
         for n in active:
             C(f"{tag}: {n['type']} trigger fires in the preview", n["fired"])
             C(f"{tag}: {n['type']} reaches a non-reacting ego after its trigger",

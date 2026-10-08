@@ -30,12 +30,29 @@
   // distance_to_ego is omitted for the ego itself — a distance from hero to
   // hero is always 0, so the condition would fire on tick 1 regardless of
   // the configured value. See _defaultFirstTrigger.
+  //
+  // after_event fires when the named event COMPLETES, event_started the moment
+  // it STARTS (startTransition) — "when X happens, also do Y". Both are the
+  // same reference machinery (ScenarioRules.isEventRef); see the dropdown
+  // rules in _afterEventGroups. ego_speed reads the ego's own speed, which is
+  // one of the things an NPC may legitimately react to now that it may not
+  // wait on an ego EVENT (ScenarioRules.mayWaitOnActor).
   const EVENT_TRIGGERS = [
     ['simulation_time', 'Simulationszeit'],
     ['distance_to_ego', 'Abstand zum Ego'],
     ['distance_to_point', 'Abstand zu einem Punkt'],
+    ['ego_speed', 'Ego-Geschwindigkeit'],
     ['after_event', 'Nach anderem Event'],
+    ['event_started', 'Mit Start eines Events'],
   ];
+
+  // SpeedCondition's two useful rules. equalTo is left out on purpose: a
+  // measured speed is almost never exactly equal to anything.
+  const EGO_SPEED_RULES = [
+    ['greaterThan', 'schneller als'],
+    ['lessThan', 'langsamer als'],
+  ];
+  const DEFAULT_EGO_SPEED = 10;
 
   // A freshly chosen distance_to_point starts as a small ring around the point
   // rather than inheriting the outgoing trigger's value, which is a delay in
@@ -566,15 +583,20 @@
     // happens to carry would be a straight lie about when the route starts.
     if (_eventAction(ev).type === 'assign_route') return 'startet sofort (fest)';
     const trigger = _eventTrigger(ev);
-    if (trigger.type === 'after_event') {
+    if (ScenarioRules.isEventRef(trigger)) {
+      const prefix = trigger.type === 'event_started' ? 'Mit Start von' : 'Nach';
       const target = ScenarioRules.afterEventTarget(actor, trigger, events);
-      if (!target) return 'Nach Event';
+      if (!target) return `${prefix} Event`;
       const name = _eventDisplayName(target.event, target.index);
       // The owning actor is named only when it is not this one — on the common
       // same-actor chain it would be on every card and say nothing.
       return target.actor.id === actor.id
-        ? `Nach ${name}`
-        : `Nach ${name} (${AppState.actorLabel(target.actor, { short: true })})`;
+        ? `${prefix} ${name}`
+        : `${prefix} ${name} (${AppState.actorLabel(target.actor, { short: true })})`;
+    }
+    if (trigger.type === 'ego_speed') {
+      const sign = trigger.rule === 'lessThan' ? '<' : '>';
+      return `Ego ${sign} ${UIUtils.fmt(trigger.value ?? DEFAULT_EGO_SPEED)} m/s`;
     }
     const pointTarget = trigger.entity_ref || _defaultPointTriggerActorId(actor);
     const triggerLabels = {
@@ -650,8 +672,8 @@
    *  actor_ref is omitted for the actor's own event: absent means self
    *  everywhere (app.js, scenario_io.py, event_builders.py), so a self-
    *  reference keeps saving exactly as it did before cross-actor refs. */
-  function _afterEventTrigger(actor, ownerId, eventId) {
-    const trigger = { type: 'after_event', event_id: eventId };
+  function _afterEventTrigger(actor, ownerId, eventId, type = 'after_event') {
+    const trigger = { type, event_id: eventId };
     if (ownerId && ownerId !== actor.id) trigger.actor_ref = ownerId;
     return trigger;
   }
@@ -672,13 +694,21 @@
    *    (ScenarioRules.canWaitFor). Omitting those is what makes a loop
    *    unauthorable rather than merely reported — the backend's 400 then only
    *    has to catch a save file or an LLM payload.
+   *
+   * The same function serves event_started, where only the lane_offset rule
+   * differs: an offset's START is well defined, so it may be named there.
+   * And for an NPC the ego's events are left out entirely (mayWaitOnActor).
    */
-  function _afterEventGroups(actor, ev, events) {
+  function _afterEventGroups(actor, ev, events, triggerType = 'after_event') {
     const groups = [];
     const addGroup = (owner, ownerEvents, label, isOwn) => {
+      // An NPC may not wait on an ego event at all (see mayWaitOnActor): the
+      // whole ego group is left out rather than shown greyed, so the dropdown
+      // only ever offers what will export.
+      if (!ScenarioRules.mayWaitOnActor(actor, owner)) return;
       const options = ownerEvents
         .map((other, index) => ({ other, index }))
-        .filter(({ other }) => _isChainTarget(other))
+        .filter(({ other }) => _isChainTarget(other, triggerType))
         .filter(({ other }) => ScenarioRules.canWaitFor(actor, ev, owner, other))
         .map(({ other, index }) => [
           ScenarioRules.afterEventKey(owner.id, other.id),
@@ -728,13 +758,18 @@
       !(value === 'distance_to_ego' && actor.type === 'ego'));
     const triggerSelect = _select(triggerOptions, trigger.type || 'simulation_time');
     triggerSelect.addEventListener('change', e => {
-      if (e.target.value === 'after_event') {
+      const kind = e.target.value;
+      if (kind === 'after_event' || kind === 'event_started') {
         // The first offered option, own actor first — _afterEventGroups has
         // already dropped the assign_routes and anything that would loop.
-        const ref = _firstAfterEventOption(_afterEventGroups(actor, ev, events));
+        const ref = _firstAfterEventOption(_afterEventGroups(actor, ev, events, kind));
         _updateEvent(actor, ev.id, {
-          trigger: ref ? _afterEventTrigger(actor, ref.actorId, ref.eventId)
-                       : { type: 'after_event', event_id: '' },
+          trigger: ref ? _afterEventTrigger(actor, ref.actorId, ref.eventId, kind)
+                       : { type: kind, event_id: '' },
+        });
+      } else if (kind === 'ego_speed') {
+        _updateEvent(actor, ev.id, {
+          trigger: { type: 'ego_speed', rule: 'greaterThan', value: DEFAULT_EGO_SPEED },
         });
       } else if (e.target.value === 'distance_to_point') {
         // The point is placed on the actor straight away rather than left null:
@@ -762,8 +797,9 @@
     });
     block.appendChild(_row('Auslöser', triggerSelect, { primary: true }));
 
-    if ((trigger.type || 'simulation_time') === 'after_event') {
-      const groups = _afterEventGroups(actor, ev, events);
+    if (ScenarioRules.isEventRef(trigger)) {
+      const kind = trigger.type;
+      const groups = _afterEventGroups(actor, ev, events, kind);
       const selected = ScenarioRules.afterEventKey(trigger.actor_ref || actor.id, trigger.event_id || '');
       // A trigger loaded from a save file may name an event this dropdown does
       // not offer — one that has since been deleted, or (in an LLM payload) one
@@ -786,12 +822,33 @@
         : _select([['', 'Kein Event']], '');
       refSelect.disabled = groups.length === 0;
       refSelect.title = 'Events anderer Akteure sind nach Akteur gruppiert; '
-        + 'Events, die bereits auf dieses warten, fehlen absichtlich (sonst Endlosschleife)';
+        + 'Events, die bereits auf dieses warten, fehlen absichtlich (sonst Endlosschleife)'
+        + (actor.type === 'ego' ? '' : '; Ego-Events fehlen, weil ein vom AV gefahrenes Ego keine hat');
       refSelect.addEventListener('change', e => {
         const { actorId, eventId } = _splitAfterEventValue(e.target.value);
-        _updateEvent(actor, ev.id, { trigger: _afterEventTrigger(actor, actorId, eventId) });
+        _updateEvent(actor, ev.id, { trigger: _afterEventTrigger(actor, actorId, eventId, kind) });
       });
-      block.appendChild(_row('Nach Event', refSelect));
+      block.appendChild(_row(kind === 'event_started' ? 'Mit Event' : 'Nach Event', refSelect));
+    } else if (trigger.type === 'ego_speed') {
+      const ruleSelect = _select(EGO_SPEED_RULES, trigger.rule === 'lessThan' ? 'lessThan' : 'greaterThan');
+      ruleSelect.title = 'Feuert, sobald die gemessene Geschwindigkeit des Ego die Schwelle '
+        + 'über- bzw. unterschreitet. „langsamer als" ist bei stehendem Ego sofort wahr.';
+      ruleSelect.addEventListener('change', e => {
+        _patchEventTrigger(actor, ev, { type: 'ego_speed', rule: e.target.value });
+      });
+      block.appendChild(_row('Ego ist', ruleSelect));
+      const speedInput = document.createElement('input');
+      speedInput.type = 'number';
+      speedInput.min = '0';
+      speedInput.step = '0.5';
+      speedInput.value = UIUtils.fmt(trigger.value ?? DEFAULT_EGO_SPEED);
+      speedInput.addEventListener('change', e => {
+        _patchEventTrigger(actor, ev, {
+          type: 'ego_speed',
+          value: Math.max(0, parseFloat(e.target.value) || 0),
+        });
+      });
+      block.appendChild(UIUtils.paramRow('Schwelle', speedInput, 'm/s'));
     } else if ((trigger.type || 'simulation_time') === 'distance_to_point') {
       const point = trigger.point;
       const selectedTarget = trigger.entity_ref || _defaultPointTriggerActorId(actor);
@@ -1445,9 +1502,9 @@
       .filter(ev => ev.id !== eventId)
       .map(ev => {
         const trigger = _eventTrigger(ev);
-        if (trigger.type === 'after_event' && !trigger.actor_ref && trigger.event_id === eventId) {
-          return _canChainOnto(currentActor, ev, currentActor, previousEvent)
-            ? { ...ev, trigger: { type: 'after_event', event_id: previousEvent.id } }
+        if (ScenarioRules.isEventRef(trigger) && !trigger.actor_ref && trigger.event_id === eventId) {
+          return _canChainOnto(currentActor, ev, currentActor, previousEvent, trigger.type)
+            ? { ...ev, trigger: { type: trigger.type, event_id: previousEvent.id } }
             : firstEventTriggerPatch(ev);
         }
         return ev;
@@ -1487,19 +1544,23 @@
   /** May `ev` be re-pointed at `candidate` — is it a real, non-route event
    *  that does not already wait on `ev`? Shared by both halves of the delete
    *  sweep, so neither can close a loop while repairing one. */
-  /** May an after_event wait on `ev` at all? Two actions never qualify: an
-   *  assign_route, whose own trigger is discarded at export, and a lane_offset,
-   *  which never completes. The dropdown, the new-event default and the delete
-   *  re-point all go through this — they drifted apart once already, when the
-   *  dropdown learned about lane_offset and the default did not. */
-  function _isChainTarget(ev) {
+  /** May an event-reference trigger of kind `triggerType` name `ev` at all?
+   *  An assign_route never qualifies — its own trigger is discarded at export.
+   *  A lane_offset never completes, so after_event may not name one; its start
+   *  is well defined, so event_started may. The dropdown, the new-event default
+   *  and the delete re-point all go through this — they drifted apart once
+   *  already, when the dropdown learned about lane_offset and the default did
+   *  not. */
+  function _isChainTarget(ev, triggerType = 'after_event') {
     const type = _eventAction(ev).type;
-    return type !== 'assign_route' && type !== 'lane_offset';
+    if (type === 'assign_route') return false;
+    return triggerType === 'event_started' || type !== 'lane_offset';
   }
 
-  function _canChainOnto(actor, ev, owner, candidate) {
+  function _canChainOnto(actor, ev, owner, candidate, triggerType = 'after_event') {
     return !!candidate
-      && _isChainTarget(candidate)
+      && _isChainTarget(candidate, triggerType)
+      && ScenarioRules.mayWaitOnActor(actor, owner)
       && ScenarioRules.canWaitFor(actor, ev, owner, candidate);
   }
 
@@ -1509,14 +1570,14 @@
       let touched = false;
       const events = other.events.map(ev => {
         const trigger = _eventTrigger(ev);
-        if (trigger.type !== 'after_event' ||
+        if (!ScenarioRules.isEventRef(trigger) ||
             trigger.actor_ref !== owner.id ||
             String(trigger.event_id) !== String(deletedEventId)) return ev;
         touched = true;
         return {
           ...ev,
-          trigger: _canChainOnto(other, ev, owner, previousEvent)
-            ? _afterEventTrigger(other, owner.id, previousEvent.id)
+          trigger: _canChainOnto(other, ev, owner, previousEvent, trigger.type)
+            ? _afterEventTrigger(other, owner.id, previousEvent.id, trigger.type)
             : _defaultFirstTrigger(other, null),
         };
       });

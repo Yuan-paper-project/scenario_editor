@@ -427,13 +427,17 @@
         </button>
       </div>
 
+      <!-- A map traffic light: not a scenario object (no pose, type or delete),
+           only the state changes the scenario forces on it. -->
       <div id="traffic-signal-panel" class="hidden">
-        <div class="traffic-signal-divider"></div>
-        <div class="event-section-titlebar">
-          <span class="event-section-title">Events</span>
-          <button id="btn-add-traffic-event" class="btn btn-secondary btn-small" type="button">Event hinzufügen</button>
+        <div id="traffic-signal-meta" class="traffic-signal-meta"></div>
+        <div class="event-section-titlebar traffic-signal-titlebar">
+          <span class="event-section-title collapsible-title">Schaltungen<span id="traffic-event-count" class="event-count">0</span></span>
+          <button id="btn-add-traffic-event" class="btn btn-secondary btn-small" type="button"
+                  title="Ampel umschalten, sobald das Ego sich nähert">+ Schaltung</button>
         </div>
         <div id="traffic-signal-event-list" class="event-list"></div>
+        <div class="props-hint traffic-signal-hint">Eine Schaltung setzt die Ampel einmal um, sobald das Ego näher als der Abstand an ihr ist. Danach läuft ihr normaler Zyklus weiter.</div>
       </div>
 
       <!-- Akteurstyp — nur für NPCs, gefüllt von properties.js -->
@@ -479,6 +483,19 @@
                    title="Startgeschwindigkeit — als SpeedAction im Storyboard-Init">
           </div>
           <div class="props-hint">Z folgt der Fahrbahnhöhe und wird bei jeder Bewegung neu berechnet.</div>
+          <!-- simple_vehicle_control's consider_trafficlights / consider_obstacles.
+               Vehicles only (ego included) — PedestrianControl reads neither,
+               so properties.js hides the row for walkers and props. -->
+          <div id="obey-row" class="obey-row">
+            <label class="obey-toggle"
+                   title="An roten Ampeln anhalten (consider_trafficlights). Aus: fährt über Rot — z. B. für einen Kreuzungskonflikt.">
+              <input type="checkbox" id="prop-obey-lights" checked> Ampeln beachten
+            </label>
+            <label class="obey-toggle"
+                   title="Vor Fahrzeugen und Hindernissen voraus bremsen (consider_obstacles). Aus: fährt auf — z. B. damit ein Konfliktfahrzeug nicht vor dem Ego ausweicht.">
+              <input type="checkbox" id="prop-obey-obstacles" checked> Hindernisse beachten
+            </label>
+          </div>
         </div>
       </div>
 

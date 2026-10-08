@@ -41,6 +41,19 @@
       };
     }
 
+    // A Schaltung on a light CARLA does not have aborts the run at load
+    // ("Unknown traffic light") — see map_renderer._extract_traffic_lights.
+    const ghostSignals = AppState.trafficSignals
+      .filter(sig => (sig.events || []).length > 0
+        && TrafficSignals.mapSignalById(sig.id)?.inCarla === false)
+      .map(sig => sig.id);
+    if (ghostSignals.length > 0) {
+      return {
+        errors: [`Diese Ampeln gibt es in CARLA nicht, ihre Schaltungen würden den Lauf abbrechen: ${ghostSignals.join(', ')}`],
+        warnings,
+      };
+    }
+
     // Events the emitter would silently drop, taking any after_event chained
     // onto them along too. The editor no longer lets you *create* one, so this
     // catches a loaded .json or a scenario built before that guard existed.
@@ -93,7 +106,8 @@
       // (entity, event_id). Absent means the acting actor, so it is filled in
       // here rather than left out — the emitter would default it to the acting
       // entity anyway, and sending it makes the payload say what it means.
-      if (trigger?.type === 'after_event') {
+      // event_started carries the same pair and needs the same remap.
+      if (trigger?.type === 'after_event' || trigger?.type === 'event_started') {
         return { ...trigger, actor_ref: entityRef(trigger.actor_ref || owner.id) };
       }
       return trigger;
@@ -110,6 +124,13 @@
       id: actor.id, type: typeOverride || actor.type,
       x: actor.x, y: actor.y, z: actor.z??0.2, yaw: actor.yaw??0,
       initial_speed:    actor.initial_speed??0,
+      // simple_vehicle_control's consider_trafficlights / consider_obstacles.
+      // Explicit allow-list entries like every other field here — an omitted
+      // key is `true` in every layer, which is what every export did before
+      // the toggles existed. A walker carries them too and the emitter ignores
+      // them (PedestrianControl reads neither).
+      obey_traffic_lights: actor.obey_traffic_lights !== false,
+      obey_obstacles:      actor.obey_obstacles !== false,
       events: (actor.events||[]).map(ev => ({
         id: ev.id, name: ev.name,
         trigger: ev.action?.type === 'assign_route'
@@ -129,7 +150,11 @@
       ego: dumpActor(ego, ego.type === 'ego' ? 'car' : ego.type),
       trafficSignals: (AppState.trafficSignals||[])
         .filter(sig => (sig.events||[]).length > 0)
-        .map(sig => ({ id: sig.id, x: sig.x, y: sig.y, events: sig.events })),
+        // z is the pole's road height: the trigger is a 3-D distance from it.
+        // A save file from before z existed falls back to the map's own light.
+        .map(sig => ({ id: sig.id, x: sig.x, y: sig.y,
+                       z: sig.z ?? (TrafficSignals.mapSignalById(sig.id)?.z ?? 0),
+                       events: sig.events })),
       // Static props: ids and pose only. The backend enriches each entry with
       // miscObjectCategory / mass / bbox from config/prop_catalog.yaml, so the
       // client is never the source of truth for what gets emitted.
