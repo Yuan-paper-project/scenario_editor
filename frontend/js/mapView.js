@@ -29,6 +29,9 @@
   let layerCrosswalks    = null;
   let layerTrafficLights = null;
   let layerRoadDir       = null;   // road direction arrows
+  let layerOverpass      = null;   // roads that pass over another road, by level
+  let _overpassGroupsFor = () => null;
+  let _overpassCount     = 0;
   let layerTriggerPoints = null;
   // Landmark dots from maps/special_buildings.csv. A map-detail layer like the
   // crosswalks, not a scenario layer: it sits below the actors, is never
@@ -106,7 +109,11 @@
   // ── Scale ruler ──────────────────────────────────────────────────────────────
   const _scaleBar   = document.querySelector('.scale-bar');
   const _scaleLabel = document.getElementById('scale-label');
-  const _NICE_DISTS = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000];
+  // Sub-metre steps keep the bar bounded at lane zoom (1 m used to be several
+  // hundred px there): with a 1-2-5 ladder the pick stays within ~70-170 px,
+  // which is what lets the bottom-centre controls reserve a fixed strip for
+  // the ruler (.map-bottom-stack's `left` in style.css).
+  const _NICE_DISTS = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000];
   const _TARGET_PX  = 120;  // target bar width in screen pixels
 
   /** Screen pixels per world metre, or null before the map has a layout. */
@@ -134,7 +141,8 @@
 
     const barWidth = Math.round(bestDist * pxPerMetre);
     _scaleBar.style.width = `${barWidth}px`;
-    _scaleLabel.textContent = bestDist >= 1000 ? `${bestDist / 1000} km` : `${bestDist} m`;
+    _scaleLabel.textContent = bestDist >= 1000 ? `${bestDist / 1000} km`
+      : `${String(bestDist).replace('.', ',')} m`;
   }
 
   /**
@@ -200,6 +208,7 @@
     if (layerCrosswalks)    layerCrosswalks.remove();
     if (layerTrafficLights) layerTrafficLights.remove();
     if (layerRoadDir)       layerRoadDir.remove();
+    if (layerOverpass)      layerOverpass.remove();
     if (layerTriggerPoints) layerTriggerPoints.remove();
     if (layerBuildings)     layerBuildings.remove();
     if (layerSigns)         layerSigns.remove();
@@ -213,6 +222,7 @@
     layerCrosswalks    = _svgEl('g', { id: 'layer-crosswalks' });
     layerTrafficLights = _svgEl('g', { id: 'layer-trafficlights' });
     layerRoadDir       = _svgEl('g', { id: 'layer-roaddir' });
+    layerOverpass      = _svgEl('g', { id: 'layer-overpass' });
     layerTriggerPoints = _svgEl('g', { id: 'layer-trigger-points' });
     layerBuildings     = _svgEl('g', { id: 'layer-buildings' });
     layerSigns         = _svgEl('g', { id: 'layer-signs' });
@@ -222,6 +232,12 @@
     const layerTrajEl  = document.getElementById('layer-trajectories');
     worldGroup.insertBefore(layerRoadDir,       layerTrajEl);
     worldGroup.insertBefore(layerCrosswalks,    layerTrajEl);
+    // Above the ground-level markings, arrows and crosswalks, so a bridge
+    // hides what it passes over; below lights, signs and everything editable.
+    worldGroup.insertBefore(layerOverpass,      layerTrajEl);
+    // Spawn dots go back above the bridges: an elevated road's spawn points
+    // would otherwise be painted over by its own deck.
+    worldGroup.insertBefore(layerSpawns,        layerTrajEl);
     worldGroup.insertBefore(layerTrafficLights, layerTrajEl);
     worldGroup.insertBefore(layerBuildings,     layerTrajEl);
     worldGroup.insertBefore(layerSpeeds,        layerTrajEl);
@@ -258,14 +274,44 @@
     _zoom = 1.0;
     _applyTransform();
 
-    // Sort roads: junctions on top
+    // Sort roads: junctions on top. A road that passes OVER another one
+    // (bridge, flyover, ramp) is drawn later still, in #layer-overpass, with
+    // its own markings and arrows — see _roadOverpassLevels.
     const normal    = roads.filter(r => r.junction === '-1');
     const junctions = roads.filter(r => r.junction !== '-1');
+    const levels    = _roadOverpassLevels(roads);
+    const overpassGroups = [];   // index = level − 1
+    _overpassGroupsFor = level => {
+      while (overpassGroups.length < level) {
+        const g = _svgEl('g', { class: 'ovp-level', 'data-level': String(overpassGroups.length + 1) });
+        const parts = {
+          g,
+          shadow: _svgEl('g', { class: 'ovp-shadow' }),
+          roads:  _svgEl('g', { class: 'ovp-roads' }),
+          marks:  _svgEl('g', { class: 'ovp-marks' }),
+          dir:    _svgEl('g', { class: 'ovp-dir' }),
+        };
+        g.append(parts.shadow, parts.roads, parts.marks, parts.dir);
+        layerOverpass.appendChild(g);
+        overpassGroups.push(parts);
+      }
+      return overpassGroups[level - 1];
+    };
 
     for (const road of [...normal, ...junctions]) {
+      const level = levels.get(road.id) || 0;
+      const grp = level ? _overpassGroupsFor(level) : null;
+      const roadTarget = grp ? grp.roads : layerRoads;
+      const markTarget = grp ? grp.marks : layerMarkings;
+      const dirTarget  = grp ? grp.dir   : layerRoadDir;
       for (const lane of road.lanes) {
         // Lane polygon with thin edge outline for visual definition
         const points = _polyToPoints(lane.polygon);
+        if (grp) {
+          // The bridge's drop shadow / parapet: a wide dark casing under the
+          // deck, so it reads as passing OVER the road beneath, not crossing it.
+          grp.shadow.appendChild(_svgEl('polygon', { points, class: 'ovp-casing' }));
+        }
         const poly = _svgEl('polygon', {
           points,
           fill:   lane.color,
@@ -274,11 +320,11 @@
           'stroke-linejoin': 'round',
           class:  `lane lane-${lane.type}`,
         });
-        layerRoads.appendChild(poly);
+        roadTarget.appendChild(poly);
         // A median/border is a separator, not a lane: hatch it so it reads as
         // blocked in Vektor, and (CSS) instead of a white lane outline in Beides.
         if (BLOCKED_LANE_TYPES.has(lane.type)) {
-          layerRoads.appendChild(_svgEl('polygon', {
+          roadTarget.appendChild(_svgEl('polygon', {
             points, fill: 'url(#hatch-blocked)', class: 'lane-hatch',
           }));
         }
@@ -290,7 +336,7 @@
       if (road.junction === '-1' && road.centerline.length > 1) {
         const hasDriving = road.lanes.some(l => l.type === 'driving');
         if (road.marks && road.marks.length) {
-          _renderRoadMarks(road.marks);
+          _renderRoadMarks(road.marks, markTarget);
         } else if (hasDriving) {
           // No <roadMark> data (render JSON from an older backend, or a map
           // that states none): the old guessed yellow dashed centreline.
@@ -302,11 +348,11 @@
             'stroke-dasharray': '3,5',
             'stroke-linecap': 'round',
           });
-          layerMarkings.appendChild(cl);
+          markTarget.appendChild(cl);
         }
         for (const lane of road.lanes) {
           if (lane.type === 'parking' && lane.directionLine && lane.directionLine.length > 1) {
-            _renderParkingGlyphs(lane.directionLine);
+            _renderParkingGlyphs(lane.directionLine, markTarget);
           }
         }
         if (hasDriving) {
@@ -316,12 +362,14 @@
           for (const lane of road.lanes) {
             if (lane.type === 'driving' &&
                 lane.directionLine && lane.directionLine.length > 1) {
-              _renderRoadDirArrows(lane.directionLine);
+              _renderRoadDirArrows(lane.directionLine, dirTarget);
             }
           }
         }
       }
     }
+    _overpassCount = [...levels.values()].filter(v => v > 0).length;
+    _applyLayerToggleExtras();
 
     for (const sign of signs)        _renderSign(sign);
     for (const sp of speedSigns)     _renderSpeedSign(sp);
@@ -372,13 +420,130 @@
     requestAnimationFrame(() => _updateScaleRuler());
   }
 
+  // ── Overlapping roads at different heights ─────────────────────────────────
+
+  /* The map is a 2-D plan, so a flyover and the road under it occupy the same
+   * pixels. Painting them in document order put whichever came later on top —
+   * often the road UNDERNEATH, markings and all, cutting the bridge in two.
+   *
+   * Each pair of roads whose footprints overlap is compared at the overlap
+   * itself (not by road-average z: a ramp is low at one end and high at the
+   * other): a sample of one road's centreline that falls inside the other's
+   * lane polygons is compared with the other road's centreline height there.
+   * More than OVERPASS_GAP_M apart is a real crossing over/under; less is a
+   * junction or a join at grade and is left alone. The result is a level per
+   * road — 0 for anything with nothing beneath it, else 1 + the highest level
+   * it passes over — and renderMap draws levels ≥ 1 in #layer-overpass, one
+   * group per level, each with its own casing, markings and arrows. */
+  const OVERPASS_GAP_M = 4.0;
+  const OVERPASS_SAMPLE_STEP = 2;     // test every 2nd centreline point
+
+  function _pointInPoly(x, y, poly) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
+      if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+
+  function _bboxOf(points, into = null) {
+    const b = into || { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+    for (const p of points) {
+      if (p[0] < b.x0) b.x0 = p[0]; if (p[0] > b.x1) b.x1 = p[0];
+      if (p[1] < b.y0) b.y0 = p[1]; if (p[1] > b.y1) b.y1 = p[1];
+    }
+    return b;
+  }
+
+  const _bboxHit = (a, b) => a.x0 <= b.x1 && b.x0 <= a.x1 && a.y0 <= b.y1 && b.y0 <= a.y1;
+
+  function _roadOverpassLevels(roads) {
+    const info = [];
+    for (const road of roads) {
+      const cl = (road.centerline || []).filter(p => p.length >= 3);
+      const lanes = (road.lanes || []).filter(l => l.polygon && l.polygon.length >= 3)
+        .map(l => ({ poly: l.polygon, bbox: _bboxOf(l.polygon) }));
+      if (!cl.length || !lanes.length) continue;
+      const bbox = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+      for (const l of lanes) _bboxOf([[l.bbox.x0, l.bbox.y0], [l.bbox.x1, l.bbox.y1]], bbox);
+      const zs = cl.map(p => p[2]);
+      info.push({ id: road.id, cl, lanes, bbox, zMin: Math.min(...zs), zMax: Math.max(...zs) });
+    }
+    const zAt = (r, x, y) => {
+      let best = Infinity, z = 0;
+      for (const p of r.cl) {
+        const d = (p[0] - x) ** 2 + (p[1] - y) ** 2;
+        if (d < best) { best = d; z = p[2]; }
+      }
+      return z;
+    };
+    // Does any sampled point of `b` lie on `a`, and how much higher is `a` there?
+    const heightOver = (a, b) => {
+      for (let k = 0; k < b.cl.length; k += OVERPASS_SAMPLE_STEP) {
+        const [x, y, z] = b.cl[k];
+        if (x < a.bbox.x0 || x > a.bbox.x1 || y < a.bbox.y0 || y > a.bbox.y1) continue;
+        for (const l of a.lanes) {
+          if (x < l.bbox.x0 || x > l.bbox.x1 || y < l.bbox.y0 || y > l.bbox.y1) continue;
+          if (_pointInPoly(x, y, l.poly)) {
+            const dz = zAt(a, x, y) - z;
+            if (Math.abs(dz) > OVERPASS_GAP_M) return dz;
+            break;
+          }
+        }
+      }
+      return 0;
+    };
+    const below = new Map(info.map(r => [r.id, new Set()]));
+    for (let i = 0; i < info.length; i++) {
+      const a = info[i];
+      for (let j = i + 1; j < info.length; j++) {
+        const b = info[j];
+        if (!_bboxHit(a.bbox, b.bbox)) continue;
+        // Two roads whose whole height ranges are within the gap cannot pass
+        // over each other anywhere — the cheap test that skips nearly all pairs.
+        if (Math.max(a.zMax - b.zMin, b.zMax - a.zMin) <= OVERPASS_GAP_M) continue;
+        const dz = heightOver(a, b) || -heightOver(b, a);
+        if (dz > 0) below.get(a.id).add(b.id);
+        else if (dz < 0) below.get(b.id).add(a.id);
+      }
+    }
+    const levels = new Map();
+    const visiting = new Set();
+    const levelOf = id => {
+      if (levels.has(id)) return levels.get(id);
+      if (visiting.has(id)) return 0;          // a cycle: should not happen, never loop
+      visiting.add(id);
+      let lv = 0;
+      for (const b of below.get(id) || []) lv = Math.max(lv, levelOf(b) + 1);
+      visiting.delete(id);
+      levels.set(id, lv);
+      return lv;
+    };
+    for (const r of info) levelOf(r.id);
+    return levels;
+  }
+
+  /** Overpass markings/arrows follow the Markierungen / Fahrtrichtung boxes. */
+  function _applyLayerToggleExtras() {
+    if (!layerOverpass) return;
+    const marks = document.getElementById('toggle-markings');
+    const dir = document.getElementById('toggle-roaddir');
+    layerOverpass.querySelectorAll('.ovp-marks').forEach(g => {
+      g.style.display = marks && !marks.checked ? 'none' : '';
+    });
+    layerOverpass.querySelectorAll('.ovp-dir').forEach(g => {
+      g.style.display = dir && !dir.checked ? 'none' : '';
+    });
+  }
+
   // ── Road furniture from the .xodr: painted lines, parking, signs, limits ──
 
   const MARK_COLORS = { white: 'rgba(242,242,242,0.85)', yellow: 'rgba(242,190,40,0.9)' };
   const PARKING_GLYPH_EVERY_M = 20;
 
   /** Painted lines from the road's <roadMark>s (backend _build_mark_polylines). */
-  function _renderRoadMarks(marks) {
+  function _renderRoadMarks(marks, target = layerMarkings) {
     for (const m of marks) {
       const attrs = {
         points: m.points.map(p => `${p[0]},${p[1]}`).join(' '),
@@ -389,12 +554,12 @@
       };
       // CARLA paints broken lines 3 m on, 6 m off.
       if (m.type === 'broken') attrs['stroke-dasharray'] = '3 6';
-      layerMarkings.appendChild(_svgEl('polyline', attrs));
+      target.appendChild(_svgEl('polyline', attrs));
     }
   }
 
   /** A "P" every PARKING_GLYPH_EVERY_M along a parking lane's centre. */
-  function _renderParkingGlyphs(line) {
+  function _renderParkingGlyphs(line, target = layerMarkings) {
     let acc = PARKING_GLYPH_EVERY_M / 2;
     for (let i = 1; i < line.length; i++) {
       const [x0, y0] = line[i - 1], [x1, y1] = line[i];
@@ -407,7 +572,7 @@
           'text-anchor': 'middle', 'dominant-baseline': 'central',
         });
         t2.textContent = 'P';
-        layerMarkings.appendChild(t2);
+        target.appendChild(t2);
         acc += PARKING_GLYPH_EVERY_M;
       }
       acc -= seg;
@@ -452,7 +617,7 @@
   }
 
   /** Render small direction-arrow chevrons along a road centerline. */
-  function _renderRoadDirArrows(centerline) {
+  function _renderRoadDirArrows(centerline, target = layerRoadDir) {
     // Place a small arrow every ~30m along the road
     const INTERVAL = 30;
     let accum = 0;
@@ -473,7 +638,7 @@
           fill: 'rgba(255,255,255,0.30)',
           transform: `translate(${mx.toFixed(1)},${my.toFixed(1)}) rotate(${angle.toFixed(1)})`,
         });
-        layerRoadDir.appendChild(arrow);
+        target.appendChild(arrow);
       }
     }
   }
@@ -630,6 +795,12 @@
    * identity of its own on the map beyond its number, so framing it without
    * saying which of the dots in view it was would answer the wrong question.
    */
+  /** Centres the view on a world point with `span` metres across the view. */
+  function centreOn(wx, wy, span = ZOOM_TO_SPAN) {
+    const vb = svg.viewBox.baseVal;
+    return _centreOn(wx, wy, vb && vb.width ? vb.width / span : _zoom);
+  }
+
   function focusWaypoint(sel) {
     const path = AppState.waypointPathOf(sel);
     const wp = path && path[sel.index];
@@ -1972,6 +2143,7 @@
       cb.onchange = () => {
         const t = p.layer;
         if (t) t.style.display = cb.checked ? '' : 'none';
+        _applyLayerToggleExtras();
       };
     }
   }
@@ -2154,6 +2326,7 @@
     focusActor,
     glowActor,
     focusWaypoint,
+    centreOn,
     glowWaypoint,
     showPath,
     actorColor(type) { return ACTOR_COLORS[type] || ACTOR_COLORS.car; },

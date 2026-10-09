@@ -27,7 +27,7 @@ bash run.sh 8080     # custom port
 
 - Always start from the repo root — the app is imported as `backend.main`, so `uvicorn main:app` from inside `backend/` will not work. `run.sh` handles this with `cd "$(dirname "$0")"`.
 - **`.vscode/launch.json` passes no `--host`/`--port`**, so debugger runs land on uvicorn's default **8000** and bind loopback only, while `run.sh` uses **9090** on `0.0.0.0`. On a remote/SSH box the debugger's server is unreachable without a forwarded port — a hung browser tab usually means this, not a broken app.
-- **There is no linter and no CI**, and no unit tests. Automated coverage is `tests/test_normalization.py` (pure Python) plus thirteen Playwright end-to-end suites that need a running editor, and `tests/run_carla_cases.py`, which needs a running CARLA (see Verification). Everything else is verified manually.
+- **There is no linter and no CI**, and no unit tests. Automated coverage is `tests/test_normalization.py` (pure Python) plus fourteen Playwright end-to-end suites that need a running editor, and `tests/run_carla_cases.py`, which needs a running CARLA (see Verification). Everything else is verified manually.
 - All map geometry is parsed once at startup into `MAP_CACHE` (`preload_maps`, `backend/main.py`). Changes to `map_renderer.py` only take effect on restart — `--reload` does this automatically on save.
 - **`--reload` only watches this repo.** Editing `../llm-scenario-gen` — including `prop_catalog.yaml`, which `xml_builder` reads once at import — requires a **manual restart**. Frontend files are read per request, so a catalogue edit appears instantly in the UI while the backend still serves the old data. That asymmetry is easy to misread as a bug.
 
@@ -69,6 +69,7 @@ Every z the editor writes is `elev(s)` at the placement point plus a per-categor
 - **A section's LAST sample evaluates laneOffset and widths at the left limit (`s_end − ε`)** — `_section_eval_s` (`backend/map_renderer.py`), used by the polygon builder and the `directionLine` loop. CARLA maps *step* the laneOffset at a lane-section boundary to make up for a lane that starts or ends there (Town03 road 1566: −6.635 → −0.635 at s=2); evaluating at `s_end` picks the record that starts there and throws section N's last vertex up to 6 m sideways. That was every spike and long wedge at a road join (Town03/04/06/10). The road `centerline` emits both limits at such a step so the marking jogs instead of slanting. Spawn points never had the bug — they drop the section-end sample outright.
 - **Lateral positions go through `_lateral_point`, which clamps the distance to just short of the arc centre on the concave side.** Past the radius an offset curve folds back on itself — the bow-tie sidewalk corners at Town01/02 junctions (Town02 road 2: 7.5 m radius, sidewalk outer edge at 8.3 m). It needs per-sample curvature, which comes from `_curvature_at` rather than a 5th sample element, because `_sample_geometry`'s 4-tuple is unpacked positionally everywhere. **Arcs are sampled at ~6° steps** (`ARC_SAMPLE_ANGLE_RAD`), not the flat 4 m that used to facet tight bends.
 - `tests/check_render_geometry.py` (no server, in `run_tests.sh`) pins both across all 9 towns. **Town06 road 598 is allow-listed**: its `.xodr` has a 0.39 m laneOffset blip (+0.635 → −2.865 → +0.635) inside one section — a source defect, not ours.
+- **A road that passes over another one is drawn in `#layer-overpass`** (`_roadOverpassLevels`, `mapView.js`), one `.ovp-level` group per level, each holding a dark casing (`.ovp-casing`), the lane polygons, and that road's own markings (`.ovp-marks`) and arrows (`.ovp-dir`). Before it, paint order was document order, so the street *under* a bridge — markings and all — was often drawn across the deck. Pairs are compared **at the overlap** (a centreline sample of one road inside the other's lane polygon, against the other road's centreline z there), not by road-average z, because a ramp is low at one end and high at the other; > `OVERPASS_GAP_M` (4 m) is an over/under, less is a junction at grade. The layer sits above markings, arrows and crosswalks, and `layer-spawns` is **moved above it** so a bridge's own spawn dots are not painted over by its deck. The Markierungen / Fahrtrichtung checkboxes reach the overpass copies through `_applyLayerToggleExtras`; Luftbild hides the overpass like `#layer-roads`, Beides outlines it. The bundled data has very few: Town04 road 39 over 47, Town05's ring 37 over 3/9/24 — Town03's "elevated" area overlaps nothing (checked offline by brute force). **Placement height under a bridge is still nearest-lane-in-2-D** (`groundZAt`), deliberately: a "topmost road wins" rule was tried and reverted, because the generator relies on a vehicle on a lane centre taking its own lane's height, and it would lift a car on the street onto the deck.
 - **`median` / `border` / `restricted` / `bidirectional` lanes are hatched** (`#hatch-blocked` in `index.html`'s `<defs>`, `BLOCKED_LANE_TYPES` in `mapView.js`) and in Beides lose the white lane outline. They used to fall through to `DEFAULT_LANE_COLOR`, i.e. asphalt, so Town03's tunnel median read as a drivable lane. Every lane polygon now carries `class="lane lane-<type>"`. **`bidirectional` is treated as a wall everywhere, not just drawn as one**: its only use in the bundled maps is Town03's ring-highway separator (lane 1 of roads 0–4, 28, 29, 65–69 — the tunnel approach), and CARLA's planner never routes it (`lane_graph_builder.py` `_ROUTABLE_TYPES`). So it gets no direction arrows, no spawn points, no route snapping (`ROUTE_SNAP_LANE_TYPES`) and no preview lane-following (`simulate.js`). An uploaded map with a real centre turn lane would lose those too — revisit if one turns up.
 - **Road furniture comes from the `.xodr`, drawn in `mapView.js` (`_renderRoadMarks` & co), never hit-tested:**
   - `roads[].marks` — painted lines from each lane's `<roadMark>` (a lane's mark is its **outer** border; the centre lane's is the reference line), `{type: 'solid'|'broken', color: 'white'|'yellow', width, points}`, built by `_build_mark_polylines` with the same left-limit and fold-clamp maths as the polygons. A double mark (`broken solid`) becomes two lines ±0.12 m, first token on the left in s direction. `none`/`curb`/`grass` are not drawn. Mark `sOffset`s are added to the sample s-values so a type change has no gap. **Junction roads' marks are not drawn** (connector edges criss-cross the box); a road with no marks falls back to the old guessed yellow centreline. Lives in `#layer-markings` (`Markierungen`).
@@ -475,8 +476,9 @@ Things that only make sense once you have read `ChangeActorTargetSpeed`:
   `scenario_runner` → 0 hits), so this is honesty rather than behaviour — but it is what
   keeps `test_templates_e2e.py`'s "`step` is what makes the duration a hold" assertion
   coherent.
-- **The four speed-profile templates ramp** (`RAMP_RATE = 5.0` m/s², `frontend/js/templates.js`):
-  all four alternate ramp and hold, because a `rate` event ends on arrival and therefore
+- **The four speed-profile templates ramp** (`RAMP_RATE = 5.0` m/s², `frontend/js/templates.js`),
+  and so does `Notbremsung` (`EMERGENCY_DECEL` 8 m/s², released by `distance_to_ego` 25):
+  all alternate ramp and hold, because a `rate` event ends on arrival and therefore
   cannot itself hold — every dwell in those chains, including the final one, is a separate
   `time` event. Every other template, and every
   hand-written `tests/carla_cases.py` chain, stays on `time`.
@@ -598,7 +600,12 @@ explicit `set_speed 0` (`_parked()` in `tests/carla_cases.py`), because its own 
 events would otherwise move it.
 
 **The default is split on purpose, and this is the trap.** `ObjectsManager`'s
-`DEFAULT_INIT_SPEED` gives a *placed* actor `10`, while an
+`DEFAULT_INIT_SPEED` gives a *placed vehicle* `10` — but a placed walker or cyclist
+(`ROAD_FACING_TYPES`) `0`, and a template-placed actor whatever
+`ScenarioTemplates.initialSpeedFor` says (its first `set_speed`'s target for a vehicle, `0`
+for a VRU, an explicit `initialSpeed` for `Ausparken`/`Pannenfahrzeug`). A walker used to
+get 10 too: the Init speed lands on tick 1, so every crossing pedestrian sprinted off at
+36 km/h along its heading before its distance trigger could fire. An
 **omitted** key defaults to `0` in both `AppState._hydrateActor` and
 `_normalize_actor`. So a legacy save file, an LLM payload and every
 `tests/carla_cases.py` case — none of which mention the field — keep exporting exactly
@@ -650,6 +657,90 @@ dropdown. It is **not** a one-shot `"current speed plus a delta"` though: the
 atomic re-samples the reference every tick for the action's whole duration (see
 the preview section below), so a self-reference *compounds* — it adds `delta`
 per tick until the duration expires, not once.
+
+## Scenario templates (`frontend/js/templates.js`)
+
+17 one-actor templates in the overview panel's **Templates** tab (Auto 11, Fußgänger 4 incl.
+`child-runs-out`, Radfahrer 2). A template is `{label, hint, actorType, events, placement?, initialSpeed?, build?}`;
+`objects.js` `_placeActor` runs `eventsForActor` and `initialSpeedFor` at the click.
+
+- **`hint` is the button's hover text** (`_buttonHtml` reads it) and the picker option's — a new
+  template without one fails `test_templates_e2e.py` ("every template button has a hover description").
+- **A template can be applied to an actor that is already placed**: the event panel's
+  `Ablauf aus Template …` select (`.event-template-select`, `_renderEventActionGrid`) →
+  `ScenarioTemplates.applyTo`, which rebuilds the chain for the actor's *current* pose, replaces its
+  events and sets the template's start speed in **one** `updateById` (one undo entry), after a
+  confirm when it already has events. `compatibleWith(type)` groups by what the chain needs, not by
+  `ACTOR_TYPE_GROUPS`: vehicle chains on any vehicle, walker chains on `pedestrian`/`child`,
+  cyclist chains on `cyclist` only (a `set_speed` crossing rides a cyclist *along* the lane), and
+  nothing on the ego (every chain waits on `distance_to_ego`). Other actors' event references into
+  the replaced chain are not re-pointed; the usual „Event fehlt" chip reports them.
+
+- **`build(actor)` computes a chain from the road at the click, with the actor's final pose**, and
+  falls back to the static `events` with a toast when it returns null (no road, or a "crossing"
+  heading along the carriageway). Used by the four crossings and the pull-out.
+  `_crossingProfile` walks the actor's heading in 0.25 m steps over every lane polygon that is not
+  `sidewalk`/`none` and reports entry, exit (+1.5 m onto the kerb) and the middle of the first
+  driving lane **by lane identity** — by type, two adjacent driving lanes are one span and its middle
+  is the line between them.
+- **Walker crossings are `set_speed` holds sized to the road**: `duration = crossing length / speed`.
+  A fixed 10 s used to stop a walker mid-carriageway on a wide road and walk it into a wall on a
+  narrow one. `pedestrian-crossing` triggers at **30 m** at 1.4 m/s — at the old 50 m / 2 m/s the
+  CARLA bench case measured the walker off the far kerb ~3.5 s before the ego arrived.
+- **`cyclist-crossing` is a `follow_trajectory`** (seed on the actor + mid + a vertex **4 m past
+  the far kerb**, 4 m/s): a cyclist is a `<Vehicle>` and a `set_speed` rides it *along* the lane.
+  The overshoot is `SimpleVehicleControl`'s 4 m waypoint acceptance — it stops dead on reaching the
+  last one, so a trajectory ending *at* the kerb left the bike in the middle of the oncoming lane
+  (measured). Its export hits the known `<Vertex relativeTime>` XSD defect like any trajectory.
+- **`vehicle-pull-out` is an `assign_route`** (NOTES 1.1 #3), not a `lane_change`, which never fires
+  from a parking lane: seed (`routeWaypointAt` → the driving lane beside the bay), a merge point
+  10 m ahead on a same-direction driving lane, and a run-on probed 80/60/40/30/20 m straight ahead (a
+  lane's own `directionLine` ends at its section, often a few metres on), plus `set_speed` 10 m/s at
+  `distance_to_ego` 30, start speed 0 — a route alone does not move an actor, so it waits at the kerb.
+- **A template actor that ends up standing in a lane blocks the run**: the ego (obstacles on) waits
+  behind it, its route never completes, and the run only ends on `MaxSimTime` — which is also when
+  `run.sh` is most likely to hang (see "CARLA verification of the templates"). So `Notbremsung`
+  stands 3 s and pulls away again (`rate` 3 m/s² back to 10 m/s) and the pull-out's route runs 80 m
+  on. `vehicle-parked` is the deliberate exception — blocking is its job.
+- **`vehicle-cut-in` (Einscheren) changes lanes *toward the ego*, and decides which way at the
+  click** (`_buildCutIn`): the sign of the cross product of the NPC's heading with the vector to
+  `AppState.ego` — CARLA's frame is left-handed with y down, so facing +x the right is +y. No ego
+  placed yet means `right` plus a toast; placing the ego afterwards does **not** re-derive it. Its
+  `lane_change` fires on `distance_to_ego` 15, not `after_event` on a 5 s hold like the two
+  Spurwechsel templates, which change lanes wherever the ego happens to be.
+- `vehicle-parked` has `events: []` (no Act, holds start speed 0); `vehicle-lane-drift` is two
+  `lane_offset`s on two ego distances (40 m out 1.5 m, 20 m back to 0) because nothing may chain
+  onto a `lane_offset` with `after_event`.
+- `test_templates_e2e.py` pins chains with an `ANY` wildcard for computed values and checks the
+  computed hold is 0.5–60 s; its `export_template` places the actor with `yaw: 90` so the crossing
+  builders have Town01 road 1 to cross.
+
+### CARLA verification of the templates (`tests/run_template_carla.py`)
+
+The `tpl-*` cases in `run_carla_cases.py` give the ego no events, so it stands still and no
+`distance_to_ego` trigger fires except on its 60 s fallback. `run_template_carla.py` instead gives
+each case an ego driving an `assign_route` past the actor at a start speed, places the template
+with a real click, and prints CARLA's result beside the preview's. Measured 2026-10-09 (all on
+the scripted ego, obstacles on):
+
+- **Pull-out** (Town03 road 6 bay): waits, released at 2.0 s, 2.8 m out onto the driving lane, 10 m/s.
+- **Pedestrian crossing / stop in lane / child** (Town01 road 1 kerb): 1.4 / 1.4 / 3.0 m/s exactly,
+  kerb to kerb; the stop-in-lane walker stood 3 s at y −2.35 (the ego's lane centre is −2.0) and the
+  ego stopped 9 m short and waited. Ego yielded in all three (closest 6.3–7.0 m).
+- **Cyclist crossing**: crosses on its trajectory at 4.0 m/s and stops on the far kerb.
+- **Notbremsung** (Town04 road 40): 10 → 0 in 1.3 s (8 m/s²), 3 s stand, back to 10 in 3.35 s.
+- **Schlenker links**: 1.45 m left (authored 1.5) for 4 s, back exactly at the 20 m trigger.
+- **Einscheren** (Town04 road 40, NPC lane 5, ego lane 4): changed left at 13.15 s with the ego
+  15 m back, into the ego's lane in ~2 s; the ego braked 11.9 → 5.1 m/s and followed at 10.8 m.
+- **Trigger times run ~1.2 s later than the preview's** — the scripted ego ramps up at 3 m/s²,
+  the preview starts it at speed (see the preview section).
+- **A spot can be unspawnable for scenery the `.xodr` does not contain**: Town03 road 6's sidewalk at
+  y −12…−12.6 is a wall/fence line under an overhead deck (`cast_ray` hits z 8.1); no walker spawns
+  there at any height, and "Unable to add actors" kills the run. Nothing in the editor can see this.
+- **`run.sh` sometimes does not return after ScenarioRunner prints "Exiting"**, even for a storyboard
+  that completed (every event END-ed) — seen on 3 of 13 runs, including one that hit only
+  `HeroActComplete`. The behaviour data is complete when it happens; `run_case`'s timeout and
+  `killpg` clean up. Cause not found.
 
 ## Static props (CARLA `static.prop.*`)
 
@@ -785,7 +876,7 @@ out; props carry a separate invisible hit circle, so clickability is not the blo
 - **Undo/redo also have header buttons** (`#btn-undo` / `#btn-redo`), sharing `mapView.js`'s `_stepHistory` with `Strg+Z` / `Strg+Y`. `UndoStack` emits nothing, so `_refreshHistoryButtons` re-reads `UndoStack.length` / `redoLength` once per frame after any AppState event.
 - **The header is one row at every width** — nothing in it may wrap. Below 1340 px `.app-title` is hidden, below 1180 px the road count and the weather summary text too. A new header control must fit that budget or go into a menu.
 - **The empty map is a town picker** (`#map-quick-pick`, filled by `toolbar.js` `_renderQuickPick`); a button just sets `#map-select` and dispatches its `change`, so there is still one load path. `#scale-ruler` stays `hidden` until a map renders.
-- **The simulation controls are not in the header.** `simulate.js` injects `#sim-controls` into `#map-bottom-stack`, a click-through (`pointer-events: none`, children `auto`) bottom-centre overlay inside `#map-container` that also holds `#traj-banner`. They are **stacked in a flex column, not given fixed `bottom` offsets** — either can be hidden without the other having to know. The ids `#sim-play` / `#sim-stop` (`tests/test_route_fidelity_e2e.py`) and `#traj-banner` (`tests/test_ego_events_e2e.py`) are unchanged by the move. Their labels are German (`Abspielen` / `Fortsetzen` / `Pause` / `Stopp`); the play button's text lives in `#sim-play-text` beside its icon, so set that, never `btnPlay.textContent`, which would wipe the icon.
+- **The simulation controls are not in the header.** `simulate.js` injects `#sim-controls` into `#map-bottom-stack`, a click-through (`pointer-events: none`, children `auto`) bottom-centre overlay inside `#map-container` that also holds `#traj-banner`. They are **stacked in a flex column, not given fixed `bottom` offsets** — either can be hidden without the other having to know. The ids `#sim-play` / `#sim-stop` (`tests/test_route_fidelity_e2e.py`) and `#traj-banner` (`tests/test_ego_events_e2e.py`) are unchanged by the move. `#sim-progress-bar` is the scrubbable timeline (see the preview section); `#sim-time-label` reads `t / end`. **`#map-bottom-stack` is centred in the strip right of the scale ruler** (`left: 272px; right: 12px`), not on the map's 50% — the ~690 px bar slid over the ruler. That reserve only holds because the ruler is bounded: `_NICE_DISTS` starts at 0.1 m, so its bar stays within ~70–170 px (from 1 m up it was several hundred px at lane zoom). On a narrow map the controls wrap and the timeline (`flex: 1 0 220px`) fills its own row. Nothing in the bar may change width when a preview starts: Stop keeps its slot (`.sim-idle` = `visibility: hidden`) and Play/Pause share a min-width, or the timeline moves out from under the cursor. Their labels are German (`Abspielen` / `Fortsetzen` / `Pause` / `Stopp`); the play button's text lives in `#sim-play-text` beside its icon, so set that, never `btnPlay.textContent`, which would wipe the icon.
 - **`#map-status` carries the road count only** ("122 Straßen") — the town name is `#map-select`'s job, and every path that writes the count (`toolbar.js` select-change and `stateLoaded`, `mapImport.js`) also sets `mapSelect.value`, so the name is never lost. Transient and failure states ("Lade …", "Import fehlgeschlagen") still take over the badge text.
 - **Pan/zoom is clamped, and `F` is the way back.** `mapView.js` holds `MIN_ZOOM` (0.25) / `MAX_ZOOM` (200) around `_zoom`, which is `1.0` when the whole town fills the viewBox. The wheel derives `_pan` from the **clamped** zoom, not the requested one — deriving it from the request keeps translating the map at the limit, which walks it off screen as effectively as no clamp. Unbounded is what it used to be: 200 notches out reached `scale(0.0000087)` and nothing but `renderMap()` ever reset the view, so the only way back was a reload, which discards the scenario. The recovery path is `MapView.resetView()` / `zoomToSelection()` / `zoomBy(factor)`, bound to `#map-view-controls` (top-right of the map, unhidden by `_setupLayerToggles` alongside `#layer-toggles`) and to the `F` key — `F` frames the selection at `ZOOM_TO_SPAN` (90 m) and falls back to a full reset when nothing is selected. **Buttons zoom about the view centre (`zoomBy` → `_centreOn`), the wheel about the cursor**; scaling `_zoom` alone zooms about the viewBox origin. Shift on the wheel switches to `ZOOM_STEP_COARSE` (1.4 vs 1.12), which is a real ergonomic difference — 9 notches to lane scale instead of 26, and 50 before the base step was raised.
 
@@ -1026,6 +1117,23 @@ is no import UI: edit the CSV.
   `renderMap`.
 
 ## The in-editor preview (`frontend/js/simulate.js`) and the cached CARLA lane graph
+
+**The run is simulated up front and Play replays it — that is what makes the timeline
+scrubbable.** Play calls `_simulateTimeline()` once (≈20 ms on a generated Town03 scenario):
+it steps every sim actor at a **fixed 20 Hz** (`SIM_DT_S`, ScenarioRunner's own synchronous
+tick — it used to be the rAF frame time × playback speed) and records a pose + badge frame
+per tick. `_showTime(t)` interpolates between two frames and writes the poses through
+`AppState.updateById` (undo suspended, as before); playback, the scrub bar
+(`#sim-progress-bar`, pointer-drag, pauses and resumes), `←`/`→` (±0.5 s, `Umschalt` ±5 s)
+and a click on an event tick (`.sim-marker`, one per tick that started events, tooltip
+names them by their card title via `EventPanel.displayName`) are all just `_seek(t)`. A
+click on the bar with no preview running starts one, paused. **The run ends where
+ScenarioRunner's would**: the ego has driven 500 m, or 60 s (every Act's `MaxSimTime`), or
+— the preview's own rule — nothing has moved and no event has fired for 3 s *and* no
+event is still pending (an unfired `distance_to_ego` keeps it going to its 60 s fallback).
+Playback holds the last frame there and `Nochmal` replays. The old live-stepping preview
+dropped seeking on purpose ("it would mean replaying everything"); replaying everything
+once is cheap, so nothing is faked. The `HeroActComplete` stop group is not modelled.
 
 The Play/Pause/Stop preview is a per-tick kinematic re-implementation of the real controllers
 (`SimpleVehicleControl` / `PedestrianControl`), not an idealisation of the authored events — it
@@ -1438,6 +1546,19 @@ this and is refused for walkers in three layers (emitter, backend, `ScenarioRule
   towns: every trigger fired and every NPC type produced a real interaction (scripted ego braked to
   2.3–5.3 m, or stopped behind the lead). The scripted ego **drives through cones** — it does not
   avoid static props; that is what an obstacle scenario tests an AV stack on.
+- Re-run 2026-10-09, one seed per type: every trigger fired and every type produced its conflict —
+  Town03 `cut_out` (ego stopped 10.9 m behind the uncovered truck), Town05 `oncoming_drift` (ego
+  stopped, 3.2 m apart), Town10HD `vru_crossing` (ego slowed to 4.5 m/s, 6.2 m clear), Town03
+  `junction_conflict` (red-light runner, 2.7 m), Town05 `cyclist_ahead` (8.2 m), Town02 `obstacle`,
+  Town10HD `lead_brake` (ego followed the braked van at 7.8 m). Two defects:
+  - **The junction NPC's route ended just past the exit**, where it stopped dead in the road the
+    ego turned onto; the ego sat behind it until the 60 s stop trigger. Its route now runs 60–90 m
+    on (`_walkForward`, `_junctionConflict`); re-run: ego route complete at 34.9 s.
+  - **Town04 `cut_in` seed 4: the ego drove through the car that cut in** — same x/y, ego 2.4 m
+    higher. `SimpleVehicleControl` commands `velocity.z = 0` every tick, so on a ~5 % downgrade at
+    10 m/s the ego left the road (2.8 m up by t = 18.5 s) while the 6.9 m/s NPC kept up. That is
+    ScenarioRunner's, not the generator's — see NOTES 1.4 for the numbers and the suggested fix.
+    **Check `z` before trusting any CARLA result on a graded road at speed.**
 - **`probe_generated_spawns.py`** spawns every actor of a whole batch together in CARLA and destroys
   them again (~5 min for 240 scenarios / ~600 actors; latest 239/240). `--zip batch.zip --out ok.zip` filters a
   downloaded batch down to the scenarios that spawn completely. **Run it before using a batch
@@ -1501,7 +1622,7 @@ bash run.sh 9090                 # terminal 1
 bash tests/run_tests.sh          # terminal 2 (EDITOR_URL overrides the target)
 ```
 
-That runs `test_normalization.py` (155 checks, no browser or server needed — the last ten build a real `.xosc` through the sibling repo to pin cross-actor event-reference resolution, `startTransition`, the hero `SpeedCondition`, the `consider_*` properties and a signal trigger at the pole's road height), then `compare_xodr_lane_graph.py` (also no browser/server/CARLA — validates `backend/lane_graph_builder.py` against the 8 committed probed graphs), then the thirteen Playwright suites: props (72), prop yaw (23), templates (159), events (82), ego events (75), triggers (47), signal panel (31), actor types (260, grows with the catalogue), elevation (33), route fidelity (9), undo (44), waypoints (67), generator (~1300: eight types × three seeds × three towns, plus batch, coverage and dialog checks). All but the first two drive a real browser against a real server and a real export. **Restart the editor first if you changed `../llm-scenario-gen`** — otherwise the frontend shows new catalogue data while the backend exports the old, which looks like a test bug and is not one.
+That runs `test_normalization.py` (155 checks, no browser or server needed — the last ten build a real `.xosc` through the sibling repo to pin cross-actor event-reference resolution, `startTransition`, the hero `SpeedCondition`, the `consider_*` properties and a signal trigger at the pole's road height), then `compare_xodr_lane_graph.py` (also no browser/server/CARLA — validates `backend/lane_graph_builder.py` against the 8 committed probed graphs), then the fourteen Playwright suites: props (72), prop yaw (23), templates (296), events (82), ego events (75), triggers (47), signal panel (31), actor types (260, grows with the catalogue), elevation (33), route fidelity (9), undo (44), waypoints (67), generator (~1380: eight types × three seeds × three towns, plus batch, coverage and dialog checks), preview timeline (28: scrubbing, event ticks, keys, Stop/undo, and the overpass layer on Town04/05/01). All but the first two drive a real browser against a real server and a real export. **Restart the editor first if you changed `../llm-scenario-gen`** — otherwise the frontend shows new catalogue data while the backend exports the old, which looks like a test bug and is not one.
 
 `test_ego_events_e2e.py` is kept separate from `test_events_e2e.py` rather than folded in: the older suite's `EGO` fixture and every one of its assertions assume an inert ego (no events), which was true before the ego became a controllable actor and is the entire premise the new suite tests against.
 
@@ -1543,7 +1664,7 @@ Each case leaves `tests/artifacts/<case>/scenario.json` — `AppState.toJSON()` 
 
 **A `lane_change` needs a same-direction neighbour lane, and Town01 has none.** ScenarioRunner's `ChangeActorLateralMotion` only succeeds once the actor has driven `distance_other_lane` (hardcoded to 10 in `openscenario_parser.py`) *in the target lane*, and it never fails except on an empty plan — so an unreachable target lane is the commonest way to produce the hang above. On Town01 road 1, where the fixed ego pose puts everything, CARLA reports `lane_change=NONE`: the left neighbour is the oncoming carriageway and the right is a shoulder. **Lane-change scenarios must use a multi-lane road** — the `tpl-*` cases use Town03 road 67 lane -2 (144 m straight, `lane_change=Left`, lane -1 alongside) and the `bench-*` cases use **Town05 roads 36→37**, a three-lane one-way carriageway at y = -200.52 / -204.02 / -207.52 with ~120 m of straight, `lane_change=Both` on the middle lane, and therefore a legal target in either direction (it climbs from z=0 to z=10, which is why nothing there states a literal z). Town03's 75 parking lanes are *not* an alternative: every one borders a single driving lane, so pulling out of a parking spot dead-ends the same way. A merge does **not** have to be a `lane_change` at all: `bench-highway-cut-in` runs on **Town04 road 44 → connector 1194 → road 39 lane 6**, a real loop on-ramp feeding the ego's own lane at x ≈ -68, and gets the merge from an `assign_route` down the ramp instead (z climbs 4.95 → 10.6 there, so again nothing states a literal z). This cannot be caught before export — which lane an actor occupies when the change fires depends on every earlier event in its chain, so validating it statically would mean simulating the chain.
 
-**Without waypoints, the two actor controllers get their direction from completely different places** — and neither failure mode shows up in a speed trace. `PedestrianControl.run_step` sets `control.direction` from the actor's *spawn heading* on every tick, so a walker with only `set_speed` events walks its init `h` forever; the editor's `_roadFacingYaw` (perpendicular to the lane) is the only thing that makes a crossing a crossing, and anything that overwrites that yaw silently converts it into a walk down the carriageway. `SimpleVehicleControl.run_step` ignores heading altogether and builds its own plan from `map.get_waypoint(...).next(2.0)`, i.e. snaps to the nearest lane and drives along it regardless of facing. **`cyclist` aliases to `bike`, a vehicle**, so `cyclist-crossing` cannot cross at all while it is built on `set_speed`; it needs `follow_trajectory` waypoints, which both controllers do honour. `tests/carla_cases.py` `expect_cyclist_crossing` carries that as an EXPECTED-TO-FAIL marker.
+**Without waypoints, the two actor controllers get their direction from completely different places** — and neither failure mode shows up in a speed trace. `PedestrianControl.run_step` sets `control.direction` from the actor's *spawn heading* on every tick, so a walker with only `set_speed` events walks its init `h` forever; the editor's `_roadFacingYaw` (toward the nearest **driving** lane, else the nearest lane of any type — it used to be any type, which from a shoulder or parking bay faced half of all walkers *away* from the road) is the only thing that makes a crossing a crossing, and anything that overwrites that yaw silently converts it into a walk down the carriageway. `SimpleVehicleControl.run_step` ignores heading altogether and builds its own plan from `map.get_waypoint(...).next(2.0)`, i.e. snaps to the nearest lane and drives along it regardless of facing. **`cyclist` aliases to `bike`, a vehicle**, so a `set_speed`-only cyclist can never cross; the `cyclist-crossing` template is therefore a `follow_trajectory` kerb to kerb (see "Scenario templates"). `tests/carla_cases.py` `expect_cyclist_crossing` now expects it to cross — not yet re-run in CARLA.
 
 **A `distance_to_point` trigger's `z` is part of the radius.** ScenarioRunner evaluates `DistanceCondition` through `calculate_distance` → `location.distance(other)`, which is **3-D**. On a graded corridor a point left at the `0.2` default is not merely imprecise: on Town04's on-ramp, where the deck is 7.7–9.8 m up, the whole radius sits below the road and the condition can *never* become true. The editor derives point z on the click (`_setTriggerPoint` → `groundZAt + SPAWN_CLEARANCE.waypoint`, `frontend/js/objects.js`); a seeded case gets the same treatment from `SEED_EVENTS_JS` in `run_carla_cases.py`, which also covers route waypoints and trajectory vertices. **A case must never write a literal `z` — anywhere, including inside a trigger point.** The failure looks like a broken `entity_ref`, not a wrong height.
 

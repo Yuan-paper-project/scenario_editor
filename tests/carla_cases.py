@@ -108,7 +108,7 @@ GOAL_T3_PARK = "185.67,62.35,0,0"
 # through them; a collision ends the run and makes the speed trace meaningless.
 SPOT_LANE = (265.0, -2.0)      # ~35.6 m ahead, same lane
 SPOT_NEAR = (275.0, -2.0)      # ~25.6 m ahead, for the 20 m pull-out trigger
-SPOT_WALK = (245.0, -6.0)      # ~55.8 m ahead, kerbside, for the 50 m trigger
+SPOT_WALK = (245.0, -6.0)      # ~55.8 m ahead, kerbside — outside the 30 m trigger at t=0
 SPOT_BIKE = (265.0, -6.0)      # ~36.0 m ahead, kerbside, for the 30 m trigger
 
 # ── Road 1's cross-section at those spots, for the crossing checks ───────────
@@ -365,12 +365,12 @@ CASES = [
         "goal": GOAL_T3_PARK,
         "spot": SPOT_T3_PARK,
         "npc_yaw": 0.0,          # parked aligned with the eastbound carriageway
-        "note": "EXPECTED TO FAIL — pull-out from a real parking bay. The "
-                "template is built on LaneChangeAction, which needs a "
-                "same-direction neighbour driving lane that a bay does not "
-                "have, so the action never completes and the run hangs. "
-                "Rebuild the template on LaneOffsetAction (absolute target 0, "
-                "continuous=false) to fix; this case is the marker for that.",
+        "note": "pull-out from a real parking bay, rebuilt (NOTES 1.1 #3) as "
+                "an assign_route onto the driving lane beside the bay "
+                "(seed + merge 10 m ahead + 40 m run-on) released by a "
+                "set_speed 10 m/s at distance_to_ego 30, start speed 0. The "
+                "old lane_change version never completed from a bay. Not yet "
+                "run in CARLA in this form.",
     },
     {
         "name": "tpl-pedestrian-crossing",
@@ -380,7 +380,7 @@ CASES = [
         # NO npc_yaw, deliberately. _roadFacingYaw gives +90 deg here, square
         # across the carriageway, and that yaw is the whole scenario:
         # PedestrianControl with no waypoints walks the spawn heading forever.
-        "note": "walker controller + distance_to_ego@50; the editor's "
+        "note": "walker controller + distance_to_ego@30; the editor's "
                 "road-facing yaw is what makes it a crossing",
     },
     {
@@ -389,16 +389,11 @@ CASES = [
         "template": "cyclist-crossing",
         "spot": SPOT_BIKE,
         # Also no npc_yaw — but unlike the walker, yaw cannot save this one.
-        "note": "EXPECTED TO FAIL the crossing checks — cyclist aliases to "
-                "`bike`, a VEHICLE, so it gets simple_vehicle_control. With "
-                "no waypoints that controller ignores the spawn heading "
-                "entirely and generates its own plan from "
-                "map.get_waypoint(...).next(2.0), i.e. it snaps to the "
-                "nearest lane and rides ALONG it whichever way the bike "
-                "faces. A set_speed-only template can never cross. Fix by "
-                "rebuilding cyclist-crossing on follow_trajectory with "
-                "waypoints across the carriageway (both controllers honour "
-                "explicit waypoints); this case is the marker for that.",
+        "note": "cyclist aliases to `bike`, a VEHICLE, so simple_vehicle_control "
+                "ignores its heading and a set_speed rides it ALONG the lane. "
+                "The template is now a follow_trajectory kerb to kerb "
+                "(computed from the road at the spot), which both controllers "
+                "honour. Not yet run in CARLA in this form.",
     },
 
     # ---- event mechanics ----------------------------------------------------
@@ -1370,39 +1365,28 @@ def expect_lane_change_left(run, timeline):
 
 
 def expect_pull_out(run, timeline):
-    """A pull-out: leave the bay, join the driving lane, drive off.
+    """A pull-out: wait in the bay, join the driving lane when the ego is near.
 
-    EXPECTED TO FAIL until the template stops using LaneChangeAction — see the
-    case note. The trigger checks should still pass; what fails is the car
-    actually getting out of the bay, and the run terminating.
+    The template is an assign_route (seed on the driving lane beside the bay,
+    a merge point 10 m ahead, a run-on) plus a set_speed at distance_to_ego 30.
+    A route alone does not move an actor, so the car must sit still until the
+    speed event fires.
     """
     out = []
-    ok, detail, t = _fired(timeline, "SpeedEvent0")
+    ok, detail, t_route = _fired(timeline, "AssignRouteEvent0")
+    out.append(("route event fires", ok, detail))
+    ok, detail, t = _fired(timeline, "SpeedEvent1")
     out.append(("speed event fires", ok, detail))
-    ok2, detail2, t2 = _fired(timeline, "LaneChangeEvent1")
-    out.append(("lateral event fires", ok2, detail2))
-    if t is not None and t2 is not None:
-        out.append(("both events share one trigger, so they fire together",
-                    abs(t - t2) <= 1.0, f"speed@{t:.2f}s lateral@{t2:.2f}s"))
-    # The car starts 60 m ahead of the ego and the trigger is 20 m, so it must
+    # The car starts 60 m ahead of the ego and the trigger is 30 m, so it must
     # NOT fire immediately — that is what makes this a proximity case rather
     # than another fires-at-act-start one.
     if t is not None:
-        out.append(("20 m trigger waits for the ego to close in", t > 1.0,
+        out.append(("30 m trigger waits for the ego to close in", t > 1.0,
                     f"fired at t={t:.2f}s"))
 
-    # The lateral event must COMPLETE. LaneChangeAction from a bay cannot:
-    # ChangeActorLateralMotion only succeeds once the actor has driven 10 m in
-    # a target lane, and a parking bay has no same-direction neighbour to
-    # target. No END means the chain is stuck and the run will not finish.
-    ended = timeline.get(_name_of(timeline, "LaneChangeEvent1"), {}).get("end")
-    out.append(("the lateral action completes", ended is not None,
-                "event went RUNNING but never reached END — the manoeuvre "
-                "cannot finish, so the storyboard never ends"))
-
-    # The car has to actually get out of the bay: 5.25 m to its left, landing
-    # on the driving lane centre. Positive lateral = the actor's own left.
-    lateral, detail = A.lateral_offset(run, "adversary", 0.0, 14.0)
+    # The car has to actually get out of the bay: ~5.25 m to its left,
+    # landing on the driving lane centre. Positive lateral = the actor's left.
+    lateral, detail = A.lateral_offset(run, "adversary", 0.0, 20.0)
     if lateral is None:
         out.append(("the car leaves the parking bay", False, detail))
     else:
@@ -1420,8 +1404,9 @@ def expect_pull_out(run, timeline):
                     f"final y={final_y:.2f}, bay y={SPOT_T3_PARK[1]:.2f}, "
                     f"lane centre y={PARK_LANE_CENTRE_Y:.2f}"))
 
-    ok, detail = A.reaches_speed(run, "adversary", 5.0, 0.0, 14.0, tol=2.0)
-    out.append(("npc pulls away at ~5 m/s", ok, detail))
+    # 10 m/s target, approached at the controller's 3 m/s² limit.
+    ok, detail = A.reaches_speed(run, "adversary", 10.0, 0.0, 20.0, tol=2.0)
+    out.append(("npc pulls away towards 10 m/s", ok, detail))
     return out
 
 
@@ -1437,16 +1422,16 @@ def expect_pedestrian_crossing(run, timeline):
     if walker is not None:
         out.append(("walker is a walker blueprint",
                     walker.type_id.startswith("walker."), walker.type_id))
-        ok, detail = A.reaches_speed(run, "adversary", 2.0, 0.0, 14.0, tol=1.0)
-        out.append(("walker actually walks at ~2 m/s", ok, detail))
+        ok, detail = A.reaches_speed(run, "adversary", 1.4, 0.0, 14.0, tol=0.6)
+        out.append(("walker actually walks at ~1.4 m/s", ok, detail))
         out.extend(_crossed_the_road(run))
     return out
 
 
 def expect_cyclist_crossing(run, timeline):
     out = []
-    ok, detail, t = _fired(timeline, "SpeedEvent0")
-    out.append(("cyclist speed event fires", ok, detail))
+    ok, detail, t = _fired(timeline, "FollowTrajectoryEvent0")
+    out.append(("cyclist trajectory event fires", ok, detail))
     if t is not None:
         out.append(("30 m trigger waits for the ego to close in", t > 0.3,
                     f"fired at t={t:.2f}s"))
@@ -1459,11 +1444,9 @@ def expect_cyclist_crossing(run, timeline):
                     bike.type_id))
         ok, detail = A.reaches_speed(run, "adversary", 4.0, 0.0, 12.0, tol=1.5)
         out.append(("cyclist rides at ~4 m/s", ok, detail))
-        # EXPECTED TO FAIL — see the case note. simple_vehicle_control
-        # generates its own lane-following plan and never reads the spawn
-        # heading, so the bike rides along the road no matter how it is
-        # placed. These two lines are the marker for that defect; they turn
-        # green only once cyclist-crossing is rebuilt on follow_trajectory.
+        # The template is a follow_trajectory across the carriageway now, which
+        # simple_vehicle_control honours — the old set_speed-only version rode
+        # along the lane whatever the heading.
         out.extend(_crossed_the_road(run))
     return out
 
@@ -2225,33 +2208,28 @@ def expect_bench_pedestrian_crossing(run, timeline):
     ok, detail, t = _fired(timeline, "SpeedEvent0")
     out.append(("walker's speed event fires", ok, detail))
     if t is not None:
-        out.append(("the 50 m trigger waits for the ego to close in", t > 0.3,
+        out.append(("the 30 m trigger waits for the ego to close in", t > 0.3,
                     f"fired at t={t:.2f}s"))
     walker = run.get("adversary")
     if walker is not None:
         out.append(("adult pedestrian blueprint", walker.type_id.startswith("walker."),
                     walker.type_id))
-        ok, detail = A.reaches_speed(run, "adversary", 2.0, 0.0, 14.0, tol=1.0)
-        out.append(("walks at the commanded 2 m/s", ok, detail))
+        ok, detail = A.reaches_speed(run, "adversary", 1.4, 0.0, 14.0, tol=0.6)
+        out.append(("walks at the commanded 1.4 m/s", ok, detail))
         # The nearside->crossing geometry, reusing the road-1 cross-section.
         out.extend(_crossed_the_road(run))
-    # EXPECTED TO FAIL, and the finding is about the TEMPLATE, not this case.
-    # `pedestrian-crossing` triggers at distance_to_ego@50 and walks at 2 m/s.
-    # The ego covers that 50 m in ~6.6 s at its 7.6 m/s Town01 cruise, while the
-    # walker needs only ~1-3 s to reach the carriageway and ~4 s to clear it —
-    # so it is off the far kerb roughly 3.5 s BEFORE the ego arrives, every
-    # time. Measured: the walker crossed cleanly, the ego never dropped below
-    # 7.07 m/s and passed 8.4 m behind it. The shipped template therefore cannot
-    # produce the conflict its name implies at Town01 speeds; it needs either a
-    # shorter trigger radius (~20 m) or a slower walker.
+    # The finding this used to mark was about the TEMPLATE: at
+    # distance_to_ego@50 and 2 m/s the walker was off the far kerb ~3.5 s
+    # before the ego arrived (measured: the ego never dropped below 7.07 m/s
+    # and passed 8.4 m behind it). The template now triggers at 30 m and walks
+    # at 1.4 m/s, sized to the road, so the walker should be in the nearside
+    # lane when the ego gets there. NOT YET RE-RUN in CARLA in this form.
     ok, detail = A.slows_by(run, "hero", 2.0, 1.0, 20.0)
-    out.append(("EXPECTED TO FAIL — ego yields to the crossing pedestrian",
-                ok, detail))
+    out.append(("ego yields to the crossing pedestrian", ok, detail))
     dist, when = A.closest_approach(run, "hero", "adversary")
-    out.append(("EXPECTED TO FAIL — the walker is still in the road when the "
-                "ego arrives", dist is not None and dist < 4.0,
-                f"closest approach {dist:.1f} m at t={when:+.1f}s — the "
-                f"template's 50 m trigger sets the walker off far too early"
+    out.append(("the walker is still in the road when the ego arrives",
+                dist is not None and dist < 4.0,
+                f"closest approach {dist:.1f} m at t={when:+.1f}s"
                 if dist is not None else "no data"))
     return out
 

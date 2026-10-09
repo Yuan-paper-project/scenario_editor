@@ -160,6 +160,25 @@
       });
       eventActionGrid.appendChild(btn);
     });
+
+    // A template's chain onto an actor that is already placed — templates.js
+    // otherwise only fire on a fresh placement click.
+    const options = window.ScenarioTemplates ? ScenarioTemplates.compatibleWith(actor.type) : [];
+    if (options.length) {
+      const select = document.createElement('select');
+      select.className = 'event-template-select';
+      select.title = 'Ersetzt die Events dieses Akteurs durch den Ablauf eines Templates, '
+        + 'berechnet für seine jetzige Position';
+      select.setAttribute('aria-label', 'Ablauf aus Template');
+      select.innerHTML = '<option value="">Ablauf aus Template …</option>'
+        + options.map(o => `<option value="${o.id}" title="${o.hint.replace(/"/g, '&quot;')}">${o.label}</option>`).join('');
+      select.addEventListener('change', async () => {
+        const id = select.value;
+        select.value = '';
+        if (id) await ScenarioTemplates.applyTo(AppState.findById(actor.id) || actor, id);
+      });
+      eventActionGrid.appendChild(select);
+    }
   }
 
   function _renderEventList(actor) {
@@ -1595,5 +1614,8 @@
     // event and clears the draw-mode state, which a bare events.filter() would
     // leave dangling.
     deleteEvent: _deleteEvent,
+    // The card title ('Geschw. setzen 2'), so simulate.js's timeline markers
+    // name an event the way its card does.
+    displayName: _eventDisplayName,
   };
 })();

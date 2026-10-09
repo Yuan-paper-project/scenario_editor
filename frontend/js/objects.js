@@ -108,9 +108,14 @@
 
     // Ego and NPCs share the same actor shape — initial_speed and events both
     // mean the same thing for both. Only the storage differs.
+    // A walker or cyclist starts still: an Init <SpeedAction> lands on tick 1,
+    // so a pedestrian placed at 10 m/s used to sprint off at 36 km/h along its
+    // heading before any trigger had a chance to fire. A template may state
+    // its own (a parked car's is 0); vehicles keep DEFAULT_INIT_SPEED.
+    const tplSpeed = ScenarioTemplates.initialSpeedFor(pendingTemplate);
     const actor = {
       id: AppState.nextId(), type, x, y, z, yaw,
-      initial_speed: DEFAULT_INIT_SPEED,
+      initial_speed: tplSpeed ?? (ROAD_FACING_TYPES.has(type) ? 0 : DEFAULT_INIT_SPEED),
       events: [],
     };
     // No template targets 'ego' (ScenarioTemplates.eventsForActor requires
@@ -213,7 +218,12 @@
   }
 
   function _roadFacingYaw(wx, wy) {
-    const nearest = _nearestLaneProjection(wx, wy);
+    // Face the nearest DRIVING lane when there is one in reach: from a
+    // shoulder, parking bay or kerb the nearest lane of any type is often the
+    // one under the walker's feet, and "perpendicular to that" faced half of
+    // all crossings away from the road.
+    const nearest = _nearestLaneProjection(wx, wy, new Set(['driving']), 30)
+      || _nearestLaneProjection(wx, wy);
     if (!nearest) return 0;
     const towardRoad = Math.atan2(nearest.y - wy, nearest.x - wx) * 180 / Math.PI;
     if (Math.hypot(nearest.x - wx, nearest.y - wy) > 0.2) return Math.round(towardRoad);

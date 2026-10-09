@@ -9,7 +9,7 @@ run /home/dellpro2/Antonio/run.sh against it, then judge the result against
 BOTH ScenarioRunner's OSC lifecycle log (did the trigger fire, when) and the
 telemetry (did the actor actually do it). Artifacts land in tests/artifacts/.
 
-This monopolises CARLA on port 3000 for the duration and runs strictly
+This monopolises CARLA on port 2010 (run.sh's) for the duration and runs strictly
 sequentially — run.sh's cleanup does `pkill -f scenario_runner.py`, so two at
 once would kill each other.
 """

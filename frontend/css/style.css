@@ -201,11 +201,16 @@ label.btn { line-height: normal; }
    itself. Beides: lane outlines over the photo, fills nearly clear. */
 #map-svg.base-aerial #layer-roads,
 #map-svg.base-aerial #layer-markings,
+#map-svg.base-aerial #layer-overpass .ovp-shadow,
+#map-svg.base-aerial #layer-overpass .ovp-roads,
+#map-svg.base-aerial #layer-overpass .ovp-marks,
+#map-svg.base-both #layer-overpass .ovp-shadow,
 #map-svg.base-aerial #layer-crosswalks,
 #map-svg.base-aerial #layer-intersections,
 #map-svg.base-both #layer-crosswalks,
 #map-svg.base-both #layer-intersections { display: none; }
-#map-svg.base-both #layer-roads polygon {
+#map-svg.base-both #layer-roads polygon,
+#map-svg.base-both #layer-overpass .ovp-roads polygon {
   fill-opacity: .08; stroke: rgba(255, 255, 255, .75); stroke-width: .15;
 }
 /* A median/border is a separator, not a lane: no white lane outline over the
@@ -213,10 +218,21 @@ label.btn { line-height: normal; }
 #map-svg.base-both #layer-roads polygon.lane-median,
 #map-svg.base-both #layer-roads polygon.lane-border,
 #map-svg.base-both #layer-roads polygon.lane-restricted,
-#map-svg.base-both #layer-roads polygon.lane-bidirectional { stroke: none; fill-opacity: 0; }
-#map-svg.base-both #layer-roads polygon.lane-hatch { fill-opacity: 1; stroke: none; }
+#map-svg.base-both #layer-roads polygon.lane-bidirectional,
+#map-svg.base-both #layer-overpass polygon.lane-median,
+#map-svg.base-both #layer-overpass polygon.lane-border,
+#map-svg.base-both #layer-overpass polygon.lane-restricted,
+#map-svg.base-both #layer-overpass polygon.lane-bidirectional { stroke: none; fill-opacity: 0; }
+#map-svg.base-both #layer-roads polygon.lane-hatch,
+#map-svg.base-both #layer-overpass polygon.lane-hatch { fill-opacity: 1; stroke: none; }
 #map-svg.base-both #hatch-blocked rect { fill: rgba(255, 170, 40, .7); }
 #layer-roads .lane-hatch { pointer-events: none; }
+/* Roads passing over another road (mapView.js _roadOverpassLevels): a dark
+   casing under the deck so the bridge reads as being above, not crossing. */
+#layer-overpass { pointer-events: none; }
+#layer-overpass .ovp-casing {
+  fill: none; stroke: rgba(10, 14, 22, .55); stroke-width: 2.2; stroke-linejoin: round;
+}
 #layer-aerial { pointer-events: none; }
 
 /* Road furniture from the .xodr (mapView.js _renderRoadMarks & co). */
@@ -387,8 +403,13 @@ label.btn { line-height: normal; }
 /* Bottom-centre overlay stack: draw banner above, sim controls below. The
    wrapper is click-through so it never eats a map click; each child opts back
    in. Children are stacked, so either can be hidden without the other moving. */
+/* Centred in the strip to the RIGHT of the scale ruler, not on the map's 50%:
+   the preview bar is ~690 px wide and used to slide over the ruler. 272 px =
+   the ruler's 16 px inset + its widest pill (a bar ≤ ~170 px, mapView.js
+   _NICE_DISTS, plus label and padding) + a gap. On a map too narrow for the
+   bar, .sim-controls wraps onto two rows instead of overlapping. */
 .map-bottom-stack {
-  position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+  position: absolute; bottom: 12px; left: 272px; right: 12px;
   display: flex; flex-direction: column; align-items: center; gap: 8px;
   pointer-events: none; z-index: 20;
 }
@@ -1268,6 +1289,7 @@ button.scene-section-head:hover { color: var(--text); }
 /* ── Simulation controls ─────────────────────────────────── */
 .sim-controls {
   display: flex; align-items: center; gap: 8px;
+  flex-wrap: wrap; justify-content: center; max-width: 100%; row-gap: 6px;
   background: var(--panel); border: 1px solid var(--border);
   border-radius: 8px; padding: 6px 12px;
   box-shadow: 0 4px 14px rgba(26, 30, 46, .18);
@@ -1284,17 +1306,46 @@ button.scene-section-head:hover { color: var(--text); }
   width: 60px; height: 3px;
 }
 .sim-progress-bar {
-  width: 80px; height: 4px; background: var(--border);
-  border-radius: 2px; overflow: hidden;   /* display only — not seekable */
+  /* The scrubbable timeline. The visible track is 4 px, but the element is
+     16 px tall so it is a reasonable target to grab; the track is drawn by the
+     ::before pseudo-element and the fill sits on top of it. */
+  position: relative; flex: 1 0 220px; height: 16px;   /* grows to fill its row when the bar wraps */
+  cursor: pointer; touch-action: none;
 }
+.sim-progress-bar::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 6px; height: 4px;
+  background: var(--border); border-radius: 2px;
+}
+.sim-progress-bar:hover::before, .sim-progress-bar.scrubbing::before { top: 5px; height: 6px; }
+.sim-marker {
+  position: absolute; top: 2px; width: 2px; height: 12px; margin-left: -1px;
+  background: #e0a400; border-radius: 1px; pointer-events: auto;
+}
+.sim-marker:hover { background: #ff8c00; width: 4px; margin-left: -2px; }
 .sim-controls .btn { display: inline-flex; align-items: center; gap: 5px; }
+/* Nothing in the bar may change width when a preview starts or its state
+   changes: the timeline sits to the right of these, and a shift moved it out
+   from under a cursor that was about to scrub it. Stop keeps its slot while
+   idle (visibility, not display), and Play/Pause share one width whatever
+   their label says (Abspielen / Fortsetzen / Nochmal / Pause). */
+#sim-play, #sim-pause { min-width: 98px; justify-content: center; }
+#sim-stop.sim-idle { visibility: hidden; }
 .sim-controls .btn svg { width: 10px; height: 10px; fill: currentColor; }
 .sim-speed-caption { font-size: 10px; color: var(--text-dim); }
 .sim-sep { width: 1px; align-self: stretch; background: var(--border); }
 .sim-progress-fill {
-  height: 100%; background: var(--accent); width: 0%;
-  transition: width 0.1s linear; border-radius: 2px;
+  position: absolute; left: 0; top: 6px; height: 4px;
+  background: var(--accent); width: 0%; border-radius: 2px; pointer-events: none;
 }
+.sim-progress-bar:hover .sim-progress-fill,
+.sim-progress-bar.scrubbing .sim-progress-fill { top: 5px; height: 6px; }
+.sim-progress-fill::after {
+  /* The playhead knob. */
+  content: ''; position: absolute; right: -5px; top: 50%; width: 10px; height: 10px;
+  margin-top: -5px; border-radius: 50%; background: var(--accent);
+  box-shadow: 0 0 0 2px var(--panel);
+}
+.sim-time-label { min-width: 92px; }   /* fits "60.0 s / 60.0 s" — no shift */
 
 /* During simulation, dim editing UI to hint it is disabled */
 body.simulating #toolbar { opacity: 0.4; pointer-events: none; }
@@ -1450,4 +1501,13 @@ body.simulating #properties-panel { opacity: 0.5; pointer-events: none; }
 ::-webkit-scrollbar-thumb:hover { background: #555; }
 .gen-menu-types .menu-item.gen-batch-item {
   border-top: 1px solid var(--border); border-radius: 0 0 5px 5px; margin-top: 2px; color: var(--accent);
+}
+
+/* Templates tab: one line of how-it-works above the buttons. */
+.templates-hint { font-size: 11px; color: var(--text-dim); margin: 2px 2px 8px; line-height: 1.4; }
+
+/* Event panel: "Ablauf aus Template …" spans the whole action grid. */
+.event-template-select {
+  grid-column: 1 / -1; width: 100%; font-size: 11px; padding: 4px 6px;
+  border: 1px dashed var(--border); border-radius: 5px; background: var(--panel); color: var(--text);
 }

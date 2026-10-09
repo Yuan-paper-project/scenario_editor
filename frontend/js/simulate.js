@@ -43,12 +43,10 @@
 
   let _running    = false;
   let _paused     = false;
-  let _simTime    = 0;       // seconds elapsed in simulation
+  let _simTime    = 0;       // seconds elapsed in simulation (the stepping clock)
   let _lastFrame  = 0;       // timestamp of last rAF
   let _animId     = null;
   let _speed      = 1.0;     // playback speed multiplier
-  let _scenarioEnded = false; // ego reached the 500 m Act stop-trigger
-  let _horizon    = 60;      // cosmetic-only estimate for the progress bar
 
   let _egoId      = null;
   let _originals  = new Map();  // actorId → {x, y, z, yaw}, to restore on stop
@@ -82,10 +80,10 @@
   const LANE_NEIGHBOR_MAX_M = 6.5;
   const LANE_NEIGHBOR_DIR_TOLERANCE_DEG = 45; // "same direction of travel" tolerance
   const LANE_SEARCH_MAX_DIST_M = 15;          // how far to reach for a lane anchor
-  const MAX_TICK_DT_S = 0.25;                 // clamp a stalled-tab rAF jump
 
   // ChangeActorWaypoints.initialise, as patched in the install run.sh runs
-  // (/home/dellpro2/yungloon/scenario_runner-0.9.15). These govern which of
+  // (/home/dellpro2/Antonio/scenario_runner — see CLAUDE.md, Verification;
+  // the yungloon checkout carries the same filter but is run by nothing). These govern which of
   // the router's points survive into the actor's waypoint list.
   const ROUTE_SEED_AHEAD_M = 1.0;             // ego_waypoint.next(1)[0]
   const ROUTE_DEDUP_MIN_M = 1.0;              // drop a point closer than this to the last kept one
@@ -104,13 +102,13 @@
     <div id="sim-controls" class="sim-controls hidden">
       <button id="sim-play"  class="btn btn-small btn-primary" title="Vorschau abspielen (Leertaste)"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 1l7 4-7 4z"/></svg><span id="sim-play-text">Abspielen</span></button>
       <button id="sim-pause" class="btn btn-small btn-secondary hidden" title="Vorschau anhalten (Leertaste)"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 1h2.2v8H2zM5.8 1H8v8H5.8z"/></svg>Pause</button>
-      <button id="sim-stop"  class="btn btn-small btn-danger hidden" title="Vorschau beenden und zurücksetzen (Esc)"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1.5 1.5h7v7h-7z"/></svg>Stopp</button>
+      <button id="sim-stop"  class="btn btn-small btn-danger sim-idle" title="Vorschau beenden und zurücksetzen (Esc)"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1.5 1.5h7v7h-7z"/></svg>Stopp</button>
       <span class="sim-sep" aria-hidden="true"></span>
       <label for="sim-speed" class="sim-speed-caption">Tempo</label>
       <input  id="sim-speed" type="range" min="0.25" max="4" step="0.25" value="1" title="Abspielgeschwindigkeit">
       <span   id="sim-speed-label" class="sim-speed-label">1×</span>
       <span   id="sim-time-label"  class="sim-time-label" title="Simulierte Zeit">0.0 s</span>
-      <div    id="sim-progress-bar" class="sim-progress-bar"><div id="sim-progress-fill" class="sim-progress-fill"></div></div>
+      <div    id="sim-progress-bar" class="sim-progress-bar" role="slider" tabindex="-1" aria-label="Zeitleiste" aria-valuemin="0" title="Klicken zum Springen — startet die Vorschau angehalten"><div id="sim-progress-fill" class="sim-progress-fill"></div></div>
     </div>`;
 
   // Float over the map's lower edge rather than sitting in the header: these
@@ -128,6 +126,7 @@
   const speedLabel   = document.getElementById('sim-speed-label');
   const timeLabel    = document.getElementById('sim-time-label');
   const progressFill = document.getElementById('sim-progress-fill');
+  const progressBar  = document.getElementById('sim-progress-bar');
 
   // Show controls once a map is loaded
   AppState.on('change', patch => {
@@ -659,7 +658,7 @@
   /**
    * Faithful port of ChangeActorWaypoints.initialise for a `fastest` route —
    * the locally patched version in the install run.sh actually executes
-   * (/home/dellpro2/yungloon/scenario_runner-0.9.15). One trace_route per
+   * (/home/dellpro2/Antonio/scenario_runner). One trace_route per
    * authored waypoint, then a filter applied to the CONCATENATED result.
    *
    * That filter is not cosmetic: the router genuinely emits points that go
@@ -1212,48 +1211,50 @@
   }
 
   // ── Simulation lifecycle ──────────────────────────────────────────────────────
+  //
+  // The whole run is simulated UP FRONT, at CARLA's own fixed 20 Hz tick, and
+  // Play only replays the recorded frames. That is what makes the timeline
+  // scrubbable: the model is a stateful discrete simulation (fired events,
+  // lane-change plans, one-shot triggers, sticky goal stops), so seeking to an
+  // arbitrary time would otherwise mean replaying everything up to it — doing
+  // that once, at Play, costs tens of milliseconds and buys free seeking.
+  // A fixed step is also closer to CARLA than the old rAF-sized one, whose
+  // step length depended on the frame rate and the playback speed.
 
-  function _estimatedHorizon() {
-    // Cosmetic only — scales the progress bar, never gates any decision.
-    let maxDur = 20;
-    for (const sim of _simActors.values()) {
-      for (const ev of sim.events) {
-        if (ev.trigger.type === 'simulation_time') maxDur = Math.max(maxDur, ev.trigger.value || 0);
-        // A 'rate' dynamics.value is m/s², not seconds — how long the ramp
-        // actually takes depends on the actor's speed when it fires, which is
-        // not knowable here. Skip it rather than add an acceleration to a clock.
-        if (ev.action.type === 'set_speed' && ev.action.dynamics &&
-            ev.action.dynamics.dimension !== 'rate') {
-          maxDur = Math.max(maxDur, (ev.trigger.value || 0) + (ev.action.dynamics.value || 0));
-        }
-      }
-    }
-    return maxDur + 10;
-  }
+  const SIM_DT_S = 0.05;                 // ScenarioRunner's synchronous 20 Hz tick
+  const MAX_SIM_TIME_S = 60.0;           // every Act's MaxSimTime StopTrigger
+  const TAIL_AFTER_ACTIVITY_S = 3.0;     // keep this much idle time after the last motion
+
+  let _frames = [];        // [{t, poses: {id: {x,y,z,yaw}}, badges: {id: badge|null}}]
+  let _timelineEnd = 0;    // seconds; the last recorded frame's t
+  let _markers = [];       // [{t, label, kind}] — event starts and the run's end
+  let _endReason = null;   // 'teardown' | 'maxtime' | 'idle'
+  let _viewTime = 0;       // the time currently on screen
 
   function _ensureBadgeLayer() {
-    if (_layerSimBadges) return;
+    if (_layerSimBadges && _layerSimBadges.isConnected) return;
     const world = document.getElementById('world');
     _layerSimBadges = document.createElementNS(SVG_NS, 'g');
     _layerSimBadges.id = 'layer-sim-badges';
     world.appendChild(_layerSimBadges);
   }
 
-  function _renderBadges() {
+  function _renderBadges(poses, badges) {
     if (!_layerSimBadges) return;
     while (_layerSimBadges.firstChild) _layerSimBadges.removeChild(_layerSimBadges.firstChild);
-    for (const sim of _simActors.values()) {
-      if (!sim.badge) continue;
-      const size = MapView.actorSize(sim.type);
+    for (const [id, badge] of Object.entries(badges || {})) {
+      if (!badge || !poses[id]) continue;
+      const sim = _simActors.get(id);
+      const size = MapView.actorSize(sim ? sim.type : 'car');
       const yOff = -Math.max(size.w, size.h) / 2 - 4.5;
       const g = document.createElementNS(SVG_NS, 'g');
-      g.setAttribute('transform', `translate(${sim.x},${sim.y + yOff})`);
+      g.setAttribute('transform', `translate(${poses[id].x},${poses[id].y + yOff})`);
       const text = document.createElementNS(SVG_NS, 'text');
       text.setAttribute('text-anchor', 'middle');
       text.setAttribute('font-size', '1.8');
       text.setAttribute('fill', '#ffd966');
       text.setAttribute('style', 'pointer-events:none; paint-order: stroke; stroke:#1a1a1a; stroke-width:0.35;');
-      text.textContent = `${sim.badge.icon} ${sim.badge.text}`;
+      text.textContent = `${badge.icon} ${badge.text}`;
       g.appendChild(text);
       _layerSimBadges.appendChild(g);
     }
@@ -1272,13 +1273,88 @@
     }
   }
 
+  function _recordFrame(t) {
+    const poses = {};
+    const badges = {};
+    for (const sim of _simActors.values()) {
+      const p = _pose(sim);
+      poses[sim.id] = { x: p.x, y: p.y, z: sim.z, yaw: sim.yaw };
+      badges[sim.id] = sim.badge ? { icon: sim.badge.icon, text: sim.badge.text } : null;
+    }
+    _frames.push({ t, poses, badges });
+  }
+
+  /** A short, human label for an event marker on the timeline. */
+  function _markerLabel(sim, ev) {
+    const actor = AppState.findById(sim.id);
+    const who = actor ? AppState.actorLabel(actor, { short: true }) : sim.id;
+    const what = window.EventPanel?.displayName
+      ? EventPanel.displayName(ev, sim.events.indexOf(ev)) : (ev.action?.type || ev.id);
+    return `${who}: ${what}`;
+  }
+
+  /**
+   * Steps the prepared _simActors from t = 0 to the end of the run and records
+   * one frame per tick. The run ends where ScenarioRunner's would — the ego has
+   * driven 500 m, or 60 s have passed (every Act's two StopTrigger groups the
+   * preview can model) — or earlier, once nothing has moved and no event has
+   * fired for TAIL_AFTER_ACTIVITY_S and none is left that could still fire.
+   */
+  function _simulateTimeline() {
+    _frames = [];
+    _markers = [];
+    _endReason = 'maxtime';
+    const egoSim = _egoId ? _simActors.get(_egoId) : null;
+    const seen = new Set();
+    let lastActivity = 0;
+    _simTime = 0;
+    _recordFrame(0);
+    while (_simTime < MAX_SIM_TIME_S - 1e-9) {
+      _simTime = r3(_simTime + SIM_DT_S);
+      const egoPrevPos = egoSim ? { ..._pose(egoSim), z: egoSim.z } : null;
+      _snapshotSpeeds();
+      for (const sim of _simActors.values()) _stepActor(sim, SIM_DT_S, egoPrevPos, _simTime);
+      _recordFrame(_simTime);
+
+      let active = false;
+      let pending = false;
+      for (const sim of _simActors.values()) {
+        if (Math.abs(sim.speed) > 0.05 && !sim.frozen && !sim.goalStopped) active = true;
+        for (const ev of sim.events) {
+          const rec = sim.fired.get(ev.id);
+          if (!rec) {
+            if (!ev.trigger.neverFires && !sim.frozen) pending = true;
+            continue;
+          }
+          const key = `${sim.id}::${ev.id}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            active = true;
+            _markers.push({ t: rec.firedAt, label: _markerLabel(sim, ev), kind: 'event' });
+          }
+        }
+      }
+      if (active) lastActivity = _simTime;
+
+      if (egoSim && egoSim.traveled >= ACT_TEARDOWN_DISTANCE_M) { _endReason = 'teardown'; break; }
+      // An unfired distance_to_ego event still has its 60 s OR-fallback ahead
+      // of it, so "pending" keeps the run going to the end in that case — the
+      // file really does do something at 60 s.
+      if (!pending && _simTime - lastActivity >= TAIL_AFTER_ACTIVITY_S) { _endReason = 'idle'; break; }
+    }
+    _timelineEnd = _simTime;
+    const endText = { teardown: 'Ende — Ego hat 500 m zurückgelegt (Stop-Trigger jedes Acts)',
+                      maxtime: 'Ende — 60 s erreicht (MaxSimTime jedes Acts)',
+                      idle: 'Ende — nichts bewegt sich mehr, kein Event steht aus' }[_endReason];
+    _markers.push({ t: _timelineEnd, label: endText, kind: 'end' });
+  }
+
   function _prepareSimulation() {
     _originals.clear();
     _simActors.clear();
     _tickSpeeds.clear();
     _tickCompleted.clear();
     _tickStarted.clear();
-    _scenarioEnded = false;
     _egoId = null;
 
     const actors = [];
@@ -1297,8 +1373,76 @@
     _snapshotSpeeds(); // so an event firing on the very first tick reads real
                        // init speeds rather than an empty map
     _ensureBadgeLayer();
-    _horizon = _estimatedHorizon();
+    _simulateTimeline();
+    _renderTimelineMarkers();
     return true;
+  }
+
+  /** Index of the last frame at or before `t` (frames are SIM_DT_S apart). */
+  function _frameIndex(t) {
+    return Math.max(0, Math.min(_frames.length - 1, Math.floor(t / SIM_DT_S + 1e-6)));
+  }
+
+  function _lerpYaw(a, b, f) {
+    const d = ((b - a + 540) % 360) - 180;
+    return a + d * f;
+  }
+
+  /** Puts the recorded state at time `t` on the map, interpolating between ticks. */
+  function _showTime(t) {
+    if (!_frames.length) return;
+    _viewTime = Math.max(0, Math.min(_timelineEnd, t));
+    const i = _frameIndex(_viewTime);
+    const a = _frames[i];
+    const b = _frames[Math.min(i + 1, _frames.length - 1)];
+    const f = b === a ? 0 : Math.max(0, Math.min(1, (_viewTime - a.t) / (b.t - a.t)));
+    const poses = {};
+    for (const id of Object.keys(a.poses)) {
+      const pa = a.poses[id], pb = b.poses[id] || pa;
+      poses[id] = {
+        x: pa.x + (pb.x - pa.x) * f,
+        y: pa.y + (pb.y - pa.y) * f,
+        z: pa.z + (pb.z - pa.z) * f,
+        yaw: _lerpYaw(pa.yaw, pb.yaw, f),
+      };
+      AppState.updateById(id, poses[id]);
+    }
+    _renderBadges(poses, a.badges);
+    _renderTimelineHead();
+  }
+
+  function _fmtTime(t) { return `${t.toFixed(1)} s`; }
+
+  function _renderTimelineHead() {
+    timeLabel.textContent = `${_fmtTime(_viewTime)} / ${_fmtTime(_timelineEnd)}`;
+    const pct = _timelineEnd > 0 ? (_viewTime / _timelineEnd) * 100 : 0;
+    progressFill.style.width = `${Math.min(100, pct)}%`;
+    progressBar.setAttribute('aria-valuenow', _viewTime.toFixed(1));
+    progressBar.setAttribute('aria-valuemax', _timelineEnd.toFixed(1));
+  }
+
+  function _renderTimelineMarkers() {
+    progressBar.querySelectorAll('.sim-marker').forEach(n => n.remove());
+    if (!(_timelineEnd > 0)) return;
+    // Several events often fire on the same tick (a chain's first link, every
+    // route at t = 0) — one tick mark with all their names in the tooltip.
+    const byTick = new Map();
+    for (const m of _markers) {
+      const key = `${m.kind}:${Math.round(m.t / SIM_DT_S)}`;
+      if (!byTick.has(key)) byTick.set(key, { t: m.t, kind: m.kind, labels: [] });
+      byTick.get(key).labels.push(m.label);
+    }
+    for (const m of byTick.values()) {
+      if (m.kind === 'end') continue;   // the bar's own right edge says that
+      const el = document.createElement('div');
+      el.className = `sim-marker sim-marker-${m.kind}`;
+      el.style.left = `${(m.t / _timelineEnd) * 100}%`;
+      el.title = `${_fmtTime(m.t)} — ${m.labels.join(' · ')}`;
+      el.dataset.t = String(m.t);
+      progressBar.appendChild(el);
+    }
+    progressBar.title = `${_markers.find(m => m.kind === 'end')?.label || ''} — `
+      + 'klicken oder ziehen zum Springen, ←/→ ±0,5 s (Umschalt ±5 s), Pos1/Ende';
   }
 
   function _startSimulation() {
@@ -1321,24 +1465,25 @@
         AppState.cancelPlacement();
         Toast.info('Platzierung beendet — Vorschau startet');
       }
-      if (!_prepareSimulation()) return;
-      _simTime = 0;
-      _running = true;
       // The preview drives the real actors' poses through AppState.updateById
-      // on every tick (see _tick), and _stopSimulation puts the originals back
-      // the same way. None of that is an edit: without this a single run would
-      // push hundreds of entries and bury the user's actual history.
+      // (see _showTime), and _stopSimulation puts the originals back the same
+      // way. None of that is an edit: without this a single run would push
+      // hundreds of entries and bury the user's actual history.
       UndoStack.suspend();
+      if (!_prepareSimulation()) { UndoStack.resume(); return; }
+      _viewTime = 0;
+      _running = true;
+      AppState.select(null);
+      document.body.classList.add('simulating');
+      btnStop.classList.remove('sim-idle');
+    } else if (_viewTime >= _timelineEnd - 1e-6) {
+      _viewTime = 0;   // Play at the end replays from the start
     }
     _paused = false;
     _lastFrame = performance.now();
 
     btnPlay.classList.add('hidden');
     btnPause.classList.remove('hidden');
-    btnStop.classList.remove('hidden');
-
-    AppState.select(null);
-    document.body.classList.add('simulating');
 
     _animId = requestAnimationFrame(_tick);
   }
@@ -1350,8 +1495,19 @@
     _animId = null;
 
     btnPlay.classList.remove('hidden');
-    playText.textContent = 'Fortsetzen';
+    playText.textContent = _viewTime >= _timelineEnd - 1e-6 ? 'Nochmal' : 'Fortsetzen';
     btnPause.classList.add('hidden');
+  }
+
+  /** Jumps to time `t`. Starts a paused preview first when none is running. */
+  function _seek(t) {
+    if (!_running) {
+      _startSimulation();
+      if (!_running) return;
+      _pauseSimulation();
+    }
+    _showTime(t);
+    if (_paused) playText.textContent = _viewTime >= _timelineEnd - 1e-6 ? 'Nochmal' : 'Fortsetzen';
   }
 
   function _stopSimulation() {
@@ -1370,13 +1526,19 @@
     }
     _originals.clear();
     _simActors.clear();
+    _frames = [];
+    _markers = [];
+    _timelineEnd = 0;
+    _viewTime = 0;
     if (_layerSimBadges) while (_layerSimBadges.firstChild) _layerSimBadges.removeChild(_layerSimBadges.firstChild);
+    progressBar.querySelectorAll('.sim-marker').forEach(n => n.remove());
+    progressBar.title = 'Klicken zum Springen — startet die Vorschau angehalten';
 
     document.body.classList.remove('simulating');
     btnPlay.classList.remove('hidden');
     playText.textContent = 'Abspielen';
     btnPause.classList.add('hidden');
-    btnStop.classList.add('hidden');
+    btnStop.classList.add('sim-idle');
     timeLabel.textContent = '0.0 s';
     progressFill.style.width = '0%';
 
@@ -1388,40 +1550,13 @@
 
   function _tick(now) {
     if (!_running || _paused) return;
-
-    const dt = Math.min(MAX_TICK_DT_S, (now - _lastFrame) / 1000) * _speed;
+    const realDt = Math.min(0.25, (now - _lastFrame) / 1000);
     _lastFrame = now;
-    _simTime += dt;
-
-    // Every actor reads the SAME pre-tick ego position, so trigger checks
-    // don't depend on iteration order within this tick. Reference speeds are
-    // snapshotted for the same reason — CarlaDataProvider's velocity map is
-    // refilled once per world tick, not read live off the other actor.
-    const egoSim = _egoId ? _simActors.get(_egoId) : null;
-    const egoPrevPos = egoSim ? { ..._pose(egoSim), z: egoSim.z } : null;
-    _snapshotSpeeds();
-
-    for (const sim of _simActors.values()) {
-      _stepActor(sim, dt, egoPrevPos, _simTime);
+    _showTime(_viewTime + realDt * _speed);
+    if (_viewTime >= _timelineEnd - 1e-6) {
+      _pauseSimulation();   // hold the last frame; Play replays
+      return;
     }
-
-    // Every Act's StopTrigger: hero traveled 500 m tears the whole storyboard
-    // down. We stop advancing rather than modelling per-Act teardown
-    // separately, since nothing downstream distinguishes them.
-    if (egoSim && !_scenarioEnded && egoSim.traveled >= ACT_TEARDOWN_DISTANCE_M) {
-      _scenarioEnded = true;
-      Toast.info('Vorschau beendet — Ego hat 500 m zurückgelegt (Stop-Trigger jedes Acts)');
-    }
-
-    for (const sim of _simActors.values()) {
-      const pose = _pose(sim);
-      AppState.updateById(sim.id, { x: pose.x, y: pose.y, z: sim.z, yaw: sim.yaw });
-    }
-    _renderBadges();
-
-    timeLabel.textContent = `${_simTime.toFixed(1)} s`;
-    progressFill.style.width = `${Math.min(100, (_simTime / _horizon) * 100)}%`;
-
     _animId = requestAnimationFrame(_tick);
   }
 
@@ -1468,6 +1603,26 @@
       return;
     }
 
+    // ←/→ step through a running preview: 0.5 s, or 5 s with Umschalt. Pauses
+    // it first — stepping a moving picture is not stepping.
+    if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && _running) {
+      if (e.defaultPrevented) return;
+      e.preventDefault();
+      if (!_paused) _pauseSimulation();
+      const step = (e.shiftKey ? 5 : 0.5) * (e.key === 'ArrowLeft' ? -1 : 1);
+      _seek(_viewTime + step);
+      return;
+    }
+
+    // Pos1/Ende jump to the start / the end of a running preview.
+    if ((e.key === 'Home' || e.key === 'End') && _running) {
+      if (e.defaultPrevented) return;
+      e.preventDefault();
+      if (!_paused) _pauseSimulation();
+      _seek(e.key === 'Home' ? 0 : _timelineEnd);
+      return;
+    }
+
     // Stops from either state — _paused implies _running.
     if (e.key === 'Escape' && _running &&
         document.getElementById('shortcuts-overlay')?.classList.contains('hidden')) {
@@ -1482,10 +1637,41 @@
     speedLabel.textContent = `${parseFloat(_speed.toFixed(2))}×`;
   });
 
-  // No click-to-seek: unlike the old pure-interpolation preview, this is a
-  // stateful discrete simulation (fired events, lane-change phases, one-shot
-  // triggers) — jumping to an arbitrary time would mean replaying everything
-  // up to it, not interpolating, so seeking is dropped rather than faked.
+  // ── Scrubbing ───────────────────────────────────────────────────────────────
+  // The run is recorded up front (_simulateTimeline), so seeking is a frame
+  // lookup. Dragging pauses playback and resumes it on release if it was
+  // playing; a click on the bar with no preview running starts one, paused.
+
+  function _timeAtPointer(e) {
+    const r = progressBar.getBoundingClientRect();
+    const f = Math.max(0, Math.min(1, (e.clientX - r.left) / Math.max(1, r.width)));
+    return f * _timelineEnd;
+  }
+
+  progressBar.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    if (!_running) _seek(0);            // simulate first, so _timelineEnd is known
+    if (!_running) return;
+    const resume = !_paused;
+    _pauseSimulation();
+    progressBar.setPointerCapture(e.pointerId);
+    progressBar.classList.add('scrubbing');
+    // A press on an event tick lands exactly on the event, not on the pixel.
+    const tick = e.target.closest?.('.sim-marker');
+    _seek(tick ? parseFloat(tick.dataset.t) : _timeAtPointer(e));
+    const move = ev => _seek(_timeAtPointer(ev));
+    const up = () => {
+      progressBar.removeEventListener('pointermove', move);
+      progressBar.removeEventListener('pointerup', up);
+      progressBar.removeEventListener('pointercancel', up);
+      progressBar.classList.remove('scrubbing');
+      if (resume && _viewTime < _timelineEnd - 1e-6) _startSimulation();
+    };
+    progressBar.addEventListener('pointermove', move);
+    progressBar.addEventListener('pointerup', up);
+    progressBar.addEventListener('pointercancel', up);
+  });
 
   // Stop simulation if user interacts with editing tools
   AppState.on('change', patch => {

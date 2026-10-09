@@ -57,13 +57,15 @@ for t in tests/test_props_e2e.py tests/test_prop_yaw_e2e.py \
          tests/test_signal_panel_e2e.py \
          tests/test_actor_types_e2e.py tests/test_elevation_e2e.py \
          tests/test_route_fidelity_e2e.py tests/test_undo_e2e.py \
-         tests/test_waypoints_e2e.py tests/test_generator_e2e.py; do
+         tests/test_waypoints_e2e.py tests/test_generator_e2e.py \
+         tests/test_preview_timeline_e2e.py; do
     echo "════ $t"
     EDITOR_URL="$URL" "$PY" "$t" || status=1
     echo
 done
 
 # tests/run_carla_cases.py is deliberately NOT run here: it needs CARLA on
-# port 3000, takes over the simulator, and takes minutes rather than seconds.
+# port 2010 (run.sh's), takes over the simulator, and takes minutes rather
+# than seconds.
 
 exit "$status"

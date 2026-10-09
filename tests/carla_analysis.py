@@ -72,6 +72,7 @@ class Track:
         self.t = []
         self.x = []
         self.y = []
+        self.z = []
         self.yaw = []
         self.speed = []
         self.frame = []
@@ -126,12 +127,13 @@ class Run:
                 track.t.append(float(row["sim_time"]))
                 track.x.append(float(row["x"]))
                 track.y.append(float(row["y"]))
+                track.z.append(float(row.get("z") or 0.0))
                 track.yaw.append(float(row["yaw"]))
                 track.speed.append(float(row["speed"]))
                 track.frame.append(int(row["frame"]))
         for track in self.tracks.values():
             order = sorted(range(len(track.t)), key=lambda i: track.t[i])
-            for attr in ("t", "x", "y", "yaw", "speed", "frame"):
+            for attr in ("t", "x", "y", "z", "yaw", "speed", "frame"):
                 seq = getattr(track, attr)
                 setattr(track, attr, [seq[i] for i in order])
 

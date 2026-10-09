@@ -18,6 +18,7 @@ what the template data said.
     bash run.sh 9090            # terminal 1
     .venv/bin/python3 tests/test_templates_e2e.py
 """
+import math
 import os
 import sys
 
@@ -34,6 +35,12 @@ check = H.Checks()
 #   dimension  : 'time' -> dynamics_value is a hold in seconds
 #                'rate' -> dynamics_value is m/s2 and the event ends on arrival
 #                None   -> lane_change, which has no dimension
+# ANY marks a value a template computes from the road at the click (a
+# crossing's hold is the crossing length over the walking speed), so the
+# suite pins its presence and plausibility rather than one town's number.
+ANY = object()
+EITHER_SIDE = object()
+
 EXPECTED = {
     "vehicle-accelerating": ("car", [
         ("distance_to_ego", 400, "set_speed", 10.0, 5.0, "time"),
@@ -57,6 +64,12 @@ EXPECTED = {
         ("after_event", "evt-3", "set_speed", 5.0, 5.0, "rate"),
         ("after_event", "evt-4", "set_speed", 5.0, 2.0, "time"),
     ]),
+    "vehicle-emergency-brake": ("car", [
+        ("distance_to_ego", 400, "set_speed", 10.0, 5.0, "time"),
+        ("distance_to_ego", 25, "set_speed", 0.0, 8.0, "rate"),
+        ("after_event", "evt-2", "set_speed", 0.0, 3.0, "time"),
+        ("after_event", "evt-3", "set_speed", 10.0, 3.0, "rate"),
+    ]),
     "vehicle-lane-change-left": ("car", [
         ("distance_to_ego", 400, "set_speed", 10.0, 5.0, "time"),
         ("after_event", "evt-1", "lane_change", "left", 15.0, None),
@@ -67,25 +80,84 @@ EXPECTED = {
         ("after_event", "evt-1", "lane_change", "right", 15.0, None),
         ("after_event", "evt-2", "set_speed", 10.0, 5.0, "time"),
     ]),
-    "vehicle-pull-out": ("car", [
-        ("distance_to_ego", 20, "set_speed", 5.0, 10.0, "time"),
-        ("distance_to_ego", 20, "lane_change", "left", 10.0, None),
+    # Direction is toward the ego, decided at the click (templates.js
+    # _buildCutIn) — EITHER_SIDE accepts left or right.
+    "vehicle-cut-in": ("car", [
+        ("distance_to_ego", 400, "set_speed", 8.0, 5.0, "time"),
+        ("distance_to_ego", 15, "lane_change", EITHER_SIDE, 12.0, None),
     ]),
+    "vehicle-lane-drift": ("car", [
+        ("distance_to_ego", 400, "set_speed", 8.0, 5.0, "time"),
+        ("distance_to_ego", 40, "lane_offset", "left", 1.5, None),
+        ("distance_to_ego", 20, "lane_offset", "left", 0.0, None),
+    ]),
+    # NOTES 1.1 #3: a route onto the driving lane (seed + merge point + run-on)
+    # released by a set_speed at 30 m — not a lane_change, which never fires
+    # from a parking lane.
+    "vehicle-pull-out": ("car", [
+        ("simulation_time", 0, "assign_route", ANY, None, None),
+        ("distance_to_ego", 30, "set_speed", 10.0, 5.0, "time"),
+    ]),
+    "vehicle-parked": ("car", []),
     "pedestrian-crossing": ("pedestrian", [
-        ("distance_to_ego", 50, "set_speed", 2.0, 10.0, "time"),
+        ("distance_to_ego", 30, "set_speed", 1.4, ANY, "time"),
         ("after_event", "evt-1", "set_speed", 0.0, 5.0, "time"),
+    ]),
+    "pedestrian-stop-in-lane": ("pedestrian", [
+        ("distance_to_ego", 40, "set_speed", 1.4, ANY, "time"),
+        ("after_event", "evt-1", "set_speed", 0.0, 3.0, "time"),
+        ("after_event", "evt-2", "set_speed", 1.4, ANY, "time"),
+        ("after_event", "evt-3", "set_speed", 0.0, 5.0, "time"),
     ]),
     "pedestrian-along-lane": ("pedestrian", [
-        ("distance_to_ego", 400, "set_speed", 2.0, 10.0, "time"),
+        ("distance_to_ego", 400, "set_speed", 1.4, 10.0, "time"),
     ]),
-    "cyclist-crossing": ("cyclist", [
-        ("distance_to_ego", 30, "set_speed", 4.0, 5.0, "time"),
+    "child-runs-out": ("child", [
+        ("distance_to_ego", 25, "set_speed", 3.0, ANY, "time"),
         ("after_event", "evt-1", "set_speed", 0.0, 5.0, "time"),
+    ]),
+    # A cyclist is a <Vehicle>: set_speed rides it ALONG the lane, so the
+    # crossing is a follow_trajectory, kerb to kerb.
+    "cyclist-crossing": ("cyclist", [
+        ("distance_to_ego", 30, "follow_trajectory", ANY, None, None),
     ]),
     "cyclist-along-lane": ("cyclist", [
         ("distance_to_ego", 400, "set_speed", 4.0, 10.0, "time"),
     ]),
 }
+
+# Start (m/s) each template gives its actor. Walkers and anything released by
+# a trigger start still — an Init SpeedAction lands on tick 1, long before any
+# distance trigger, so a 10 m/s pedestrian used to be across the road first.
+EXPECTED_INIT_SPEED = {
+    "vehicle-accelerating": 10.0, "vehicle-braking": 10.0, "vehicle-stopping": 10.0,
+    "vehicle-stop-and-go": 10.0, "vehicle-emergency-brake": 10.0,
+    "vehicle-lane-change-left": 10.0, "vehicle-lane-change-right": 10.0,
+    "vehicle-cut-in": 8.0, "vehicle-lane-drift": 8.0, "vehicle-pull-out": 0, "vehicle-parked": 0,
+    "pedestrian-crossing": 0, "pedestrian-stop-in-lane": 0, "pedestrian-along-lane": 0,
+    "child-runs-out": 0, "cyclist-crossing": 0, "cyclist-along-lane": 0,
+}
+
+
+def matches(got, want):
+    """Tuple equality where ANY in `want` accepts any positive number or a list."""
+    if len(got) != len(want):
+        return False
+    for g, w in zip(got, want):
+        if len(g) != len(w):
+            return False
+        for gv, wv in zip(g, w):
+            if wv is EITHER_SIDE:
+                if gv not in ("left", "right"):
+                    return False
+            elif wv is ANY:
+                if not (isinstance(gv, list) and len(gv) >= 2
+                        or isinstance(gv, (int, float)) and gv > 0):
+                    return False
+            elif gv != wv:
+                return False
+    return True
+
 
 EGO = (300.631, -2.025)
 # One known-good spot on the ego's carriageway (borrowed from pedestrian.xosc),
@@ -107,6 +179,13 @@ def summarise(events):
         if act.get("type") == "lane_change":
             out.append((kind, arg, "lane_change", act.get("direction"),
                         (act.get("dynamics") or {}).get("value"), None))
+        elif act.get("type") == "lane_offset":
+            out.append((kind, arg, "lane_offset", act.get("direction"),
+                        act.get("offset"), None))
+        elif act.get("type") == "assign_route":
+            out.append((kind, arg, "assign_route", act.get("waypoints"), None, None))
+        elif act.get("type") == "follow_trajectory":
+            out.append((kind, arg, "follow_trajectory", act.get("trajectory"), None, None))
         else:
             out.append((kind, arg, act.get("type"),
                         (act.get("target") or {}).get("value"),
@@ -122,7 +201,7 @@ with sync_playwright() as p:
     check("ScenarioTemplates global exists", page.evaluate("!!window.ScenarioTemplates"))
 
     n = page.evaluate("Object.keys(ScenarioTemplates.templates).length")
-    check("11 templates registered", n == 11, f"got {n}")
+    check(f"{len(EXPECTED)} templates registered", n == len(EXPECTED), f"got {n}")
     missing = page.evaluate("(ids)=>ids.filter(i=>!ScenarioTemplates.templates[i])",
                             list(EXPECTED))
     check("every expected template id exists", missing == [], str(missing))
@@ -131,11 +210,14 @@ with sync_playwright() as p:
     page.evaluate("AppState.select(null)")
     page.click('[data-overview-tab="templates"]')
     n_btns = page.evaluate("document.querySelectorAll('[data-template-action]').length")
-    check("11 template buttons rendered", n_btns == 11, f"got {n_btns}")
+    check(f"{len(EXPECTED)} template buttons rendered", n_btns == len(EXPECTED), f"got {n_btns}")
     unbound = page.evaluate(
         "(ids)=>ids.filter(i=>!document.querySelector(`[data-template-action=\"${i}\"]`))",
         list(EXPECTED))
     check("every template has a button", unbound == [], str(unbound))
+    untitled = page.evaluate("""() => [...document.querySelectorAll('[data-template-action]')]
+        .filter(b => !(b.title || '').trim()).map(b => b.dataset.templateAction)""")
+    check("every template button has a hover description", untitled == [], str(untitled))
 
     # ── Placement + attached event chain, per template ───────────────────────
     H.place_actor(page, "ego", *EGO)
@@ -155,7 +237,10 @@ with sync_playwright() as p:
         check(f"{tpl_id}: {len(want_events)} events attached",
               len(got) == len(want_events), f"got {len(got)}")
         check(f"{tpl_id}: event chain matches the template",
-              got == want_events, f"got {got}")
+              matches(got, want_events), f"got {got}")
+        check(f"{tpl_id}: start speed {EXPECTED_INIT_SPEED[tpl_id]}",
+              actor.get("initial_speed") == EXPECTED_INIT_SPEED[tpl_id],
+              str(actor.get("initial_speed")))
         page.evaluate("(id) => AppState.removeById(id)", actor["id"])
 
     check("every template placed an actor", len(placed) == len(EXPECTED),
@@ -171,15 +256,15 @@ with sync_playwright() as p:
           page.evaluate("AppState.pendingTemplate") is None)
 
     # ── Template-specific placement rules ────────────────────────────────────
-    # Only three templates declare `placement`; the rest fall through to the
+    # Only four templates declare `placement`; the rest fall through to the
     # default spawn-point snap.
     decl = page.evaluate("""() => Object.fromEntries(
         Object.entries(ScenarioTemplates.templates)
               .map(([k,v]) => [k, v.placement || null]))""")
     with_placement = sorted(k for k, v in decl.items() if v)
-    check("exactly 3 templates declare a placement rule",
+    check("exactly 4 templates declare a placement rule",
           with_placement == ["cyclist-along-lane", "pedestrian-along-lane",
-                             "vehicle-pull-out"], str(with_placement))
+                             "vehicle-parked", "vehicle-pull-out"], str(with_placement))
     check("pull-out snaps to lane centre within 12 m",
           decl["vehicle-pull-out"]["snap"] == "lane-center"
           and decl["vehicle-pull-out"]["maxDistance"] == 12,
@@ -198,6 +283,17 @@ with sync_playwright() as p:
         check("along-lane yaw differs from crossing yaw",
               delta > 20, f"along={along} crossing={cross} delta={delta:.1f}")
 
+    # The cut-in changes lanes TOWARD the ego. CARLA's frame is left-handed
+    # with y down, so facing +x the right-hand side is +y.
+    if "vehicle-cut-in" in placed:
+        a = placed["vehicle-cut-in"]
+        yaw = math.radians(a["yaw"])
+        cross = math.cos(yaw) * (EGO[1] - a["y"]) - math.sin(yaw) * (EGO[0] - a["x"])
+        want = "right" if cross >= 0 else "left"
+        got = a["events"][1]["action"]["direction"]
+        check(f"cut-in changes lanes toward the ego ({want})", got == want,
+              f"got {got}, actor at ({a['x']},{a['y']}) yaw {a['yaw']}")
+
     # ── Export: does the chain survive to the .xosc? ─────────────────────────
     # Re-seed with a single template so entity refs stay predictable, then let
     # the real export path run.
@@ -209,7 +305,10 @@ with sync_playwright() as p:
                             z:0.2, yaw:180, trajectory:[], events:[]};
             const actor = {id:'obj-2',
                            type: ScenarioTemplates.templates[id].actorType,
-                           x:265.364, y:1.967, z:0.2, yaw:0,
+                           x:265.364, y:1.967, z:0.2,
+                           // Across Town01 road 1 (it runs east-west), so a
+                           // crossing template has a crossing to build.
+                           yaw: 90,
                            events:[]};
             actor.events = ScenarioTemplates.eventsForActor(actor, id);
             AppState.npcs = [actor];
@@ -217,8 +316,10 @@ with sync_playwright() as p:
         }""", tpl_id)
         return H.export_xosc(page)
 
-    for tpl_id in ("vehicle-stopping", "vehicle-lane-change-left",
-                   "vehicle-pull-out", "pedestrian-crossing", "cyclist-crossing"):
+    for tpl_id in ("vehicle-stopping", "vehicle-lane-change-left", "vehicle-emergency-brake",
+                   "vehicle-cut-in",
+                   "vehicle-lane-drift", "vehicle-pull-out", "pedestrian-crossing",
+                   "pedestrian-stop-in-lane", "cyclist-crossing"):
         want_type, want_events = EXPECTED[tpl_id]
         xml = export_template(tpl_id)
         evs = H.parse_events(xml, entity="adversary")
@@ -232,7 +333,14 @@ with sync_playwright() as p:
             t_kind, t_arg, a_kind, a_arg, dyn, dim = want
             check(f"{tpl_id}[{i}]: action is {a_kind}",
                   got["action"]["kind"] == a_kind, got["action"]["kind"])
-            if a_kind == "set_speed":
+            if a_kind == "set_speed" and dyn is ANY:
+                check(f"{tpl_id}[{i}]: target speed {a_arg}",
+                      got["action"].get("value") == a_arg,
+                      str(got["action"].get("value")))
+                check(f"{tpl_id}[{i}]: computed hold is plausible (0.5-60 s)",
+                      0.5 <= (got["action"].get("dynamics_value") or 0) <= 60,
+                      str(got["action"].get("dynamics_value")))
+            elif a_kind == "set_speed":
                 check(f"{tpl_id}[{i}]: target speed {a_arg}",
                       got["action"].get("value") == a_arg,
                       str(got["action"].get("value")))
@@ -251,6 +359,18 @@ with sync_playwright() as p:
                 check(f"{tpl_id}[{i}]: dynamics value {dyn} {unit} survives export",
                       got["action"].get("dynamics_value") == dyn,
                       str(got["action"].get("dynamics_value")))
+            elif a_kind == "assign_route":
+                check(f"{tpl_id}[{i}]: route has seed + merge + run-on waypoints",
+                      (got["action"].get("waypoints") or 0) >= 3,
+                      str(got["action"].get("waypoints")))
+            elif a_kind == "follow_trajectory":
+                check(f"{tpl_id}[{i}]: trajectory reaches the far kerb (>= 2 vertices)",
+                      (got["action"].get("vertices") or 0) >= 2,
+                      str(got["action"].get("vertices")))
+            elif a_kind == "lane_change" and a_arg is EITHER_SIDE:
+                check(f"{tpl_id}[{i}]: lane offset is one lane, either side",
+                      got["action"].get("lane_offset") in (1, -1),
+                      str(got["action"].get("lane_offset")))
             elif a_kind == "lane_change":
                 want_offset = 1 if a_arg == "left" else -1
                 check(f"{tpl_id}[{i}]: lane offset {want_offset} ({a_arg})",
@@ -292,6 +412,70 @@ with sync_playwright() as p:
     check("cyclist resolves through the bike alias to its blueprint",
           "vehicle.diamondback.century" in xml,
           "expected vehicle.diamondback.century (bike npc_default)")
+
+    # ── Applying a template to an actor that is already placed ──────────────
+    # The event panel's "Ablauf aus Template" picker (eventPanel.js) runs the
+    # same builder on the actor's current pose and replaces its events.
+    page.evaluate("""() => AppState.loadJSON({map: 'Town01', weather: {}, time: 'daytime',
+        ego: null, npcs: [], staticObjects: [], trafficSignals: []})""")
+    page.evaluate("UndoStack.clear ? UndoStack.clear() : null")
+    H.place_actor(page, "ego", *EGO)
+    van = H.place_actor(page, "van", *SPOT)
+    page.evaluate("(id) => AppState.select(id)", van["id"])
+    page.wait_for_timeout(150)
+    opts = page.evaluate("""() => [...document.querySelectorAll('.event-template-select option')]
+        .map(o => o.value).filter(Boolean)""")
+    check("a van is offered the vehicle templates", "vehicle-emergency-brake" in opts
+          and "vehicle-cut-in" in opts, str(opts))
+    check("a van is not offered walker or cyclist templates",
+          not any(o.startswith(("pedestrian", "child", "cyclist")) for o in opts), str(opts))
+    undo_before = page.evaluate("UndoStack.length")
+    page.select_option(".event-template-select", "vehicle-emergency-brake")
+    page.wait_for_timeout(200)
+    got = page.evaluate("(id) => AppState.findById(id)", van["id"])
+    check("applying a template gives the van its chain",
+          matches(summarise(got["events"]), EXPECTED["vehicle-emergency-brake"][1]),
+          str(summarise(got["events"])))
+    check("...keeps the van a van, where it was",
+          got["type"] == "van" and got["x"] == van["x"] and got["y"] == van["y"])
+    check("...and sets the template's start speed", got["initial_speed"] == 10.0,
+          str(got["initial_speed"]))
+    check("applying is one undo entry", page.evaluate("UndoStack.length") == undo_before + 1,
+          f"{undo_before} -> {page.evaluate('UndoStack.length')}")
+    # A second template over existing events asks first; cancelling keeps them.
+    page.select_option(".event-template-select", "vehicle-lane-drift")
+    page.wait_for_selector("#confirm-overlay:not(.hidden)", timeout=3000)
+    check("replacing existing events asks first", "ersetzen" in page.inner_text("#confirm-message"),
+          page.inner_text("#confirm-message"))
+    page.click("#confirm-cancel")
+    page.wait_for_timeout(150)
+    kept = page.evaluate("(id) => AppState.findById(id).events.length", van["id"])
+    check("cancelling keeps the old chain",
+          kept == len(EXPECTED["vehicle-emergency-brake"][1]), str(kept))
+    page.evaluate("document.activeElement && document.activeElement.blur()")
+    page.keyboard.press("Control+z")
+    page.wait_for_timeout(150)
+    back = page.evaluate("(id) => AppState.findById(id)", van["id"])
+    check("Strg+Z takes the applied template off again",
+          back["events"] == [] and back["initial_speed"] == 10.0, str(back["events"]))
+    walker = H.place_actor(page, "pedestrian", 245.0, -6.0)
+    page.evaluate("(id) => AppState.select(id)", walker["id"])
+    page.wait_for_timeout(150)
+    wopts = page.evaluate("""() => [...document.querySelectorAll('.event-template-select option')]
+        .map(o => o.value).filter(Boolean)""")
+    check("a pedestrian is offered exactly the walker templates",
+          sorted(wopts) == ["child-runs-out", "pedestrian-along-lane", "pedestrian-crossing",
+                            "pedestrian-stop-in-lane"], str(wopts))
+    page.select_option(".event-template-select", "pedestrian-crossing")
+    page.wait_for_timeout(200)
+    wev = page.evaluate("(id) => AppState.findById(id).events", walker["id"])
+    check("a crossing applied to a kerbside walker is sized to the road",
+          len(wev) == 2 and 0.5 <= wev[0]["action"]["dynamics"]["value"] <= 60,
+          str(wev and wev[0]["action"]))
+    page.evaluate("() => AppState.select(AppState.ego.id)")
+    page.wait_for_timeout(150)
+    check("the ego gets no template picker",
+          page.evaluate("document.querySelectorAll('.event-template-select').length") == 0)
 
     unexpected = [e for e in errors if "400 (Bad Request)" not in e]
     check("no unexpected JS errors during the run", not unexpected, str(unexpected[:3]))

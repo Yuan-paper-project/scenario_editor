@@ -933,13 +933,21 @@
     const exitKey = (net.succ.get(C.key) || [])[0];
     const exitL = exitKey && net.lanes.get(exitKey);
     if (!exitL) return null;
-    const exitPose = _laneAt(exitL, Math.min(POST_JUNCTION_WP_M, exitL.length - 0.5));
+    const exitS = Math.min(POST_JUNCTION_WP_M, exitL.length - 0.5);
+    const exitPose = _laneAt(exitL, exitS);
+    // ...and well on past it. The route's end is where SimpleVehicleControl
+    // stops dead (_reached_goal), and right after the exit is often the road
+    // the ego turns onto: measured in CARLA (Town03 junction 238) the NPC
+    // parked 5 m past the junction, the ego stopped 8.7 m behind it and sat
+    // there until every Act's 60 s stop trigger, its own route never complete.
+    const runOn = _walkForward(rng, net, exitL.key, exitS, rng.range(60, 90));
+    const runOnPose = runOn && _laneAt(runOn.L, runOn.s);
 
     const type = rng.weighted([['car', 6], ['van', 2], ['truck', 1], ['motorcycle', 1], ['police', 0.5], ['ambulance', 0.5]]);
     const npc = _vehicle(type, npcPose, 0);
     _ignoresTraffic(npc);
     npc.events = [
-      _routeEvent(npc, [_routeWp(exitPose)]),
+      _routeEvent(npc, runOnPose ? [_routeWp(exitPose), _routeWp(runOnPose)] : [_routeWp(exitPose)]),
       // A rate ramp at the controller's own acceleration, so the preview's
       // timing and CARLA's agree (a 'time' step is instant in the preview but
       // ramps at 3 m/s² in CARLA).
