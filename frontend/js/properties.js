@@ -89,6 +89,7 @@
       });
     });
     ScenarioTemplates.bindPanel(propsOverview);
+    if (window.ScenarioGenerator) ScenarioGenerator.bindRecipe(propsOverview, _renderOverviewPanel);
     _bindCollapsibleHeaders(propsOverview);
     _bindSceneList(propsOverview);
   }
@@ -107,6 +108,9 @@
     html += `<div class="summary-row"><span class="label">Akteure mit Pfad</span><span class="value">${withTraj}</span></div>`;
 
     html += _sceneListHtml();
+
+    // The generated scenario's parameters (scenarioGenerator.js), when there is one.
+    if (window.ScenarioGenerator) html += ScenarioGenerator.recipeHtml();
 
     html += `<div class="summary-section">Wetter</div>`;
     html += `<div class="summary-row"><span class="label">Tageszeit</span><span class="value">${_esc(AppState.timeLabel(AppState.time))}</span></div>`;
@@ -895,7 +899,8 @@
     const sceneChanged = Object.keys(patch).length === 0;
     if (!AppState.selectedId
         && (sceneChanged
-            || 'weather' in patch || 'time' in patch || 'map' in patch || 'mapData' in patch)) {
+            || 'weather' in patch || 'time' in patch || 'map' in patch || 'mapData' in patch
+            || 'generated' in patch || 'userTemplates' in patch)) {
       _renderOverviewPanel();
     }
     // Entering or leaving draw mode changes which event card is marked as the

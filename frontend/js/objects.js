@@ -49,6 +49,13 @@
       return;
     }
 
+    // "Generate here": the click is the spot the generator builds a conflict
+    // at, wherever it lands — on an actor too, since the scenario is replaced.
+    if (AppState.pendingGenerate) {
+      ScenarioGenerator.generateAtClick(world.x, world.y, e);
+      return;
+    }
+
     // A waypoint marker owns its own click: mousedown already marked it (and
     // may have dragged it). Without this the click falls through to the
     // deselect branch at the bottom, which drops the actor whose waypoints are

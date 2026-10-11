@@ -27,8 +27,9 @@ bash run.sh 8080     # custom port
 
 - Always start from the repo root — the app is imported as `backend.main`, so `uvicorn main:app` from inside `backend/` will not work. `run.sh` handles this with `cd "$(dirname "$0")"`.
 - **`.vscode/launch.json` passes no `--host`/`--port`**, so debugger runs land on uvicorn's default **8000** and bind loopback only, while `run.sh` uses **9090** on `0.0.0.0`. On a remote/SSH box the debugger's server is unreachable without a forwarded port — a hung browser tab usually means this, not a broken app.
-- **There is no linter and no CI**, and no unit tests. Automated coverage is `tests/test_normalization.py` (pure Python) plus fourteen Playwright end-to-end suites that need a running editor, and `tests/run_carla_cases.py`, which needs a running CARLA (see Verification). Everything else is verified manually.
+- **There is no linter and no CI**, and no unit tests. Automated coverage is `tests/test_normalization.py` (pure Python) plus eighteen Playwright end-to-end suites that need a running editor, and `tests/run_carla_cases.py`, which needs a running CARLA (see Verification). Everything else is verified manually.
 - All map geometry is parsed once at startup into `MAP_CACHE` (`preload_maps`, `backend/main.py`). Changes to `map_renderer.py` only take effect on restart — `--reload` does this automatically on save.
+- **`--reload` watches every `*.py` in the repo — `tests/` included.** Writing or editing a test file while a suite runs restarts the server under it: the in-flight request dies (seen as a batch-export download that never arrives), and on 2026-10-09 the restarted worker then wedged outright — ~90 connections unread in CLOSE-WAIT, no response, and after it was killed the reloader left a zombie and never respawned. Only a fresh `run.sh` recovers. When editing tests and running suites in parallel, run the suites against a server **without** `--reload` (`.venv/bin/uvicorn backend.main:app --port 9091`, `EDITOR_URL=http://localhost:9091`).
 - **`--reload` only watches this repo.** Editing `../llm-scenario-gen` — including `prop_catalog.yaml`, which `xml_builder` reads once at import — requires a **manual restart**. Frontend files are read per request, so a catalogue edit appears instantly in the UI while the backend still serves the old data. That asymmetry is easy to misread as a bug.
 
 ## The sibling-repo dependency (read this first)
@@ -660,8 +661,9 @@ per tick until the duration expires, not once.
 
 ## Scenario templates (`frontend/js/templates.js`)
 
-17 one-actor templates in the overview panel's **Templates** tab (Auto 11, Fußgänger 4 incl.
-`child-runs-out`, Radfahrer 2). A template is `{label, hint, actorType, events, placement?, initialSpeed?, build?}`;
+17 one-actor templates in the overview panel's **Templates** tab (Auto 11 in two sections — „Spur &
+Position" 6, „Tempo" 5 —, Fußgänger 4 incl. `child-runs-out`, Radfahrer 2), below „Konflikt hier erzeugen" (the generator's types, see the
+generator section) and „Eigene Vorlagen" (user templates, below). A template is `{label, hint, actorType, events, placement?, initialSpeed?, build?}`;
 `objects.js` `_placeActor` runs `eventsForActor` and `initialSpeedFor` at the click.
 
 - **`hint` is the button's hover text** (`_buttonHtml` reads it) and the picker option's — a new
@@ -711,6 +713,17 @@ per tick until the duration expires, not once.
 - `vehicle-parked` has `events: []` (no Act, holds start speed 0); `vehicle-lane-drift` is two
   `lane_offset`s on two ego distances (40 m out 1.5 m, 20 m back to 0) because nothing may chain
   onto a `lane_offset` with `after_event`.
+- **User templates („Eigene Vorlagen") live in the same `templates` table under `user:N` ids**, each
+  with a `build(actor)` that maps a stored chain onto the new actor's pose — so placement, the
+  `Ablauf aus Template …` picker and `applyTo` need no special case. `saveFromActor` (the event
+  panel's „Als Vorlage speichern", `.event-template-save`) stores every position **relative to the
+  actor** (`u` along its heading, `v` to its right — y-down, so right is +y at heading +x) and every
+  actor reference as `'$self'`/`'$ego'`; on build a `fastest` route waypoint is re-snapped and
+  waypoint 0 goes on the actor, and every z is re-derived (`groundZAt` + 0.5). **A chain naming another
+  NPC is refused** (that actor will not exist where the template is used). Stored per viewer in
+  `localStorage` (`scenarioEditor.userTemplates`, try/catch, not scenario state, not undo); shared as a
+  JSON file (Exportieren / Importieren, which adds with new ids). The transform is rigid: on a bend or a
+  different road width a trajectory keeps its shape and may no longer fit — the preview shows it.
 - `test_templates_e2e.py` pins chains with an `ANY` wildcard for computed values and checks the
   computed hold is 0.5–60 s; its `export_template` places the actor with `yaw: 90` so the crossing
   builders have Town01 road 1 to cross.
@@ -866,9 +879,9 @@ out; props carry a separate invisible hit circle, so clickability is not the blo
 
 ## Frontend conventions
 
-**No build step, no bundler, no npm.** Each `frontend/js/*.js` is an IIFE attaching one global: `AppState`, `Api`, `MapView`, `ObjectsManager`, `EventPanel`, `TrafficSignals`, `ScenarioTemplates`, `PropCatalog`, `LaneGraph`, `Dropdown`, `SpecialBuildings`, `AerialMap`, `ScenarioGenerator`, plus `Toast` / `Confirm` / `UndoStack` / `UIUtils` / `ScenarioRules` from `app.js`. `Simulate` also exports `routeGeometry(actor, ev)` — the lane-following route `mapView.js` draws — and `runHeadless()`, the whole preview run to completion in one call (see the generator section). `ScenarioIO` exports `buildParams` / `validate` / `downloadBlob` for the generator's batch, beside the `buildParamsForTesting` test hook. Two globals exist only as test hooks and are called by no UI code: `Simulate.routeForTesting` (`tests/test_route_fidelity_e2e.py`, asserts on a computed route without running the animation) and `ScenarioIO.buildParamsForTesting` (`tests/test_events_e2e.py`, builds the export payload without the click, so a payload the client-side gate refuses can still be handed to the backend). Several files (`toolbar.js`, `properties.js`, `weather.js`, `mapImport.js`, `welcome.js`, `layerMenu.js`) export nothing else and simply bind DOM listeners on load.
+**No build step, no bundler, no npm.** Each `frontend/js/*.js` is an IIFE attaching one global: `AppState`, `Api`, `MapView`, `ObjectsManager`, `EventPanel`, `TrafficSignals`, `ScenarioTemplates`, `PropCatalog`, `LaneGraph`, `Dropdown`, `SpecialBuildings`, `AerialMap`, `ScenarioGenerator`, `EventTimeline`, plus `Toast` / `Confirm` / `UndoStack` / `UIUtils` / `ScenarioRules` from `app.js`. `Simulate` also exports `routeGeometry(actor, ev)` — the lane-following route `mapView.js` draws — and `runHeadless()`, the whole preview run to completion in one call (see the generator section). `ScenarioIO` exports `buildParams` / `validate` / `downloadBlob` for the generator's batch, beside the `buildParamsForTesting` test hook. Two globals exist only as test hooks and are called by no UI code: `Simulate.routeForTesting` (`tests/test_route_fidelity_e2e.py`, asserts on a computed route without running the animation) and `ScenarioIO.buildParamsForTesting` (`tests/test_events_e2e.py`, builds the export payload without the click, so a payload the client-side gate refuses can still be handed to the backend). Several files (`toolbar.js`, `properties.js`, `weather.js`, `mapImport.js`, `welcome.js`, `layerMenu.js`) export nothing else and simply bind DOM listeners on load.
 
-- **Script order in `frontend/index.html` (the `<script>` block near the end) is load-bearing** — `app.js` first, dependents after; `propCatalog.js` must precede `toolbar.js`, which renders the prop tiles from it, and `aerialMap.js` must precede `mapView.js`, whose `renderMap` / `_applyTransform` call into it unguarded. `scenarioGenerator.js` goes after `simulate.js` (it calls `Simulate.routeGeometry` / `runHeadless`) and after `dropdown.js`, whose delegated `[data-menu-item]` close is what shuts its menu. A new module must be added there or it never runs.
+- **Script order in `frontend/index.html` (the `<script>` block near the end) is load-bearing** — `app.js` first, dependents after; `propCatalog.js` must precede `toolbar.js`, which renders the prop tiles from it, and `aerialMap.js` must precede `mapView.js`, whose `renderMap` / `_applyTransform` call into it unguarded. `scenarioGenerator.js` goes after `simulate.js` (it calls `Simulate.routeGeometry` / `runHeadless`) and after `dropdown.js`, whose delegated `[data-menu-item]` close is what shuts its menu. `eventTimeline.js` goes after `simulate.js` (it inserts `#sim-lanes` into `#map-bottom-stack` above `#sim-controls` and appends its toggle to the bar). A new module must be added there or it never runs.
 - **The header's dropdowns share one mechanism.** `dropdown.js` (global `Dropdown`) owns toggle-on-button, close-on-outside-click and close-on-Esc; the Esc handler is on the **capture phase** and `stopPropagation`s, so closing a menu does not also cancel a path being drawn in `mapView`. A menu needs no module of its own — `dropdown.js` auto-binds any `[data-dropdown]` wrapper holding a `[data-dropdown-button]` and a `[data-dropdown-panel]` (this is how **Datei**, **Generieren** and **Umgebung** work), and a row marked `data-menu-item` closes the menu after its own handler runs. A menu with extra behaviour calls `Dropdown.bind()` itself instead; **Ebenen** does, and must therefore *not* also carry `data-dropdown` or it binds twice. Shared classes are `.menu` / `.menu-btn` / `.menu-panel` / `.menu-item`; `.menu-panel-right` right-aligns a panel near the window edge.
 - **The nine map-layer checkboxes live in the Ebenen dropdown** (`#layer-toggles` → `#layer-menu-btn` + `#layer-menu-panel`, "Ebenen N/9"; the pill counts checkboxes, so it needs no edit when one is added). `Tempolimits` (`#toggle-speeds`) is the only one that starts **unchecked**. Ownership is split: `layerMenu.js` owns only the count pill and `Alle`/`Keine`, while `mapView.js`'s `_setupLayerToggles` still binds each `#toggle-*` checkbox to its SVG layer by id, exactly as when they were inline in the header. Keep those ids: they are the contract between the two files (and `tests/test_props_e2e.py` asserts `#toggle-props` exists). `Alle`/`Keine` set `.checked` directly, which fires **no** event, so it dispatches a synthetic `change` per box — drop that and the pill updates while the map does not. `#layer-toggles` itself stays `hidden` until a map loads (`mapImport.js`, `_setupLayerToggles`).
 - **The Datei menu holds `#btn-save` / `#btn-load-input` / `#btn-import-map-input` / `#btn-export-route`, and their ids are unchanged** — `scenarioIO.js` binds them by id and does not care that they now live in a popup. `#btn-export` deliberately stays a top-level primary button: it is the app's goal, and `tests/_harness.py` clicks it directly and waits on its `.disabled`.
@@ -876,7 +889,7 @@ out; props carry a separate invisible hit circle, so clickability is not the blo
 - **Undo/redo also have header buttons** (`#btn-undo` / `#btn-redo`), sharing `mapView.js`'s `_stepHistory` with `Strg+Z` / `Strg+Y`. `UndoStack` emits nothing, so `_refreshHistoryButtons` re-reads `UndoStack.length` / `redoLength` once per frame after any AppState event.
 - **The header is one row at every width** — nothing in it may wrap. Below 1340 px `.app-title` is hidden, below 1180 px the road count and the weather summary text too. A new header control must fit that budget or go into a menu.
 - **The empty map is a town picker** (`#map-quick-pick`, filled by `toolbar.js` `_renderQuickPick`); a button just sets `#map-select` and dispatches its `change`, so there is still one load path. `#scale-ruler` stays `hidden` until a map renders.
-- **The simulation controls are not in the header.** `simulate.js` injects `#sim-controls` into `#map-bottom-stack`, a click-through (`pointer-events: none`, children `auto`) bottom-centre overlay inside `#map-container` that also holds `#traj-banner`. They are **stacked in a flex column, not given fixed `bottom` offsets** — either can be hidden without the other having to know. The ids `#sim-play` / `#sim-stop` (`tests/test_route_fidelity_e2e.py`) and `#traj-banner` (`tests/test_ego_events_e2e.py`) are unchanged by the move. `#sim-progress-bar` is the scrubbable timeline (see the preview section); `#sim-time-label` reads `t / end`. **`#map-bottom-stack` is centred in the strip right of the scale ruler** (`left: 272px; right: 12px`), not on the map's 50% — the ~690 px bar slid over the ruler. That reserve only holds because the ruler is bounded: `_NICE_DISTS` starts at 0.1 m, so its bar stays within ~70–170 px (from 1 m up it was several hundred px at lane zoom). On a narrow map the controls wrap and the timeline (`flex: 1 0 220px`) fills its own row. Nothing in the bar may change width when a preview starts: Stop keeps its slot (`.sim-idle` = `visibility: hidden`) and Play/Pause share a min-width, or the timeline moves out from under the cursor. Their labels are German (`Abspielen` / `Fortsetzen` / `Pause` / `Stopp`); the play button's text lives in `#sim-play-text` beside its icon, so set that, never `btnPlay.textContent`, which would wipe the icon.
+- **The simulation controls are not in the header.** `simulate.js` injects `#sim-controls` into `#map-bottom-stack`, a click-through (`pointer-events: none`, children `auto`) bottom-centre overlay inside `#map-container` that also holds `#traj-banner`. They are **stacked in a flex column, not given fixed `bottom` offsets** — either can be hidden without the other having to know. The ids `#sim-play` / `#sim-stop` (`tests/test_route_fidelity_e2e.py`) and `#traj-banner` (`tests/test_ego_events_e2e.py`) are unchanged by the move. `#sim-progress-bar` is the scrubbable timeline (see the preview section); `#sim-time-label` reads `t / end`. **`#sim-controls` is a fixed 560 px card of two `.sim-row`s**: `.sim-row-top` holds icon-only Play/Pause/Stop, the tempo slider, then „Ego bremst" and „Ablauf" (eventTimeline.js appends its toggle into `.sim-row-top`, not the card), `.sim-row-timeline` only the scrub bar and `t / end`, so the bar gets the width. **`#map-bottom-stack` is centred in the strip right of the scale ruler** (`left: 272px; right: 12px`), not on the map's 50% — the old ~690 px one-row bar slid over the ruler. That reserve only holds because the ruler is bounded: `_NICE_DISTS` starts at 0.1 m, so its bar stays within ~70–170 px. Nothing in the bar may change width when a preview starts or on an edit — the card has a width, Stop keeps its slot (`.sim-idle` = `visibility: hidden`), Play/Pause are the same 30 px icon slot, the toggles and the time label are fixed width — or the timeline moves out from under the cursor and a click at one x lands at a different time (`test_preview_timeline_e2e.py`'s "seeking to the same time twice"). **Play's state (`Abspielen` / `Fortsetzen` / `Nochmal`) is not visible text**: `_setPlayLabel` writes it into the visually hidden `#sim-play-text` (tests read it), the `title` and `aria-label`, and „Nochmal" swaps in the replay icon (`.replay`). Never set `btnPlay.textContent`, which would wipe the icons.
 - **`#map-status` carries the road count only** ("122 Straßen") — the town name is `#map-select`'s job, and every path that writes the count (`toolbar.js` select-change and `stateLoaded`, `mapImport.js`) also sets `mapSelect.value`, so the name is never lost. Transient and failure states ("Lade …", "Import fehlgeschlagen") still take over the badge text.
 - **Pan/zoom is clamped, and `F` is the way back.** `mapView.js` holds `MIN_ZOOM` (0.25) / `MAX_ZOOM` (200) around `_zoom`, which is `1.0` when the whole town fills the viewBox. The wheel derives `_pan` from the **clamped** zoom, not the requested one — deriving it from the request keeps translating the map at the limit, which walks it off screen as effectively as no clamp. Unbounded is what it used to be: 200 notches out reached `scale(0.0000087)` and nothing but `renderMap()` ever reset the view, so the only way back was a reload, which discards the scenario. The recovery path is `MapView.resetView()` / `zoomToSelection()` / `zoomBy(factor)`, bound to `#map-view-controls` (top-right of the map, unhidden by `_setupLayerToggles` alongside `#layer-toggles`) and to the `F` key — `F` frames the selection at `ZOOM_TO_SPAN` (90 m) and falls back to a full reset when nothing is selected. **Buttons zoom about the view centre (`zoomBy` → `_centreOn`), the wheel about the cursor**; scaling `_zoom` alone zooms about the viewBox origin. Shift on the wheel switches to `ZOOM_STEP_COARSE` (1.4 vs 1.12), which is a real ergonomic difference — 9 notches to lane scale instead of 26, and 50 before the base step was raised.
 
@@ -886,7 +899,7 @@ out; props carry a separate invisible hit circle, so clickability is not the blo
 - **A traffic light is drawn as a signal head** (`_renderTrafficLight`): dark housing, three lamps, all dark until a signal event forces a state, then exactly the states its events set are lit, plus an accent outline. It used to be an 8 m red disc with a glow, red whether or not anything was configured. The invisible r = 2.4 m circle is its hit target.
 - **Drag and rotate are two disjoint zones on the marker, and the gap between them is real.** The body drags; a handle out past the nose rotates. `_buildYawArrow` (`mapView.js`) takes the caller's **own hit radius** — half the marker for an actor, the prop's invisible grab circle for a prop — and derives `arrowLen = bodyRadius + YAW_HANDLE_GAP + handleR`, so the invariant *(handle inner edge is outside the body, always)* holds by construction at any size rather than by a tuned constant. It did not before: `max(w, 4.5) * 0.8` with a fixed `r = 1.5` grab circle put the handle's inner edge at 2.1 m on a car whose half-length is 2.25 m, and swallowed a small oriented prop whole (arrow 1.6 m out, `r` 1.5, body grab circle 1.2) — that prop could not be dragged at all, every grab rotated it. Two more pieces of the same fix: the shaft is `.yaw-shaft`, `pointer-events: none`, drawn from the body edge instead of from the actor's *centre* where it hit-tested as "rotate" straight across the marker; and `objects.js`'s mousedown matches the single class `.yaw-handle` instead of the old four-way string match on `[class*="arrow"]` and `style === 'cursor:grab'`. **A new part of the arrow is decoration unless it carries `.yaw-handle`.** The mode guard (`activeTool`/`trajectoryMode`/`routeMode`) is now shared by both branches at the top of the handler — the rotate branch had none, so with a tool armed the handle rotated while the body selected.
 - **The drag cursor is a class on `<body>`, not `:active` on the element.** `.actor-group` is `move`, `.yaw-handle` is `grab`, and mousedown adds `body.dragging-actor` / `body.rotating` (removed on mouseup) which force `move` / `grabbing` document-wide. `:active` cannot work here: every `updateById` re-renders the whole actor layer (`AppState.on('actorUpdated')`), so the element the drag started on is detached within a frame — the same reason the trigger-point drag re-derives its z on mouseup rather than trusting the element. `.yaw-handle-ring` draws the grab circle's own boundary on `.yaw-arrow:hover`, so the zone is findable *before* committing to a drag.
-- **`AppState.cancelPlacement(extra)` is the one way to disarm placement**, with `AppState.placementActive` as its predicate. It clears all eight of `activeTool` / `pendingTemplate` / `pendingProp` / `trajectoryMode` / `activeTrajectoryId` / `routeMode` / `activeRouteId` / `activePathEventId`; three callers need exactly that set — Esc, the `r` ruler toggle (which passes its own `activeTool`) and pressing Play. It records no undo entry (`_isScenarioPatch` ignores editor-only keys), but clearing the draw flags is what fires `objects.js`'s `_discardIncompletePath`, so **a caller that then reads the actors must call it first** or it simulates/exports an event that no longer exists.
+- **`AppState.cancelPlacement(extra)` is the one way to disarm placement**, with `AppState.placementActive` as its predicate. It clears all nine of `activeTool` / `pendingTemplate` / `pendingProp` / `pendingGenerate` / `trajectoryMode` / `activeTrajectoryId` / `routeMode` / `activeRouteId` / `activePathEventId`; three callers need exactly that set — Esc, the `r` ruler toggle (which passes its own `activeTool`) and pressing Play. It records no undo entry (`_isScenarioPatch` ignores editor-only keys), but clearing the draw flags is what fires `objects.js`'s `_discardIncompletePath`, so **a caller that then reads the actors must call it first** or it simulates/exports an event that no longer exists.
 - **The preview answers to `Leertaste` (Play/Pause) and `Esc` (Stop).** Both are one bubble-phase `window` keydown in `simulate.js`, deliberately without `stopPropagation`: `app.js`'s confirm dialog and `dropdown.js`'s menus handle Escape on the **capture** phase and stop it there, so they preempt this for free, and `mapView.js` — loaded first — runs its own Escape branch before it. Space yields to a control **only when the keyboard put focus there** (`UIUtils.keyboardFocused`), and otherwise `preventDefault()`s — which is what stops the browser turning the keydown into a click on the focused button. The blanket `button, [role="option"], a[href]` bail it replaced was a real bug: clicking leaves a button focused, so the last toolbar tile clicked ate every Space and re-armed/disarmed itself (crosshair flickering on and off) while the preview never started, and a clicked panel button or scene row did the same. **`:focus-visible` cannot be used for this** — it was tried first, and its heuristic is "was the most recent interaction a keypress", so pressing Space *itself* flips every control into focus-visible and the next press hands the key back to the button. `app.js` tracks focus modality directly instead: Tab/arrow/Home/End set it, any mousedown clears it. `properties.js`'s scene-row Space reads the same predicate and preempts this handler through `e.defaultPrevented`. `_startSimulation` calls `AppState.cancelPlacement()` on a cold start — `body.simulating` dims the *toolbar*, but the map SVG stays live for pan/zoom, so an armed tool used to survive Play, crosshair and all, and the first click on the animating map placed an actor.
 
 - **`MapView.focusActor(id)` frames an actor *without* selecting it**, sharing `_frameActor` with `zoomToSelection`, then calls `glowActor(id)`. The glow is the **object's own body brightening** — the same `filter` it gets when hovered directly on the map, **no ring**, nothing appended to the actor group at render time. It brightens, holds ~0.5 s, then fades: `GLOW_MS` (900) must stay in step with the `actor-glow-fade` keyframes (brightness held to 55% of the timeline), or the class outlives the animation and leaves the object sitting bright. It is fired on the scene list's **click**, never on hover — hovering a list to read it must not set things flashing on the map. Both work for props: they carry `.actor-group` too. Flying the view *is* the feature — markers are drawn at true world size, so an actor at the town view is a few pixels and no amount of highlighting would find it for you.
@@ -909,7 +922,7 @@ out; props carry a separate invisible hit circle, so clickability is not the blo
   - **Every delete confirms, and `Strg` (`Cmd` on a Mac) is the app-wide "skip the confirm" modifier.** It is honoured by `Entf`/`Backspace` (`mapView.js`), by every scene-list trash and the prop `✕`, and by `#props-delete` in the properties header; each button carries it in its `title`. It is `(e.ctrlKey || e.metaKey)` at every site — `Cmd` is not optional, since `Strg`+click is a right-click on macOS and fires no `click` at all. **Shift used to be this modifier and must not be given the job back**: it already means coarse wheel zoom (`ZOOM_STEP_COARSE`) and prop lane-snap at placement (`_placeProp`), and a mis-modified delete is unrecoverable in a way a mis-zoom is not. The `Entf` path used to delete outright — it was the one unguarded delete in the app — so it now awaits `Confirm.show` and **re-reads the object in the callback** rather than trusting the id it captured, since the selection can move while the dialog is open. The one deliberate exception is a marked path **waypoint**, which `Entf`/`Backspace` takes with no confirm and ahead of the actor — see the waypoint section above for why the two are not comparable acts.
   - `_sceneCollapsed` and `_locatedId` are module-local in `properties.js` **because `_renderOverviewPanel` rebuilds its `innerHTML` wholesale** — a collapsed section held only in the DOM springs back open the moment a prop is placed. Anything else the scene list needs to remember goes there too.
   - The summary above the list no longer prints `Ego-Fahrzeug` / `NPCs` / `Requisiten` counts or the NPC breakdown; the list is the same numbers with the objects reachable behind them. `Karte`, `Akteure mit Pfad` and the `Wetter` block stayed — the list cannot show those.
-- Modal editor state (`trajectoryMode`, `routeMode`, `activePathEventId`, `pendingTemplate`, `pendingProp`) lives on `AppState` and is what the `mapView.js` click handlers branch on.
+- Modal editor state (`trajectoryMode`, `routeMode`, `activePathEventId`, `pendingTemplate`, `pendingProp`, `pendingGenerate`) lives on `AppState` and is what the `mapView.js` click handlers branch on.
 - The left toolbar is **tabbed** (`Akteure` | `Requisiten`, `data-toolbar-tab`). `toolbar.js` uses **event delegation** on `#toolbar`, not a load-time `.tool-btn` snapshot — prop tiles are rendered at runtime and a snapshot would silently miss them. Tab state is module-local, matching `_overviewPanelTab` in `properties.js`.
 - **The Requisiten tab is a search field over foldable group sections** (`PropCatalog.renderPanel`). At 79 props a flat two-column grid is a ~40-row scroll. Fold state is a per-viewer `localStorage` preference (`scenarioEditor.propSections`, a JSON array of folded group ids; not scenario state, not undo) and **defaults to everything past Baustelle and Fahrbahn folded**. A folded tile is still in the DOM but not visible, so **a test that clicks a tile outside those two groups must unfold it, search for it, or seed that key with `'[]'`** (`test_prop_yaw_e2e.py` does the last). While the search has text every section with a hit is shown open regardless of its fold state (`.searching`), and the fold state itself is left alone. The search's own `Esc` clears the field and `stopPropagation`s — otherwise it would also reach `mapView.js`'s `Esc` and disarm the prop tool just picked. Prop tile labels wrap to two lines rather than ellipsising.
 - Props reuse the `.actor-group` class (plus `.prop-group`), which gives them selection, body-drag and the `mapView.js` pan-exclusion list for free. If you add a new draggable map object, do the same rather than adding a class to three separate `closest()` checks.
@@ -1353,10 +1366,9 @@ a known conflict, never random actions**. Eight types: `lead_brake`, `cut_in`, `
 `junction_conflict`, `obstacle`, `oncoming_drift`, `cyclist_ahead`, `cut_out`. Plan and history:
 <https://claude.ai/artifact/GReE895gaqTjULAjrzN8Dm>.
 
-`generate(type, seed, {difficulty})` replaces the whole scenario as **one undo step**; `build(...)`
+`generate(type, seed, {near, overrides})` replaces the whole scenario as **one undo step**; `build(...)`
 is the same without touching `AppState`; `generateBatch({...})` makes N off-screen;
-`assess(candidate)` scores one. A seed rebuilds the same scenario on the same map + lane graph, but
-only under the same `difficulty` filter (the filter changes which attempts are rejected). Actor ids
+`assess(candidate)` scores one. A seed rebuilds the same scenario on the same map + lane graph. Actor ids
 are not part of that — `nextId` keeps counting.
 
 - **The ego may be driven by the AV under test, so nothing is timed off the clock.** Every NPC event
@@ -1418,7 +1430,7 @@ are not part of that — `nextId` keeps counting.
   `distance_to_point` on the lead's **own** entity — positional, and ego-relative through the
   following itself. It starts as late as the lead can make it: 6 m same-lane run-in + 60% of the
   lateral spread (where a 2.1 m car stops overlapping a 3.5 m lane) + both half-lengths + 1.5–10 m;
-  drawn generously the ego saw the obstacle 4–7 s out and every one scored leicht. The lead ignores
+  drawn generously the ego saw the obstacle 4–7 s out — far too easy. The lead ignores
   obstacles (its sensor would brake it for the car it is swerving round). 70% of stopped cars drive
   off once the ego is right behind (a **9 m** bumper-gap radius — the scripted ego halts ~6.3 m back,
   so 6 m was never reached and the car left only on the 60 s fallback), so the run does not stall. Criticality is
@@ -1468,7 +1480,31 @@ are not part of that — `nextId` keeps counting.
   again**: in CARLA a lead that stopped for good blocked the ego for the rest of the run (45 m
   driven, then the 60 s stop trigger).
 
-### Criticality (phase 2): every candidate is scored, trivial and unavoidable ones are dropped
+### „Konflikt hier erzeugen": a generator type built at a map click
+
+`build(type, seed, {near: {x, y}})` sets the module-level `_focus` for that one call (try/finally): every
+`_buildCorridor` then starts `_focusStart` — a random 50–220 m walk **back** through predecessors from a
+driving lane within 6 m of the click (12 m on a retry from a kerb; either direction, connectors included) —
+and is **forced along that path** to the clicked lane before going on at random. A type's own start-lane
+bias (cut-in's multi-lane, the drift's two-way start) is ignored under a focus; its site search still runs
+on the corridor. A candidate is kept only when `assess()`'s new **`at`** — the ego's position at contact,
+or at closest approach — is within `FOCUS_RADIUS_M` (40 m) of the click, and gets 150 more attempts for
+it. A seed + spot reproduces. Measured on Town03/05/10HD spawn points: 2–6 of 6 spots per type, slowest
+~1.7 s (`junction_conflict` on Town05); failures are sites that cannot host the type.
+
+UI: the Templates tab's first section (`[data-generate-here]`, `ScenarioTemplates._generatorSectionHtml`,
+labels from `ScenarioGenerator.TYPES`) and the Generieren menu with **„Ort auf der Karte wählen"**
+(`#gen-pick-spot`) both call `ScenarioGenerator.armAt(type)`, which sets **`AppState.pendingGenerate`**
+(`'any'` for Beliebig). `objects.js`'s click handler hands the next map click to `generateAtClick` before
+anything else — on an actor too, since the scenario is replaced (confirm unless Strg). A spot where nothing
+fits toasts and **re-arms**, so the next click tries elsewhere. `tests/test_generate_here_e2e.py` pins it.
+
+### Internal conflict check: trivial and unavoidable candidates are dropped
+
+**Nothing here is shown to the user.** The difficulty grades (leicht/mittel/schwer), the batch
+„Schwierigkeit" filter, the live badge and the TTC/difficulty manifest columns were all removed on
+2026-10-11 as not accurate enough to show. What remains is the rejection gate and the conflict
+location `at` used by „Konflikt hier erzeugen".
 
 `generate`/`generateBatch` **stop a running preview first** (`Simulate.stop()`): `runHeadless`
 cannot run beside it, and generating mid-Play used to fail every attempt and report „Kein passender
@@ -1489,17 +1525,80 @@ test does nothing". Contact is a **separating-axis overlap of the two footprints
   ego-relative trigger, **except** where a type names something better: the junction car crossing
   the line into its connector, the pedestrian stepping off the kerb (`res.onsets`), the cyclist's
   swerve rather than its kerb-riding event that fires at t = 0 (`res.threats`). Measured from the
-  release, every junction conflict scored leicht, because the NPC's run-up includes ~15 m inside the
+  release, every junction conflict looked easy, because the NPC's run-up includes ~15 m inside the
   junction.
 - **trivial** = no contact and the footprints never within 2 m → rejected. **unavoidable** = contact
-  < 1.0 s after onset or > 9 m/s² needed → rejected. Otherwise **schwer** (≥ 5 m/s² or < 2 s),
-  **mittel** (≥ 2.5 m/s² or < 3.5 s), **leicht**.
-- **Obstacles always score leicht** — they are in view from t = 0, so kinematically they are easy;
-  their difficulty is perceptual (a 0.3 m box), which this metric does not model. A `mittel+`/
-  `schwer` batch therefore never contains one; the type falls back to another and the manifest says
-  `type_fallback`.
+  < 1.0 s after onset or > 9 m/s² needed → rejected. Everything else is kept (`verdict: 'ok'`).
 - Scenery (`res.sceneryIds`, the occluding van) is excluded from the conflict search, or a parked car
   beside the lane scores as a near miss.
+
+### Recipes: a generated scenario's parameters, editable (`AppState.generated`)
+
+`generate()` stores a **recipe** on `AppState.generated` — `{type, label, seed, town, near, anchored,
+attempt, overrides, params, criticality, signature}` — which is **scenario state**: in `SCENARIO_KEYS`,
+in both undo directions (`_snapshot`/`_apply`) and in `toJSON`/`loadJSON`, so undoing a rebuild
+restores the recipe that built what is on screen. The Übersicht tab renders it as „Generiert"
+(`ScenarioGenerator.recipeHtml` / `bindRecipe`, called by `properties.js` like the template panel; the
+overview re-renders on a `generated` patch). One field per entry of `PARAMS[type]` plus `EGO_SPEED`;
+changing one **pins** it (`overrides`) and calls `rebuild()`; × unpins; „Variante würfeln" = new seed,
+pins kept, focused on the recipe's spot.
+
+- **Every random draw goes through `_p(key, drawn)`, and the draw is made whether or not it is
+  pinned** — conditional draws were rewritten so (`stopDraw`, `hesitDraw`/`holdDraw`, `occDraw`).
+  `key` is also the key in the build's `params`, which is what the panel *displays*: the value used,
+  not the pin, because a site may not honour one (an occluder needs a parking lane; a lead or cut-in
+  car is capped at 0.9 × ego speed). A pin that differs from its value is flagged (`.unmet`, ⚠).
+- **Each attempt has its own RNG** (`_attemptSeed(seed, attempt)`), not one shared generator. That is
+  what makes "same site" possible: attempt k is the same corridor and draws whatever happened before
+  it, so `rebuild` retries the recipe's `attempt` first (`opts.firstAttempt`, `onlyFirst`). With one
+  shared RNG a pin that changed how far an earlier attempt got shifted every later one, and a pinned
+  build also accepts verdicts the original rejected (below), so an *earlier* attempt won and the
+  scenario jumped ~100 m. **This changed which scenario every seed produces** — seeds from batches
+  made before it do not reproduce.
+- `anchored` says which attempt numbering `attempt` is in: a focused build (a click, or a rebuild
+  that needed the focus) is anchored and rebuilds focused; otherwise the **plain** attempt is retried
+  first and kept only if its conflict stays within `FOCUS_RADIUS_M` of the recipe's `near` (the first
+  build's conflict point), else a focused build follows. Measured on Town05 (seed 5, every type, one pin
+  at a time): 43 of 47 rebuilds kept the ego start exactly; the 4 that moved (two speed pins, two
+  ego-speed pins) made the original attempt infeasible.
+- **With pins the trivial/unavoidable gate is off** (`no_run` still rejected): the user asked for those
+  values, and the badge says what they give.
+- `signature` (a djb2 hash of ego/npcs/props right after the build) tells the panel the scenario was
+  hand-edited; a rebuild then asks first (`_confirmDiscardEdits`). A collapsed event card counts as an
+  edit — it only decides whether to ask. On another map the panel says so and `rebuild` refuses.
+- **„Serie exportieren"** (`sweepFromRecipe`, `_sweepHtml`): one scenario per value of one parameter
+  (2–25 evenly spaced values rounded to the field's step, or every option of a choice/bool), optionally
+  × all six weather presets, max 200, each built with `_buildFromRecipe` (the same path as `rebuild`, so
+  the same site), exported through `POST /api/export/batch` with `sweep_param`/`sweep_value`/`pinned`
+  in the manifest. The editor is swapped out and restored exactly like `generateBatch`. `_sweepUi` keeps
+  the box's state across the overview's wholesale re-renders; its open flag is set on the summary
+  **click**, not on `toggle` — `toggle` is a later task and a re-render in between drew it closed.
+- `tests/test_recipe_e2e.py`.
+
+### „Ego bremst": a reacting ego, preview only (`simulate.js`)
+
+`#sim-ego-react` (preview bar, fixed width) switches the preview ego from "does nothing" to a simple
+braking driver: it follows its **commanded** speed (`sim.cmdSpeed`, what the events set — restored at
+the top of `_stepActor` so event logic never sees the brake) but drives `sim.driven`, braking up to
+8 m/s² to stop 2 m short of anything in its path (`_egoAllowedSpeed`: other sims and props inside a
+footprint-wide corridor up to 60 m ahead, extent taken conservatively whatever their heading) and
+pulling away at 3 m/s². Flipping it mid-preview stops and reopens the run at the same time.
+**`runHeadless` never reacts unless asked** (`reactiveEgo`, saved/restored around the run), so the
+generator's `assess` always scores the no-reaction counterfactual. It is not a model of CARLA's scripted ego (`consider_obstacles`) —
+measured on Town03, a braking ego avoids lead-brake/cut-in/cut-out/cyclist/obstacle contacts and not
+an oncoming drift or a walker stepping out late, which is the plausible split.
+
+### „Ablauf": the events on a time axis (`frontend/js/eventTimeline.js`)
+
+`#sim-lanes-toggle` (preview bar, fixed width) opens `#sim-lanes` above the bar, as wide as the bar:
+one row per actor (ego first), one block per event from its `firedAt` to its `completedAt` (dashed
+right edge = still running at the end), read off `Simulate.runHeadless` — which now also returns
+`completed` — with a dashed connector from the event an `after_event`/`event_started` waits on, and
+an „nie: N" column for events that never fire in the run. Re-runs 400 ms after any edit while open,
+never during a preview (`runHeadless` refuses) — opened mid-preview it keeps its last result or says
+„Vorschau läuft". **Click a block → `Simulate.seek(firedAt)`** (new export; starts a paused
+preview). **Blocks are not draggable, by decision**: drag-to-retime existed and was removed along with
+the criticality badge (2026-10-11); retime an event in its card. `tests/test_event_timeline_e2e.py`.
 
 ### Batch export and coverage (phases 2 and 3)
 
@@ -1509,7 +1608,7 @@ actors/weather/time/map are put back at the end. It emits `change {}` afterwards
 `stateLoaded`** — `app.js` clears the undo history on that. `POST /api/export/batch`
 (`export_batch_zip`, `backend/scenario_io.py`) zips `<name>.xosc`, `<name>.json` (an editor save
 file, reopens with **Laden**) and `<name>_route.xml` (the ego route as a goal for an AV stack) per
-scenario plus `manifest.csv`/`manifest.json` (seed, town, type, difficulty, ttc, weather, time,
+scenario plus `manifest.csv`/`manifest.json` (seed, town, type, weather, time,
 every type parameter). Each scenario is exported independently; a failure is a manifest row with
 its error, not a lost batch.
 
@@ -1622,7 +1721,7 @@ bash run.sh 9090                 # terminal 1
 bash tests/run_tests.sh          # terminal 2 (EDITOR_URL overrides the target)
 ```
 
-That runs `test_normalization.py` (155 checks, no browser or server needed — the last ten build a real `.xosc` through the sibling repo to pin cross-actor event-reference resolution, `startTransition`, the hero `SpeedCondition`, the `consider_*` properties and a signal trigger at the pole's road height), then `compare_xodr_lane_graph.py` (also no browser/server/CARLA — validates `backend/lane_graph_builder.py` against the 8 committed probed graphs), then the fourteen Playwright suites: props (72), prop yaw (23), templates (296), events (82), ego events (75), triggers (47), signal panel (31), actor types (260, grows with the catalogue), elevation (33), route fidelity (9), undo (44), waypoints (67), generator (~1380: eight types × three seeds × three towns, plus batch, coverage and dialog checks), preview timeline (28: scrubbing, event ticks, keys, Stop/undo, and the overpass layer on Town04/05/01). All but the first two drive a real browser against a real server and a real export. **Restart the editor first if you changed `../llm-scenario-gen`** — otherwise the frontend shows new catalogue data while the backend exports the old, which looks like a test bug and is not one.
+That runs `test_normalization.py` (155 checks, no browser or server needed — the last ten build a real `.xosc` through the sibling repo to pin cross-actor event-reference resolution, `startTransition`, the hero `SpeedCondition`, the `consider_*` properties and a signal trigger at the pole's road height), then `compare_xodr_lane_graph.py` (also no browser/server/CARLA — validates `backend/lane_graph_builder.py` against the 8 committed probed graphs), then the eighteen Playwright suites: props (72), prop yaw (23), templates (296), events (82), ego events (75), triggers (47), signal panel (31), actor types (260, grows with the catalogue), elevation (33), route fidelity (9), undo (44), waypoints (67), generator (~1380: eight types × three seeds × three towns, plus batch, coverage and dialog checks), preview timeline (28: scrubbing, event ticks, keys, Stop/undo, and the overpass layer on Town04/05/01), generate here (73), recipe (62), user templates (25), event timeline (18). All but the first two drive a real browser against a real server and a real export. **Restart the editor first if you changed `../llm-scenario-gen`** — otherwise the frontend shows new catalogue data while the backend exports the old, which looks like a test bug and is not one.
 
 `test_ego_events_e2e.py` is kept separate from `test_events_e2e.py` rather than folded in: the older suite's `EGO` fixture and every one of its assertions assume an inert ego (no events), which was true before the ego became a controllable actor and is the entire premise the new suite tests against.
 

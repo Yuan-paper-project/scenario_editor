@@ -145,6 +145,9 @@
       <div id="gen-menu-panel" class="menu-panel menu-panel-right hidden" data-dropdown-panel
            role="menu" aria-label="Szenario generieren">
         <div id="gen-menu-types" class="gen-menu-types"></div>
+        <label class="gen-pick-row" title="Statt eines zufälligen Orts: nach der Typwahl die Stelle des Konflikts auf der Karte anklicken">
+          <input type="checkbox" id="gen-pick-spot"> Ort auf der Karte wählen
+        </label>
         <div class="gen-seed-row">
           <label for="gen-seed">Seed</label>
           <input type="number" id="gen-seed" min="1" step="1" placeholder="zufällig"
@@ -692,12 +695,6 @@
       <input type="number" id="gen-batch-count" min="1" max="1000" step="1" value="50" required>
       <label for="gen-batch-type">Typ</label>
       <select id="gen-batch-type"></select>
-      <label for="gen-batch-difficulty">Schwierigkeit</label>
-      <select id="gen-batch-difficulty">
-        <option value="alle">Alle (ohne triviale und unvermeidbare)</option>
-        <option value="mittel+">Mittel und schwer</option>
-        <option value="schwer">Nur schwer</option>
-      </select>
       <label for="gen-batch-maps">Karten</label>
       <select id="gen-batch-maps">
         <option value="current">Nur aktuelle Karte</option>
@@ -740,6 +737,7 @@
 <script src="/static/js/laneGraph.js"></script>  <!-- before simulate.js: its only consumer -->
 <script src="/static/js/simulate.js"></script>
 <script src="/static/js/scenarioGenerator.js"></script>  <!-- after simulate.js (routeGeometry), objects.js, propCatalog.js, dropdown.js -->
+<script src="/static/js/eventTimeline.js"></script>  <!-- after simulate.js (#sim-controls, runHeadless, seek) and eventPanel.js (displayName) -->
 
 <script src="/static/js/specialBuildings.js"></script>  <!-- landmark dots from maps/special_buildings.csv; mapView.js draws them -->
 <script src="/static/js/mapImport.js"></script>

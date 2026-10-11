@@ -221,6 +221,68 @@
     return best;
   }
 
+  // ── "Generate here" focus ────────────────────────────────────────────────────
+
+  // Set by build() for one call when the user picked a spot on the map:
+  // {x, y, radius, lanes: [{L, s}]}. Every corridor then runs through one of
+  // `lanes`, and a candidate is kept only when its conflict happens within
+  // `radius` of the click (assess's `at`).
+  let _focus = null;
+  // Set by build() for one call: {key: value} the user pinned in the recipe
+  // panel (already validated against PARAMS by _cleanOverrides). _p() hands
+  // a pinned value back in place of the random draw.
+  let _overrides = null;
+
+  /** The random `drawn` value, unless the user pinned `key`. The draw is made
+   * either way, so pinning one parameter does not shift every later draw. */
+  function _p(key, drawn) {
+    return _overrides && Object.prototype.hasOwnProperty.call(_overrides, key) ? _overrides[key] : drawn;
+  }
+  const FOCUS_RADIUS_M = 40;
+  const FOCUS_LANE_REACH_M = [6, 12];   // driving lanes this close to the click; a wider retry from a kerb
+
+  /** Driving lanes (either direction, junction connectors included) passing
+   * near (x, y), each with the arc length of its nearest point. */
+  function _focusLanes(net, x, y) {
+    for (const reach of FOCUS_LANE_REACH_M) {
+      const out = [];
+      for (const L of net.lanes.values()) {
+        const p = _projectOnLane(L, x, y);
+        if (p && p.d <= reach) out.push({ L, s: p.s });
+      }
+      if (out.length) return out;
+    }
+    return [];
+  }
+
+  /** A corridor start `back` metres upstream of a focus lane, and the lane
+   * keys from there to that lane — the path _buildCorridor is forced along. */
+  function _focusStart(rng, net, targetLen) {
+    const { L: F, s: sF } = rng.pick(_focus.lanes);
+    // Far enough back for a run-up and the conflict's own lead-in, short
+    // enough that the corridor still runs on well past the click.
+    const back = rng.range(50, Math.max(60, Math.min(220, targetLen - 60)));
+    const path = [F.key];
+    if (!F.junction && sF >= back + 2) return { L: F, s: sF - back, path };
+    let remaining = back - sF;
+    let cur = F;
+    for (let hop = 0; hop < 15; hop++) {
+      const preds = (net.pred.get(cur.key) || [])
+        .map(k => net.lanes.get(k)).filter(P => P && !path.includes(P.key));
+      if (!preds.length) {
+        // A dead end upstream: start at the top of what was walked, if that is
+        // an ordinary lane and leaves some run-up.
+        return !cur.junction && back - remaining >= 40 ? { L: cur, s: 1, path } : null;
+      }
+      const P = rng.pick(preds);
+      path.unshift(P.key);
+      if (!P.junction && P.length >= remaining + 2) return { L: P, s: P.length - remaining, path };
+      remaining -= P.length;
+      cur = P;
+    }
+    return null;
+  }
+
   // ── Ego corridor ─────────────────────────────────────────────────────────────
 
   /**
@@ -236,6 +298,17 @@
     if (!net.startable.length) return null;
     let L = startLane || rng.pick(net.startable);
     let s = startS ?? rng.range(2, Math.max(2.5, L.length - 15));
+    // "Generate here": the corridor is walked BACK from a lane at the click
+    // and then forced along that same path, so it passes the clicked spot. A
+    // type's own start lane (a multi-lane or two-way stretch) is a bias for a
+    // random draw, not a requirement — its site search runs on the corridor.
+    let forced = null;
+    if (_focus) {
+      const start = _focusStart(rng, net, targetLen);
+      if (!start) return null;
+      ({ L, s } = start);
+      forced = start.path;
+    }
     const pts = [];
     const segs = [];
     const visited = new Set();
@@ -262,7 +335,9 @@
       if (total >= targetLen) break;
       const next = (net.succ.get(L.key) || []).filter(k => !visited.has(k));
       if (!next.length) break;
-      L = net.lanes.get(rng.pick(next));
+      const fi = forced ? forced.indexOf(L.key) : -1;
+      const nextKey = fi >= 0 && fi + 1 < forced.length ? forced[fi + 1] : rng.pick(next);
+      L = net.lanes.get(nextKey);
       s = 0;
     }
     if (total < minLen || pts.length < 2) return null;
@@ -426,17 +501,21 @@
     // Time headway (bumper gap / ego speed) at which the lead brakes. 1-3 s
     // brackets the usual ACC settings; an ego following at a longer headway
     // than this never closes in, and the brake waits for the 60 s fallback.
-    const thw = rng.range(1.0, 3.0);
-    const type = rng.weighted(VEHICLE_MIX);
+    const thw = _p('brake_headway_s', rng.range(1.0, 3.0));
+    const type = _p('lead_type', rng.weighted(VEHICLE_MIX));
     const trigger = _centreDistance(Math.max(6, thw * vEgo), type);
     const gap0 = trigger + rng.range(15, 35);   // initial gap, ego closes from behind
     if (!_junctionFree(c, gap0 - 6, gap0 + 6)) return null;
     const pose = _corridorAt(c, gap0);
-    const vLead = vEgo * rng.range(0.55, 0.8);
-    const decel = rng.range(2.5, 8);
-    const stopFully = rng.chance(0.7);
-    const vEnd = stopFully ? 0 : rng.range(1.5, 4);
-    const hold = rng.range(3, 8);
+    // A lead at or above the ego's speed is never caught: cap an override.
+    const vLead = Math.min(_p('lead_speed', vEgo * rng.range(0.55, 0.8)), vEgo * 0.9);
+    const decel = _p('decel', rng.range(2.5, 8));
+    // Each draw is made whether or not it is overridden, so the RNG sequence
+    // (and with it the site a seed lands on) does not depend on the overrides.
+    const stopDraw = rng.chance(0.7);
+    const vEnd = _p('end_speed', stopDraw ? 0 : rng.range(1.5, 4));
+    const stopFully = vEnd === 0;
+    const hold = _p('hold_s', rng.range(3, 8));
 
     const lead = _vehicle(type, pose, vLead);
     // The lights on the corridor are forced green by the EGO's approach
@@ -452,7 +531,7 @@
     // A full stop that never drives off blocks the ego's lane for the rest of
     // the run (measured in CARLA: the scripted ego covered 45 m and waited out
     // the 60 s stop trigger), so most full stops pull away again.
-    const resume = rng.chance(stopFully ? 0.75 : 0.4);
+    const resume = _p('resumes', rng.chance(stopFully ? 0.75 : 0.4));
     if (resume) events.push(_speedEvent('evt-4', after('evt-3'), vLead, 'rate', 2.5));
     lead.events = events;
     // Where the ego catches up: it closes at vEgo - vLead from gap0 to the trigger.
@@ -506,9 +585,9 @@
 
     // A clear speed difference and a short initial gap, so the ego closes in
     // within one multi-lane stretch (Town10HD's are ~90-130 m long).
-    const vNpc = vEgo * rng.range(0.45, 0.7);
-    const lcDist = rng.range(10, 22);           // lateral move spread over this many metres
-    const trigger = rng.range(8, 26);           // cut in when the ego is this close
+    const vNpc = Math.min(_p('npc_speed', vEgo * rng.range(0.45, 0.7)), vEgo * 0.9);
+    const lcDist = _p('lane_change_m', rng.range(10, 22));   // lateral move spread over this many metres
+    const trigger = _p('trigger_m', rng.range(8, 26));       // cut in when the ego is this close
     // The NPC spawns beside corridor distance dNpc, i.e. dNpc ahead of the ego,
     // somewhere in this lane visit and far enough ahead that the ego has to
     // close in before the trigger fires.
@@ -534,14 +613,14 @@
     const back = N.record && N.record[npcDir];
     if (!back || net.refKey(back) !== sg.key) return null;
 
-    const type = rng.weighted(VEHICLE_MIX.filter(([t]) => t !== 'bus'));
+    const type = _p('npc_type', rng.weighted(VEHICLE_MIX.filter(([t]) => t !== 'bus')));
     const npc = _vehicle(type, onN, vNpc);
     const events = [{
       id: 'evt-1',
       trigger: nearEgo(trigger),
       action: { type: 'lane_change', direction: npcDir, dynamics: { shape: 'linear', value: r1(lcDist) } },
     }];
-    const brakesAfter = rng.chance(0.4);
+    const brakesAfter = _p('brakes_after', rng.chance(0.4));
     if (brakesAfter) events.push(_speedEvent('evt-2', after('evt-1'), vNpc * rng.range(0.3, 0.7), 'rate', rng.range(2, 5)));
     npc.events = events;
     return {
@@ -598,9 +677,9 @@
   function _vruCrossing(rng, net, vEgo) {
     const c = _buildCorridor(rng, net, rng.range(160, 260));
     if (!c) return null;
-    const type = rng.weighted([['pedestrian', 5], ['child', 2.5], ['cyclist', 2.5]]);
+    const type = _p('vru_type', rng.weighted([['pedestrian', 5], ['child', 2.5], ['cyclist', 2.5]]));
     const prof = VRU_PROFILES[type];
-    const v = rng.range(...prof.speed);
+    const v = _p('speed', rng.range(...prof.speed));
     const dMin = _egoRunUp(vEgo) + vEgo * 4;
 
     // Prefer a painted crosswalk on the corridor; otherwise anywhere straight.
@@ -625,7 +704,7 @@
     const pose = _corridorAt(c, dConflict);
     const edges = _carriagewayEdges(net, pose);
     if (edges.right === null || edges.left === null) return null;
-    const fromRight = rng.chance(0.65);
+    const fromRight = _p('from', rng.chance(0.65) ? 'right' : 'left') === 'right';
     // Start and finish on something walkable just past the carriageway edge.
     // "Past the edge" alone is not enough: on Town10HD it was a building
     // wall, CARLA refused to spawn the cyclist there, and the whole run
@@ -658,7 +737,7 @@
     const tVru = Math.abs(startOff) / v;
     // A walker clears a 2 m-wide car's path in ~1.3 s, so an offset much past
     // +0.8 s is mostly a near miss rather than a conflict.
-    const dt = rng.range(-0.5, 0.8);
+    const dt = _p('arrival_offset_s', rng.range(-0.5, 0.8));
     const sol = _solveTrigger(c, dConflict, tVru + dt, vEgo, start);
     if (!sol) return null;
 
@@ -695,10 +774,13 @@
     // stop is triggered by the walker reaching the ego lane's centre itself —
     // distance_to_point on its own entity. 1.5 m because the condition is 3-D
     // and the walker's centre sits ~0.9 m above the point.
-    const hesitates = MapView.isWalkerType(type) && rng.chance(0.3);
-    let hold = null;
+    const isWalker = MapView.isWalkerType(type);
+    const hesitDraw = isWalker && rng.chance(0.3);
+    const holdDraw = hesitDraw ? rng.range(1.5, 4) : 0;
+    let hold = isWalker ? _p('stops_in_lane_s', holdDraw) : 0;
+    const hesitates = hold > 0;
+    if (!hesitates) hold = null;
     if (hesitates) {
-      hold = rng.range(1.5, 4);
       vru.events.push(
         {
           id: 'evt-2',
@@ -719,7 +801,8 @@
     const npcs = [vru];
     const sceneryIds = new Set();
     let occluded = false;
-    if (type !== 'cyclist' && rng.chance(0.5)) {
+    const occDraw = type !== 'cyclist' && rng.chance(0.5);
+    if (type !== 'cyclist' && _p('occluded', occDraw)) {
       const upstream = _corridorAt(c, dConflict - rng.range(5, 9));
       const edgeOff = fromRight ? edges.right : edges.left;
       const probe = _lateral(upstream, edgeOff - Math.sign(edgeOff) * 1.5);
@@ -921,10 +1004,10 @@
     const back = _walkBack(rng, net, C.key, rng.range(6, 55));
     if (!back) return null;
     const npcPose = _laneAt(back.L, back.s);
-    const vNpc = rng.range(7, 13);
+    const vNpc = _p('npc_speed', rng.range(7, 13));
     const npcToX = back.walked + X.sB;
     const tNpc = _timeFromRest(npcToX, vNpc);
-    const dt = rng.range(-0.6, 0.8);   // ego arrives this much after the NPC
+    const dt = _p('arrival_offset_s', rng.range(-0.6, 0.8));   // ego arrives this much after the NPC
     const dX = sg.startD + X.sA;
     const sol = _solveTrigger(c, dX, tNpc + dt, vEgo, npcPose);
     if (!sol) return null;
@@ -943,7 +1026,7 @@
     const runOn = _walkForward(rng, net, exitL.key, exitS, rng.range(60, 90));
     const runOnPose = runOn && _laneAt(runOn.L, runOn.s);
 
-    const type = rng.weighted([['car', 6], ['van', 2], ['truck', 1], ['motorcycle', 1], ['police', 0.5], ['ambulance', 0.5]]);
+    const type = _p('npc_type', rng.weighted([['car', 6], ['van', 2], ['truck', 1], ['motorcycle', 1], ['police', 0.5], ['ambulance', 0.5]]));
     const npc = _vehicle(type, npcPose, 0);
     _ignoresTraffic(npc);
     npc.events = [
@@ -989,8 +1072,9 @@
     const dObs = rng.range(_egoRunUp(vEgo) + 25, c.length - 30);
     if (!_junctionFree(c, dObs - 30, dObs + 15)) return null;
     const pose = _corridorAt(c, dObs);
-    const variant = rng.weighted([['cargo', 1], ['workzone', 1], ['breakdown', 1]]);
-    const side = rng.chance(0.7) ? 1 : -1;   // which edge of the lane it sits toward
+    const variant = _p('variant', rng.weighted([['cargo', 1], ['workzone', 1], ['breakdown', 1]]));
+    // which edge of the lane it sits toward
+    const side = _p('side', rng.chance(0.7) ? 'right' : 'left') === 'right' ? 1 : -1;
     const props = [];
     const npcs = [];
     const params = { variant };
@@ -1112,14 +1196,14 @@
       return { O, s: p.s, pose: _laneAt(O, p.s) };
     };
 
-    const vNpc = rng.range(8, 14);
+    const vNpc = _p('npc_speed', rng.range(8, 14));
     // The swing, in metres of travel.
     const lenIn = vNpc * rng.range(1.0, 2.2);         // centre line -> peak
-    const lenHold = rng.range(0, 6);                  // at the peak
+    const lenHold = _p('hold_m', rng.range(0, 6));    // at the peak
     const lenOut = vNpc * rng.range(0.8, 1.8);        // back to its own lane
     // Metres toward the ego's lane. Under ~1.4 m (lane 3.5 m minus a 2.1 m
     // car) the two only brush past; most draws cross that.
-    const offset = rng.range(1.2, 2.8);
+    const offset = _p('offset_m', rng.range(1.2, 2.8));
 
     // dX is the corridor distance of the peak. The oncoming car travels toward
     // the ego, i.e. DOWN the corridor: it meets the swing's start at dX + lenIn
@@ -1182,7 +1266,7 @@
     if (!exit) return null;
 
     // Ego arrives at the peak this much after the car does (negative: before).
-    const dt = rng.range(-0.4, 0.6);
+    const dt = _p('arrival_offset_s', rng.range(-0.4, 0.6));
     const tNpc = _timeFromRest(toPeak, vNpc);
     const sol = _solveTrigger(c, dX, tNpc + dt, vEgo, spawn);
     if (!sol) return null;
@@ -1196,7 +1280,7 @@
     });
     const exitPose = _laneAt(exit.L, exit.s);
 
-    const type = rng.weighted([['car', 6], ['van', 2], ['truck', 1], ['motorcycle', 1]]);
+    const type = _p('npc_type', rng.weighted([['car', 6], ['van', 2], ['truck', 1], ['motorcycle', 1]]));
     const npc = _vehicle(type, spawn, 0);
     _ignoresTraffic(npc);
     npc.events = [
@@ -1258,19 +1342,19 @@
     if (!candidates.length) return null;
     const { sg, N, side } = rng.pick(candidates);
 
-    const type = rng.weighted(VEHICLE_MIX.filter(([t]) => t !== 'bus' && t !== 'motorcycle'));
-    const stoppedType = rng.weighted([['car', 4], ['van', 2], ['truck', 1]]);
-    const thw = rng.range(0.9, 2.0);                         // following headway, s
+    const type = _p('lead_type', rng.weighted(VEHICLE_MIX.filter(([t]) => t !== 'bus' && t !== 'motorcycle')));
+    const stoppedType = _p('stopped_type', rng.weighted([['car', 4], ['van', 2], ['truck', 1]]));
+    const thw = _p('headway_s', rng.range(0.9, 2.0));       // following headway, s
     const gap0 = _centreDistance(thw * vEgo, type);           // lead ahead of the ego
-    const lcDist = rng.range(8, 14);                           // lateral move spread
+    const lcDist = _p('lane_change_m', rng.range(8, 14));     // lateral move spread
     // From the start of the swerve to the stopped car, as late as the lead can
     // make it: the lane change runs 6 m in its own lane, then moves across
     // over lcDist, and the two bodies stop overlapping about 60% of the way
     // over (a 2.1 m car in a 3.5 m lane). Plus both half-lengths and a margin.
-    // Drawn generously the ego saw the obstacle 4-7 s out and every cut-out
-    // scored leicht.
+    // Drawn generously the ego saw the obstacle 4-7 s out — far too easy.
     const len = t => MapView.actorSize(t).w;
-    const cutDist = 6 + 0.6 * lcDist + (len(type) + len(stoppedType)) / 2 + rng.range(1.5, 10);
+    const cutMargin = _p('cut_margin_m', rng.range(1.5, 10));
+    const cutDist = 6 + 0.6 * lcDist + (len(type) + len(stoppedType)) / 2 + cutMargin;
     const dCut = rng.range(Math.max(sg.startD + 2, gap0 + 25), sg.endD - cutDist - 4);
     if (!(dCut > sg.startD) || dCut + cutDist + 4 > sg.endD) return null;
     const dObs = dCut + cutDist;
@@ -1300,7 +1384,7 @@
     // radius is a 9 m bumper gap: the scripted ego halts ~6.3 m behind (10.8 m
     // centre to centre, measured on Town05), so a 6 m one was never reached
     // and the car left only on the 60 s fallback.
-    const drivesOff = rng.chance(0.7);
+    const drivesOff = _p('stopped_drives_off', rng.chance(0.7));
     stopped.events = drivesOff
       ? [_speedEvent('evt-1', nearEgo(_centreDistance(9, stoppedType)), r1(rng.range(6, 10)), 'rate', 2.0)]
       : [];
@@ -1310,6 +1394,7 @@
       params: {
         lead_type: type, stopped_type: stoppedType, side, headway_s: r2(thw),
         lead_speed: r1(vLead), lane_change_m: r1(lcDist), cut_to_obstacle_m: r1(cutDist),
+        cut_margin_m: r1(cutMargin),
         stopped_drives_off: drivesOff,
       },
       routedNpcs: [],
@@ -1325,8 +1410,8 @@
   function _cyclistAhead(rng, net, vEgo) {
     const c = _buildCorridor(rng, net, rng.range(200, 300));
     if (!c) return null;
-    const vBike = rng.range(3, 6);
-    const gap0 = rng.range(30, 60);
+    const vBike = _p('speed', rng.range(3, 6));
+    const gap0 = _p('initial_gap_m', rng.range(30, 60));
     const tCatch = gap0 / (vEgo - vBike);
     // A cyclist has no route (assign_route is for vehicles the planner routes,
     // and `bike` is not one), so it lane-follows: keep its whole ride before
@@ -1334,16 +1419,16 @@
     // guess at.
     if (!_junctionFree(c, gap0 - 8, gap0 + vBike * tCatch + 25)) return null;
     const pose = _corridorAt(c, gap0);
-    const edgeOffset = rng.range(0.8, 1.2);
+    const edgeOffset = _p('edge_offset_m', rng.range(0.8, 1.2));
     const bike = _vehicle('cyclist', pose, vBike);
     const events = [{
       id: 'evt-1', trigger: nearEgo(400),   // at once: rides at the edge from the start
       action: { type: 'lane_offset', direction: 'right', offset: r1(edgeOffset) },
     }];
-    const swerves = rng.chance(0.5);
+    const swerves = _p('swerves', rng.chance(0.5));
     let swerveTtc = null;
     if (swerves) {
-      swerveTtc = rng.range(1.2, 3.5);
+      swerveTtc = _p('swerve_ttc_s', rng.range(1.2, 3.5));
       // A second offset supersedes the first (its _overwritten flag), so this
       // is a move from the edge out to `out` metres left of the lane centre.
       events.push({
@@ -1362,6 +1447,96 @@
       routedNpcs: [],
       threats: swerves ? new Map([[bike.id, 'evt-2']]) : null,
     };
+  }
+
+  // ── Editable parameters per type (the recipe panel) ──────────────────────────
+  //
+  // `key` is both the _p() override key and the key in the build's `params`,
+  // which is where the panel reads the value the build actually used. Ranges
+  // are the generator's own draw ranges: outside them a site check or the
+  // trigger solve fails more often than it builds.
+  const num = (key, label, unit, min, max, step) => ({ key, label, unit, kind: 'num', min, max, step });
+  const bool = (key, label) => ({ key, label, kind: 'bool' });
+  const choice = (key, label, options) => ({ key, label, kind: 'choice', options });
+  const VEHICLE_OPTS = [['car', 'Auto'], ['van', 'Transporter'], ['truck', 'Lkw'], ['bus', 'Bus'], ['motorcycle', 'Motorrad']];
+  const SIDE_OPTS = [['right', 'rechts'], ['left', 'links']];
+  const EGO_SPEED = num('ego_speed', 'Ego-Tempo', 'm/s', 5, 20, 0.5);
+  const PARAMS = {
+    lead_brake: [
+      choice('lead_type', 'Vorausfahrzeug', VEHICLE_OPTS),
+      num('lead_speed', 'Tempo', 'm/s', 2, 14, 0.5),
+      num('brake_headway_s', 'Bremst bei', 's Abstand', 1, 3, 0.1),
+      num('decel', 'Verzögerung', 'm/s²', 2.5, 8, 0.5),
+      num('end_speed', 'Bremst auf', 'm/s', 0, 4, 0.5),
+      num('hold_s', 'Hält', 's', 1, 10, 0.5),
+      bool('resumes', 'Fährt wieder an'),
+    ],
+    cut_in: [
+      choice('npc_type', 'Fahrzeug', VEHICLE_OPTS.filter(([k]) => k !== 'bus')),
+      num('npc_speed', 'Tempo', 'm/s', 3, 10, 0.5),
+      num('trigger_m', 'Schert ein bei', 'm', 8, 26, 1),
+      num('lane_change_m', 'Spurwechsel über', 'm', 10, 22, 1),
+      bool('brakes_after', 'Bremst danach'),
+    ],
+    vru_crossing: [
+      choice('vru_type', 'Person', [['pedestrian', 'Fußgänger'], ['child', 'Kind'], ['cyclist', 'Radfahrer']]),
+      num('speed', 'Tempo', 'm/s', 0.8, 6, 0.1),
+      choice('from', 'Kommt von', SIDE_OPTS),
+      num('arrival_offset_s', 'Zeitversatz', 's', -0.5, 0.8, 0.05),
+      bool('occluded', 'Verdeckt (parkendes Fahrzeug)'),
+      num('stops_in_lane_s', 'Bleibt stehen', 's (0 = nein)', 0, 4, 0.5),
+    ],
+    junction_conflict: [
+      choice('npc_type', 'Fahrzeug', [...VEHICLE_OPTS.filter(([k]) => k !== 'bus'), ['police', 'Polizei'], ['ambulance', 'Rettungswagen']]),
+      num('npc_speed', 'Tempo', 'm/s', 7, 13, 0.5),
+      num('arrival_offset_s', 'Zeitversatz', 's', -0.6, 0.8, 0.05),
+    ],
+    obstacle: [
+      choice('variant', 'Art', [['cargo', 'Ladung'], ['workzone', 'Baustelle'], ['breakdown', 'Pannenfahrzeug']]),
+      choice('side', 'Seite', SIDE_OPTS),
+    ],
+    oncoming_drift: [
+      choice('npc_type', 'Fahrzeug', VEHICLE_OPTS.filter(([k]) => k !== 'bus')),
+      num('npc_speed', 'Tempo', 'm/s', 8, 14, 0.5),
+      num('offset_m', 'Ausschwenken', 'm', 1.2, 2.8, 0.1),
+      num('hold_m', 'Bleibt drüben', 'm', 0, 6, 0.5),
+      num('arrival_offset_s', 'Zeitversatz', 's', -0.4, 0.6, 0.05),
+    ],
+    cut_out: [
+      choice('lead_type', 'Vorausfahrzeug', [['car', 'Auto'], ['van', 'Transporter'], ['truck', 'Lkw']]),
+      choice('stopped_type', 'Stehendes Fahrzeug', [['car', 'Auto'], ['van', 'Transporter'], ['truck', 'Lkw']]),
+      num('headway_s', 'Folgeabstand', 's', 0.9, 2, 0.1),
+      num('lane_change_m', 'Spurwechsel über', 'm', 8, 14, 1),
+      num('cut_margin_m', 'Reserve', 'm', 1.5, 10, 0.5),
+      bool('stopped_drives_off', 'Stehendes fährt an'),
+    ],
+    cyclist_ahead: [
+      num('speed', 'Tempo', 'm/s', 3, 6, 0.5),
+      num('initial_gap_m', 'Vorsprung', 'm', 30, 60, 1),
+      num('edge_offset_m', 'Randabstand', 'm', 0.8, 1.2, 0.1),
+      bool('swerves', 'Schwenkt aus'),
+      num('swerve_ttc_s', 'Schwenkt bei', 's', 1.2, 3.5, 0.1),
+    ],
+  };
+
+  /** Keep only overrides that name a parameter of this type, coerced and
+   * clamped to it. A save file or a stale recipe can carry anything. */
+  function _cleanOverrides(typeKey, raw) {
+    if (!raw || !typeKey || !PARAMS[typeKey]) return null;
+    const out = {};
+    for (const spec of [EGO_SPEED, ...PARAMS[typeKey]]) {
+      if (!Object.prototype.hasOwnProperty.call(raw, spec.key)) continue;
+      const v = raw[spec.key];
+      if (spec.kind === 'num') {
+        const n = Number(v);
+        if (Number.isFinite(n)) out[spec.key] = Math.min(spec.max, Math.max(spec.min, n));
+      } else if (spec.kind === 'bool') {
+        out[spec.key] = v === true || v === 'true';
+      } else if (spec.options.some(([k]) => k === v)) {
+        out[spec.key] = v;
+      }
+    }
+    return Object.keys(out).length ? out : null;
   }
 
   const TYPES = {
@@ -1430,12 +1605,13 @@
     return true;
   }
 
-  // ── Criticality (phase 2) ────────────────────────────────────────────────────
+  // ── Conflict check (internal) ────────────────────────────────────────────────
   //
   // Every candidate is run through the preview headlessly, with an ego that
-  // does NOT react — the preview never brakes for anyone, which is exactly the
-  // counterfactual a criticality metric wants: "what happens if the system
-  // under test does nothing". From that run:
+  // does NOT react: "what happens if the system under test does nothing".
+  // Only used to drop candidates where nothing happens or nothing could be
+  // avoided, and to locate the conflict (`at`) for a map-click build — it is
+  // never shown, graded or exported. From that run:
   //
   //   ttc_s        seconds from the NPC's trigger to first contact. The time
   //                the system under test has to notice and act.
@@ -1501,11 +1677,12 @@
 
   /**
    * Score a candidate {ego, npcs, props}. Returns
-   * {difficulty, ttc_s, decel_mps2, min_gap_m, conflict_with, verdict}
+   * {verdict, ttc_s, decel_mps2, min_gap_m, conflict_with, at}
    * where verdict is 'ok' | 'trivial' | 'unavoidable' | 'no_run'.
    */
   function assess(cand) {
-    const run = Simulate.runHeadless({ dt: 0.05, maxTime: 45, ego: cand.ego, npcs: cand.npcs });
+    cand = { props: [], ...cand };
+    const run = Simulate.runHeadless({ dt: 0.05, maxTime: 45, ego: cand.ego, npcs: cand.npcs, props: cand.props });
     if (!run) return { verdict: 'no_run' };
     const egoTr = run.tracks[run.egoId];
     const egoH = _headings(egoTr, cand.ego.yaw);
@@ -1550,15 +1727,18 @@
         if (k >= 0) t0 = run.times[k];
       }
       const i0 = Math.max(0, run.times.findIndex(t => t >= t0));
-      let contact = null, minGap = Infinity;
+      let contact = null, minGap = Infinity, minAt = null;
       for (let i = i0; i < run.times.length; i++) {
         const ox = o.tr ? o.tr[i].x : o.a.x, oy = o.tr ? o.tr[i].y : o.a.y;
         if (Math.hypot(ox - egoTr[i].x, oy - egoTr[i].y) > 25) continue;   // cheap reject
         const g = _quadGap(_corners(egoTr[i].x, egoTr[i].y, egoH[i], egoFp),
                            _corners(ox, oy, h ? h[i] : o.a.yaw / DEG, fp));
-        minGap = Math.min(minGap, g);
+        if (g < minGap) { minGap = g; minAt = i; }
         if (g < 0) { contact = i; break; }
       }
+      // Where it happens: the ego at contact, or at its closest approach.
+      const atI = contact ?? minAt;
+      const at = atI != null ? { x: r1(egoTr[atI].x), y: r1(egoTr[atI].y) } : null;
       let entry;
       if (contact != null) {
         const ttc = run.times[contact] - (i0 ? run.times[i0] : 0);
@@ -1566,39 +1746,34 @@
         for (let i = i0 + 1; i <= contact; i++) travel += Math.hypot(egoTr[i].x - egoTr[i - 1].x, egoTr[i].y - egoTr[i - 1].y);
         const v = egoTr[i0].speed;
         const decel = v > 0.1 ? v * v / (2 * Math.max(travel - 0.5, 0.25)) : 0;
-        entry = { contact: true, ttc_s: r2(ttc), decel_mps2: r1(decel), min_gap_m: 0, with: o.a.type };
+        entry = { contact: true, ttc_s: r2(ttc), decel_mps2: r1(decel), min_gap_m: 0, with: o.a.type, at };
       } else {
-        entry = { contact: false, ttc_s: null, decel_mps2: 0, min_gap_m: r1(Math.max(0, minGap)), with: o.a.type };
+        entry = { contact: false, ttc_s: null, decel_mps2: 0, min_gap_m: r1(Math.max(0, minGap)), with: o.a.type, at };
       }
       // The worst conflict is the one that leaves the least time.
       const key = e => (e.contact ? e.ttc_s : 1000 + e.min_gap_m);
       if (!worst || key(entry) < key(worst)) worst = entry;
     }
-    if (!worst) return { verdict: 'trivial', difficulty: null };
+    if (!worst) return { verdict: 'trivial' };
 
     let verdict = 'ok';
     if (!worst.contact && worst.min_gap_m > TRIVIAL_GAP_M) verdict = 'trivial';
     if (worst.contact && (worst.ttc_s < UNAVOIDABLE_TTC_S || worst.decel_mps2 > UNAVOIDABLE_DECEL)) verdict = 'unavoidable';
-    let difficulty = 'leicht';
-    if (worst.contact) {
-      if (worst.decel_mps2 >= 5 || worst.ttc_s < 2) difficulty = 'schwer';
-      else if (worst.decel_mps2 >= 2.5 || worst.ttc_s < 3.5) difficulty = 'mittel';
-    }
     return {
-      verdict, difficulty, ttc_s: worst.ttc_s, decel_mps2: worst.decel_mps2,
-      min_gap_m: worst.min_gap_m, conflict_with: worst.with,
+      verdict, ttc_s: worst.ttc_s, decel_mps2: worst.decel_mps2,
+      min_gap_m: worst.min_gap_m, conflict_with: worst.with, at: worst.at,
     };
   }
 
-  /** 'alle' | 'mittel+' | 'schwer' → does this difficulty pass? */
-  function _difficultyOk(filter, difficulty) {
-    if (!filter || filter === 'alle') return true;
-    if (filter === 'schwer') return difficulty === 'schwer';
-    if (filter === 'mittel+') return difficulty === 'mittel' || difficulty === 'schwer';
-    return difficulty === filter;
-  }
-
   // ── Public entry point ───────────────────────────────────────────────────────
+
+  /** A well-mixed 32-bit seed for attempt `attempt` of seed `seed`. */
+  function _attemptSeed(seed, attempt) {
+    let h = (Math.imul(seed >>> 0, 0x9E3779B1) ^ Math.imul(attempt + 1, 0x85EBCA6B)) >>> 0;
+    h = Math.imul(h ^ (h >>> 16), 0x7FEB352D) >>> 0;
+    h = Math.imul(h ^ (h >>> 15), 0x846CA68B) >>> 0;
+    return (h ^ (h >>> 16)) >>> 0 || 1;
+  }
 
   let _lastInfo = null;
 
@@ -1611,21 +1786,51 @@
    * {ego, npcs, props, info} or null when no attempt fit this map.
    *
    * Every candidate is scored (assess) and dropped when it is trivial or
-   * unavoidable, or outside `opts.difficulty` ('alle' | 'mittel+' | 'schwer').
+   * unavoidable.
+   *
+   * `opts.near` = {x, y} builds it at that spot ("Generate here"): the ego's
+   * corridor runs through a lane at the click and the conflict must happen
+   * within FOCUS_RADIUS_M of it. Null when no driving lane is near the point.
    */
   function build(typeKey = null, seed = null, opts = {}) {
     const net = _network();
     if (!net) return null;
+    if (opts.near) {
+      const lanes = _focusLanes(net, opts.near.x, opts.near.y);
+      if (!lanes.length) return null;
+      _focus = { x: opts.near.x, y: opts.near.y, radius: opts.near.radius ?? FOCUS_RADIUS_M, lanes };
+    }
+    _overrides = _cleanOverrides(typeKey, opts.overrides);
+    try {
+      return _build(net, typeKey, seed, opts);
+    } finally {
+      _focus = null;
+      _overrides = null;
+    }
+  }
+
+  function _build(net, typeKey, seed, opts) {
     seed = Number.isFinite(Number(seed)) && Number(seed) > 0 ? Math.floor(Number(seed)) : _randomSeed();
-    const rng = new Rng(seed);
     const keys = typeKey ? [typeKey] : Object.keys(TYPES);
 
-    // A difficulty filter throws most finished candidates away, so it gets
-    // more tries; each costs one headless run (~20 ms) only once it is built.
-    const maxAttempts = opts.difficulty && opts.difficulty !== 'alle' ? MAX_ATTEMPTS + 100 : MAX_ATTEMPTS;
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    // A focus throws away every candidate whose conflict lands elsewhere, so
+    // it gets more tries; each costs one headless run (~20 ms) once built.
+    const maxAttempts = MAX_ATTEMPTS + (_focus ? 150 : 0);
+    // Every attempt draws from its OWN generator, seeded from (seed, attempt):
+    // attempt k is then the same corridor and draws whatever happened in
+    // attempts 0..k-1. That is what lets the recipe panel rebuild a scenario
+    // with one value pinned on the very site it was on — it retries the
+    // original attempt first (opts.firstAttempt). With one shared generator a
+    // pin that changed how far an earlier attempt got shifted every later one.
+    const first = Number.isInteger(opts.firstAttempt) && opts.firstAttempt >= 0 ? opts.firstAttempt : null;
+    const order = first !== null ? [first] : [];
+    if (!opts.onlyFirst || first === null) {
+      for (let a = 0; a < maxAttempts; a++) if (a !== first) order.push(a);
+    }
+    for (const attempt of order) {
+      const rng = new Rng(_attemptSeed(seed, attempt));
       const key = rng.pick(keys);
-      const vEgo = Math.round(rng.range(8, 14) * 2) / 2;
+      const vEgo = _p('ego_speed', Math.round(rng.range(8, 14) * 2) / 2);
       const res = TYPES[key].build(rng, net, vEgo);
       if (!res) continue;
       const trafficSignals = _greenWave(net, res.corridor, res.conflictD ?? res.corridor.length);
@@ -1656,14 +1861,20 @@
       const criticality = assess({ ego, npcs: res.npcs, props: res.props,
                                    sceneryIds: res.sceneryIds, onsets: res.onsets,
                                    threats: res.threats, revealedBy: res.revealedBy });
-      if (criticality.verdict !== 'ok') continue;
-      if (!_difficultyOk(opts.difficulty, criticality.difficulty)) continue;
+      // Pinned values are the user's call: build what they give rather than
+      // moving on to another site.
+      if (criticality.verdict === 'no_run') continue;
+      if (criticality.verdict !== 'ok' && !_overrides) continue;
+      if (_focus && !(criticality.at
+          && Math.hypot(criticality.at.x - _focus.x, criticality.at.y - _focus.y) <= _focus.radius)) continue;
 
       const info = {
-        seed, type: key, label: TYPES[key].label, town: AppState.map, attempts: attempt + 1,
+        seed, type: key, label: TYPES[key].label, town: AppState.map, attempts: order.indexOf(attempt) + 1, attempt,
         ego_speed: vEgo, route_m: r1(egoEnd), criticality, params: res.params,
       };
       info.forced_green_lights = trafficSignals.length;
+      if (_focus) info.near = { x: r1(_focus.x), y: r1(_focus.y) };
+      if (_overrides) info.overrides = { ..._overrides };
       return { ego, npcs: res.npcs, props: res.props, trafficSignals, info };
     }
     return null;
@@ -1677,44 +1888,237 @@
 
     Simulate.stop();   // scoring needs the preview's tick state, see Simulate.stop
     AppState.cancelPlacement();
-    const result = build(typeKey, seed, opts);
+    const result = opts.prebuilt || build(typeKey, seed, opts);
     if (!result) {
-      Toast.error(`Kein passender Ort für „${typeKey ? TYPES[typeKey].label : 'Szenario'}" auf ${AppState.map} gefunden`);
+      const what = typeKey ? TYPES[typeKey].label : 'Szenario';
+      Toast.error(opts.near
+        ? `Kein passender Ort für „${what}" an dieser Stelle — eine andere Stelle oder einen anderen Typ versuchen`
+        : `Kein passender Ort für „${what}" auf ${AppState.map} gefunden`);
       return null;
     }
-    UndoStack.group('Szenario generiert', () => {
+    // The recipe: enough to rebuild this scenario with one parameter changed
+    // on the same site (recipe panel). A first build that was not anchored to
+    // a click is anchored to its own conflict point from now on, so repeated
+    // rebuilds cannot drift across the map.
+    const info = result.info;
+    const recipe = {
+      type: info.type, label: info.label, seed: info.seed, town: info.town,
+      near: info.near || opts.near || (info.criticality?.at ? { ...info.criticality.at } : null),
+      // Built focused (a click, or a rebuild that needed the focus): `attempt`
+      // indexes the focused attempts, so rebuilds stay focused. Otherwise it
+      // indexes the plain ones, and the plain attempt is retried first.
+      anchored: !!info.near,
+      attempt: info.attempt,
+      overrides: info.overrides || {},
+      params: { ego_speed: info.ego_speed, ...info.params },
+      criticality: info.criticality,
+    };
+    UndoStack.group(opts.undoLabel || 'Szenario generiert', () => {
       AppState.select(null);
       AppState.set({
         ego: result.ego,
         npcs: result.npcs,
         staticObjects: result.props,
         trafficSignals: result.trafficSignals,
+        generated: recipe,
       });
+      recipe.signature = sceneSignature();
       // The overview panel re-renders off an allow-list that does not include
       // ego/npcs; an empty patch is the codebase's "arrays changed" signal it
       // does listen for (properties.js). Inside the group, so still one undo.
       AppState.set({});
     });
     MapView.renderAllActors();
-    _frame(result);
+    if (!opts.keepView) _frame(result);
 
     const problems = [result.ego, ...result.npcs]
       .flatMap(a => ScenarioRules.problemsOf(a).map(p => `${AppState.actorLabel(a)}: ${p.problem.message}`));
     if (problems.length) Toast.warn(`Generiertes Szenario hat Probleme: ${problems.join('; ')}`, 8000);
-    else Toast.success(`${result.info.label} generiert · ${_criticalityText(result.info.criticality)} · Seed ${result.info.seed}`);
+    else if (!opts.quiet) Toast.success(`${result.info.label} generiert · Seed ${result.info.seed}`);
 
     _lastInfo = result.info;
     AppState.emit('scenarioGenerated', result.info);
     return result.info;
   }
 
-  /** "schwer (1.6 s, 6.2 m/s²)" — the difficulty and why, for a toast. */
-  function _criticalityText(c) {
-    if (!c) return '';
-    const label = c.difficulty.charAt(0).toUpperCase() + c.difficulty.slice(1);
-    return c.ttc_s != null
-      ? `${label} (${UIUtils.fmt(c.ttc_s)} s bis Kontakt, ${UIUtils.fmt(c.decel_mps2)} m/s²)`
-      : `${label} (kein Kontakt, ${UIUtils.fmt(c.min_gap_m)} m Abstand)`;
+  /** A short hash of the scenario objects, to tell whether the open scenario
+   * is still the one a recipe built (the panel warns before a rebuild would
+   * throw hand edits away). Editor-only flags (a collapsed event card) are
+   * edits too as far as this knows; it only decides whether to ask. */
+  function sceneSignature() {
+    const str = JSON.stringify([AppState.ego, AppState.npcs, AppState.staticObjects]);
+    let h = 5381;
+    for (let i = 0; i < str.length; i++) h = ((h * 33) ^ str.charCodeAt(i)) >>> 0;
+    return h.toString(36);
+  }
+
+  /** True when the open scenario is no longer exactly what the recipe built. */
+  function recipeEdited() {
+    const r = AppState.generated;
+    return !!r && r.signature !== sceneSignature();
+  }
+
+  /**
+   * Rebuild the open recipe with `changes` merged into its pinned values
+   * (null removes a pin), on the same site and seed. `newSeed` makes a
+   * variant instead: everything not pinned is drawn afresh. One undo step;
+   * on failure the open scenario is left alone and a toast says so.
+   */
+  function rebuild(changes = {}, { newSeed = false } = {}) {
+    const r = AppState.generated;
+    if (!r || !TYPES[r.type]) return null;
+    if (r.town && r.town !== AppState.map) {
+      Toast.error(`Das Rezept gehört zu ${r.town} — erst die Karte wechseln`);
+      return null;
+    }
+    const overrides = { ...(r.overrides || {}) };
+    for (const [k, v] of Object.entries(changes)) {
+      if (v === null || v === undefined) delete overrides[k];
+      else overrides[k] = v;
+    }
+    Simulate.stop();
+    const result = _buildFromRecipe(r, overrides, newSeed ? _randomSeed() : null);
+    if (!result) {
+      Toast.error(`„${r.label}" lässt sich mit diesen Werten an dieser Stelle nicht bauen`);
+      return null;
+    }
+    return generate(r.type, result.info.seed, {
+      near: r.near, prebuilt: result, keepView: true,
+      undoLabel: newSeed ? 'Variante' : 'Parameter',
+    });
+  }
+
+  /**
+   * Build `r`'s scenario again with `overrides`, without touching AppState.
+   * Same seed: an unanchored recipe retries its original plain attempt first
+   * (pins never shift the per-attempt RNG, so that is the very same corridor)
+   * and keeps it only if the conflict stays within FOCUS_RADIUS_M of where it
+   * was; otherwise, and for an anchored recipe, it builds focused on the
+   * recipe's spot, original attempt first. `newSeed`: a variant, focused.
+   */
+  function _buildFromRecipe(r, overrides, newSeed = null) {
+    if (newSeed) return build(r.type, newSeed, { near: r.near, overrides });
+    if (!r.anchored && Number.isInteger(r.attempt)) {
+      const plain = build(r.type, r.seed, { overrides, firstAttempt: r.attempt, onlyFirst: true });
+      const at = plain?.info.criticality?.at;
+      if (at && (!r.near || Math.hypot(at.x - r.near.x, at.y - r.near.y) <= FOCUS_RADIUS_M)) return plain;
+    }
+    if (!r.near) return null;
+    return build(r.type, r.seed, { near: r.near, overrides, firstAttempt: r.anchored ? r.attempt : undefined });
+  }
+
+  // ── Parameter sweep (a series from one recipe) ───────────────────────────────
+
+  const SWEEP_MAX = 200;
+
+  /** The values a sweep over `spec` visits: every option of a choice or a
+   * bool, else `steps` evenly spaced from..to, rounded to the field's step. */
+  function _sweepValues(spec, from, to, steps) {
+    if (spec.kind === 'bool') return [false, true];
+    if (spec.kind === 'choice') return spec.options.map(([k]) => k);
+    const clamp = v => Math.min(spec.max, Math.max(spec.min, v));
+    const a = clamp(Number(from)), b = clamp(Number(to));
+    const n = Math.max(2, Math.min(25, Math.floor(Number(steps) || 2)));
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const v = Math.round((a + (b - a) * i / (n - 1)) / spec.step) * spec.step;
+      const rv = Math.round(v * 1000) / 1000;
+      if (!out.includes(rv)) out.push(rv);
+    }
+    return out;
+  }
+
+  /**
+   * One scenario per value of `key` (× every weather preset when `weathers`),
+   * built from the open recipe on its site, as batch-export entries. The
+   * editor's own scenario is swapped out and put back exactly as
+   * generateBatch does it: plain assignment, undo suspended, `change {}`.
+   */
+  async function sweepFromRecipe({ key, from, to, steps = 5, weathers = false,
+                                   onProgress = () => {}, isCancelled = () => false } = {}) {
+    const r = AppState.generated;
+    if (!r || !PARAMS[r.type]) return null;
+    const spec = [EGO_SPEED, ...PARAMS[r.type]].find(sp => sp.key === key);
+    if (!spec) return null;
+    const values = _sweepValues(spec, from, to, steps);
+    const wx = weathers ? Object.keys(WEATHER_PRESETS) : [null];
+    const plan = values.flatMap(v => wx.map(w => ({ v, w }))).slice(0, SWEEP_MAX);
+
+    Simulate.stop();
+    const saved = JSON.parse(JSON.stringify({
+      ego: AppState.ego, npcs: AppState.npcs, staticObjects: AppState.staticObjects,
+      trafficSignals: AppState.trafficSignals, weather: AppState.weather, time: AppState.time,
+      generated: AppState.generated,
+    }));
+    AppState.cancelPlacement();
+    AppState.select(null);
+    UndoStack.suspend();
+    const entries = [], skipped = [];
+    const cache = new Map();   // one build per value, reused across weathers
+    try {
+      for (let k = 0; k < plan.length; k++) {
+        if (isCancelled()) break;
+        const { v, w } = plan[k];
+        const ck = JSON.stringify(v);
+        if (!cache.has(ck)) cache.set(ck, _buildFromRecipe(r, { ...(r.overrides || {}), [key]: v }));
+        const res = cache.get(ck);
+        if (!res) { skipped.push({ value: v, reason: 'an dieser Stelle nicht baubar' }); continue; }
+        const copy = JSON.parse(JSON.stringify({ ego: res.ego, npcs: res.npcs, props: res.props, sig: res.trafficSignals }));
+        AppState.ego = copy.ego;
+        AppState.npcs = copy.npcs;
+        AppState.staticObjects = copy.props;
+        AppState.trafficSignals = copy.sig;
+        AppState.weather = w ? _weatherOf(w) : JSON.parse(JSON.stringify(saved.weather));
+        AppState.time = saved.time;
+        const problems = ScenarioIO.validate().errors;
+        if (problems.length) { skipped.push({ value: v, reason: problems[0] }); continue; }
+        const n = String(entries.length + 1).padStart(4, '0');
+        const vName = String(v).replace(/[^\w.-]/g, '');
+        entries.push({
+          name: `${n}_${r.type}_${key}-${vName}${w ? '_' + w : ''}_s${res.info.seed}`,
+          params: ScenarioIO.buildParams(),
+          scenario: AppState.toJSON(),
+          meta: {
+            index: entries.length + 1, seed: res.info.seed, town: AppState.map, type: r.type,
+            label: r.label, sweep_param: key, sweep_value: v,
+            weather: w || 'editor', time: AppState.time, ego_speed: res.info.ego_speed,
+            params: res.info.params, pinned: { ...(r.overrides || {}), [key]: v },
+          },
+        });
+        onProgress(k + 1, plan.length, entries.length);
+        await _tick();
+      }
+    } finally {
+      Object.assign(AppState, saved);
+      UndoStack.resume();
+      AppState.emit('change', {});
+      MapView.renderAllActors();
+    }
+    return { entries, skipped, values, cancelled: isCancelled() };
+  }
+
+  let _sweepRunning = false;
+
+  async function _runSweep(opts) {
+    if (_sweepRunning) return;
+    _sweepRunning = true;
+    try {
+      const res = await sweepFromRecipe(opts);
+      if (!res) return;
+      if (!res.entries.length) { Toast.error('Serie: kein Wert ließ sich an dieser Stelle bauen'); return; }
+      const r = AppState.generated;
+      const filename = `serie_${AppState.map}_${r.type}_${opts.key}_${res.entries.length}.zip`;
+      const out = await Api.exportBatch({ scenarios: res.entries, filename });
+      ScenarioIO.downloadBlob(out.blob, filename);
+      const notes = [];
+      if (res.skipped.length) notes.push(`${res.skipped.length} übersprungen`);
+      if (out.failed) notes.push(`${out.failed} Export fehlgeschlagen (siehe manifest)`);
+      Toast.success(`Serie: ${out.ok} Szenarien exportiert${notes.length ? ' · ' + notes.join(' · ') : ''}`, 8000);
+    } catch (err) {
+      Toast.error(`Serie fehlgeschlagen: ${err.message}`);
+    } finally {
+      _sweepRunning = false;
+    }
   }
 
   /** Frame everything the scenario placed, including the ego's route end. */
@@ -1818,7 +2222,7 @@
    * and toJSON read AppState, but nothing needs to render or record them.
    */
   async function generateBatch({
-    count = 50, typeKey = null, difficulty = 'alle', seed = null,
+    count = 50, typeKey = null, seed = null,
     balance = true, varyWeather = true, maps = 'current',
     onProgress = () => {}, isCancelled = () => false,
   } = {}) {
@@ -1863,9 +2267,9 @@
         const s = baseSeed + item.i;
         // A type this map cannot host (cut-in on single-lane Town01) falls
         // back to any type rather than leaving a hole in the batch.
-        let r = build(item.type, s, { difficulty });
+        let r = build(item.type, s);
         let fellBack = false;
-        if (!r && item.type) { r = build(null, s, { difficulty }); fellBack = !!r; }
+        if (!r && item.type) { r = build(null, s); fellBack = !!r; }
         if (!r) {
           skipped.push({ town: item.town, type: item.type, seed: s, reason: 'kein passender Ort' });
           onProgress(k + 1, plan.length, entries.length);
@@ -1889,16 +2293,13 @@
           continue;
         }
         const n = String(entries.length + 1).padStart(4, '0');
-        const c = r.info.criticality;
         entries.push({
-          name: `${n}_${item.town}_${r.info.type}_${c.difficulty}_s${s}`,
+          name: `${n}_${item.town}_${r.info.type}_s${s}`,
           params: ScenarioIO.buildParams(),
           scenario: AppState.toJSON(),
           meta: {
             index: entries.length + 1, seed: s, town: item.town, type: r.info.type,
-            label: r.info.label, type_fallback: fellBack, difficulty: c.difficulty,
-            difficulty_filter: difficulty, ttc_s: c.ttc_s, decel_mps2: c.decel_mps2,
-            min_gap_m: c.min_gap_m, conflict_with: c.conflict_with,
+            label: r.info.label, type_fallback: fellBack,
             weather: item.weather === '__keep' ? 'editor' : item.weather,
             time: AppState.time, ego_speed: r.info.ego_speed, route_m: r.info.route_m,
             attempts: r.info.attempts, params: r.info.params,
@@ -1956,7 +2357,7 @@
     startBtn.disabled = true;
     try {
       const res = await generateBatch({
-        count, typeKey: val('gen-batch-type') || null, difficulty: val('gen-batch-difficulty'),
+        count, typeKey: val('gen-batch-type') || null,
         seed: val('gen-batch-seed') || null, maps: val('gen-batch-maps'),
         balance: document.getElementById('gen-batch-balance').checked,
         varyWeather: document.getElementById('gen-batch-weather').checked,
@@ -2008,30 +2409,225 @@
     }, true);
   })();
 
+  // ── Recipe panel (Übersicht tab) ─────────────────────────────────────────────
+  //
+  // The generated scenario's parameters as editable fields. Changing one pins
+  // it and rebuilds the scenario on the same site and seed; „Variante würfeln"
+  // keeps the pins and draws everything else afresh. Rendered by properties.js
+  // (recipeHtml / bindRecipe), like the template panel.
+
+  const _escHtml = v => String(v ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  /** The value the build actually used — not the pin, which the site may
+   * not have allowed (an occluder needs a parking lane; a lead faster than
+   * the ego is capped). _recipeMismatch says when the two differ. */
+  function _recipeValue(r, spec) {
+    const v = r.params?.[spec.key];
+    if (spec.kind === 'bool') return !!v;
+    if (spec.kind === 'num') {
+      if (v === null || v === undefined || v === false) return spec.key === 'stops_in_lane_s' ? 0 : '';
+      return v;
+    }
+    return v ?? '';
+  }
+
+  function _recipeControl(r, spec) {
+    const v = _recipeValue(r, spec);
+    const attr = `data-recipe-key="${spec.key}" aria-label="${_escHtml(spec.label)}"`;
+    if (spec.kind === 'bool') return `<input type="checkbox" ${attr}${v ? ' checked' : ''}>`;
+    if (spec.kind === 'choice') {
+      const opts = spec.options.map(([k, l]) => `<option value="${k}"${k === v ? ' selected' : ''}>${_escHtml(l)}</option>`).join('');
+      return `<select ${attr}>${opts}</select>`;
+    }
+    return `<input type="number" ${attr} min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${v === '' ? '' : _escHtml(v)}">`;
+  }
+
+  function _recipeMismatch(r, spec) {
+    if (!Object.prototype.hasOwnProperty.call(r.overrides || {}, spec.key)) return false;
+    const want = r.overrides[spec.key], got = _recipeValue(r, spec);
+    if (spec.kind === 'num') return got === '' || Math.abs(Number(got) - want) > spec.step / 2 + 1e-6;
+    return got !== want;
+  }
+
+  /** The recipe block for the overview panel, or '' when nothing generated. */
+  function recipeHtml() {
+    const r = AppState.generated;
+    if (!r || !PARAMS[r.type]) return '';
+    const pins = r.overrides || {};
+    const rows = [EGO_SPEED, ...PARAMS[r.type]].map(spec => {
+      const pinned = Object.prototype.hasOwnProperty.call(pins, spec.key);
+      const unpin = pinned
+        ? `<button type="button" class="gen-recipe-unpin" data-recipe-unpin="${spec.key}" title="Festgelegten Wert lösen — wieder zufällig aus dem Seed">×</button>`
+        : '<span></span>';
+      const miss = _recipeMismatch(r, spec);
+      const missTitle = miss
+        ? ` title="Festgelegt auf ${_escHtml(spec.kind === 'choice' ? (spec.options.find(([k]) => k === pins[spec.key]) || [, pins[spec.key]])[1] : pins[spec.key])}, an dieser Stelle nicht möglich"`
+        : '';
+      return `<div class="gen-recipe-row${pinned ? ' pinned' : ''}${miss ? ' unmet' : ''}" data-recipe-row="${spec.key}">
+        <span class="gen-recipe-label"${missTitle}>${_escHtml(spec.label)}${miss ? ' ⚠' : ''}</span>
+        ${_recipeControl(r, spec)}
+        <span class="gen-recipe-unit">${_escHtml(spec.unit || '')}</span>
+        ${unpin}
+      </div>`;
+    }).join('');
+    const wrongTown = r.town && r.town !== AppState.map;
+    const warn = wrongTown
+      ? `<div class="gen-recipe-warn">Gebaut auf ${_escHtml(r.town)} — Karte wechseln, um neu zu bauen.</div>`
+      : recipeEdited()
+        ? '<div class="gen-recipe-warn">Seit dem Generieren von Hand bearbeitet — eine Änderung hier baut neu und verwirft das.</div>'
+        : '';
+    return `<div class="gen-recipe" data-recipe>
+      <div class="summary-section">Generiert</div>
+      <div class="gen-recipe-head"><b>${_escHtml(r.label)}</b><span>Seed ${_escHtml(r.seed)}</span></div>
+      ${warn}
+      <div class="gen-recipe-grid">${rows}</div>
+      <div class="gen-recipe-actions">
+        <button type="button" class="btn btn-small btn-secondary" data-recipe-variant
+                title="Neuer Seed an derselben Stelle; fest eingestellte Werte bleiben">Variante würfeln</button>
+      </div>
+      ${wrongTown ? '' : _sweepHtml(r)}
+      <div class="summary-hint">Ein geänderter Wert wird festgelegt (●) und das Szenario an derselben Stelle neu gebaut.</div>
+    </div>`;
+  }
+
+  // Remembered across re-renders: the overview rebuilds its innerHTML wholesale.
+  const _sweepUi = { open: false, key: null, from: null, to: null, steps: 5, weathers: false };
+
+  function _sweepHtml(r) {
+    const specs = [EGO_SPEED, ...PARAMS[r.type]];
+    if (!specs.some(sp => sp.key === _sweepUi.key)) {
+      const firstNum = specs.find(sp => sp.kind === 'num' && sp.key !== 'ego_speed') || specs[0];
+      Object.assign(_sweepUi, { key: firstNum.key, from: firstNum.min, to: firstNum.max });
+    }
+    const spec = specs.find(sp => sp.key === _sweepUi.key);
+    const values = _sweepValues(spec, _sweepUi.from, _sweepUi.to, _sweepUi.steps);
+    const total = Math.min(SWEEP_MAX, values.length * (_sweepUi.weathers ? Object.keys(WEATHER_PRESETS).length : 1));
+    const opts = specs.map(sp => `<option value="${sp.key}"${sp.key === spec.key ? ' selected' : ''}>${_escHtml(sp.label)}</option>`).join('');
+    const range = spec.kind === 'num'
+      ? `<label>Von</label><input type="number" data-sweep-from min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${_sweepUi.from}">
+         <label>Bis</label><input type="number" data-sweep-to min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${_sweepUi.to}">
+         <label>Werte</label><input type="number" data-sweep-steps min="2" max="25" step="1" value="${_sweepUi.steps}">`
+      : `<span class="gen-sweep-all">alle Werte: ${values.map(v => _escHtml(spec.kind === 'bool' ? (v ? 'ja' : 'nein') : spec.options.find(([k]) => k === v)[1])).join(', ')}</span>`;
+    return `<details class="gen-sweep" data-sweep${_sweepUi.open ? ' open' : ''}>
+      <summary>Serie exportieren</summary>
+      <div class="gen-sweep-grid">
+        <label>Parameter</label><select data-sweep-key>${opts}</select>
+        ${range}
+      </div>
+      <label class="gen-sweep-weather"><input type="checkbox" data-sweep-weather${_sweepUi.weathers ? ' checked' : ''}> × alle Wetter (${Object.keys(WEATHER_PRESETS).length})</label>
+      <div class="gen-recipe-actions">
+        <button type="button" class="btn btn-small btn-primary" data-sweep-run
+                title="Ein Szenario pro Wert an derselben Stelle, als ZIP mit manifest">${total} Szenarien exportieren</button>
+      </div>
+    </details>`;
+  }
+
+  async function _confirmDiscardEdits() {
+    if (!recipeEdited()) return true;
+    return Confirm.show('Von Hand gemachte Änderungen am Szenario verwerfen und neu bauen?', 'Neu bauen');
+  }
+
+  /** Wire the block recipeHtml() rendered. `rerender` redraws the panel, so
+   * a rebuild that failed shows the old values again. */
+  function bindRecipe(root, rerender) {
+    const box = root.querySelector('[data-recipe]');
+    if (!box) return;
+    const r = AppState.generated;
+    const specs = Object.fromEntries([EGO_SPEED, ...(PARAMS[r?.type] || [])].map(sp => [sp.key, sp]));
+    const run = async (changes, opts) => {
+      if (!(await _confirmDiscardEdits())) { rerender(); return; }
+      if (!rebuild(changes, opts)) rerender();
+    };
+    box.querySelectorAll('[data-recipe-key]').forEach(el => {
+      el.addEventListener('change', () => {
+        const spec = specs[el.dataset.recipeKey];
+        if (!spec) return;
+        let v;
+        if (spec.kind === 'bool') v = el.checked;
+        else if (spec.kind === 'num') {
+          if (el.value === '') { rerender(); return; }
+          v = Math.min(spec.max, Math.max(spec.min, Number(el.value)));
+        } else v = el.value;
+        run({ [spec.key]: v });
+      });
+    });
+    box.querySelectorAll('[data-recipe-unpin]').forEach(btn => {
+      btn.addEventListener('click', () => run({ [btn.dataset.recipeUnpin]: null }));
+    });
+    box.querySelector('[data-recipe-variant]')?.addEventListener('click', () => run({}, { newSeed: true }));
+
+    const sweep = box.querySelector('[data-sweep]');
+    if (!sweep) return;
+    // Recorded on the summary click, not on 'toggle': toggle is dispatched as a
+    // later task, and a panel re-render in between draws the box closed again.
+    sweep.querySelector('summary').addEventListener('click', () => { _sweepUi.open = !sweep.open; });
+    sweep.querySelector('[data-sweep-key]').addEventListener('change', e => {
+      const sp = specs[e.target.value];
+      Object.assign(_sweepUi, { key: sp.key, from: sp.min, to: sp.max });
+      rerender();
+    });
+    for (const [attr, field] of [['data-sweep-from', 'from'], ['data-sweep-to', 'to'], ['data-sweep-steps', 'steps']]) {
+      sweep.querySelector(`[${attr}]`)?.addEventListener('change', e => { _sweepUi[field] = Number(e.target.value); rerender(); });
+    }
+    sweep.querySelector('[data-sweep-weather]').addEventListener('change', e => { _sweepUi.weathers = e.target.checked; rerender(); });
+    sweep.querySelector('[data-sweep-run]').addEventListener('click', () => _runSweep({ ..._sweepUi }));
+  }
+
   // ── Header menu ──────────────────────────────────────────────────────────────
 
   function _hasScenario() {
     return !!(AppState.ego || AppState.npcs.length || AppState.staticObjects.length);
   }
 
-  async function _onMenuPick(e, typeKey) {
-    // Generating replaces the whole scenario. It is one undo step, but a
-    // scenario that took an hour to author deserves a question first —
-    // Strg/Cmd skips it, the app-wide "skip the confirm" modifier.
-    if (_hasScenario() && !(e.ctrlKey || e.metaKey)) {
-      const ok = await Confirm.show('Aktuelles Szenario durch ein generiertes ersetzen?', 'Ersetzen');
-      if (!ok) return;
-    }
+  /** Generating replaces the whole scenario. It is one undo step, but a
+   * scenario that took an hour to author deserves a question first —
+   * Strg/Cmd skips it, the app-wide "skip the confirm" modifier. */
+  async function _confirmReplace(e) {
+    if (!_hasScenario() || e.ctrlKey || e.metaKey) return true;
+    return Confirm.show('Aktuelles Szenario durch ein generiertes ersetzen?', 'Ersetzen');
+  }
+
+  function _seedFromField() {
     const seedField = document.getElementById('gen-seed');
-    const seed = seedField?.value ? Number(seedField.value) : null;
-    const info = generate(typeKey, seed);
-    // A used seed is cleared so the next click makes a new scenario; the seed
-    // that was used is in the toast and on the menu button's tooltip.
-    if (info && seedField) {
-      seedField.value = '';
-      document.getElementById('gen-menu-btn').title =
-        `Zufälliges Szenario erzeugen — zuletzt: ${info.label}, Seed ${info.seed}`;
-    }
+    return seedField?.value ? Number(seedField.value) : null;
+  }
+
+  /** A used seed is cleared so the next click makes a new scenario; the seed
+   * that was used is in the toast and on the menu button's tooltip. */
+  function _noteUsedSeed(info) {
+    const seedField = document.getElementById('gen-seed');
+    if (!info || !seedField) return;
+    seedField.value = '';
+    document.getElementById('gen-menu-btn').title =
+      `Zufälliges Szenario erzeugen — zuletzt: ${info.label}, Seed ${info.seed}`;
+  }
+
+  /** Arm "Generate here": the next map click builds `typeKey` (null = any
+   * type) at that spot. Esc disarms, like every other placement mode. */
+  function armAt(typeKey = null) {
+    if (!AppState.mapData) { Toast.error('Zuerst eine Karte laden'); return; }
+    if (typeKey && !TYPES[typeKey]) return;
+    AppState.cancelPlacement({ pendingGenerate: typeKey || 'any' });
+    Toast.info(`„${typeKey ? TYPES[typeKey].label : 'Beliebiger Typ'}": Stelle des Konflikts auf der Karte anklicken (Esc bricht ab)`);
+  }
+
+  async function generateAtClick(x, y, e) {
+    const pending = AppState.pendingGenerate;
+    if (!pending) return null;
+    const typeKey = pending === 'any' ? null : pending;
+    AppState.cancelPlacement();
+    if (!(await _confirmReplace(e))) return null;
+    const info = generate(typeKey, _seedFromField(), { near: { x, y } });
+    // No site here: stay armed, so the next click tries another spot.
+    if (!info) AppState.set({ pendingGenerate: pending });
+    _noteUsedSeed(info);
+    return info;
+  }
+
+  async function _onMenuPick(e, typeKey) {
+    if (document.getElementById('gen-pick-spot')?.checked) { armAt(typeKey); return; }
+    if (!(await _confirmReplace(e))) return;
+    _noteUsedSeed(generate(typeKey, _seedFromField()));
   }
 
   (function _bindMenu() {
@@ -2067,6 +2663,15 @@
     generate,
     assess,
     generateBatch,
+    armAt,
+    generateAtClick,
+    rebuild,
+    recipeHtml,
+    bindRecipe,
+    sweepFromRecipe,
+    sceneSignature,
+    recipeEdited,
+    PARAMS: Object.fromEntries(Object.entries(PARAMS).map(([k, v]) => [k, [EGO_SPEED, ...v].map(sp => sp.key)])),
     weatherPreset: _weatherOf,
     WEATHER_PRESETS: Object.keys(WEATHER_PRESETS),
     coveragePlan(n, dims, seed = 1) { return coveragePlan(n, dims, new Rng(seed)); },

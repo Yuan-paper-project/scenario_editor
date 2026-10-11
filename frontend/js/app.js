@@ -122,6 +122,12 @@
     activeRouteId:       null,   // actor id whose route we're drawing
     activePathEventId:    null,   // event id whose action path/route we're drawing
     pendingTemplate:     null,   // scenario template to apply to the next placed actor
+    pendingGenerate:     null,   // generator type key (or 'any') to build at the next map click
+    // Recipe of the scenario the generator last built ({type, seed, near,
+    // overrides, params, criticality, signature}) or null. Scenario state:
+    // saved, and part of every undo snapshot, so undoing a rebuild restores
+    // the recipe that built what is on screen.
+    generated:           null,
     pendingProp:         null,   // CARLA blueprint id to place while activeTool === 'prop'
 
     // ── Listeners ─────────────────────────────────────────────
@@ -398,6 +404,7 @@
           ...sig,
           events: sig.events.map(ev => ({ ...ev })),
         })),
+        generated: this.generated ? JSON.parse(JSON.stringify(this.generated)) : null,
       };
     },
 
@@ -446,7 +453,8 @@
      *
      * Three callers need exactly this set cleared — Esc, the ruler toggle (which
      * passes its own `activeTool`) and pressing Play — and it was two verbatim
-     * copies of an eight-key literal before the third arrived. Clearing the draw
+     * copies of an eight-key literal before the third arrived (nine keys now,
+     * with `pendingGenerate`). Clearing the draw
      * flags is also what discards a path that never reached two waypoints
      * (objects.js `_discardIncompletePath` hangs off this change), so callers
      * that go on to read the actors must call this first.
@@ -455,7 +463,7 @@
      */
     cancelPlacement(extra = {}) {
       this.set({
-        activeTool: null, pendingTemplate: null, pendingProp: null,
+        activeTool: null, pendingTemplate: null, pendingProp: null, pendingGenerate: null,
         trajectoryMode: false, activeTrajectoryId: null,
         routeMode: false, activeRouteId: null, activePathEventId: null,
         ...extra,
@@ -464,7 +472,7 @@
 
     /** True while a tool is armed, a prop is pending or a path is being drawn. */
     get placementActive() {
-      return !!(this.activeTool || this.pendingTemplate || this.pendingProp ||
+      return !!(this.activeTool || this.pendingTemplate || this.pendingProp || this.pendingGenerate ||
                 this.trajectoryMode || this.routeMode);
     },
 
@@ -477,6 +485,7 @@
       this.npcs            = (data.npcs || []).map(n => this._hydrateActor(n));
       this.staticObjects   = data.staticObjects || [];
       this.trafficSignals = (data.trafficSignals || []).map(sig => ({ ...sig, events: sig.events || [] }));
+      this.generated       = data.generated || null;
 
       // Advance the id counter past everything just loaded, otherwise the next
       // placed object reuses an id that already exists in the file.
@@ -498,6 +507,7 @@
       this.activePathEventId = null;
       this.pendingTemplate = null;
       this.pendingProp     = null;
+      this.pendingGenerate = null;
       this.emit('stateLoaded', data);
     },
   };
@@ -625,7 +635,7 @@
   let _groupLabel = null;
   let _groupTaken = false;
 
-  const SCENARIO_KEYS = ['ego', 'npcs', 'staticObjects', 'trafficSignals'];
+  const SCENARIO_KEYS = ['ego', 'npcs', 'staticObjects', 'trafficSignals', 'generated'];
 
   /**
    * Deep copy of the scenario half of AppState.
@@ -641,6 +651,7 @@
       npcs:           AppState.npcs,
       staticObjects:  AppState.staticObjects,
       trafficSignals: AppState.trafficSignals,
+      generated:      AppState.generated,
     }));
     copy.label                  = label || '';
     copy.selectedId             = AppState.selectedId;
@@ -874,11 +885,13 @@
       const restored = JSON.parse(JSON.stringify({
         ego: snap.ego, npcs: snap.npcs,
         staticObjects: snap.staticObjects, trafficSignals: snap.trafficSignals,
+        generated: snap.generated ?? null,
       }));
       AppState.ego            = restored.ego;
       AppState.npcs           = restored.npcs;
       AppState.staticObjects  = restored.staticObjects;
       AppState.trafficSignals = restored.trafficSignals;
+      AppState.generated      = restored.generated;
       AppState.selectedId = snap.selectedId && AppState.findById(snap.selectedId)
         ? snap.selectedId
         : null;

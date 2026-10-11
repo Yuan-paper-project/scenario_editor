@@ -66,7 +66,7 @@
 
   // Update button active state when tool changes
   AppState.on('change', patch => {
-    if (!('activeTool' in patch) && !('pendingProp' in patch)) return;
+    if (!('activeTool' in patch) && !('pendingProp' in patch) && !('pendingGenerate' in patch)) return;
     toolbar.querySelectorAll('.tool-btn').forEach(btn => {
       const match = btn.dataset.tool === AppState.activeTool
         && (btn.dataset.prop || null) === (AppState.pendingProp || null);
@@ -74,7 +74,7 @@
     });
     // Update cursor
     const svg = MapView.svg;
-    if (AppState.activeTool) {
+    if (AppState.activeTool || AppState.pendingGenerate) {
       svg.classList.add('placing');
     } else {
       svg.classList.remove('placing');

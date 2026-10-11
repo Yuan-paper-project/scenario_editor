@@ -18,9 +18,10 @@ The other properties pinned here:
   * generating is ONE undo step, and replacing a scenario asks first;
   * a type the map cannot host (cut-in on single-lane Town01) fails cleanly;
   * phase 2: every scenario carries a criticality record that passed the
-    trivial/unavoidable gate, the difficulty filter holds, and a batch
+    trivial/unavoidable gate (no difficulty grade), and a batch
     restores the editor exactly (undo history included) and exports a zip
-    with three files per scenario plus a manifest;
+    with three files per scenario plus a manifest without difficulty or
+    criticality columns;
   * phase 3: the coverage plan covers every pair, the all-maps batch spans
     the CARLA towns, and the oncoming drift is a
     fastest/shortest route and both conflict NPCs ignore lights and obstacles.
@@ -63,10 +64,13 @@ GEN_AND_MEASURE = ("""([t, s]) => {
         min = Math.min(min, Math.hypot(tr[i].x - ego[i].x, tr[i].y - ego[i].y));
       }
     }
-    // Centre distance at which the two footprints can touch end to end: a
-    // 7 m truck is touching at 4.3 m. Never tighter than CONFLICT_M.
+    // Centre distance at which the two footprints can touch end to end (a
+    // 7 m truck is touching at 4.3 m), plus the generator's own near-miss
+    // allowance: assess() counts a footprint gap up to 2 m (TRIVIAL_GAP_M) as
+    // a conflict, and a crossing car that clears the ego's nose by 1.2 m is
+    // ~6.5 m centre to centre. Never tighter than CONFLICT_M.
     const len = t => (MapView.actorSize(t) || {}).w || 4.5;
-    const reach = Math.max(%CONFLICT%, (len('ego') + len(npc.type)) / 2);
+    const reach = Math.max(%CONFLICT%, (len('ego') + len(npc.type)) / 2 + 2.0);
     // Where each 'shortest' run hands back to a 'fastest' leg: that leg is
     // routed from the shortest point, so it must sit on a driving lane centre
     // (an off-lane seed projects onto whatever lane is nearest).
@@ -122,7 +126,7 @@ def check_scenario(town, t, s, r, page):
     C(f"{tag}: type is the one asked for", r["info"]["type"] == t, r["info"]["type"])
     crit = r["info"].get("criticality") or {}
     C(f"{tag}: passed the trivial/unavoidable gate", crit.get("verdict") == "ok", crit)
-    C(f"{tag}: has a difficulty", crit.get("difficulty") in ("leicht", "mittel", "schwer"), crit)
+    C(f"{tag}: carries no difficulty grade", "difficulty" not in crit, crit)
     if crit.get("ttc_s") is not None:
         C(f"{tag}: contact is not sooner than 1 s after the threat", crit["ttc_s"] >= 1.0, crit)
     C(f"{tag}: no ScenarioRules problems", not r["problems"], r["problems"])
@@ -281,20 +285,6 @@ def main():
         C("seed: 12 seeds cover at least 3 types", len(types) >= 3, sorted(types))
         C("seed: 12 seeds give at least 10 different ego starts", len(starts) >= 10, len(starts))
 
-        # ── Phase 2: difficulty filter ──────────────────────────────────────
-        diffs = page.evaluate("""() => [1, 2, 3, 4].map(s => {
-            const r = ScenarioGenerator.build('lead_brake', s, { difficulty: 'schwer' });
-            return r && r.info.criticality.difficulty; })""")
-        # A seed may find no 'schwer' site at all (it returns null, and a batch
-        # falls back to another type); what must hold is that nothing else gets in.
-        C("filter: 'schwer' only builds schwer, and most seeds find one",
-          sum(d == "schwer" for d in diffs) >= 3 and all(d in ("schwer", None) for d in diffs), diffs)
-        diffs = page.evaluate("""() => [1, 2, 3, 4].map(s => {
-            const r = ScenarioGenerator.build('cut_in', s, { difficulty: 'mittel+' });
-            return r && r.info.criticality.difficulty; })""")
-        C("filter: 'mittel+' never builds leicht, and most seeds find one",
-          sum(d in ("mittel", "schwer") for d in diffs) >= 3 and all(d in ("mittel", "schwer", None) for d in diffs), diffs)
-
         # ── Phase 3: pairwise coverage plan ─────────────────────────────────
         cover = page.evaluate("""() => {
             const dims = { a: [1, 2, 3], b: ['x', 'y', 'z'], c: ['p', 'q'] };
@@ -332,9 +322,14 @@ def main():
         rows = list(csv.DictReader(io.StringIO(z.read("manifest.csv").decode())))
         C("zip: manifest has one ok row per scenario",
           len(rows) == 10 and all(r["status"] == "ok" for r in rows), len(rows))
-        C("zip: manifest records seed, type, difficulty, ttc, weather and time",
-          all(k in rows[0] for k in ("seed", "type", "difficulty", "ttc_s", "weather", "time", "town")),
-          list(rows[0])[:12])
+        C("zip: manifest records seed, type, weather and time",
+          all(k in rows[0] for k in ("seed", "type", "weather", "time", "town")), list(rows[0])[:12])
+        C("zip: manifest carries no difficulty or criticality columns",
+          not any(k in rows[0] for k in ("difficulty", "difficulty_filter", "ttc_s", "decel_mps2", "min_gap_m", "conflict_with")),
+          list(rows[0]))
+        C("zip: file names carry no difficulty",
+          not any(d in n for n in names for d in ("_leicht_", "_mittel_", "_schwer_")), names[:3])
+        C("dialog: no Schwierigkeit field", page.locator("#gen-batch-difficulty").count() == 0)
         C("zip: every .json reopens as an editor save file",
           all(json.loads(z.read(n)).get("ego") for n in names if n.endswith(".json") and not n.startswith("manifest")))
         C("zip: weather varies across the batch", len({r["weather"] for r in rows}) >= 4,

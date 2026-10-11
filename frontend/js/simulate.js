@@ -98,17 +98,28 @@
 
   // ── Controls (created dynamically) ─────────────────────────────────────────
 
+  // Two rows in a fixed-width card: transport, tempo and the two preview
+  // toggles on top (eventTimeline.js appends „Ablauf" to .sim-row-top); the
+  // scrub bar and the time underneath, so the bar gets the whole width.
+  // Play/Pause/Stop are icon-only; their state („Abspielen" / „Fortsetzen" /
+  // „Nochmal") is in the title and in the visually hidden #sim-play-text.
   const controlsHtml = `
     <div id="sim-controls" class="sim-controls hidden">
-      <button id="sim-play"  class="btn btn-small btn-primary" title="Vorschau abspielen (Leertaste)"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 1l7 4-7 4z"/></svg><span id="sim-play-text">Abspielen</span></button>
-      <button id="sim-pause" class="btn btn-small btn-secondary hidden" title="Vorschau anhalten (Leertaste)"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 1h2.2v8H2zM5.8 1H8v8H5.8z"/></svg>Pause</button>
-      <button id="sim-stop"  class="btn btn-small btn-danger sim-idle" title="Vorschau beenden und zurücksetzen (Esc)"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1.5 1.5h7v7h-7z"/></svg>Stopp</button>
-      <span class="sim-sep" aria-hidden="true"></span>
-      <label for="sim-speed" class="sim-speed-caption">Tempo</label>
-      <input  id="sim-speed" type="range" min="0.25" max="4" step="0.25" value="1" title="Abspielgeschwindigkeit">
-      <span   id="sim-speed-label" class="sim-speed-label">1×</span>
-      <span   id="sim-time-label"  class="sim-time-label" title="Simulierte Zeit">0.0 s</span>
-      <div    id="sim-progress-bar" class="sim-progress-bar" role="slider" tabindex="-1" aria-label="Zeitleiste" aria-valuemin="0" title="Klicken zum Springen — startet die Vorschau angehalten"><div id="sim-progress-fill" class="sim-progress-fill"></div></div>
+      <div class="sim-row sim-row-top">
+        <button id="sim-play"  class="btn btn-small btn-primary sim-icon-btn" title="Abspielen (Leertaste)" aria-label="Abspielen"><svg class="ic-play" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 1l7 4-7 4z"/></svg><svg class="ic-replay" viewBox="0 0 10 10" aria-hidden="true"><path d="M8.3 5.2A3.3 3.3 0 1 1 5 1.9" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M4.4 0l2.8 1.9-2.8 1.9z"/></svg><span id="sim-play-text" class="sr-only">Abspielen</span></button>
+        <button id="sim-pause" class="btn btn-small btn-secondary sim-icon-btn hidden" title="Anhalten (Leertaste)" aria-label="Pause"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 1h2.2v8H2zM5.8 1H8v8H5.8z"/></svg></button>
+        <button id="sim-stop"  class="btn btn-small btn-danger sim-icon-btn sim-idle" title="Stopp: Vorschau beenden und zurücksetzen (Esc)" aria-label="Stopp"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1.5 1.5h7v7h-7z"/></svg></button>
+        <span class="sim-sep" aria-hidden="true"></span>
+        <input  id="sim-speed" type="range" min="0.25" max="4" step="0.25" value="1" title="Tempo (Abspielgeschwindigkeit)" aria-label="Tempo">
+        <span   id="sim-speed-label" class="sim-speed-label" title="Tempo">1×</span>
+        <span class="sim-row-spacer"></span>
+        <button id="sim-ego-react" type="button" class="btn btn-small btn-secondary sim-toggle" aria-pressed="false"
+                title="Aus: das Ego reagiert nicht. Ein: es bremst für alles in seinem Fahrweg — zeigt, ob der Konflikt vermeidbar ist">Ego bremst</button>
+      </div>
+      <div class="sim-row sim-row-timeline">
+        <div    id="sim-progress-bar" class="sim-progress-bar" role="slider" tabindex="-1" aria-label="Zeitleiste" aria-valuemin="0" title="Klicken zum Springen — startet die Vorschau angehalten"><div id="sim-progress-fill" class="sim-progress-fill"></div></div>
+        <span   id="sim-time-label"  class="sim-time-label" title="Simulierte Zeit / Gesamtdauer">0.0 s</span>
+      </div>
     </div>`;
 
   // Float over the map's lower edge rather than sitting in the header: these
@@ -121,9 +132,28 @@
   const btnPlay      = document.getElementById('sim-play');
   const playText     = document.getElementById('sim-play-text');
   const btnPause     = document.getElementById('sim-pause');
+  /** The play button is icon-only: its state lives in the hidden text, the
+   * tooltip and the accessible name; „Nochmal" swaps in the replay icon. */
+  function _setPlayLabel(text) {
+    playText.textContent = text;
+    btnPlay.title = `${text} (Leertaste)`;
+    btnPlay.setAttribute('aria-label', text);
+    btnPlay.classList.toggle('replay', text === 'Nochmal');
+  }
   const btnStop      = document.getElementById('sim-stop');
   const speedSlider  = document.getElementById('sim-speed');
   const speedLabel   = document.getElementById('sim-speed-label');
+  const btnReact     = document.getElementById('sim-ego-react');
+  // Flipping it re-simulates the run: stop, then reopen at the same time,
+  // playing again if it was.
+  btnReact.addEventListener('click', () => {
+    const was = _running, paused = _paused, t = _viewTime;
+    if (was) _stopSimulation();
+    _reactiveEgo = !_reactiveEgo;
+    btnReact.setAttribute('aria-pressed', String(_reactiveEgo));
+    btnReact.classList.toggle('active', _reactiveEgo);
+    if (was) { _seek(t); if (!paused) _startSimulation(); }
+  });
   const timeLabel    = document.getElementById('sim-time-label');
   const progressFill = document.getElementById('sim-progress-fill');
   const progressBar  = document.getElementById('sim-progress-bar');
@@ -1148,8 +1178,84 @@
     else _advanceLaneFollow(sim, dt);
   }
 
+  // ── Reacting ego („Ego bremst", preview only) ──────────────────────────────
+  //
+  // Off, the preview ego never reacts ("what if the system under test does
+  // nothing"). On, it is a
+  // simple braking driver: it follows its commanded speed (what the events
+  // set) but brakes for anything in its path, at most REACT_DECEL, to stop
+  // REACT_STANDOFF_M short of it, and pulls away again at REACT_ACCEL. That
+  // shows whether a conflict is avoidable at all. CARLA's scripted ego does
+  // its own obstacle braking (consider_obstacles); this is not a model of it.
+  // The commanded speed lives in `cmdSpeed`, the driven one in `speed`, so
+  // the event logic above never sees the brake.
+  const REACT_DECEL = 8.0;          // m/s², hard but tyre-limited
+  const REACT_PLAN_DECEL = 6.0;     // m/s², what it plans a stop with
+  const REACT_ACCEL = 3.0;          // m/s², max_acceleration of the controller
+  const REACT_STANDOFF_M = 2.0;     // bumper gap it stops at
+  const REACT_LOOKAHEAD_M = 60;
+  let _reactiveEgo = false;
+  let _staticObstacles = [];        // [{x, y, len, wid}] for the run being simulated
+
+  function _footprintOf(type, prop) {
+    if (type === 'prop') {
+      const ps = window.PropCatalog?.planSize ? PropCatalog.planSize(prop) : null;
+      return { len: ps?.len || 1, wid: ps?.wid || 1 };
+    }
+    const sz = MapView.actorSize(type) || { w: 4.5, h: 2.1 };
+    return { len: sz.w, wid: sz.h || sz.w };
+  }
+
+  /** The speed the reacting ego may drive this tick: braking room to the
+   * nearest thing in its path, Infinity when the path is clear. */
+  function _egoAllowedSpeed(ego) {
+    const p = _pose(ego);
+    const rad = (ego.yaw || 0) * Math.PI / 180;
+    const cx = Math.cos(rad), cy = Math.sin(rad);
+    const me = _footprintOf('ego');
+    let gapMin = Infinity;
+    const consider = (x, y, len, wid) => {
+      const dx = x - p.x, dy = y - p.y;
+      const lon = dx * cx + dy * cy;
+      const lat = -dx * cy + dy * cx;
+      if (lon <= 0 || lon > REACT_LOOKAHEAD_M) return;
+      // Its extent across the ego's path, whatever its heading: conservative.
+      if (Math.abs(lat) > me.wid / 2 + Math.max(len, wid) / 2 + 0.3) return;
+      gapMin = Math.min(gapMin, lon - me.len / 2 - Math.min(len, wid) / 2);
+    };
+    for (const o of _simActors.values()) {
+      if (o === ego) continue;
+      const q = _pose(o);
+      const fp = _footprintOf(o.type);
+      consider(q.x, q.y, fp.len, fp.wid);
+    }
+    for (const o of _staticObstacles) consider(o.x, o.y, o.len, o.wid);
+    if (!Number.isFinite(gapMin)) return Infinity;
+    return Math.sqrt(Math.max(0, 2 * REACT_PLAN_DECEL * (gapMin - REACT_STANDOFF_M)));
+  }
+
+  function _reactEgo(sim, dt) {
+    const cmd = sim.speed;
+    sim.cmdSpeed = cmd;
+    const want = Math.min(cmd, _egoAllowedSpeed(sim));
+    const cur = sim.driven ?? cmd;
+    const next = want < cur ? Math.max(want, cur - REACT_DECEL * dt) : Math.min(want, cur + REACT_ACCEL * dt);
+    sim.driven = Math.max(0, next);
+    sim.speed = sim.driven;
+    const braking = sim.driven < cmd - 0.3;
+    if (braking && !sim.reactBadge) {
+      sim.reactBadge = true;
+      sim.badge = { icon: '⏹', text: 'Ego bremst — Hindernis im Fahrweg' };
+    } else if (!braking && sim.reactBadge) {
+      sim.reactBadge = false;
+      if (sim.badge && sim.badge.text.startsWith('Ego bremst')) sim.badge = null;
+    }
+  }
+
   function _stepActor(sim, dt, egoPrevPos, simTime) {
     if (sim.frozen) return;
+    // The reacting ego's events act on the COMMANDED speed, never on the brake.
+    if (_reactiveEgo && sim.isEgo && sim.cmdSpeed != null) sim.speed = sim.cmdSpeed;
 
     if (sim.hasNoEvents) {
       // events: [] — no Act is emitted for this actor at all, so the Init
@@ -1207,6 +1313,7 @@
       }
     }
 
+    if (_reactiveEgo && sim.isEgo) _reactEgo(sim, dt);
     _advancePosition(sim, dt);
   }
 
@@ -1370,6 +1477,7 @@
       _originals.set(actor.id, { x: actor.x, y: actor.y, z: actor.z, yaw: actor.yaw });
       _simActors.set(actor.id, _makeSimActor(actor, actor.id === _egoId));
     }
+    _staticObstacles = (AppState.staticObjects || []).map(o => ({ x: o.x, y: o.y, ..._footprintOf('prop', o.prop) }));
     _snapshotSpeeds(); // so an event firing on the very first tick reads real
                        // init speeds rather than an empty map
     _ensureBadgeLayer();
@@ -1495,7 +1603,7 @@
     _animId = null;
 
     btnPlay.classList.remove('hidden');
-    playText.textContent = _viewTime >= _timelineEnd - 1e-6 ? 'Nochmal' : 'Fortsetzen';
+    _setPlayLabel(_viewTime >= _timelineEnd - 1e-6 ? 'Nochmal' : 'Fortsetzen');
     btnPause.classList.add('hidden');
   }
 
@@ -1507,7 +1615,7 @@
       _pauseSimulation();
     }
     _showTime(t);
-    if (_paused) playText.textContent = _viewTime >= _timelineEnd - 1e-6 ? 'Nochmal' : 'Fortsetzen';
+    if (_paused) _setPlayLabel(_viewTime >= _timelineEnd - 1e-6 ? 'Nochmal' : 'Fortsetzen');
   }
 
   function _stopSimulation() {
@@ -1536,7 +1644,7 @@
 
     document.body.classList.remove('simulating');
     btnPlay.classList.remove('hidden');
-    playText.textContent = 'Abspielen';
+    _setPlayLabel('Abspielen');
     btnPause.classList.add('hidden');
     btnStop.classList.add('sim-idle');
     timeLabel.textContent = '0.0 s';
@@ -1739,7 +1847,8 @@
    * or null while a live preview is running (the two share this module's
    * tick state). scenarioGenerator.js measures conflicts off the tracks.
    */
-  function runHeadless({ dt = 0.05, maxTime = 40, ego = AppState.ego, npcs = AppState.npcs } = {}) {
+  function runHeadless({ dt = 0.05, maxTime = 40, ego = AppState.ego, npcs = AppState.npcs,
+                         reactiveEgo = false, props = [] } = {}) {
     // `ego`/`npcs` default to the editor's scenario; the generator passes a
     // candidate it has not loaded, so it can score one before committing it.
     // _makeSimActor reads only the actor it is given, and cross-actor lookups
@@ -1748,6 +1857,11 @@
     const actors = [ego, ...npcs].filter(Boolean);
     if (!actors.length) return null;
     const savedTime = _simTime;
+    // Scoring wants the ego that does nothing, whatever the preview's switch says.
+    const savedReact = _reactiveEgo;
+    _reactiveEgo = !!reactiveEgo;
+    const savedStatic = _staticObstacles;
+    _staticObstacles = (props || []).map(o => ({ x: o.x, y: o.y, ..._footprintOf('prop', o.prop) }));
     _simActors.clear();
     _tickSpeeds.clear();
     _tickCompleted.clear();
@@ -1783,13 +1897,18 @@
         if (still > 10 && _simTime > DISTANCE_TO_EGO_FALLBACK_S) { ended = 'stopped'; break; }
       }
       const fired = {};
+      const completed = {};  // actorId -> eventId -> completedAt (absent while still running)
       const frozen = {};   // actorId -> the badge it froze with (lane ran out, no successor, …)
       for (const sim of _simActors.values()) {
         fired[sim.id] = {};
-        for (const [eventId, rec] of sim.fired) fired[sim.id][eventId] = r3(rec.firedAt);
+        completed[sim.id] = {};
+        for (const [eventId, rec] of sim.fired) {
+          fired[sim.id][eventId] = r3(rec.firedAt);
+          if (rec.completedAt != null) completed[sim.id][eventId] = r3(rec.completedAt);
+        }
         if (sim.frozen) frozen[sim.id] = sim.badge ? sim.badge.text : 'frozen';
       }
-      return { egoId: _egoId, dt, times, tracks, fired, frozen, frozenAt, ended };
+      return { egoId: _egoId, dt, times, tracks, fired, completed, frozen, frozenAt, ended };
     } finally {
       _simActors.clear();
       _tickSpeeds.clear();
@@ -1797,6 +1916,8 @@
       _tickStarted.clear();
       _egoId = null;
       _simTime = savedTime;
+      _reactiveEgo = savedReact;
+      _staticObstacles = savedStatic;
     }
   }
 
@@ -1808,6 +1929,10 @@
     // runHeadless refuses to run beside it, and the preview's Stop would then
     // try to put back poses on actors that no longer exist.
     get running() { return _running; },
+    get reactiveEgo() { return _reactiveEgo; },
+    // Jump the preview to time t (starting it paused if none runs) — the
+    // event timeline's block click (eventTimeline.js).
+    seek(t) { _seek(t); },
     stop() { if (_running) _stopSimulation(); },
     // routeForTesting exists purely for tests/test_route_fidelity_e2e.py: it
     // returns the route without running the animation. Asserting on the route

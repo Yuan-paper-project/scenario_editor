@@ -179,6 +179,18 @@
       });
       eventActionGrid.appendChild(select);
     }
+    // The reverse: this actor's chain as a reusable template (templates.js,
+    // „Eigene Vorlagen"), positions kept relative to the actor.
+    if (window.ScenarioTemplates && actor.type !== 'ego' && actor.type !== 'prop' && (actor.events || []).length) {
+      const save = document.createElement('button');
+      save.type = 'button';
+      save.className = 'btn btn-small btn-secondary event-template-save';
+      save.textContent = 'Als Vorlage speichern';
+      save.title = 'Diese Events als eigene Vorlage speichern — Positionen relativ zum Akteur, '
+        + 'wiederverwendbar auf jeder Karte (Tab Templates → Eigene Vorlagen)';
+      save.addEventListener('click', () => ScenarioTemplates.saveFromActor(AppState.findById(actor.id) || actor));
+      eventActionGrid.appendChild(save);
+    }
   }
 
   function _renderEventList(actor) {

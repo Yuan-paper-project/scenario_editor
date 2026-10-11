@@ -98,6 +98,50 @@ button, input, select, textarea { font-family: inherit; }
   font-size: 11px; color: var(--text-dim);
 }
 .gen-seed-row input { width: 100%; min-width: 0; font-size: 11px; padding: 3px 6px; }
+.gen-pick-row {
+  display: flex; align-items: center; gap: 6px; padding: 6px 8px 2px; margin-top: 4px;
+  border-top: 1px solid var(--border); font-size: 11px; color: var(--text-dim); cursor: pointer;
+}
+.gen-pick-row:hover { color: var(--text); }
+
+/* Recipe panel (Übersicht → Generiert): label | control | unit | unpin. */
+.gen-recipe-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 12px; margin: 4px 0 6px; }
+.gen-recipe-head span { font-size: 11px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.gen-recipe-warn {
+  font-size: 11px; color: #8a5b00; background: #fff3d6; border: 1px solid #e0b44a;
+  border-radius: 5px; padding: 4px 6px; margin-bottom: 6px;
+}
+.gen-recipe-grid { display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content 18px; gap: 4px 6px; align-items: center; }
+.gen-recipe-row { display: contents; }
+.gen-recipe-label { font-size: 11px; color: var(--text-dim); }
+.gen-recipe-row.pinned .gen-recipe-label { color: var(--text); font-weight: 600; }
+.gen-recipe-row.pinned .gen-recipe-label::before { content: '● '; color: var(--accent); font-size: 8px; vertical-align: middle; }
+.gen-recipe-grid input[type="number"], .gen-recipe-grid select { width: 100%; min-width: 0; font-size: 11px; padding: 2px 4px; }
+.gen-recipe-grid input[type="checkbox"] { justify-self: start; }
+.gen-recipe-row.unmet .gen-recipe-label { color: #a33a0b; }
+.gen-recipe-unit { font-size: 10px; color: var(--text-dim); white-space: nowrap; }
+.gen-recipe-unpin {
+  width: 18px; height: 18px; padding: 0; border: none; border-radius: 4px; background: transparent;
+  color: var(--text-dim); cursor: pointer; font-size: 13px; line-height: 1;
+}
+.gen-recipe-unpin:hover { color: var(--danger); background: var(--panel2); }
+.gen-recipe-actions { display: flex; justify-content: flex-end; margin-top: 8px; }
+/* „Eigene Vorlagen" rows in the Templates tab: name | place | delete. */
+.user-template-row { display: grid; grid-template-columns: minmax(0, 1fr) max-content 22px; gap: 4px; align-items: center; margin-bottom: 4px; }
+.user-template-name { width: 100%; min-width: 0; font-size: 11px; padding: 3px 5px; }
+.user-template-place { padding: 3px 8px; }
+.user-template-del { width: 22px; height: 22px; padding: 0; border: none; background: transparent; color: var(--text-dim); cursor: pointer; border-radius: 4px; }
+.user-template-del:hover { color: var(--danger); background: var(--panel2); }
+.user-template-io { display: flex; gap: 6px; justify-content: flex-end; margin-top: 6px; }
+.user-template-io label { cursor: pointer; }
+.event-template-save { grid-column: 1 / -1; margin-top: 4px; }
+.gen-sweep { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 6px; }
+.gen-sweep summary { font-size: 11px; font-weight: 600; cursor: pointer; color: var(--text); }
+.gen-sweep-grid { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 6px; align-items: center; margin-top: 6px; font-size: 11px; }
+.gen-sweep-grid label { color: var(--text-dim); }
+.gen-sweep-grid input, .gen-sweep-grid select { width: 100%; min-width: 0; font-size: 11px; padding: 2px 4px; }
+.gen-sweep-all { grid-column: 1 / -1; font-size: 11px; color: var(--text-dim); }
+.gen-sweep-weather { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-dim); margin-top: 6px; }
 
 /* ── Layer menu extras ──────────────────────────────────────── */
 #layer-toggles { margin-left: 8px; }
@@ -404,10 +448,10 @@ label.btn { line-height: normal; }
    wrapper is click-through so it never eats a map click; each child opts back
    in. Children are stacked, so either can be hidden without the other moving. */
 /* Centred in the strip to the RIGHT of the scale ruler, not on the map's 50%:
-   the preview bar is ~690 px wide and used to slide over the ruler. 272 px =
+   the preview bar (560 px) used to slide over the ruler when it was ~690. 272 px =
    the ruler's 16 px inset + its widest pill (a bar ≤ ~170 px, mapView.js
    _NICE_DISTS, plus label and padding) + a gap. On a map too narrow for the
-   bar, .sim-controls wraps onto two rows instead of overlapping. */
+   bar, .sim-controls shrinks (max-width) and the timeline takes the loss. */
 .map-bottom-stack {
   position: absolute; bottom: 12px; left: 272px; right: 12px;
   display: flex; flex-direction: column; align-items: center; gap: 8px;
@@ -1287,29 +1331,35 @@ button.scene-section-head:hover { color: var(--text); }
 .undo-toast .btn { padding: 3px 10px; font-size: 11px; }
 
 /* ── Simulation controls ─────────────────────────────────── */
+/* Two rows in a FIXED-width card (simulate.js): transport, tempo + toggles
+   on top, scrub bar + time below. Nothing in it may change width when a
+   preview starts or its state changes — the timeline would move out from
+   under a cursor about to scrub it. So the card has a width, the play/pause
+   icons share one slot, Stop keeps its slot while idle (visibility, not
+   display) and the toggles and time label are fixed width. */
 .sim-controls {
-  display: flex; align-items: center; gap: 8px;
-  flex-wrap: wrap; justify-content: center; max-width: 100%; row-gap: 6px;
+  display: flex; flex-direction: column; gap: 6px;
+  width: 560px; max-width: 100%; box-sizing: border-box;
   background: var(--panel); border: 1px solid var(--border);
-  border-radius: 8px; padding: 6px 12px;
+  border-radius: 8px; padding: 6px 10px;
   box-shadow: 0 4px 14px rgba(26, 30, 46, .18);
 }
+.sim-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.sim-row-spacer { flex: 1; }
 .sim-speed-label {
   font-size: 10px; color: var(--accent); font-weight: 700;
-  min-width: 32px; text-align: center;
+  min-width: 28px; text-align: left;
 }
 .sim-time-label {
   font-size: 10px; color: var(--text-dim); font-weight: 600;
-  min-width: 36px; text-align: right; font-variant-numeric: tabular-nums;
+  min-width: 84px; text-align: right; font-variant-numeric: tabular-nums;   /* fits "60.0 s / 60.0 s" */
 }
-.sim-controls input[type="range"] {
-  width: 60px; height: 3px;
-}
+.sim-controls input[type="range"] { width: 56px; height: 3px; flex: none; }
 .sim-progress-bar {
   /* The scrubbable timeline. The visible track is 4 px, but the element is
      16 px tall so it is a reasonable target to grab; the track is drawn by the
      ::before pseudo-element and the fill sits on top of it. */
-  position: relative; flex: 1 0 220px; height: 16px;   /* grows to fill its row when the bar wraps */
+  position: relative; flex: 1 1 auto; min-width: 0; height: 16px;
   cursor: pointer; touch-action: none;
 }
 .sim-progress-bar::before {
@@ -1323,15 +1373,12 @@ button.scene-section-head:hover { color: var(--text); }
 }
 .sim-marker:hover { background: #ff8c00; width: 4px; margin-left: -2px; }
 .sim-controls .btn { display: inline-flex; align-items: center; gap: 5px; }
-/* Nothing in the bar may change width when a preview starts or its state
-   changes: the timeline sits to the right of these, and a shift moved it out
-   from under a cursor that was about to scrub it. Stop keeps its slot while
-   idle (visibility, not display), and Play/Pause share one width whatever
-   their label says (Abspielen / Fortsetzen / Nochmal / Pause). */
-#sim-play, #sim-pause { min-width: 98px; justify-content: center; }
-#sim-stop.sim-idle { visibility: hidden; }
+.sim-icon-btn { width: 30px; height: 24px; padding: 0; justify-content: center; flex: none; }
 .sim-controls .btn svg { width: 10px; height: 10px; fill: currentColor; }
-.sim-speed-caption { font-size: 10px; color: var(--text-dim); }
+#sim-play .ic-replay { display: none; }
+#sim-play.replay .ic-play { display: none; }
+#sim-play.replay .ic-replay { display: inline; }
+#sim-stop.sim-idle { visibility: hidden; }
 .sim-sep { width: 1px; align-self: stretch; background: var(--border); }
 .sim-progress-fill {
   position: absolute; left: 0; top: 6px; height: 4px;
@@ -1345,7 +1392,41 @@ button.scene-section-head:hover { color: var(--text); }
   margin-top: -5px; border-radius: 50%; background: var(--accent);
   box-shadow: 0 0 0 2px var(--panel);
 }
-.sim-time-label { min-width: 92px; }   /* fits "60.0 s / 60.0 s" — no shift */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* „Ablauf" (eventTimeline.js): one row per actor above the preview bar. */
+.sim-lanes {
+  position: relative; max-width: 100%; max-height: 40vh; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  padding: 6px 10px; box-shadow: 0 4px 14px rgba(26, 30, 46, .18); font-size: 10px;
+}
+.sim-lanes-empty { color: var(--text-dim); padding: 4px; }
+.sim-lane-row { display: grid; grid-template-columns: 64px minmax(0, 1fr) 34px; align-items: center; gap: 6px; min-height: 20px; }
+.sim-lane-axis { min-height: 14px; color: var(--text-dim); }
+.sim-lane-label {
+  font: inherit; font-weight: 700; text-align: left; border: none; background: transparent;
+  color: var(--text); cursor: pointer; padding: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sim-lane-label:hover { color: var(--accent); }
+.sim-lane-track { position: relative; height: 18px; border-bottom: 1px dashed var(--border); }
+.sim-lane-axis .sim-lane-track { border-bottom: none; height: 12px; }
+.sim-lane-tick { position: absolute; top: 0; transform: translateX(-50%); font-size: 9px; font-variant-numeric: tabular-nums; }
+.sim-lane-block {
+  position: absolute; top: 2px; height: 14px; border-radius: 3px; overflow: hidden;
+  background: #cfe0f5; border: 1px solid #6b93c8; color: #1c3d66; cursor: pointer; box-sizing: border-box;
+}
+.sim-lane-block.open { border-right-style: dashed; background: linear-gradient(90deg, #cfe0f5 70%, rgba(207,224,245,.2)); }
+.sim-lane-block span { padding: 0 3px; white-space: nowrap; line-height: 12px; pointer-events: none; }
+.sim-lane-never { color: #a33a0b; font-weight: 600; white-space: nowrap; }
+.sim-lane-links { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
+.sim-lane-links path { fill: none; stroke: var(--accent); stroke-width: 1.2; stroke-dasharray: 3 2; }
+
+/* Fixed width, like Play/Pause: the bar must not change width (timeline). */
+.sim-toggle { width: 88px; justify-content: center; white-space: nowrap; flex: none; }
+.sim-toggle.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
 /* During simulation, dim editing UI to hint it is disabled */
 body.simulating #toolbar { opacity: 0.4; pointer-events: none; }
