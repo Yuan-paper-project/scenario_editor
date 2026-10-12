@@ -1521,7 +1521,17 @@
 
   function _fmtTime(t) { return `${t.toFixed(1)} s`; }
 
+  // Listeners on the preview's time (eventTimeline.js's playhead): called with
+  // the view time on every frame shown, and with null when the preview stops.
+  const _timeListeners = [];
+  function _emitTime(t) {
+    for (const fn of _timeListeners) {
+      try { fn(t); } catch (err) { console.warn('[simulate] time listener', err); }
+    }
+  }
+
   function _renderTimelineHead() {
+    _emitTime(_viewTime);
     timeLabel.textContent = `${_fmtTime(_viewTime)} / ${_fmtTime(_timelineEnd)}`;
     const pct = _timelineEnd > 0 ? (_viewTime / _timelineEnd) * 100 : 0;
     progressFill.style.width = `${Math.min(100, pct)}%`;
@@ -1649,6 +1659,7 @@
     btnStop.classList.add('sim-idle');
     timeLabel.textContent = '0.0 s';
     progressFill.style.width = '0%';
+    _emitTime(null);
 
     // After the originals are back, so the restore is not recorded either.
     if (wasRunning) UndoStack.resume();
@@ -1934,6 +1945,13 @@
     // event timeline's block click (eventTimeline.js).
     seek(t) { _seek(t); },
     stop() { if (_running) _stopSimulation(); },
+    pause() { _pauseSimulation(); },
+    play() { _startSimulation(); },
+    get paused() { return _paused; },
+    get time() { return _running ? _viewTime : null; },
+    get end() { return _running ? _timelineEnd : null; },
+    /** fn(t) on every shown frame, fn(null) on Stop. */
+    onTime(fn) { _timeListeners.push(fn); },
     // routeForTesting exists purely for tests/test_route_fidelity_e2e.py: it
     // returns the route without running the animation. Asserting on the route
     // directly is deterministic, whereas sampling a moving actor can only ever

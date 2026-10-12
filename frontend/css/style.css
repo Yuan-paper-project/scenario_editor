@@ -1423,6 +1423,18 @@ button.scene-section-head:hover { color: var(--text); }
 .sim-lane-never { color: #a33a0b; font-weight: 600; white-space: nowrap; }
 .sim-lane-links { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
 .sim-lane-links path { fill: none; stroke: var(--accent); stroke-width: 1.2; stroke-dasharray: 3 2; }
+/* The preview's current time. A 9 px grab strip with a 2 px line drawn in it. */
+.sim-lane-playhead {
+  position: absolute; top: 0; width: 9px; margin-left: -4px; cursor: ew-resize; z-index: 2;
+  background: linear-gradient(90deg, transparent 3.5px, #d0342c 3.5px, #d0342c 5.5px, transparent 5.5px);
+}
+.sim-lane-playhead::before {   /* handle on the axis row */
+  content: ''; position: absolute; top: 0; left: 0; width: 9px; height: 9px;
+  background: #d0342c; clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+.sim-lane-playhead.idle { opacity: .45; }
+.sim-lane-axis { cursor: ew-resize; }
+.sim-lanes.scrubbing { cursor: ew-resize; user-select: none; }
 
 /* Fixed width, like Play/Pause: the bar must not change width (timeline). */
 .sim-toggle { width: 88px; justify-content: center; white-space: nowrap; flex: none; }
@@ -1431,12 +1443,46 @@ button.scene-section-head:hover { color: var(--text); }
 /* During simulation, dim editing UI to hint it is disabled */
 body.simulating #toolbar { opacity: 0.4; pointer-events: none; }
 body.simulating #btn-save,
+body.simulating #btn-new-scenario,
 body.simulating #btn-load-label,
 body.simulating #btn-export,
 body.simulating #btn-export-route,
 body.simulating .history-btns,
 body.simulating #btn-import-map-label { opacity: 0.4; pointer-events: none; }
-body.simulating #properties-panel { opacity: 0.5; pointer-events: none; }
+/* The properties panel stays at full opacity and scrolls during a preview —
+   it is how you read what an actor is doing — but is view-only: every
+   descendant ignores the pointer, except the two scroll containers, so the
+   wheel still scrolls them. Keyboard entry is blocked in properties.js. The
+   cue is the sticky banner plus an accent frame, not a fade. */
+.preview-lock-banner { display: none; }
+body.simulating #properties-panel {
+  box-shadow: inset 0 0 0 2px var(--accent); position: relative;
+}
+body.simulating #properties-panel * { pointer-events: none; }
+body.simulating #properties-panel .waypoint-list { pointer-events: auto; }
+body.simulating #properties-panel :is(input, select, textarea, button) { cursor: not-allowed; }
+body.simulating .preview-lock-banner {
+  display: flex; align-items: center; gap: 6px;
+  position: sticky; top: -10px; z-index: 5; margin: -10px -10px 8px; padding: 7px 10px;
+  background: var(--accent); color: #fff; font-size: 11px; font-weight: 600;
+}
+.preview-lock-banner svg { width: 13px; height: 13px; flex: none; }
+.preview-lock-banner kbd {
+  font: inherit; padding: 0 4px; border-radius: 3px; background: rgba(255,255,255,.22);
+}
+/* The card the „Ablauf" timeline points at (EventPanel.highlight). Static —
+   the panel re-renders every preview frame, so an animation would restart on
+   each one. Red like the timeline's playhead. */
+.event-card.timeline-focus {
+  outline: 2px solid #d0342c; outline-offset: 1px; background: #fdf1f0;
+}
+/* Nothing on the map is draggable in a preview: no rotate handle, and a
+   marker offers selection (pointer) rather than a move. */
+body.simulating #map-svg .yaw-arrow { display: none; }
+body.simulating #map-svg .actor-group,
+body.simulating #map-svg .path-waypoint,
+body.simulating #map-svg .trigger-point-control,
+body.simulating #map-svg .trigger-radius-control { cursor: pointer; }
 
 /* ── Karten-Import Drag-and-drop Overlay ─────────────────── */
 .map-drop-overlay {

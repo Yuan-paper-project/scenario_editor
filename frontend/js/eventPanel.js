@@ -91,6 +91,46 @@
     _renderEventList(actor);
   }
 
+  /* The card the „Ablauf" timeline last pointed at ({actorId, eventId,
+   * scroll}). Module state because the panel re-renders on every preview
+   * frame: the mark has to be re-applied by each render, and the scroll done
+   * only once. A collapsed card shows expanded while marked — view only, its
+   * stored `collapsed` is untouched. eventTimeline.js clears it on Stop. */
+  let _highlight = null;
+
+  function highlight(actorId, eventId) {
+    const had = !!_highlight;
+    _highlight = actorId && eventId ? { actorId, eventId, scroll: true } : null;
+    if (had && !_highlight) _refresh();   // clearing: take the mark off now
+  }
+
+  function _isHighlighted(actor, ev) {
+    return !!_highlight && _highlight.actorId === actor.id && _highlight.eventId === ev.id;
+  }
+
+  /** After a render: bring the marked card into view, once. */
+  function _scrollToHighlight() {
+    if (!_highlight?.scroll) return;
+    const card = eventList.querySelector('.event-card.timeline-focus');
+    if (!card) return;
+    _highlight.scroll = false;
+    // The events section may be folded; the card would be invisible.
+    const section = card.closest('.collapsible-section');
+    if (section?.classList.contains('collapsed')) {
+      section.classList.remove('collapsed');
+      const header = section.querySelector('.collapsible-header');
+      header?.setAttribute('aria-expanded', 'true');
+      const ind = header?.querySelector('.collapse-indicator');
+      if (ind) ind.textContent = '-';
+    }
+    // Not smooth: the panel re-renders every preview frame, and a smooth scroll
+    // would be fighting those rebuilds.
+    requestAnimationFrame(() => {
+      eventList.querySelector('.event-card.timeline-focus')?.scrollIntoView({ block: 'center' });
+    });
+  }
+
+
   function setRefreshHandler(handler) {
     _refresh = typeof handler === 'function' ? handler : () => {};
   }
@@ -235,11 +275,14 @@
       const displayName = _eventDisplayName(ev, i);
       const triggerSummary = _eventTriggerSummary(ev, events, actor);
       const card = document.createElement('div');
-      const isCollapsed = !!ev.collapsed;
+      const isHighlighted = _isHighlighted(actor, ev);
+      const isCollapsed = !!ev.collapsed && !isHighlighted;
       const isDrawing = drawingEventId === ev.id;
       const problem = problems.get(ev.id) || null;
       card.className = `event-card${isCollapsed ? ' collapsed' : ''}` +
-        `${isDrawing ? ' active-draw' : ''}${problem ? ' has-problem' : ''}`;
+        `${isDrawing ? ' active-draw' : ''}${problem ? ' has-problem' : ''}` +
+        `${isHighlighted ? ' timeline-focus' : ''}`;
+      card.dataset.eventId = ev.id;
 
       const header = document.createElement('div');
       header.className = 'event-card-header';
@@ -306,6 +349,7 @@
         _appendLaneOffsetControls(card, actor, ev, action);
       } else {
         _appendEventPathControls(card, actor, ev);
+        if (actionType === 'follow_trajectory') _appendTrajectorySpeedRow(card, actor, ev);
         const pathList = document.createElement('div');
         pathList.className = 'event-waypoint-list waypoint-list';
         _renderPathList(actor, actionType === 'assign_route' ? 'route' : 'trajectory', pathList, ev);
@@ -316,6 +360,7 @@
     });
 
     syncWaypointSelection();
+    _scrollToHighlight();
   }
 
   /**
@@ -670,7 +715,7 @@
     const partial = n => `unvollständig (${n} Wegpunkt${n === 1 ? '' : 'e'})`;
     const actionLabels = {
       follow_trajectory: trajectoryPoints >= 2
-        ? `Pfad gezeichnet${trajectoryVisible ? '' : ', ausgeblendet'}`
+        ? `Pfad gezeichnet, ${UIUtils.fmt(_trajectorySpeed(action.trajectory))} m/s${trajectoryVisible ? '' : ', ausgeblendet'}`
         : trajectoryPoints > 0 ? `Pfad ${partial(trajectoryPoints)}` : 'Pfad nicht gezeichnet',
       assign_route: routePoints >= 2
         ? `Route gezeichnet${routeVisible ? '' : ', ausgeblendet'}`
@@ -1217,8 +1262,8 @@
         MapView.focusWaypoint(sel);
       };
       item.addEventListener('click', e => {
-        // The row's own controls keep their clicks: the delete button and the
-        // velocity field both sit inside it.
+        // The row's own controls keep their clicks: the delete and strategy
+        // buttons sit inside it.
         if (e.target.closest('button, input')) return;
         locate();
       });
@@ -1287,28 +1332,6 @@
         });
         item.appendChild(stratBtn);
       }
-      if (!isRoute) {
-        const velInput = document.createElement('input');
-        velInput.type = 'number';
-        velInput.min = '0';
-        velInput.max = '50';
-        velInput.step = '0.5';
-        velInput.value = UIUtils.fmt(wp.velocity || 10);
-        velInput.title = 'Geschwindigkeit (m/s)';
-        velInput.setAttribute('aria-label', `Geschwindigkeit an Wegpunkt ${i + 1} (m/s)`);
-        velInput.dataset.idx = i;
-        velInput.addEventListener('change', e => {
-          ObjectsManager.setPathPointVelocity(actor.id, type, i, e.target.value, eventId);
-        });
-
-        const msSuffix = document.createElement('span');
-        msSuffix.style.cssText = 'color:var(--text-dim);font-size:11px;';
-        msSuffix.textContent = 'm/s';
-
-        item.appendChild(velInput);
-        item.appendChild(msSuffix);
-      }
-
       item.appendChild(delBtn);
       target.appendChild(item);
     });
@@ -1339,6 +1362,46 @@
     });
     if (marked && key !== _lastMarkKey) marked.scrollIntoView({ block: 'nearest' });
     _lastMarkKey = key;
+  }
+
+  /**
+   * The speed a trajectory is driven at — what CARLA actually does with it.
+   * The emitter turns per-vertex velocities into relativeTime and
+   * ScenarioRunner collapses those back into ONE speed (length ÷ time), so a
+   * per-vertex field promised something nothing executes. The value is still
+   * stored on every vertex (all equal), which keeps the export payload and the
+   * emitter unchanged; a legacy file with differing values shows the
+   * effective average, the same number Simulate._avgTrajectorySpeed drives.
+   */
+  function _trajectorySpeed(points) {
+    let dist = 0, time = 0;
+    for (let i = 1; i < points.length; i++) {
+      const d = Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+      const v = ((points[i - 1].velocity ?? 10) + (points[i].velocity ?? 10)) / 2 || 1;
+      dist += d;
+      time += d / v;
+    }
+    if (time > 0) return dist / time;
+    return points[0]?.velocity ?? 10;
+  }
+
+  function _appendTrajectorySpeedRow(card, actor, ev) {
+    const points = _eventAction(ev).trajectory || [];
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.className = 'trajectory-speed-input';
+    input.min = '0';
+    input.max = '50';
+    input.step = '0.5';
+    input.value = UIUtils.fmt(_trajectorySpeed(points));
+    input.disabled = points.length === 0;
+    input.title = points.length
+      ? 'Geschwindigkeit entlang des ganzen Pfads (CARLA fährt eine Trajektorie mit einer einzigen Geschwindigkeit)'
+      : 'Erst einen Pfad zeichnen';
+    input.addEventListener('change', e => {
+      ObjectsManager.setPathVelocity(actor.id, e.target.value, ev.id);
+    });
+    card.appendChild(UIUtils.paramRow('Geschw.', input, 'm/s'));
   }
 
   function _appendEventPathControls(card, actor, ev) {
@@ -1629,5 +1692,8 @@
     // The card title ('Geschw. setzen 2'), so simulate.js's timeline markers
     // name an event the way its card does.
     displayName: _eventDisplayName,
+    // Mark an event's card (eventTimeline.js block click) — the panel's next
+    // render shows it expanded and scrolls it into view.
+    highlight,
   };
 })();

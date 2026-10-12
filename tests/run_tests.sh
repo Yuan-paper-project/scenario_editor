@@ -60,7 +60,8 @@ for t in tests/test_props_e2e.py tests/test_prop_yaw_e2e.py \
          tests/test_waypoints_e2e.py tests/test_generator_e2e.py \
          tests/test_preview_timeline_e2e.py tests/test_generate_here_e2e.py \
          tests/test_recipe_e2e.py \
-         tests/test_user_templates_e2e.py tests/test_event_timeline_e2e.py; do
+         tests/test_user_templates_e2e.py tests/test_event_timeline_e2e.py \
+         tests/test_preview_lock_e2e.py; do
     echo "════ $t"
     EDITOR_URL="$URL" "$PY" "$t" || status=1
     echo

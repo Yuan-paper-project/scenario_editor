@@ -121,27 +121,54 @@
 
   mapSelect.addEventListener('change', async () => {
     const town = mapSelect.value;
-    if (!town) return;
+    // The batch generator swaps maps under a scenario it saved and puts back
+    // itself (scenarioGenerator.js _loadMap) — that switch must not park it.
+    const keepScenario = mapSelect.dataset.keepScenario === '1';
+    delete mapSelect.dataset.keepScenario;
+    if (!town) { mapSelect.value = AppState.map || ''; return; }
+    const switching = !keepScenario && town !== AppState.map;
 
     mapStatus.textContent = `Lade ${town}…`;
     try {
       const mapData = await Api.getMapRender(town);
       const laneGraph = await _fetchLaneGraph(town);
+      // Each town keeps its own scenario (UIUtils.leaveMap / enterMap): the
+      // one being left is parked, the one arrived at comes back or is empty.
+      if (switching) UIUtils.leaveMap();
       AppState.set({ map: town, mapData, laneGraph });
+      const restored = switching && UIUtils.enterMap(town);
       MapView.renderMap(mapData);
       MapView.renderAllActors();
       mapStatus.textContent = `${mapData.roads.length} Straßen`;
+      if (restored) Toast.info(`Szenario auf ${town} wiederhergestellt`);
     } catch (e) {
       mapStatus.textContent = 'Karte konnte nicht geladen werden';
+      mapSelect.value = AppState.map || '';
       console.error(e);
     }
   });
 
-  // Restore map selector when state is loaded
+  // Mark the towns that hold a parked scenario in the selector: „Town03 ●".
+  const PARKED_MARK = ' ●';
+  function _markParkedTowns() {
+    const parked = new Set(UIUtils.parkedTowns());
+    for (const opt of mapSelect.options) {
+      if (!opt.value) continue;
+      const base = opt.textContent.replace(/ ●$/, '');
+      opt.textContent = parked.has(opt.value) ? base + PARKED_MARK : base;
+      opt.title = parked.has(opt.value) ? 'Auf dieser Karte liegt ein Szenario — Wechsel holt es zurück' : '';
+    }
+  }
+  AppState.on('mapScenariosChanged', _markParkedTowns);
+
+  // Restore map selector when state is loaded. The geometry is re-fetched when
+  // the file is for another town than the one on screen — it used to be
+  // fetched only when none was loaded, so a Town05 file opened over Town03
+  // drew its actors on Town03's roads.
   AppState.on('stateLoaded', async data => {
     if (data.map) {
       mapSelect.value = data.map;
-      if (!AppState.mapData) {
+      if (!AppState.mapData || AppState.mapData.town !== data.map) {
         mapStatus.textContent = `Lade ${data.map}…`;
         try {
           const mapData = await Api.getMapRender(data.map);
@@ -155,6 +182,19 @@
         }
       }
     }
+  });
+
+  // ── Datei → Neues Szenario ─────────────────────────────────────────────────
+  // Strg/Cmd skips the confirm, as on every other delete in the app. Undoable.
+  document.getElementById('btn-new-scenario')?.addEventListener('click', async e => {
+    if (!AppState.hasScenarioContent) { Toast.info('Das Szenario ist bereits leer'); return; }
+    const skip = e.ctrlKey || e.metaKey;
+    if (!skip && !(await Confirm.show(
+      `Alles auf ${AppState.map || 'dieser Karte'} entfernen? Ego, NPCs, Requisiten und `
+      + 'Ampelschaltungen werden gelöscht (Strg+Z holt sie zurück).', 'Alles entfernen'))) return;
+    window.Simulate?.stop();
+    AppState.clearScenario();
+    Toast.success('Szenario geleert');
   });
 
   // Initialise map list on page load

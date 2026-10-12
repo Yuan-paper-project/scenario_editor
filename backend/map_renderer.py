@@ -959,6 +959,11 @@ def _process_root_to_render_data(root: ET.Element, town_name: str, xodr_path: Pa
 
                 poly  = _build_lane_polygon_dynamic(sec_samples, ld, lane_defs, s_start, offsets, geom_segs)
                 color = LANE_COLORS.get(ld['type'], DEFAULT_LANE_COLOR)
+                # Junction connectors carry the kerb-side parking lane across
+                # the box (Town03: 25 roads, Town05: 8, Town07: 2). Nobody
+                # parks in a junction, so paint it as carriageway, not blue.
+                if is_junction and ld['type'] == 'parking':
+                    color = LANE_COLORS['driving']
 
                 lane_entry = {
                     'laneId': ld['id'],

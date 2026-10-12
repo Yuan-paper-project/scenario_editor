@@ -193,6 +193,8 @@
     try {
       const text = await file.text();
       const data = JSON.parse(text);
+      // Another town's file: park this town's scenario first (UIUtils.leaveMap).
+      UIUtils.beforeLoadFile(data.map);
       AppState.loadJSON(data);
       e.target.value = '';
       const npcCount = (data.npcs || []).length;

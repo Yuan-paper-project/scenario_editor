@@ -476,6 +476,34 @@
                 this.trajectoryMode || this.routeMode);
     },
 
+    /** True when there is anything a clear would throw away. */
+    get hasScenarioContent() {
+      return !!(this.ego || this.npcs.length || this.staticObjects.length || this.generated
+        || this.trafficSignals.some(sig => (sig.events || []).length));
+    },
+
+    /**
+     * Back to an empty scenario on the current map — what a fresh map load
+     * looks like: no ego, NPCs, props, signal Schaltungen or generator recipe.
+     * Weather and time are a setting, not scenario content, and stay. One
+     * undo step; the map-change path clears the history afterwards instead,
+     * since undoing there would restore actors at the old town's coordinates.
+     */
+    clearScenario() {
+      this.cancelPlacement();
+      UndoStack.group('Szenario geleert', () => {
+        this.select(null);
+        this.set({
+          ego: null, npcs: [], staticObjects: [], trafficSignals: [], generated: null,
+          selectedTrafficLightId: null, selectedWaypoint: null,
+        });
+        // Empty patch: the overview's "arrays changed" signal (properties.js).
+        // selectionChanged redraws the actors and the signal heads on the map.
+        this.set({});
+        this.emit('selectionChanged', null);
+      });
+    },
+
     /** Restore editor state from scenario JSON. */
     loadJSON(data) {
       this.map             = data.map || null;
@@ -590,6 +618,57 @@
     e.stopPropagation();
     _closeConfirm(e.key === 'Enter');
   }, true);
+
+  // ── Map switch: one scenario per town ───────────────────────────────────────
+  // A scenario's poses belong to the town they were placed on. Leaving a town
+  // parks its scenario AND its undo history; coming back restores both, and a
+  // town never visited (or left empty) starts empty. In memory only — a page
+  // reload loses the parked scenarios exactly as it loses the live one, and the
+  // save file holds the current town's scenario only. Shared by the map
+  // selector (toolbar.js), the .xodr import (mapImport.js) and Laden
+  // (scenarioIO.js). The batch generator swaps maps itself and bypasses this.
+
+  const _parked = new Map();   // town → UndoStack.park() result
+
+  function _emitParked() { AppState.emit('mapScenariosChanged'); }
+
+  /** Park the current town's scenario (or forget it, when there is nothing). */
+  function leaveMap() {
+    window.Simulate?.stop();
+    AppState.cancelPlacement();
+    const town = AppState.map;
+    if (!town) return;
+    if (AppState.hasScenarioContent || UndoStack.length || UndoStack.redoLength) {
+      AppState.select(null);
+      _parked.set(town, UndoStack.park());
+    } else {
+      _parked.delete(town);
+    }
+    _emitParked();
+  }
+
+  /** Bring `town`'s parked scenario back, or start it empty. Call after
+   * AppState.map is set. Returns true when something was restored. */
+  function enterMap(town) {
+    const entry = _parked.get(town);
+    _parked.delete(town);
+    _emitParked();
+    if (entry) { UndoStack.unpark(entry); return true; }
+    AppState.clearScenario();
+    UndoStack.clear();
+    return false;
+  }
+
+  /** A file is about to replace the live scenario: park the current town's if
+   * the file is for another one, and drop any parked scenario of the file's
+   * own town — the file replaces it, as it does the live one. */
+  function beforeLoadFile(fileTown) {
+    if (fileTown && AppState.map && fileTown !== AppState.map) leaveMap();
+    if (fileTown && _parked.delete(fileTown)) _emitParked();
+  }
+
+  /** Towns holding a parked scenario (not counting the current one). */
+  function parkedTowns() { return [..._parked.keys()]; }
 
   window.Confirm = {
     show: showConfirm,
@@ -979,6 +1058,22 @@
 
     clear() { _undo.length = 0; _redo.length = 0; _openKind = null; _baseline = null; },
 
+    /** Take the live scenario and its whole history out (a map switch, see
+     * UIUtils.leaveMap). The live state is left as it is; the caller replaces it. */
+    park() {
+      const entry = { snap: _snapshot(''), undo: _undo.splice(0), redo: _redo.splice(0) };
+      _openKind = null;
+      return entry;
+    },
+
+    /** Put a park() result back: its scenario live, its history as the stacks. */
+    unpark(entry) {
+      _apply({ ...entry.snap, selectedId: null, selectedTrafficLightId: null });
+      _undo.length = 0; _undo.push(...entry.undo);
+      _redo.length = 0; _redo.push(...entry.redo);
+      _openKind = null;
+    },
+
     get length()     { return _undo.length; },
     get redoLength() { return _redo.length; },
   };
@@ -1333,6 +1428,11 @@
   }, true);
 
   window.UIUtils = {
+    leaveMap,
+    enterMap,
+    beforeLoadFile,
+    parkedTowns,
+
     /**
      * True when `el` holds focus *because the user put it there with the
      * keyboard* — tabbed or arrowed onto, rather than left focused by a click.

@@ -42,7 +42,8 @@
       mapSelect.appendChild(opt);
     }
 
-    // Auto-select and render the newly imported map
+    // Auto-select and render the newly imported map. The scenario on the
+    // current town is parked, as on any map switch (UIUtils.leaveMap).
     mapSelect.value = town;
     mapStatus.textContent = `Lade ${town} …`;
     try {
@@ -53,7 +54,10 @@
       // fetch toolbar.js uses for the normal map-select path. A build
       // failure server-side degrades to null here, same as any other miss.
       const laneGraph = await Api.getLaneGraph(town).catch(() => null);
+      const switching = town !== AppState.map;
+      if (switching) UIUtils.leaveMap();
       AppState.set({ map: town, mapData, laneGraph });
+      if (switching) UIUtils.enterMap(town);
       MapView.renderMap(mapData);
       MapView.renderAllActors();
       mapStatus.textContent = `${mapData.roads.length} Straßen`;

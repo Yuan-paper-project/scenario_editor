@@ -380,6 +380,10 @@
     // The rotate branch below used to lack this guard, so grabbing the handle
     // with a tool armed spun the actor while grabbing its body selected it.
     if (AppState.activeTool || AppState.trajectoryMode || AppState.routeMode) return;
+    // Nor during a preview: it writes every actor's pose each tick, and Stop
+    // puts the authored poses back — a drag here would be overwritten either
+    // way. mapView pans instead (see its pan-exclusion list).
+    if (window.Simulate?.running) return;
 
     /* A path waypoint of the SELECTED actor: mark it, and drag it.
      *
@@ -924,15 +928,16 @@
     )));
   }
 
-  function setPathPointVelocity(actorId, type, idx, velocity, eventId = null) {
-    if (type !== 'trajectory') return;
+  /** One speed for the whole trajectory, written to every vertex (see
+   * EventPanel._trajectorySpeed for why there is only one). */
+  function setPathVelocity(actorId, velocity, eventId = null) {
     const actor = _findActor(actorId);
-    const path = actor ? _eventPath(actor, eventId, type) : null;
-    if (!actor || !path?.[idx]) return;
+    const path = actor ? _eventPath(actor, eventId, 'trajectory') : null;
+    if (!actor || !path?.length) return;
+    const v = Math.min(50, Math.max(0, parseFloat(velocity)));
+    const speed = Number.isFinite(v) ? v : 10.0;
     // Copy rather than write through to the live point — see _addPathPoint.
-    _setEventPath(actor, eventId, type, path.map((pt, i) => (
-      i === idx ? { ...pt, velocity: parseFloat(velocity) || 10.0 } : pt
-    )));
+    _setEventPath(actor, eventId, 'trajectory', path.map(pt => ({ ...pt, velocity: speed })));
   }
 
   function clearPath(actorId, type, eventId = null) {
@@ -949,7 +954,7 @@
     movePathPoint,
     deletePathPoint,
     setPathPointStrategy,
-    setPathPointVelocity,
+    setPathVelocity,
     clearPath,
     groundZAt,
     surfaceZFor: _surfaceZFor,

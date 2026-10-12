@@ -875,6 +875,21 @@
 
   // ── Listen for state changes ─────────────────────────────────────────────────
 
+  // A preview is view-only (body.simulating; the CSS takes the pointer away):
+  // Tab must not reach a field either. Capture phase, so nothing in the
+  // panel ever sees the focus. A field focused before Play is let go on the
+  // first frame.
+  const _panelEl = document.getElementById('properties-panel');
+  _panelEl?.addEventListener('focusin', e => {
+    if (document.body.classList.contains('simulating')) e.target.blur?.();
+  }, true);
+  // simulate.js loads after this file, hence the deferred subscription.
+  document.addEventListener('DOMContentLoaded', () => {
+    Simulate.onTime(t => {
+      if (t != null && _panelEl?.contains(document.activeElement)) document.activeElement.blur();
+    });
+  });
+
   AppState.on('selectionChanged', () => render());
   AppState.on('trafficSignalSelected', () => render());
   AppState.on('trafficSignalUpdated', () => render());

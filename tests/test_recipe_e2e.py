@@ -204,9 +204,15 @@ def main():
         C("load: recipe restored", page.evaluate("AppState.generated && AppState.generated.seed") ==
           json.loads(saved)["generated"]["seed"])
 
-        # ── Another map: no rebuild ─────────────────────────────────────────
+        # ── Another map ─────────────────────────────────────────────────────
+        # Switching maps empties the scenario, recipe included (toolbar.js).
         H.select_map(page, "Town03")
         page.wait_for_function("AppState.laneGraph !== null && AppState.map === 'Town03'", timeout=60000)
+        C("other map: a map switch clears the recipe", page.evaluate("AppState.generated") is None)
+        # A recipe can still name another town in a (hand-edited) save file:
+        # the panel says so and refuses to rebuild there.
+        page.evaluate("s => { const d = JSON.parse(s); d.map = 'Town03'; AppState.loadJSON(d); }", saved)
+        page.wait_for_timeout(500)
         show_overview(page)
         C("other map: panel says where it was built",
           page.locator(".gen-recipe-warn", has_text="Town05").count() == 1)

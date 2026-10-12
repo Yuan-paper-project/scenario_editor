@@ -2202,6 +2202,7 @@
     const select = document.getElementById('map-select');
     if (![...select.options].some(o => o.value === town)) return false;
     select.value = town;
+    select.dataset.keepScenario = '1';   // toolbar.js: this switch must not clear
     select.dispatchEvent(new Event('change'));
     for (let i = 0; i < 600; i++) {
       await new Promise(r => setTimeout(r, 50));

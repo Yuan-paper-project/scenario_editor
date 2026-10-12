@@ -8,7 +8,10 @@
  * event it waits on. An event that never fires in the run is listed at the
  * end of its row.
  *
- *   click a block   → the preview jumps to when it fires (Simulate.seek)
+ *   click a block   → the preview jumps to when it fires (Simulate.seek), the
+ *                     actor is selected and its card highlighted in the panel
+ *   playhead        → follows the preview's time; drag it (or press anywhere
+ *                     on the axis row) to scrub, like the bar's own timeline
  *
  * The panel sits above the preview bar (#map-bottom-stack), toggled by the
  * bar's „Ablauf" button, and re-runs 400 ms after any edit while open.
@@ -102,9 +105,66 @@
         <span></span>
       </div>
       ${rowHtml}
-      <svg class="sim-lane-links" aria-hidden="true"></svg>`;
+      <svg class="sim-lane-links" aria-hidden="true"></svg>
+      <div class="sim-lane-playhead" title="Aktueller Zeitpunkt der Vorschau — ziehen zum Springen"></div>`;
     _drawLinks();
+    _placePlayhead();
   }
+
+  /* ── Playhead ──────────────────────────────────────────────────────────
+   * Placed on THIS panel's axis (_data.end), not the preview bar's: the two
+   * runs are the same model but the preview may run with „Ego bremst" on and
+   * end at a different time. A time past the axis end pins to its edge. */
+  let _lastTime = null;
+
+  function _axisTrack() { return panel.querySelector('.sim-lane-axis .sim-lane-track'); }
+
+  function _placePlayhead(t = _lastTime) {
+    const head = panel.querySelector('.sim-lane-playhead');
+    const track = _axisTrack();
+    if (!head || !track || !_data) return;
+    const box = panel.getBoundingClientRect(), tr = track.getBoundingClientRect();
+    const f = Math.max(0, Math.min(1, (t ?? 0) / _data.end));
+    head.style.left = `${tr.left - box.left + panel.scrollLeft + f * tr.width}px`;
+    head.style.height = `${panel.scrollHeight}px`;
+    head.classList.toggle('idle', t == null);
+  }
+
+  function _timeAt(clientX) {
+    const tr = _axisTrack().getBoundingClientRect();
+    return Math.max(0, Math.min(1, (clientX - tr.left) / Math.max(1, tr.width))) * _data.end;
+  }
+
+  Simulate.onTime(t => {
+    _lastTime = t;
+    if (t == null) EventPanel.highlight(null);   // the mark is a preview-time aid
+    if (_open) _placePlayhead(t);
+  });
+
+  // Scrub: same contract as the preview bar's — pause while dragging, resume
+  // afterwards if it was playing. Starts a paused preview when none runs.
+  panel.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || !_data) return;
+    if (!e.target.closest('.sim-lane-playhead, .sim-lane-axis')) return;
+    e.preventDefault();
+    const resume = Simulate.running && !Simulate.paused;
+    Simulate.seek(_timeAt(e.clientX));
+    if (!Simulate.running) return;
+    Simulate.pause();
+    panel.setPointerCapture(e.pointerId);
+    panel.classList.add('scrubbing');
+    const move = ev => Simulate.seek(_timeAt(ev.clientX));
+    const up = () => {
+      panel.removeEventListener('pointermove', move);
+      panel.removeEventListener('pointerup', up);
+      panel.removeEventListener('pointercancel', up);
+      panel.classList.remove('scrubbing');
+      if (resume && Simulate.time < Simulate.end - 1e-6) Simulate.play();
+    };
+    panel.addEventListener('pointermove', move);
+    panel.addEventListener('pointerup', up);
+    panel.addEventListener('pointercancel', up);
+  });
 
   /** Connectors from each referenced event to the one waiting on it: from the
    * referenced block's end (after_event) or start (event_started). */
@@ -168,7 +228,15 @@
 
   panel.addEventListener('click', e => {
     const block = e.target.closest('.sim-lane-block');
-    if (block) { Simulate.seek(Number(block.dataset.t)); return; }
+    if (block) {
+      Simulate.seek(Number(block.dataset.t));
+      // Show the event in the panel: select its actor and mark its card.
+      // Highlight first — the select re-renders the panel, which reads it.
+      EventPanel.highlight(block.dataset.actor, block.dataset.event);
+      if (AppState.selectedId !== block.dataset.actor) AppState.select(block.dataset.actor);
+      else AppState.emit('selectionChanged', AppState.selectedId);
+      return;
+    }
     const label = e.target.closest('.sim-lane-label');
     if (label) MapView.focusActor(label.dataset.actor);
   });

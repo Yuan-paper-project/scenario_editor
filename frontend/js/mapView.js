@@ -1163,7 +1163,7 @@
 
   function _attachTriggerPointDrag(el, actorId, eventId) {
     el.addEventListener('mousedown', e => {
-      if (e.button !== 0) return;
+      if (e.button !== 0 || window.Simulate?.running) return;
       _triggerPointDrag = { actorId, eventId };
       e.preventDefault();
       e.stopPropagation();
@@ -1192,7 +1192,7 @@
 
   function _attachTriggerRadiusDrag(el, actorId, eventId, point) {
     el.addEventListener('mousedown', e => {
-      if (e.button !== 0) return;
+      if (e.button !== 0 || window.Simulate?.running) return;
       _triggerRadiusDrag = { actorId, eventId, point: { ...point } };
       e.preventDefault();
       e.stopPropagation();
@@ -1898,14 +1898,16 @@
   // Pan with left-drag on the background (not on actors)
   svg.addEventListener('mousedown', e => {
     if (e.button !== 0) return;
-    if (e.target.closest('.actor-group') ||
+    // During a preview nothing on the map is draggable (objects.js stands
+    // down), so a grab on a marker pans like a grab anywhere else.
+    if (!window.Simulate?.running && (e.target.closest('.actor-group') ||
         e.target.closest('.yaw-arrow') ||
         e.target.closest('.trigger-radius-control') ||
         e.target.closest('.trigger-point-control') ||
         // This handler is capture-phase on the same <svg> objects.js binds on
         // the bubble phase, so it runs FIRST: without the waypoint here the pan
         // is already under way by the time the drag handler sees the mousedown.
-        e.target.closest('.path-waypoint')) return;
+        e.target.closest('.path-waypoint'))) return;
 
     _dragging  = true;
     _dragStart = { x: e.clientX, y: e.clientY };
@@ -2018,6 +2020,15 @@
     }
 
     if (inInput) return;
+
+    // A preview is view-only: no undo/redo (it would restore poses under the
+    // running preview) and no deletes. Ctrl+Z is still swallowed, so the
+    // browser does not act on it either.
+    if (window.Simulate?.running) {
+      const editKey = e.key === 'Delete' || e.key === 'Backspace'
+        || ((e.ctrlKey || e.metaKey) && /^[zZy]$/.test(e.key));
+      if (editKey) { e.preventDefault(); return; }
+    }
 
     // ? — show keyboard shortcuts
     if (e.key === '?') {
