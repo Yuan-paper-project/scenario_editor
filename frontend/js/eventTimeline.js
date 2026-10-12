@@ -53,7 +53,7 @@
   function _compute() {
     const actors = _actors();
     if (!actors.length || !AppState.mapData) return null;
-    const run = Simulate.runHeadless({ dt: 0.05, maxTime: RUN_TIME_S });
+    const run = Simulate.runHeadless({ dt: 0.05, maxTime: RUN_TIME_S, stopWhenIdle: true });
     if (!run) return null;
     const end = run.times.length ? run.times[run.times.length - 1] : 0;
     const rows = actors.map(actor => ({

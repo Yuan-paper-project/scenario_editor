@@ -243,10 +243,10 @@ def _sample_geometry(
     return samples
 
 
-def _section_eval_s(sec_samples: list[tuple]) -> list[float]:
+def _section_eval_s(sec_samples: list[tuple], s_start: float) -> list[float]:
     """The s at which to evaluate laneOffset and lane widths for each sample of
     one lane section: its own s, except the section's LAST sample, which takes
-    the left limit (s_end − ε).
+    the left limit (s_end − ε) — and never less than `s_start`.
 
     CARLA maps step the laneOffset at a lane-section boundary to make up for a
     lane that starts or ends there (Town03 road 1566: −6.635 → −0.635 at s=2).
@@ -254,8 +254,15 @@ def _section_eval_s(sec_samples: list[tuple]) -> list[float]:
     next section's, which threw section N's last vertex sideways by up to 6 m —
     the spikes and long wedges at road joins. The next section's first sample
     keeps s_start and correctly picks the new record up.
+
+    The floor matters because the section filters take samples within 1e-4 of
+    s_start, and the sampler can emit two there: the regular interval's s = 2.0
+    and the boundary's own 2.000000000000057. Evaluated as-is, the 2.0 one picks
+    the PREVIOUS laneOffset record — Town06 road 1124 steps −14.635 → −0.635 at
+    that s, so its connector lanes ended 14 m to one side and every route
+    through junction 1050 drew (and previewed) a 14 m sideways jump.
     """
-    out = [sp[3] for sp in sec_samples]
+    out = [max(sp[3], s_start) for sp in sec_samples]
     if len(out) > 1:
         out[-1] -= 1e-6
     return out
@@ -432,6 +439,56 @@ def _get_lane_sections(road_elem: ET.Element) -> list[tuple]:
     return result
 
 
+def _lane_centre(sample: tuple, s_eval: float, ld: dict, side_lanes: list[dict], s_start: float,
+                 offsets: list[tuple], elevations: list[tuple], geom_segs: list[tuple]
+                 ) -> tuple[float, float, float, float]:
+    """Centre of lane `ld` at one reference-line sample (px, py, hdg, s), full
+    precision: (x, y, z, lane width) in CARLA frame. `s_eval` is where laneOffset
+    and widths are read (see _section_eval_s); z and curvature use the sample's
+    own s."""
+    px, py, ph, s = sample
+    sec_s = s_eval - s_start
+    inner_w = 0.0
+    this_w = 3.5
+    for l_item in side_lanes:
+        w_val = _eval_lane_width(l_item['width_polys'], sec_s)
+        if abs(l_item['id']) < abs(ld['id']):
+            inner_w += w_val
+        if l_item['id'] == ld['id']:
+            this_w = w_val
+    sign = +1.0 if ld['side'] == 'L' else -1.0
+    cx, cy = _lateral_point(px, py, ph, _eval_lane_offset(offsets, s_eval) + sign * (inner_w + this_w / 2.0),
+                            _curvature_at(geom_segs, s))
+    return cx, cy, _eval_elevation(elevations, s), this_w
+
+
+def lane_centre_points(road_elem: ET.Element, section_id: int, lane_id: int,
+                       s_values: list[float]) -> list[list[float]]:
+    """[x, y, z, s] of a lane's centre at each of `s_values`, unrounded — the
+    same maths as the directionLine, but at exactly the s asked for. For
+    lane_graph_builder, which has to reproduce GlobalRoutePlanner's 2 m samples
+    and the whole-metre rounding of its node ids; interpolating the 1 cm-rounded
+    directionLine instead put sample-count ties (a last sample 2.0001 m from the
+    exit) on the wrong side often enough to change A*'s routes.
+
+    An s equal to the section's end reads laneOffset/widths at the left limit,
+    like the directionLine's last point."""
+    sections = _get_lane_sections(road_elem)
+    s_start, s_end, lane_defs = sections[section_id]
+    ld = next(l for l in lane_defs if l['id'] == lane_id)
+    side_lanes = [l for l in lane_defs if l['side'] == ld['side']]
+    offsets, elevations = _get_lane_offsets(road_elem), _get_elevations(road_elem)
+    geom_segs = _parse_geometry_segments(road_elem)
+    samples = {round(sp[3], 9): sp for sp in _sample_geometry(road_elem, 1e9, extra_s=list(s_values))}
+    out = []
+    for sv in s_values:
+        sp = samples.get(round(sv, 9)) or min(samples.values(), key=lambda q: abs(q[3] - sv))
+        s_eval = min(max(sv, s_start), s_end - 1e-6) if sv >= s_end - 1e-9 else max(sv, s_start)
+        cx, cy, cz, _w = _lane_centre(sp, s_eval, ld, side_lanes, s_start, offsets, elevations, geom_segs)
+        out.append([cx, cy, cz, sv])
+    return out
+
+
 # ── Dynamic Polygon Builder ────────────────────────────────────────────────────
 
 def _build_lane_polygon_dynamic(
@@ -449,7 +506,7 @@ def _build_lane_polygon_dynamic(
 
     side_lanes = [l for l in all_lane_defs if l['side'] == target_ld['side']]
 
-    for (px, py, ph, s), s_eval in zip(samples, _section_eval_s(samples)):
+    for (px, py, ph, s), s_eval in zip(samples, _section_eval_s(samples, sec_start_s)):
         sec_s = s_eval - sec_start_s
         offset_shift = _eval_lane_offset(offsets, s_eval)
         curv = _curvature_at(geom_segs, s) if geom_segs else 0.0
@@ -512,7 +569,7 @@ def _build_mark_polylines(
             if len(pts) < 2:
                 continue
             dists = []
-            for (px, py, ph, s), s_eval in zip(pts, _section_eval_s(pts)):
+            for (px, py, ph, s), s_eval in zip(pts, _section_eval_s(pts, s_start)):
                 d = _eval_lane_offset(offsets, s_eval)
                 if ld is not None:
                     d += sign * sum(_eval_lane_width(l['width_polys'], s_eval - s_start)
@@ -986,28 +1043,13 @@ def _process_root_to_render_data(root: ET.Element, town_name: str, xodr_path: Pa
                     lane_widths = []
                     side_lanes = [l for l in lane_defs if l['side'] == ld['side']]
 
-                    for (px, py, ph, s), s_eval in zip(sec_samples, _section_eval_s(sec_samples)):
-                        sec_s = s_eval - s_start
-                        offset_shift = _eval_lane_offset(offsets, s_eval)
-
-                        inner_w = 0.0
-                        this_w = 3.5
-                        for l_item in side_lanes:
-                            w_val = _eval_lane_width(l_item['width_polys'], sec_s)
-                            if abs(l_item['id']) < abs(ld['id']):
-                                inner_w += w_val
-                            if l_item['id'] == ld['id']:
-                                this_w = w_val
-
-                        center_offset = inner_w + (this_w / 2.0)
-                        cx, cy = _lateral_point(px, py, ph, offset_shift + sign * center_offset,
-                                                _curvature_at(geom_segs, s))
-                        cx, cy = round(cx, 2), round(cy, 2)
-                        cz = round(_eval_elevation(elevations, s), 2)
+                    for sample, s_eval in zip(sec_samples, _section_eval_s(sec_samples, s_start)):
+                        cx, cy, cz, this_w = _lane_centre(sample, s_eval, ld, side_lanes, s_start,
+                                                          offsets, elevations, geom_segs)
                         # 4th element is s, the same backward-compatible trick
                         # already used for z — existing 3-element consumers
                         # destructure positionally and never see it.
-                        lane_cl.append([cx, cy, cz, round(s, 2)])
+                        lane_cl.append([round(cx, 2), round(cy, 2), round(cz, 2), round(sample[3], 2)])
                         lane_widths.append(round(this_w, 2))
 
                     if ld['side'] == 'L':

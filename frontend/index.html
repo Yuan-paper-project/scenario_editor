@@ -510,6 +510,19 @@
               <input type="checkbox" id="prop-obey-obstacles" checked> Hindernisse beachten
             </label>
           </div>
+          <!-- simple_vehicle_control's max_acceleration / max_deceleration, the
+               limits the controller clamps every commanded speed change to.
+               Vehicles only, like the row above; the preview applies them too. -->
+          <div id="dynamics-row" class="props-group spawn-grid dynamics-row">
+            <label for="prop-max-accel"
+                   title="Höchste Beschleunigung (max_acceleration). Auch eine Rate-Rampe ist darauf begrenzt.">Beschl. (m/s²)</label>
+            <input type="number" id="prop-max-accel" step="0.5" min="0.1" max="50" value="3"
+                   title="Höchste Beschleunigung (max_acceleration) — gilt auch für das Anfahren auf die Startgeschwindigkeit">
+            <label for="prop-max-decel"
+                   title="Höchste Verzögerung (max_deceleration). Eine stärkere Brems-Rampe wird darauf begrenzt.">Verz. (m/s²)</label>
+            <input type="number" id="prop-max-decel" step="0.5" min="0.1" max="50" value="10"
+                   title="Höchste Verzögerung (max_deceleration) — auch eine Notbremsung bremst nicht stärker">
+          </div>
         </div>
       </div>
 

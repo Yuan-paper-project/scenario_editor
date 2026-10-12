@@ -45,14 +45,28 @@ get_right_lane() being relative to each lane's own forward-driving direction,
 which is exactly what the sign convention above already encodes.
 """
 
+import struct
 import xml.etree.ElementTree as ET
 from pathlib import Path
+
+from backend.map_renderer import _get_lane_sections, lane_centre_points
 
 # 'bidirectional' (a centre turn lane) is deliberately excluded — confirmed
 # against ground truth (maps/Town03/Town03.xodr road 0 lane 1 is
 # bidirectional and never appears in any committed lane_graph.json): CARLA's
 # GlobalRoutePlanner only samples Driving lanes into its routing topology.
 _ROUTABLE_TYPES = ('driving',)
+
+# GlobalRoutePlanner(map, 2.0) — the resolution ChangeActorWaypoints builds it with.
+SAMPLING_RESOLUTION_M = 2.0
+
+
+def _carla_round(v: float) -> float:
+    """np.round(v, 0) of a carla.Location coordinate, which is float32: a
+    point at exactly x.5 in the map — Town03 has several at x = -0.5 — comes
+    out of float64 maths a hair either side, and only the float32 cast puts it
+    back on .5, where half-to-even then rounds it the way CARLA does."""
+    return float(round(struct.unpack('f', struct.pack('f', v))[0]))
 
 
 # ── Union-find (merges lane-boundary node identities that connect) ─────────
@@ -210,6 +224,87 @@ def _parse_lane_change_marks(root: ET.Element) -> dict[tuple[int, int, int], str
     return result
 
 
+# CARLA's LaneMarking::LaneChange bits for right-hand traffic (LaneMarking.cpp
+# GetLaneChange): `increase` -> Right, `decrease` -> Left. An absent or
+# unrecognised attribute is Both (MapBuilder::CreateRoadMark's else branch).
+_LC_RIGHT, _LC_LEFT = 1, 2
+_LC_BITS = {'increase': _LC_RIGHT, 'decrease': _LC_LEFT, 'none': 0}
+
+
+def _parse_mark_records(root: ET.Element) -> dict[tuple[int, int, int], list[tuple[float, int]]]:
+    """(roadId, sectionId, laneId) -> [(absolute s, lane-change bits), ...] in
+    s order, one per <roadMark>, the centre lane (id 0) included — it is the
+    LEFT marking of both |id| == 1 lanes. This is what CARLA's
+    waypoint.left/right_lane_marking.lane_change reads, and therefore what
+    GlobalRoutePlanner._lane_change_link gates every lane-change edge on."""
+    result: dict[tuple[int, int, int], list[tuple[float, int]]] = {}
+    for road in root.findall('road'):
+        road_id = int(road.get('id'))
+        lanes_elem = road.find('lanes')
+        if lanes_elem is None:
+            continue
+        for section_id, ls in enumerate(lanes_elem.findall('laneSection')):
+            section_s = float(ls.get('s', 0.0))
+            for side in ('left', 'center', 'right'):
+                se = ls.find(side)
+                if se is None:
+                    continue
+                for lane in se.findall('lane'):
+                    try:
+                        lane_id = int(lane.get('id'))
+                    except (TypeError, ValueError):
+                        continue
+                    records = sorted(
+                        (section_s + float(rm.get('sOffset', 0.0)),
+                         _LC_BITS.get((rm.get('laneChange') or '').lower(), _LC_RIGHT | _LC_LEFT))
+                        for rm in lane.findall('roadMark'))
+                    result[(road_id, section_id, lane_id)] = records
+    return result
+
+
+def _mark_bits_at(records: list[tuple[float, int]] | None, s: float) -> int:
+    """Lane-change bits of the record in force at `s` (RoadInfo GetInfo(s): the
+    last record starting at or before s). No record means no marking object at
+    all, which _lane_change_link treats as no lane change."""
+    bits = 0
+    for record_s, record_bits in records or ():
+        if record_s > s + 1e-6:
+            break
+        bits = record_bits
+    return bits
+
+
+def _carla_path(evaluate, s0: float, s1: float, step: float) -> list[list[float]]:
+    """The interior `path` GlobalRoutePlanner._build_topology samples for one
+    lane driven from s0 to s1: entry.next(step) repeatedly, kept while the
+    straight-line distance to the exit is still > step; a lane whose ends are
+    within `step` of each other gets exactly one point. next() advances along
+    s, so the samples sit at s0 ± k·step, evaluated exactly (`evaluate`, a
+    list of s -> [x, y, z, s] points): a last sample 2.0001 m from the exit
+    is in, 1.9999 m is out, and that sample count is the edge's A* cost."""
+    sign = 1.0 if s1 >= s0 else -1.0
+    span = abs(s1 - s0)
+    entry_pt, exit_pt = evaluate([s0, s1])
+
+    def chord(p: list[float]) -> float:
+        d = ((p[0] - exit_pt[0]) ** 2 + (p[1] - exit_pt[1]) ** 2 + (p[2] - exit_pt[2]) ** 2) ** 0.5
+        # On a straight lane whose length is a multiple of `step` the last
+        # sample is exactly `step` from the exit; CARLA's `> step` is then
+        # false (Town02's 18 m lanes), our float64 a hair either side.
+        return step if abs(d - step) < 1e-6 else d
+
+    if chord(entry_pt) <= step:
+        return evaluate([s0 + sign * min(step, span)])
+    candidates = evaluate([s0 + sign * step * k for k in range(1, int(span / step) + 1)
+                           if step * k < span])
+    out = []
+    for p in candidates:
+        if chord(p) <= step:
+            break
+        out.append(p)
+    return out
+
+
 # ── Successor resolution ────────────────────────────────────────────────────
 
 def _resolve_lane_successors(
@@ -292,14 +387,7 @@ def _derive_left_right(lane_index: dict[tuple[int, int, int], dict]) -> dict[tup
 
 
 def _lane_points(direction_line: list[list[float]]) -> list[dict]:
-    return [{'x': p[0], 'y': p[1], 'z': p[2]} for p in direction_line]
-
-
-def _lane_length(direction_line: list[list[float]]) -> float:
-    total = 0.0
-    for a, b in zip(direction_line, direction_line[1:]):
-        total += ((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2 + (b[2] - a[2]) ** 2) ** 0.5
-    return round(total, 2)
+    return [{'x': round(p[0], 3), 'y': round(p[1], 3), 'z': round(p[2], 3)} for p in direction_line]
 
 
 # ── Public entry point ──────────────────────────────────────────────────────
@@ -338,10 +426,27 @@ def build_lane_graph_from_xodr(xodr_path: Path, roads_out: list[dict], town: str
         if max_section >= 0:
             section_count_by_road[road_id] = max_section + 1
 
+    # Exact geometry per lane: its s range straight from the .xodr, driven
+    # direction included (a positive lane drives from s_end to s_start), and
+    # an evaluator for its centre at any s. The directionLine is rounded to
+    # 1 cm and sampled every 4 m — fine for drawing, too coarse for the
+    # whole-metre rounding of node ids and the 2 m sample counts below.
+    road_elems = {int(r.get('id')): r for r in root.findall('road')}
+    section_s = {rid: [(a, b) for a, b, _ in _get_lane_sections(el)] for rid, el in road_elems.items()}
+    for key, entry in lane_index.items():
+        road_id, section_id, lane_id = key
+        a, b = section_s[road_id][section_id]
+        s0, s1 = (a, b) if lane_id < 0 else (b, a)
+        evaluate = (lambda el, sec, ln: lambda svals: lane_centre_points(el, sec, ln, svals))(
+            road_elems[road_id], section_id, lane_id)
+        entry['s0'], entry['s1'], entry['evaluate'] = s0, s1, evaluate
+        entry['ends'] = evaluate([s0, s1])
+
     lane_links = _parse_lane_links(root)
     road_links = _parse_road_links(root)
     junction_conns = _parse_junction_connections(root)
     lane_change_marks = _parse_lane_change_marks(root)
+    mark_records = _parse_mark_records(root)
     left_right = _derive_left_right(lane_index)
 
     # ── Resolve successors per lane, filtered to lanes we actually have geometry for ──
@@ -378,19 +483,36 @@ def build_lane_graph_from_xodr(xodr_path: Path, roads_out: list[dict], town: str
 
     node_point: dict[str, dict] = {}
     for key, entry in lane_index.items():
-        dl = entry['directionLine']
-        node_point[entry_raw(key)] = {'x': dl[0][0], 'y': dl[0][1], 'z': dl[0][2]}
-        node_point[exit_raw(key)] = {'x': dl[-1][0], 'y': dl[-1][1], 'z': dl[-1][2]}
+        first, last = entry['ends']
+        node_point[entry_raw(key)] = {'x': first[0], 'y': first[1], 'z': first[2]}
+        node_point[exit_raw(key)] = {'x': last[0], 'y': last[1], 'z': last[2]}
 
     canon_id: dict[str, int] = {}
     nodes: list[dict] = []
+
+    # CARLA's node identity is the end point rounded to whole metres
+    # (_build_topology's entryxyz/exitxyz, np.round half-to-even like round()),
+    # so it also merges ends that merely round alike: a lane under ~1 m long
+    # becomes a self-loop, and a route steps straight over it.
+    by_rounded: dict[tuple[float, float, float], str] = {}
+    for raw, pt in node_point.items():
+        rounded = (_carla_round(pt['x']), _carla_round(pt['y']), _carla_round(pt['z']))
+        if rounded in by_rounded:
+            uf.union(raw, by_rounded[rounded])
+        else:
+            by_rounded[rounded] = raw
 
     def node_for(raw: str) -> int:
         root_id = uf.find(raw)
         if root_id not in canon_id:
             canon_id[root_id] = len(nodes)
             pt = node_point.get(raw) or node_point.get(root_id) or {'x': 0.0, 'y': 0.0, 'z': 0.0}
-            nodes.append({'id': canon_id[root_id], 'x': pt['x'], 'y': pt['y'], 'z': pt['z']})
+            # Rounded to whole metres like _build_topology's entryxyz/exitxyz:
+            # the vertex is only ever the A* heuristic's input, and CARLA's
+            # heuristic runs on the rounded value.
+            nodes.append({'id': canon_id[root_id],
+                          'x': _carla_round(pt['x']), 'y': _carla_round(pt['y']),
+                          'z': _carla_round(pt['z'])})
         return canon_id[root_id]
 
     # ── LANEFOLLOW edges (one per routable lane) + roadIdToEdge ────────────
@@ -398,48 +520,92 @@ def build_lane_graph_from_xodr(xodr_path: Path, roads_out: list[dict], town: str
     road_id_to_edge: dict[str, dict] = {}
     lane_entry_node: dict[tuple[int, int, int], int] = {}
 
+    lane_path: dict[tuple[int, int, int], list[list[float]]] = {}
+
     for key, entry in lane_index.items():
         road_id, section_id, lane_id = key
         from_node = node_for(entry_raw(key))
         to_node = node_for(exit_raw(key))
         lane_entry_node[key] = from_node
 
-        dl = entry['directionLine']
+        first, last = entry['ends']
+        path = _carla_path(entry['evaluate'], entry['s0'], entry['s1'], SAMPLING_RESOLUTION_M)
+        lane_path[key] = path
         edges.append({
             'from': from_node, 'to': to_node, 'type': 'LANEFOLLOW',
-            'length': _lane_length(dl), 'intersection': entry['isJunction'],
-            'path': _lane_points(dl[1:-1]),
+            # _build_graph's length is a SAMPLE COUNT, not metres. It matters:
+            # lane-change edges cost 0, so near-equal alternatives through a
+            # neighbour lane are decided by exactly this number.
+            'length': len(path) + 1, 'intersection': entry['isJunction'],
+            'path': _lane_points(path),
             'entry': {'roadId': road_id, 'sectionId': section_id, 'laneId': lane_id,
-                      'x': dl[0][0], 'y': dl[0][1], 'z': dl[0][2]},
+                      'x': round(first[0], 3), 'y': round(first[1], 3), 'z': round(first[2], 3)},
             'exit': {'roadId': road_id, 'sectionId': section_id, 'laneId': lane_id,
-                     'x': dl[-1][0], 'y': dl[-1][1], 'z': dl[-1][2]},
+                     'x': round(last[0], 3), 'y': round(last[1], 3), 'z': round(last[2], 3)},
         })
         road_id_to_edge.setdefault(str(road_id), {}).setdefault(str(section_id), {})[str(lane_id)] = [from_node, to_node]
 
-    # ── CHANGELANELEFT/RIGHT edges — mirrors the flat lanes[] left/right
-    # table exactly (no legality gate: the real ChangeActorLateralMotion
-    # atomic doesn't check one either, check=False — see module docstring). ─
-    for key, lr in left_right.items():
-        if key not in lane_index:
+    # ── CHANGELANELEFT/RIGHT edges — GlobalRoutePlanner._lane_change_link,
+    # literally: none from a junction lane; otherwise walk the lane's path
+    # samples and add the FIRST right and the first left change the marking
+    # at that sample allows, to a Driving lane on the same road. The right
+    # marking is the lane's own <roadMark>, the left one its inner
+    # neighbour's (lane 0 for |id| == 1) — Map::GetMarkRecord. Every extra
+    # edge here is a zero-cost detour A* may take: one inside a junction is
+    # what drew "change left, then straight back right" through Town03
+    # junction 730 on a route CARLA drives straight. ──────────────────────
+    for key, entry in lane_index.items():
+        if entry['isJunction']:
             continue
-        for direction, edge_type in (('left', 'CHANGELANELEFT'), ('right', 'CHANGELANERIGHT')):
-            ref = lr[direction]
-            if not ref:
-                continue
-            target_key = (ref['roadId'], ref['sectionId'], ref['laneId'])
-            if target_key not in lane_index:
-                continue
-            from_node = lane_entry_node[key]
-            to_node = lane_entry_node[target_key]
-            edges.append({
-                'from': from_node, 'to': to_node, 'type': edge_type,
-                'length': 0, 'intersection': lane_index[key]['isJunction'],
-                'path': [],
-                'entry': {'roadId': key[0], 'sectionId': key[1], 'laneId': key[2],
-                          **node_point[entry_raw(key)]},
-                'exit': {'roadId': target_key[0], 'sectionId': target_key[1], 'laneId': target_key[2],
-                         **node_point[entry_raw(target_key)]},
-            })
+        # (lane the sample is on, [x, y, z, s]) — normally this lane's own
+        # path. A lane under one sample long gets entry.next(2.0)[0] as its
+        # only sample, which lies in the SUCCESSOR lane; CARLA then reads that
+        # lane's markings and neighbours (Town03's 2 m stubs before a
+        # junction change lanes inside the connector, not on the stub).
+        samples = [(key, p) for p in lane_path[key]]
+        span = abs(entry['s1'] - entry['s0'])
+        succs = successors_by_lane.get(key) or []
+        if span < SAMPLING_RESOLUTION_M and succs:
+            # next() keeps walking through as many stubs as the 2 m covers.
+            remaining = SAMPLING_RESOLUTION_M - span
+            succ_key = (succs[0]['roadId'], succs[0]['sectionId'], succs[0]['laneId'])
+            for _ in range(10):
+                succ = lane_index[succ_key]
+                succ_span = abs(succ['s1'] - succ['s0'])
+                onward = successors_by_lane.get(succ_key) or []
+                if remaining <= succ_span or not onward:
+                    break
+                remaining -= succ_span
+                succ_key = (onward[0]['roadId'], onward[0]['sectionId'], onward[0]['laneId'])
+            sign = 1.0 if succ['s1'] >= succ['s0'] else -1.0
+            samples = [(succ_key, succ['evaluate']([succ['s0'] + sign * min(remaining, succ_span)])[0])]
+        found = {'right': False, 'left': False}
+        for wkey, sample in samples:
+            w_road, w_section, w_lane = wkey
+            lr = left_right.get(wkey) or {}
+            inner_key = (w_road, w_section, w_lane + 1 if w_lane < 0 else w_lane - 1)
+            s_here = sample[3]
+            for direction, bit, records, edge_type in (
+                    ('right', _LC_RIGHT, mark_records.get(wkey), 'CHANGELANERIGHT'),
+                    ('left', _LC_LEFT, mark_records.get(inner_key), 'CHANGELANELEFT')):
+                if found[direction] or not (_mark_bits_at(records, s_here) & bit):
+                    continue
+                ref = lr.get(direction)
+                target_key = (ref['roadId'], ref['sectionId'], ref['laneId']) if ref else None
+                if target_key not in lane_index:
+                    continue
+                edges.append({
+                    'from': lane_entry_node[key], 'to': lane_entry_node[target_key],
+                    'type': edge_type, 'length': 0, 'intersection': False,
+                    'path': [],
+                    'entry': {'roadId': w_road, 'sectionId': w_section, 'laneId': w_lane,
+                              'x': round(sample[0], 3), 'y': round(sample[1], 3), 'z': round(sample[2], 3)},
+                    'exit': {'roadId': target_key[0], 'sectionId': target_key[1], 'laneId': target_key[2],
+                             **node_point[entry_raw(target_key)]},
+                })
+                found[direction] = True
+            if found['right'] and found['left']:
+                break
 
     # ── Flat lanes[] table ──────────────────────────────────────────────────
     lanes_out: list[dict] = []
@@ -458,8 +624,8 @@ def build_lane_graph_from_xodr(xodr_path: Path, roads_out: list[dict], town: str
     return {
         'town': town,
         'carlaMapName': None,
-        'samplingResolution': None,
-        'probeVersion': 'xodr-1',
+        'samplingResolution': SAMPLING_RESOLUTION_M,
+        'probeVersion': 'xodr-2',
         'source': 'xodr',
         'nodes': nodes,
         'edges': edges,

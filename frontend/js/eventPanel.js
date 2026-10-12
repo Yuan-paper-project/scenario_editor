@@ -26,6 +26,11 @@
     ['lane_change', 'Spurwechsel'],
     ['lane_offset', 'Spurversatz'],
   ];
+  // Kept in EVENT_ACTIONS so a loaded event still gets its label and card, but
+  // not offered in the grid. set_distance is hidden by decision: it emits no
+  // DynamicConstraints, so KeepLongitudinalGap chases at its 100 m/s default
+  // whenever the gap is too large, and the preview does not simulate it.
+  const HIDDEN_ACTIONS = new Set(['set_distance']);
 
   // distance_to_ego is omitted for the ego itself — a distance from hero to
   // hero is always 0, so the condition would fire on tick 1 regardless of
@@ -37,11 +42,16 @@
   // rules in _afterEventGroups. ego_speed reads the ego's own speed, which is
   // one of the things an NPC may legitimately react to now that it may not
   // wait on an ego EVENT (ScenarioRules.mayWaitOnActor).
+  //
+  // distance_to_ego is „Abstand zu Akteur": the distance from another actor
+  // (entity_ref; absent = the ego, which every older payload means) to this
+  // one. relative_speed is that actor's speed minus this one's.
   const EVENT_TRIGGERS = [
     ['simulation_time', 'Simulationszeit'],
-    ['distance_to_ego', 'Abstand zum Ego'],
+    ['distance_to_ego', 'Abstand zu Akteur'],
     ['distance_to_point', 'Abstand zu einem Punkt'],
     ['ego_speed', 'Ego-Geschwindigkeit'],
+    ['relative_speed', 'Geschw.-Differenz'],
     ['after_event', 'Nach anderem Event'],
     ['event_started', 'Mit Start eines Events'],
   ];
@@ -54,6 +64,13 @@
   ];
   const DEFAULT_EGO_SPEED = 10;
 
+  // relative_speed: speed(other actor) − speed(this actor), RelativeSpeedCondition.
+  const RELATIVE_SPEED_RULES = [
+    ['greaterThan', 'größer als'],
+    ['lessThan', 'kleiner als'],
+  ];
+  const DEFAULT_RELATIVE_SPEED = 2;
+
   // A freshly chosen distance_to_point starts as a small ring around the point
   // rather than inheriting the outgoing trigger's value, which is a delay in
   // seconds or a 400 m ego distance and means nothing as a radius.
@@ -63,7 +80,7 @@
   // dimension, so switching re-defaults it — 5 is a nonsense rate and 2.5 a
   // nonsense duration. 2.5 m/s² is ≈0.25 g, everyday accel/brake.
   const SPEED_DIMENSIONS = [
-    ['time', 'Zeit'],
+    ['time', 'für'],
     ['rate', 'Rate'],
   ];
   const DEFAULT_SPEED_TIME = 5.0;
@@ -73,6 +90,19 @@
   // without leaving the lane; the backend clamps the magnitude to 10 m.
   const DEFAULT_LANE_OFFSET_M = 1.0;
   const MAX_LANE_OFFSET_M = 10.0;
+  // Used for the „½ Spur" / „1 Spur" presets when no lane is found under the actor.
+  const FALLBACK_LANE_WIDTH_M = 3.5;
+  const DEFAULT_SPEED_FACTOR = 0.8;
+
+  const RETURN_LANE_OFFSET_HINT =
+    'Endet, sobald der Versatz erreicht ist (auf 0,1 m), und kehrt dann zur Spurmitte '
+    + 'zurück — ein Schlenker in einem Event, an den „Nach anderem Event" anschließen kann. '
+    + 'Braucht den lokalen ScenarioRunner-Patch (ChangeActorLaneOffset); '
+    + 'ein unveränderter ScenarioRunner 0.9.15 setzt den Versatz sofort zurück.';
+
+  const CONTINUOUS_SPEED_HINT =
+    'Folgt der Geschwindigkeit des Bezugsakteurs dauerhaft (continuous="true") — '
+    + 'endet erst, wenn ein anderes Geschwindigkeits- oder Trajektorien-Event übernimmt.';
 
   const FIXED_LANE_OFFSET_HINT =
     'Ein Spurversatz gilt dauerhaft (continuous="true") — er endet erst, wenn '
@@ -148,6 +178,7 @@
     });
 
     EVENT_ACTIONS.forEach(([actionType, label]) => {
+      if (HIDDEN_ACTIONS.has(actionType)) return;
       const isPathAction = actionType === 'follow_trajectory' || actionType === 'assign_route';
       // AssignRouteAction is vehicle-only downstream (_ROUTE_ACTION_TYPES in
       // event_builders.py). Offering it to a Fußgänger produced an event that
@@ -279,6 +310,8 @@
       const isCollapsed = !!ev.collapsed && !isHighlighted;
       const isDrawing = drawingEventId === ev.id;
       const problem = problems.get(ev.id) || null;
+      // Exports fine but cannot do anything in CARLA — never blocks the export.
+      const warning = problem ? null : ScenarioRules.eventWarning(actor, ev, events);
       card.className = `event-card${isCollapsed ? ' collapsed' : ''}` +
         `${isDrawing ? ' active-draw' : ''}${problem ? ' has-problem' : ''}` +
         `${isHighlighted ? ' timeline-focus' : ''}`;
@@ -322,6 +355,7 @@
       if (isCollapsed) {
         card.appendChild(_summaryLine(ev, actor, actionType, triggerSummary));
         if (problem) card.appendChild(_problemChip(problem));
+        else if (warning) card.appendChild(_problemChip(warning, { soft: true }));
         eventList.appendChild(card);
         return;
       }
@@ -329,6 +363,7 @@
       // Directly under the header, before the trigger: this is the reason the
       // rest of the card will not happen, so it reads first.
       if (problem) card.appendChild(_problemChip(problem));
+      else if (warning) card.appendChild(_problemChip(warning, { soft: true }));
 
       // WENN before DANN: the trigger goes first, the action controls below it.
       // An assign_route has no trigger *controls* — its start is discarded and
@@ -395,9 +430,9 @@
   }
 
   /** „⚠ <Grund>" — why this card will not reach the exported file. */
-  function _problemChip(problem) {
+  function _problemChip(problem, { soft = false } = {}) {
     const chip = document.createElement('div');
-    chip.className = 'event-problem';
+    chip.className = soft ? 'event-problem event-warning' : 'event-problem';
     chip.setAttribute('role', 'status');
     const icon = document.createElement('span');
     icon.className = 'event-problem-icon';
@@ -405,7 +440,9 @@
     icon.textContent = '⚠';
     const text = document.createElement('span');
     text.textContent = problem.short;
-    chip.title = `Dieses Event wird beim Export verworfen: ${problem.message}.`;
+    chip.title = soft
+      ? `Wird exportiert, bewirkt in CARLA aber nichts: ${problem.message}.`
+      : `Dieses Event wird beim Export verworfen: ${problem.message}.`;
     chip.appendChild(icon);
     chip.appendChild(text);
     return chip;
@@ -455,40 +492,107 @@
 
   // ── Action Controls ─────────────────────────────────────────────────────────
 
+  /**
+   * Geschw. setzen, in at most three rows: Modus + its partner (the reference
+   * actor, or Vorwärts/Rückwärts), then Art + Folgen for a relative target, then
+   * the value with its dynamics — „für N s" / „Rate N m/s²" chosen by a small
+   * select inside the row rather than a toggle row of its own.
+   */
   function _appendSpeedActionControls(card, actor, ev, action) {
     const speedTarget = action.target || { mode: 'absolute', value: 10.0 };
     const speedDynamics = action.dynamics || { shape: 'step', dimension: 'time', value: 5.0 };
     const isRelativeSpeed = _speedMode(ev) === 'relative';
-    card.appendChild(_row('Modus', _speedModeToggle(actor, ev)));
+    const isFactor = isRelativeSpeed && speedTarget.value_type === 'factor';
+    const isSelf = isRelativeSpeed && speedTarget.entity_ref === actor.id;
+    const isContinuous = isRelativeSpeed && speedTarget.continuous === true && !isSelf;
+
+    const modeControls = [_speedModeToggle(actor, ev)];
     if (isRelativeSpeed) {
-      const targetOptions = _relativeActorOptions(actor);
+      // „Eigene Geschw." is offered last: relative to oneself is only safe with
+      // a `rate` ramp, which snapshots the target once — choosing it switches
+      // the dynamics to Rate and drops any continuous follow.
+      const targetOptions = [..._relativeActorOptions(actor), [actor.id, 'Eigene Geschw.']];
       const selectedTarget = speedTarget.entity_ref || _defaultRelativeActorId(actor);
-      const targetSelect = _select(targetOptions.length ? targetOptions : [['', 'Kein Akteur']], selectedTarget);
-      targetSelect.disabled = targetOptions.length === 0;
+      const targetSelect = _select(targetOptions, selectedTarget);
+      targetSelect.className = 'event-speed-ref';
+      targetSelect.setAttribute('aria-label', 'Relativ zu');
+      targetSelect.title = 'Relativ zu — „Eigene Geschw.": Ziel ist die eigene Geschwindigkeit '
+        + 'beim Start, z. B. Faktor 0,5 = auf die Hälfte abbremsen (nur mit Rate)';
       targetSelect.addEventListener('change', e => {
-        _patchEventAction(actor, ev, {
-          target: { ...speedTarget, mode: 'relative', entity_ref: e.target.value },
-        });
+        const self = e.target.value === actor.id;
+        const patch = { target: { ...speedTarget, mode: 'relative', entity_ref: e.target.value } };
+        if (self) {
+          patch.target.continuous = false;
+          if (_speedDimension(ev) !== 'rate') {
+            patch.dynamics = { ...speedDynamics, dimension: 'rate', shape: 'linear', value: DEFAULT_SPEED_RATE };
+          }
+        }
+        _patchEventAction(actor, ev, patch);
       });
-      card.appendChild(_row('Relativ zu', targetSelect));
+      modeControls.push(targetSelect);
+    } else if (ScenarioRules.canReverse(actor.type)) {
+      const dir = _toggle(actor, ev,
+        [['forward', 'Vor'], ['reverse', 'Rück']],
+        speedTarget.reverse === true ? 'reverse' : 'forward',
+        value => ({ target: { ...speedTarget, mode: 'absolute', reverse: value === 'reverse' } }));
+      dir.title = 'Richtung — Rück: das Fahrzeug fährt rückwärts, ohne sich zu drehen '
+        + '(SimpleVehicleControl kehrt nur die Geschwindigkeit um)';
+      dir.querySelector('[data-value="forward"]').title = 'Vorwärts';
+      dir.querySelector('[data-value="reverse"]').title = 'Rückwärts';
+      modeControls.push(dir);
     }
-    card.appendChild(_row('Dynamik', _speedDimensionToggle(actor, ev)));
+    card.appendChild(_multiRow('Modus', modeControls));
+
+    if (isRelativeSpeed) {
+      const art = _toggle(actor, ev,
+        [['delta', 'Δ'], ['factor', '×']],
+        isFactor ? 'factor' : 'delta',
+        value => ({ target: { ...speedTarget, value_type: value } }));
+      art.title = 'Art — Δ: Bezugsgeschw. plus Differenz; ×: Bezugsgeschw. mal Faktor';
+      art.querySelector('[data-value="delta"]').title = 'Differenz (m/s)';
+      art.querySelector('[data-value="factor"]').title = 'Faktor';
+      const controls = [art];
+      if (!isSelf) {
+        const follow = _toggle(actor, ev,
+          [['once', 'Einmal'], ['continuous', 'Dauer']],
+          isContinuous ? 'continuous' : 'once',
+          value => ({ target: { ...speedTarget, continuous: value === 'continuous' } }));
+        follow.title = 'Folgen — Einmal: Ziel beim Start bzw. für die Dauer nachgeführt. '
+          + 'Dauer: folgt dem Bezugsakteur, bis ein anderes Event übernimmt.';
+        controls.push(follow);
+      }
+      card.appendChild(_multiRow('Art', controls));
+    }
 
     const speedInput = document.createElement('input');
     speedInput.type = 'number';
-    speedInput.max = '100';
-    speedInput.step = '0.5';
-    speedInput.value = UIUtils.fmt(isRelativeSpeed ? (speedTarget.delta ?? 10.0) : (speedTarget.value ?? 10.0));
+    speedInput.max = isFactor ? '10' : '100';
+    speedInput.step = isFactor ? '0.05' : '0.5';
+    speedInput.value = isFactor
+      ? UIUtils.fmt(speedTarget.factor ?? DEFAULT_SPEED_FACTOR, 2)
+      : UIUtils.fmt(isRelativeSpeed ? (speedTarget.delta ?? 10.0) : (speedTarget.value ?? 10.0));
     speedInput.addEventListener('change', e => {
       const parsed = parseFloat(e.target.value);
       const value = Number.isFinite(parsed) ? parsed : 0;
       _patchEventAction(actor, ev, {
-        target: isRelativeSpeed
-          ? { ...speedTarget, mode: 'relative', delta: value }
-          : { ...speedTarget, mode: 'absolute', value: Math.max(0, value) },
+        target: isFactor
+          ? { ...speedTarget, mode: 'relative', factor: Math.min(10, Math.max(0, value)) }
+          : isRelativeSpeed
+            ? { ...speedTarget, mode: 'relative', delta: value }
+            : { ...speedTarget, mode: 'absolute', value: Math.max(0, value) },
       });
     });
-    if (!isRelativeSpeed) speedInput.min = '0';
+    if (!isRelativeSpeed || isFactor) speedInput.min = '0';
+    const valueLabel = isFactor ? 'Faktor' : isRelativeSpeed ? 'Δ Geschw.' : 'Geschw.';
+
+    if (isContinuous) {
+      const fact = document.createElement('span');
+      fact.className = 'event-fixed-trigger-text';
+      fact.textContent = 'dauerhaft';
+      fact.title = CONTINUOUS_SPEED_HINT;
+      card.appendChild(_speedTimingRow(speedInput, null, fact, valueLabel, isFactor));
+      return;
+    }
 
     const isRate = _speedDimension(ev) === 'rate';
     const dynFloor = isRate ? 0.1 : 0; // a rate of 0 never reaches its target
@@ -507,7 +611,27 @@
         },
       });
     });
-    card.appendChild(_speedTimingRow(speedInput, timeInput, isRate));
+    card.appendChild(_speedTimingRow(speedInput, timeInput,
+      _speedDimensionSelect(actor, ev, { rateOnly: isSelf }), valueLabel, isFactor));
+  }
+
+  /** A segmented toggle whose click patches the action with `patchFor(value)`. */
+  function _toggle(actor, ev, options, current, patchFor) {
+    const wrap = document.createElement('div');
+    wrap.className = 'event-toggle';
+    options.forEach(([value, label]) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = label;
+      btn.dataset.value = value;
+      btn.className = value === current ? 'active' : '';
+      btn.addEventListener('click', () => {
+        if (value === current) return;
+        _patchEventAction(actor, ev, patchFor(value));
+      });
+      wrap.appendChild(btn);
+    });
+    return wrap;
   }
 
   function _appendDistanceActionControls(card, actor, ev, action) {
@@ -544,8 +668,6 @@
     directionSelect.addEventListener('change', e => {
       _patchEventAction(actor, ev, { direction: e.target.value === 'right' ? 'right' : 'left' });
     });
-    card.appendChild(_row('Richtung', directionSelect));
-
     const durationInput = document.createElement('input');
     durationInput.type = 'number';
     durationInput.min = '0';
@@ -564,7 +686,9 @@
     // Kept short so it fits the shared 70px label column; the title carries
     // the long form.
     durationInput.title = 'Strecke, über die der Spurwechsel ausgeführt wird';
-    card.appendChild(UIUtils.paramRow('Strecke', durationInput, 'm'));
+    directionSelect.setAttribute('aria-label', 'Richtung');
+    card.appendChild(_multiRow('Richtung', [directionSelect, _unit('über'), durationInput, _unit('m')],
+      { className: 'event-lane-change-row' }));
   }
 
   /**
@@ -576,8 +700,6 @@
    * two-way choice.
    */
   function _appendLaneOffsetControls(card, actor, ev, action) {
-    card.appendChild(_row('Richtung', _lateralDirectionToggle(actor, ev)));
-
     const offsetInput = document.createElement('input');
     offsetInput.type = 'number';
     offsetInput.min = '0';
@@ -590,14 +712,47 @@
         offset: Math.min(MAX_LANE_OFFSET_M, Math.max(0, Number.isFinite(parsed) ? parsed : 0)),
       });
     });
-    offsetInput.title = 'Seitlicher Abstand zur Spurmitte; 0 m bedeutet zurück in die Mitte';
-    card.appendChild(UIUtils.paramRow('Versatz', offsetInput, 'm'));
+    offsetInput.title = 'Versatz — seitlicher Abstand zur Spurmitte; 0 m bedeutet zurück in die Mitte';
+    offsetInput.setAttribute('aria-label', 'Versatz');
 
-    // The one thing about this action that no control states: it has no end.
-    // Same role as the assign_route card's fixed-trigger row — a fact, not a
-    // control — and worth a row of its own, because it is what decides whether
-    // anything can be chained after it.
-    card.appendChild(_fixedFactRow('Dauer', 'dauerhaft (fest)', FIXED_LANE_OFFSET_HINT));
+    // Presets from the width of the lane under the actor, read off the .xodr:
+    // half a lane puts the actor's centre ON the lane line (straddling), a whole
+    // lane puts it in the middle of the next one. A fixed 1.75 m is only half a
+    // lane on a 3.5 m lane — Town01/02 lanes are 4 m.
+    const width = _laneWidthAt(actor);
+    const presets = document.createElement('div');
+    presets.className = 'event-toggle event-offset-presets';
+    [['half', '½', width / 2], ['full', '1', width]].forEach(([key, label, metres]) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.dataset.preset = key;
+      btn.textContent = label;
+      btn.title = `${key === 'half' ? 'Halbe Spur' : 'Ganze Spur'}: ${UIUtils.fmt(metres, 2)} m `
+        + `— Spurbreite hier ${UIUtils.fmt(width, 2)} m`;
+      btn.addEventListener('click', () => {
+        _patchEventAction(actor, ev, { offset: Math.round(metres * 100) / 100 });
+      });
+      presets.appendChild(btn);
+    });
+    card.appendChild(_multiRow('Seite',
+      [_lateralDirectionToggle(actor, ev), offsetInput, _unit('m'), presets],
+      { className: 'event-offset-row' }));
+
+    const held = action.continuous !== false;
+    const mode = _toggle(actor, ev,
+      [['held', 'Dauerhaft'], ['return', 'Hin & zurück']],
+      held ? 'held' : 'return',
+      value => ({ continuous: value === 'held' }));
+    mode.title = held ? FIXED_LANE_OFFSET_HINT : RETURN_LANE_OFFSET_HINT;
+    card.appendChild(_row('Dauer', mode));
+  }
+
+  /** Width of the driving lane under the actor, from the render JSON's per-point
+   * `widths`; FALLBACK_LANE_WIDTH_M off the network. */
+  function _laneWidthAt(actor) {
+    const near = ObjectsManager.nearestLaneProjection(actor.x, actor.y, new Set(['driving']), 10);
+    const w = near && near.lane.widths ? near.lane.widths[near.segIndex] : null;
+    return Number.isFinite(w) && w > 0.5 ? w : FALLBACK_LANE_WIDTH_M;
   }
 
   /** Links | Rechts, for an action whose direction is a side of the lane. */
@@ -621,25 +776,6 @@
       wrap.appendChild(btn);
     });
     return wrap;
-  }
-
-  /** A card row that states something fixed, styled like the assign_route
-   *  trigger block's label/text pair rather than like an editable row. */
-  function _fixedFactRow(labelText, text, hint) {
-    const row = document.createElement('div');
-    row.className = 'event-row event-fixed-row';
-    // A <span>, not a <label>: there is no control here to address, and
-    // UIUtils.bindLabel would have nothing to point `for` at.
-    const label = document.createElement('span');
-    label.className = 'event-fixed-row-label';
-    label.textContent = labelText;
-    const value = document.createElement('span');
-    value.className = 'event-fixed-trigger-text';
-    value.textContent = text;
-    value.title = hint;
-    row.appendChild(label);
-    row.appendChild(value);
-    return row;
   }
 
   // ── Summaries And Labels ────────────────────────────────────────────────────
@@ -673,6 +809,14 @@
     if (trigger.type === 'ego_speed') {
       const sign = trigger.rule === 'lessThan' ? '<' : '>';
       return `Ego ${sign} ${UIUtils.fmt(trigger.value ?? DEFAULT_EGO_SPEED)} m/s`;
+    }
+    if (trigger.type === 'relative_speed') {
+      const sign = trigger.rule === 'lessThan' ? '<' : '>';
+      return `v(${_eventActorLabel(trigger.entity_ref)}) − eigene ${sign} ${UIUtils.fmt(trigger.value ?? 0)} m/s`;
+    }
+    if (trigger.type === 'distance_to_ego' && trigger.entity_ref &&
+        trigger.entity_ref !== AppState.ego?.id) {
+      return `Abstand zu ${_eventActorLabel(trigger.entity_ref)} ${UIUtils.fmt(trigger.value ?? 0, 0)}m`;
     }
     const pointTarget = trigger.entity_ref || _defaultPointTriggerActorId(actor);
     const triggerLabels = {
@@ -721,15 +865,20 @@
         ? `Route gezeichnet${routeVisible ? '' : ', ausgeblendet'}`
         : routePoints > 0 ? `Route ${partial(routePoints)}` : 'Route nicht gezeichnet',
       set_speed: speedMode === 'relative'
-        ? `${UIUtils.fmt(target.delta ?? 10)} m/s relativ zu ${_eventActorLabel(relativeSpeedTarget)} ${speedDynamicsSummary}`
-        : `${UIUtils.fmt(target.value ?? 10)} m/s ${speedDynamicsSummary}`,
+        ? `${target.value_type === 'factor'
+            ? `${UIUtils.fmt(target.factor ?? DEFAULT_SPEED_FACTOR, 2)}×`
+            : `${UIUtils.fmt(target.delta ?? 10)} m/s`} relativ zu ${
+            relativeSpeedTarget === actor.id ? 'eigener Geschw.' : _eventActorLabel(relativeSpeedTarget)} ${
+            target.continuous === true && relativeSpeedTarget !== actor.id ? 'dauerhaft' : speedDynamicsSummary}`
+        : `${UIUtils.fmt(target.value ?? 10)} m/s${target.reverse === true ? ' rückwärts' : ''} ${speedDynamicsSummary}`,
       set_distance: `${action.axis === 'lateral' ? 'Lateral' : 'Longitudinal'} ${UIUtils.fmt(action.value ?? 10)} m relativ zu ${_eventActorLabel(distanceTarget)}`,
       lane_change: `${action.direction === 'right' ? 'Rechts' : 'Links'} innerhalb ${UIUtils.fmt(dynamics.value ?? 12)} m`,
       // 'dauerhaft' is half the meaning of the action, so it belongs in the one
       // line a collapsed card gets — an offset of 0 reads 'zurück zur Spurmitte'
       // because naming a side there would say nothing.
       lane_offset: (action.offset ?? DEFAULT_LANE_OFFSET_M) > 0
-        ? `${action.direction === 'right' ? 'Rechts' : 'Links'} ${UIUtils.fmt(action.offset ?? DEFAULT_LANE_OFFSET_M)} m, dauerhaft`
+        ? `${action.direction === 'right' ? 'Rechts' : 'Links'} ${UIUtils.fmt(action.offset ?? DEFAULT_LANE_OFFSET_M)} m, ${
+          action.continuous === false ? 'hin & zurück' : 'dauerhaft'}`
         : 'Zurück zur Spurmitte, dauerhaft',
     };
     return actionLabels[action.type];
@@ -830,8 +979,12 @@
    *  the action controls (see _renderEventList). */
   function _appendEventTriggerControls(block, actor, ev, events) {
     const trigger = _eventTrigger(ev);
+    // The two actor-relative triggers need another actor to measure against;
+    // for the ego that means an NPC, for an NPC there is always the ego.
+    const others = _relativeActorOptions(actor);
     const triggerOptions = EVENT_TRIGGERS.filter(([value]) =>
-      !(value === 'distance_to_ego' && actor.type === 'ego'));
+      !((value === 'distance_to_ego' || value === 'relative_speed') && others.length === 0) ||
+      value === trigger.type);
     const triggerSelect = _select(triggerOptions, trigger.type || 'simulation_time');
     triggerSelect.addEventListener('change', e => {
       const kind = e.target.value;
@@ -847,6 +1000,17 @@
         _updateEvent(actor, ev.id, {
           trigger: { type: 'ego_speed', rule: 'greaterThan', value: DEFAULT_EGO_SPEED },
         });
+      } else if (kind === 'relative_speed') {
+        _updateEvent(actor, ev.id, {
+          trigger: { type: 'relative_speed', entity_ref: _defaultRelativeActorId(actor),
+                     rule: 'greaterThan', value: DEFAULT_RELATIVE_SPEED },
+        });
+      } else if (kind === 'distance_to_ego') {
+        // Absent entity_ref = the ego, which is what every older payload means
+        // and what an NPC gets by default; the ego itself has to name an NPC.
+        const next = { type: 'distance_to_ego', value: trigger.type === 'distance_to_ego' ? (trigger.value ?? 400) : 400 };
+        if (actor.type === 'ego') next.entity_ref = _defaultRelativeActorId(actor);
+        _updateEvent(actor, ev.id, { trigger: next });
       } else if (e.target.value === 'distance_to_point') {
         // The point is placed on the actor straight away rather than left null:
         // a null point used to reach the backend and be silently defaulted to
@@ -912,7 +1076,6 @@
       ruleSelect.addEventListener('change', e => {
         _patchEventTrigger(actor, ev, { type: 'ego_speed', rule: e.target.value });
       });
-      block.appendChild(_row('Ego ist', ruleSelect));
       const speedInput = document.createElement('input');
       speedInput.type = 'number';
       speedInput.min = '0';
@@ -924,7 +1087,63 @@
           value: Math.max(0, parseFloat(e.target.value) || 0),
         });
       });
-      block.appendChild(UIUtils.paramRow('Schwelle', speedInput, 'm/s'));
+      speedInput.setAttribute('aria-label', 'Schwelle');
+      block.appendChild(_multiRow('Ego ist', [ruleSelect, speedInput, _unit('m/s')],
+        { className: 'event-rule-row' }));
+    } else if (trigger.type === 'relative_speed') {
+      const refSelect = _select(others.length ? others : [['', 'Kein Akteur']],
+        trigger.entity_ref || _defaultRelativeActorId(actor));
+      refSelect.disabled = others.length === 0;
+      refSelect.addEventListener('change', e => {
+        _patchEventTrigger(actor, ev, { type: 'relative_speed', entity_ref: e.target.value });
+      });
+      block.appendChild(_row('Akteur', refSelect));
+      const ruleSelect = _select(RELATIVE_SPEED_RULES, trigger.rule === 'lessThan' ? 'lessThan' : 'greaterThan');
+      ruleSelect.title = 'Geschwindigkeit des gewählten Akteurs minus die eigene. '
+        + 'Positiv: der andere ist schneller. Beide als Betrag gemessen.';
+      ruleSelect.addEventListener('change', e => {
+        _patchEventTrigger(actor, ev, { type: 'relative_speed', rule: e.target.value });
+      });
+      const diffInput = document.createElement('input');
+      diffInput.type = 'number';
+      diffInput.min = '-100';
+      diffInput.max = '100';
+      diffInput.step = '0.5';
+      diffInput.value = UIUtils.fmt(trigger.value ?? DEFAULT_RELATIVE_SPEED);
+      diffInput.title = ruleSelect.title;
+      diffInput.addEventListener('change', e => {
+        const parsed = parseFloat(e.target.value);
+        _patchEventTrigger(actor, ev, {
+          type: 'relative_speed',
+          value: Math.max(-100, Math.min(100, Number.isFinite(parsed) ? parsed : 0)),
+        });
+      });
+      diffInput.setAttribute('aria-label', 'Schwelle');
+      block.appendChild(_multiRow('Differenz', [ruleSelect, diffInput, _unit('m/s')],
+        { className: 'event-rule-row' }));
+    } else if (trigger.type === 'distance_to_ego') {
+      const distanceInput = document.createElement('input');
+      distanceInput.type = 'number';
+      distanceInput.min = '0';
+      distanceInput.step = '1';
+      distanceInput.value = UIUtils.fmt(trigger.value ?? 0, 0);
+      distanceInput.addEventListener('change', e => {
+        _patchEventTrigger(actor, ev, {
+          type: 'distance_to_ego',
+          value: Math.max(0, parseFloat(e.target.value) || 0),
+        });
+      });
+      const selected = trigger.entity_ref || AppState.ego?.id || '';
+      const refSelect = _select(others.length ? others : [['', 'Kein Akteur']], selected);
+      refSelect.disabled = others.length === 0;
+      refSelect.addEventListener('change', e => {
+        const current = _eventTrigger(_currentEvent(actor.id, ev.id) || ev);
+        const { entity_ref, ...rest } = current;
+        _updateEvent(actor, ev.id, {
+          trigger: e.target.value === AppState.ego?.id ? rest : { ...rest, entity_ref: e.target.value },
+        });
+      });
+      block.appendChild(_pointDistanceRow(distanceInput, refSelect));
     } else if ((trigger.type || 'simulation_time') === 'distance_to_point') {
       const point = trigger.point;
       const selectedTarget = trigger.entity_ref || _defaultPointTriggerActorId(actor);
@@ -963,22 +1182,18 @@
       });
       block.appendChild(_pointDistanceRow(distanceInput, targetSelect));
     } else {
-      const isEgoDistance = (trigger.type || 'simulation_time') === 'distance_to_ego';
       const valueInput = document.createElement('input');
       valueInput.type = 'number';
       valueInput.min = '0';
-      valueInput.step = isEgoDistance ? '1' : '0.1';
-      valueInput.value = UIUtils.fmt(trigger.value ?? 0, isEgoDistance ? 0 : 1);
+      valueInput.step = '0.1';
+      valueInput.value = UIUtils.fmt(trigger.value ?? 0, 1);
       valueInput.addEventListener('change', e => {
         _patchEventTrigger(actor, ev, {
           type: trigger.type || 'simulation_time',
           value: Math.max(0, parseFloat(e.target.value) || 0),
         });
       });
-      // 'Wert' said nothing about which quantity; the two triggers left here
-      // measure different things in different units.
-      block.appendChild(UIUtils.paramRow(
-        isEgoDistance ? 'Abstand' : 'Zeit', valueInput, isEgoDistance ? 'm' : 's'));
+      block.appendChild(UIUtils.paramRow('Zeit', valueInput, 's'));
     }
   }
 
@@ -1119,39 +1334,63 @@
     return wrap;
   }
 
-  /** Zeit (s) vs Rate (m/s²) for the SpeedActionDynamics value. The two are not
-   * interchangeable numbers, so a real change re-defaults the value; clicking
-   * the already-active button leaves a hand-tuned one alone. */
-  function _speedDimensionToggle(actor, ev) {
+  /** „für" (a hold, seconds) vs „Rate" (a ramp, m/s²) for the
+   * SpeedActionDynamics value — a small select inside the speed row. The two are
+   * not interchangeable numbers, so a real change re-defaults the value. */
+  function _speedDimensionSelect(actor, ev, { rateOnly = false } = {}) {
     const current = _speedDimension(ev);
     const dynamics = _eventAction(ev).dynamics || {};
-    const wrap = document.createElement('div');
-    wrap.className = 'event-toggle';
-
-    SPEED_DIMENSIONS.forEach(([value, label]) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.textContent = label;
-      btn.className = value === current ? 'active' : '';
-      btn.addEventListener('click', () => {
-        if (value === current) return;
-        _patchEventAction(actor, ev, {
-          dynamics: {
-            ...dynamics,
-            dimension: value,
-            // 'step' + 'rate' is self-contradictory; the backend forces this
-            // too, but keeping state honest keeps the export a no-op change.
-            shape: value === 'rate' ? 'linear' : 'step',
-            value: value === 'rate' ? DEFAULT_SPEED_RATE : DEFAULT_SPEED_TIME,
-          },
-        });
+    const select = _select(SPEED_DIMENSIONS, current);
+    select.className = 'event-speed-dim';
+    select.setAttribute('aria-label', 'Dynamik');
+    select.title = 'Dynamik — für: Zielgeschwindigkeit sofort, gehalten für N s; '
+      + 'Rate: Rampe mit N m/s², endet beim Erreichen';
+    if (rateOnly) {
+      select.querySelector('option[value="time"]').disabled = true;
+      select.title += ' (relativ zur eigenen Geschwindigkeit nur mit Rate)';
+    }
+    select.addEventListener('change', e => {
+      const value = e.target.value;
+      if (value === current) return;
+      _patchEventAction(actor, ev, {
+        dynamics: {
+          ...dynamics,
+          dimension: value,
+          // 'step' + 'rate' is self-contradictory; the backend forces this
+          // too, but keeping state honest keeps the export a no-op change.
+          shape: value === 'rate' ? 'linear' : 'step',
+          value: value === 'rate' ? DEFAULT_SPEED_RATE : DEFAULT_SPEED_TIME,
+        },
       });
-      wrap.appendChild(btn);
     });
-    return wrap;
+    return select;
   }
 
   // ── DOM Helpers ─────────────────────────────────────────────────────────────
+
+  /** A label and several controls side by side — one row per meaning, so a
+   * choice and the value it governs never take two rows. The first control
+   * gets the label's `for`. */
+  function _multiRow(labelText, controls, { className = '' } = {}) {
+    const row = document.createElement('div');
+    row.className = `event-row event-multi-row ${className}`.trim();
+    const label = document.createElement('label');
+    label.textContent = labelText;
+    UIUtils.bindLabel(label, controls[0]);
+    const wrap = document.createElement('div');
+    wrap.className = 'event-multi';
+    controls.forEach(c => wrap.appendChild(c));
+    row.appendChild(label);
+    row.appendChild(wrap);
+    return row;
+  }
+
+  function _unit(text) {
+    const span = document.createElement('span');
+    span.className = 'event-unit';
+    span.textContent = text;
+    return span;
+  }
 
   function _row(labelText, control, { primary = false } = {}) {
     const row = document.createElement('div');
@@ -1167,28 +1406,32 @@
     return row;
   }
 
-  function _speedTimingRow(speedInput, timeInput, isRate) {
+  /** `<value> <unit> <dimension select> <dynamics value> <unit>` — or, for a
+   * continuous follow, the value followed by a fixed „dauerhaft" (`dimControl`
+   * is then that span and `timeInput` null). */
+  function _speedTimingRow(speedInput, timeInput, dimControl, valueLabel, isFactor) {
     const row = document.createElement('div');
     row.className = 'event-speed-row';
 
     const speedLabel = document.createElement('label');
-    speedLabel.textContent = 'Geschw.';
+    speedLabel.textContent = valueLabel;
     UIUtils.bindLabel(speedLabel, speedInput);
     const speedUnit = document.createElement('span');
-    speedUnit.textContent = 'm/s';
-
-    const timeLabel = document.createElement('label');
-    timeLabel.textContent = isRate ? 'Rate' : 'Für';
-    UIUtils.bindLabel(timeLabel, timeInput);
-    const timeUnit = document.createElement('span');
-    timeUnit.textContent = isRate ? 'm/s²' : 's';
+    speedUnit.textContent = isFactor ? '×' : 'm/s';
 
     row.appendChild(speedLabel);
     row.appendChild(speedInput);
     row.appendChild(speedUnit);
-    row.appendChild(timeLabel);
-    row.appendChild(timeInput);
-    row.appendChild(timeUnit);
+    row.appendChild(dimControl);
+    if (timeInput) {
+      const timeUnit = document.createElement('span');
+      timeUnit.textContent = dimControl.value === 'rate' ? 'm/s²' : 's';
+      timeInput.setAttribute('aria-label', dimControl.value === 'rate' ? 'Rate' : 'Dauer');
+      row.appendChild(timeInput);
+      row.appendChild(timeUnit);
+    } else {
+      row.classList.add('event-speed-row-fixed');
+    }
     return row;
   }
 
@@ -1646,9 +1889,9 @@
    *  already, when the dropdown learned about lane_offset and the default did
    *  not. */
   function _isChainTarget(ev, triggerType = 'after_event') {
-    const type = _eventAction(ev).type;
-    if (type === 'assign_route') return false;
-    return triggerType === 'event_started' || type !== 'lane_offset';
+    const action = _eventAction(ev);
+    if (action.type === 'assign_route') return false;
+    return triggerType === 'event_started' || !ScenarioRules.neverCompletes(action);
   }
 
   function _canChainOnto(actor, ev, owner, candidate, triggerType = 'after_event') {

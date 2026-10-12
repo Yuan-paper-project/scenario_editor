@@ -82,7 +82,22 @@ GEN_AND_MEASURE = ("""([t, s]) => {
         const lane = ObjectsManager.nearestLaneProjection(w.x, w.y, new Set(['driving']), 5);
         return lane ? lane.dist : null;
       });
-    return { id: npc.id, type: npc.type, events: npc.events, hasEvents: npc.events.length > 0,
+    // A route's end is where SimpleVehicleControl stops dead for good. Ending
+    // on the ego's route, ahead of where the NPC joined it, parks it in the
+    // ego's way until the 60 s stop trigger (CARLA, Town03 junction 655).
+    let endBlocksEgo = false;
+    const egoRouteEv = AppState.ego.events.find(e => e.action?.type === 'assign_route');
+    const egoRoute = egoRouteEv ? (Simulate.routeGeometry(AppState.ego, egoRouteEv) || [])
+      .map(p => Array.isArray(p) ? { x: p[0], y: p[1] } : p) : [];
+    if (route && wps.length >= 2 && egoRoute.length > 1) {
+      const near = q => { let bi = -1, bd = Infinity;
+        egoRoute.forEach((p, i) => { const d = Math.hypot(p.x - q.x, p.y - q.y); if (d < bd) { bd = d; bi = i; } });
+        return [bi, bd]; };
+      const [ei, ed] = near(wps[wps.length - 1]);
+      const [ji] = near(wps[1]);
+      endBlocksEgo = ed < 2.5 && ei >= ji;
+    }
+    return { id: npc.id, type: npc.type, events: npc.events, hasEvents: npc.events.length > 0, endBlocksEgo,
              fired: t0 != null, min, reach,
              obeyLights: npc.obey_traffic_lights !== false, obeyObstacles: npc.obey_obstacles !== false,
              strategies: wps.map(w => w.strategy), handoffs,
@@ -182,6 +197,9 @@ def check_scenario(town, t, s, r, page):
             if n["hasEvents"]:
                 C(f"{tag}: {n['type']} ignores lights and obstacles",
                   not n["obeyLights"] and not n["obeyObstacles"])
+    for n in r["npcs"]:
+        C(f"{tag}: {n['type']} route does not end on the ego's route ahead",
+          not n.get("endBlocksEgo"))
     if t == "oncoming_drift":
         n = next((n for n in r["npcs"] if n["hasEvents"]), None)
         st = n["strategies"] if n else []
@@ -366,6 +384,18 @@ def main():
                         C(f"{town}/{t}/seed{s}: cannot be hosted, returns null", r is None)
                         continue
                     check_scenario(town, t, s, r, page)
+
+        # ── A junction NPC that turns into the ego's lane must not park there ──
+        # SEEDS above never reach the sites that did this; Town03 seeds 5, 6, 7
+        # and 18 all did before the fix (and 24 in CARLA).
+        H.select_map(page, "Town03")
+        page.wait_for_function("AppState.laneGraph !== null", timeout=60000)
+        blocked = []
+        for s in (5, 6, 7, 10, 13, 18, 19, 24):
+            r = page.evaluate(GEN_AND_MEASURE, ["junction_conflict", s])
+            if r and any(n.get("endBlocksEgo") for n in r["npcs"]):
+                blocked.append(s)
+        C("Town03 junction_conflict: no NPC route ends on the ego's route ahead", not blocked, blocked)
 
         C("no JS errors", not [e for e in errors if "404" not in e], errors[:5])
         browser.close()

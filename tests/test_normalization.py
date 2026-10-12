@@ -14,6 +14,7 @@ pin the intended behaviour down so a change to it has to be deliberate.
 """
 import os
 import sys
+import shutil
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -578,14 +579,29 @@ check("ego: set_distance naming a real npc passes",
             "action": {"type": "set_distance", "entity_ref": "obj-2"}}],
           npcs=[{"id": "obj-2", "type": "car", "x": 5, "y": 5}])))
 
-# Relative set_speed naming the acting entity itself is legal — "my current
-# speed plus a delta" is a well-defined one-shot action, unlike set_distance.
+# Relative set_speed naming the acting entity itself compounds every tick
+# (ChangeActorTargetSpeed re-applies the relative target per tick) unless the
+# `rate` ramp snapshots it once — so it is legal with rate only, and never
+# continuous.
+check("ego: relative set_speed naming itself with 'time' raises",
+      raises(lambda: norm_ego([{"id": "e1", "trigger": {"type": "simulation_time"},
+                                "action": {"type": "set_speed",
+                                           "target": {"mode": "relative", "entity_ref": "obj-1",
+                                                      "delta": 5}}}])))
 out = norm_ego([{"id": "e1", "trigger": {"type": "simulation_time"},
                  "action": {"type": "set_speed",
-                            "target": {"mode": "relative", "entity_ref": "obj-1", "delta": 5}}}])
-check("ego: relative set_speed naming itself is allowed",
+                            "dynamics": {"dimension": "rate", "value": 2},
+                            "target": {"mode": "relative", "entity_ref": "obj-1",
+                                       "value_type": "factor", "factor": 0.5}}}])
+check("ego: relative set_speed naming itself with 'rate' is allowed",
       out["ego"]["events"][0]["action"]["target"]["entity_ref"] == "hero",
       str(out["ego"]["events"][0]["action"]["target"]))
+check("ego: self-referencing continuous set_speed raises",
+      raises(lambda: norm_ego([{"id": "e1", "trigger": {"type": "simulation_time"},
+                                "action": {"type": "set_speed",
+                                           "dynamics": {"dimension": "rate", "value": 2},
+                                           "target": {"mode": "relative", "entity_ref": "obj-1",
+                                                      "continuous": True}}}])))
 
 # distance_to_point naming the ego on an ego event is legitimate ("when I
 # reach this spot") and must not be coerced or rejected.
@@ -1108,5 +1124,179 @@ root = _xosc_root(_signal_scene("Town03", _HIGH_TL[0], _HIGH_TL[1], z=_HIGH_TL[2
 wp = root.find(".//ReachPositionCondition//WorldPosition")
 check("the signal's trigger point sits at the pole's road height, not z = 0",
       wp is not None and float(wp.get("z")) == _HIGH_TL[2], str(wp.attrib if wp is not None else None))
+
+
+# ── Speed/offset/trigger extensions and controller rate limits ──────────────
+
+def _relspd(eid, target, dimension="time"):
+    return {"id": eid, "trigger": {"type": "simulation_time", "value": 1},
+            "action": {"type": "set_speed", "target": target,
+                       "dynamics": {"dimension": dimension, "value": 2}}}
+
+
+out = validate_scenario_params(_scene(
+    [_spd("a", {"type": "simulation_time", "value": 1})],
+    [_spd("b", {"type": "distance_to_ego", "value": 20, "entity_ref": "obj-3"})],
+    [_spd("c", {"type": "distance_to_ego", "value": 20, "entity_ref": "obj-1"})],
+))
+check("distance_to_ego naming another NPC resolves to its entity",
+      out["npcs"][0]["events"][0]["trigger"] == {"type": "distance_to_ego", "value": 20.0,
+                                                  "entity_ref": "adversary1"},
+      str(out["npcs"][0]["events"][0]["trigger"]))
+check("distance_to_ego naming the ego drops the ref (identical to before)",
+      "entity_ref" not in out["npcs"][1]["events"][0]["trigger"])
+check("an NPC's distance_to_ego naming itself is a 400",
+      raises(lambda: validate_scenario_params(_scene(
+          [], [_spd("b", {"type": "distance_to_ego", "value": 20, "entity_ref": "obj-2"})]))))
+out = validate_scenario_params(_scene(
+    [_spd("a", {"type": "distance_to_ego", "value": 20, "entity_ref": "obj-2"}),
+     _spd("b", {"type": "distance_to_ego", "value": 20})], []))
+check("an ego distance_to_ego naming an NPC is kept, not coerced",
+      out["ego"]["events"][0]["trigger"].get("entity_ref") == "adversary",
+      str(out["ego"]["events"][0]["trigger"]))
+check("... while an ego distance_to_ego naming nobody is still coerced to time 0",
+      out["ego"]["events"][1]["trigger"] == {"type": "simulation_time", "value": 0.0})
+
+out = validate_scenario_params(_scene(
+    [_spd("a", {"type": "simulation_time", "value": 1})],
+    [_spd("b", {"type": "relative_speed", "entity_ref": "obj-1", "rule": "lessThan",
+                "value": -3})]))
+check("relative_speed normalises rule, signed value and ref",
+      out["npcs"][0]["events"][0]["trigger"] == {"type": "relative_speed", "rule": "lessThan",
+                                                  "value": -3.0, "entity_ref": "hero"},
+      str(out["npcs"][0]["events"][0]["trigger"]))
+check("a hero relative_speed with no ref (= itself) is a 400",
+      raises(lambda: validate_scenario_params(_scene(
+          [_spd("a", {"type": "relative_speed", "value": 1})], []))))
+
+out = validate_scenario_params(_scene(
+    [_spd("a", {"type": "simulation_time", "value": 1})],
+    [_relspd("b", {"mode": "relative", "entity_ref": "obj-1", "value_type": "factor",
+                   "factor": 0.8, "continuous": True})]))
+check("a factor/continuous relative target survives normalisation",
+      out["npcs"][0]["events"][0]["action"]["target"] == {
+          "mode": "relative", "entity_ref": "hero", "value_type": "factor",
+          "factor": 0.8, "continuous": True},
+      str(out["npcs"][0]["events"][0]["action"]["target"]))
+check("after_event onto a continuous follow is a 400",
+      raises(lambda: validate_scenario_params(_scene(
+          [_spd("a", {"type": "simulation_time", "value": 1})],
+          [_relspd("b", {"mode": "relative", "entity_ref": "obj-1", "continuous": True}),
+           _spd("c", {"type": "after_event", "event_id": "b"})]))))
+check("... while event_started onto it is fine",
+      not raises(lambda: validate_scenario_params(_scene(
+          [_spd("a", {"type": "simulation_time", "value": 1})],
+          [_relspd("b", {"mode": "relative", "entity_ref": "obj-1", "continuous": True}),
+           _spd("c", {"type": "event_started", "event_id": "b"})]))))
+
+walker_scene = _scene([_spd("a", {"type": "simulation_time", "value": 1})],
+                      [{"id": "b", "trigger": {"type": "simulation_time", "value": 1},
+                        "action": {"type": "set_speed", "target": {"mode": "absolute", "value": 2,
+                                                                     "reverse": True}}}])
+walker_scene["npcs"][0]["type"] = "pedestrian"
+check("reverse on a walker is a 400", raises(lambda: validate_scenario_params(walker_scene)))
+
+check("a returning lane_offset (continuous false) is kept and may be chained onto",
+      not raises(lambda: validate_scenario_params(_scene(
+          [_spd("a", {"type": "simulation_time", "value": 1})],
+          [{"id": "b", "trigger": {"type": "simulation_time", "value": 1},
+            "action": {"type": "lane_offset", "offset": 1.5, "continuous": False}},
+           _spd("c", {"type": "after_event", "event_id": "b"})]))))
+check("... while a held one still may not",
+      raises(lambda: validate_scenario_params(_scene(
+          [_spd("a", {"type": "simulation_time", "value": 1})],
+          [{"id": "b", "trigger": {"type": "simulation_time", "value": 1},
+            "action": {"type": "lane_offset", "offset": 1.5}},
+           _spd("c", {"type": "after_event", "event_id": "b"})]))))
+
+out = validate_scenario_params({**_scene([_spd("a", {"type": "simulation_time", "value": 1})], []),
+                                })
+check("max_acceleration / max_deceleration default to 3 / 10",
+      (out["ego"]["max_acceleration"], out["ego"]["max_deceleration"]) == (3.0, 10.0))
+lim = _scene([_spd("a", {"type": "simulation_time", "value": 1})], [])
+lim["ego"]["max_acceleration"] = 0
+lim["ego"]["max_deceleration"] = 99
+out = validate_scenario_params(lim)
+check("the limits are clamped to 0.1 … 50",
+      (out["ego"]["max_acceleration"], out["ego"]["max_deceleration"]) == (0.1, 50.0))
+
+# Emission of all of the above, through the sibling repo's build_xosc.
+ext = _scene(
+    [_spd("a", {"type": "simulation_time", "value": 1})],
+    [_relspd("b", {"mode": "relative", "entity_ref": "obj-1", "value_type": "factor",
+                   "factor": 0.8, "continuous": True}),
+     {"id": "c", "trigger": {"type": "relative_speed", "entity_ref": "obj-1", "value": 4},
+      "action": {"type": "set_speed", "target": {"mode": "absolute", "value": 3, "reverse": True}}},
+     {"id": "d", "trigger": {"type": "distance_to_ego", "value": 12, "entity_ref": "obj-3"},
+      "action": {"type": "lane_offset", "offset": 1.2, "continuous": False}}],
+    [_spd("e", {"type": "simulation_time", "value": 1})])
+ext["npcs"][0]["max_acceleration"] = 4.5
+ext["ego"]["max_deceleration"] = 6
+root = _xosc_root(ext)
+rts = root.findall(".//RelativeTargetSpeed")
+check("emits RelativeTargetSpeed factor, continuous",
+      len(rts) == 1 and rts[0].get("speedTargetValueType") == "factor"
+      and rts[0].get("continuous") == "true" and float(rts[0].get("value")) == 0.8,
+      str([r.attrib for r in rts]))
+check("emits a negative AbsoluteTargetSpeed for reverse",
+      any(float(a.get("value")) == -3 for a in root.iter("AbsoluteTargetSpeed")))
+rsc = root.find(".//RelativeSpeedCondition")
+check("emits RelativeSpeedCondition with the NPC as reference",
+      rsc is not None and rsc.get("entityRef") == "adversary" and float(rsc.get("value")) == 4)
+lo = root.find(".//LaneOffsetAction")
+check("emits LaneOffsetAction continuous=false for a returning offset",
+      lo is not None and lo.get("continuous") == "false")
+dist_trig = [bec.find("TriggeringEntities/EntityRef").get("entityRef")
+             for bec in root.iter("ByEntityCondition")
+             if bec.find("EntityCondition/RelativeDistanceCondition") is not None]
+check("emits the distance trigger from the named NPC", "adversary1" in dist_trig, str(dist_trig))
+
+
+def _limits(root, entity):
+    props = root.findall(f".//Private[@entityRef='{entity}']//Controller/Properties/Property")
+    return {p.get("name"): p.get("value") for p in props
+            if p.get("name") in ("max_acceleration", "max_deceleration")}
+
+
+check("NPC controller carries its own max_acceleration",
+      _limits(root, "adversary") == {"max_acceleration": "4.5", "max_deceleration": "10.0"},
+      str(_limits(root, "adversary")))
+check("hero template carries its own max_deceleration",
+      _limits(root, "hero") == {"max_acceleration": "3.0", "max_deceleration": "6.0"},
+      str(_limits(root, "hero")))
+
+# Two XSD-required elements the emitter used to leave out. ScenarioRunner reads
+# neither, so they are pure schema validity: alongRoute on DistanceCondition
+# (every distance_to_point trigger) and TimeReference in FollowTrajectoryAction.
+xsd_scene = _scene(
+    [_spd("a", {"type": "simulation_time", "value": 1})],
+    [{"id": "t", "trigger": {"type": "distance_to_point", "value": 5,
+                             "point": {"x": 3.0, "y": 4.0, "z": 0.5}},
+      "action": {"type": "follow_trajectory",
+                 "trajectory": [{"x": 10, "y": 0, "velocity": 5}, {"x": 30, "y": 0, "velocity": 5}]}}])
+root = _xosc_root(xsd_scene)
+dc = root.find(".//DistanceCondition")
+check("DistanceCondition carries alongRoute (XSD-required)",
+      dc is not None and dc.get("alongRoute") == "false", str(dc.attrib if dc is not None else None))
+fta = root.find(".//FollowTrajectoryAction")
+check("FollowTrajectoryAction carries a TimeReference (XSD-required)",
+      fta is not None and fta.find("TimeReference/None") is not None)
+
+_XSD = "/home/dellpro2/Antonio/scenario_runner/srunner/openscenario/OpenSCENARIO.xsd"
+if os.path.exists(_XSD) and shutil.which("xmllint"):
+    import subprocess
+    import tempfile
+    import xml.etree.ElementTree as ET
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "s.xosc")
+        ET.ElementTree(root).write(path)
+        r = subprocess.run(["xmllint", "--noout", "--schema", _XSD, path],
+                           capture_output=True, text=True)
+    # The <Vertex relativeTime> defect is known and documented (CLAUDE.md,
+    # Verification); everything else must validate.
+    left = [ln for ln in r.stderr.splitlines()
+            if "Vertex" not in ln and "fails to validate" not in ln and ln.strip()]
+    check("the .xosc validates against the XSD apart from the known Vertex defect",
+          not left, "; ".join(left[:3]))
 
 sys.exit(check.report())

@@ -100,6 +100,13 @@
       if (trigger?.type === 'distance_to_point') {
         return { ...trigger, entity_ref: entityRef(trigger.entity_ref) };
       }
+      // „Abstand zu Akteur" / relative_speed name the OTHER actor. Absent on a
+      // distance_to_ego means the ego and stays absent, so a payload from
+      // before the field existed is byte-for-byte what it was.
+      if ((trigger?.type === 'distance_to_ego' || trigger?.type === 'relative_speed') &&
+          trigger.entity_ref) {
+        return { ...trigger, entity_ref: entityRef(trigger.entity_ref) };
+      }
       // after_event's `event_id` is a storyboard element name and stays as it
       // is, but `actor_ref` names WHICH actor owns that event and needs the
       // same obj-N → OSC remap: the emitter keys its cross-actor name table on
@@ -131,6 +138,10 @@
       // them (PedestrianControl reads neither).
       obey_traffic_lights: actor.obey_traffic_lights !== false,
       obey_obstacles:      actor.obey_obstacles !== false,
+      // simple_vehicle_control's rate limits (m/s²); a walker carries them too
+      // and the emitter ignores them. Same defaults as every other layer.
+      max_acceleration: actor.max_acceleration ?? 3.0,
+      max_deceleration: actor.max_deceleration ?? 10.0,
       events: (actor.events||[]).map(ev => ({
         id: ev.id, name: ev.name,
         trigger: ev.action?.type === 'assign_route'
@@ -199,6 +210,13 @@
       e.target.value = '';
       const npcCount = (data.npcs || []).length;
       Toast.success(`Szenario geladen: ${data.map || 'Karte unbekannt'}, ${npcCount} NPC${npcCount !== 1 ? 's' : ''}`);
+      // An unknown type is a 400 at export, and the type picker cannot offer a
+      // way out (the type is in no group) — say so now, not at export time.
+      const known = new Set(AppState.ACTOR_TYPE_GROUPS.flatMap(g => g.sections.flatMap(s => s.types.map(t => t.type))));
+      const unknown = [...new Set(AppState.npcs.map(n => n.type).filter(t => !known.has(t)))];
+      if (unknown.length) {
+        Toast.warn(`Unbekannter Akteurtyp: ${unknown.join(', ')} — der Export wird abgelehnt. Akteur löschen und neu platzieren.`);
+      }
     } catch (err) {
       Toast.error(`Szenario konnte nicht geladen werden: ${err.message}`);
       e.target.value = '';

@@ -72,9 +72,9 @@ with sync_playwright() as p:
     ego_labels = page.evaluate(
         "[...document.querySelectorAll('#event-action-grid .event-action-button')]"
         ".map(b => b.textContent)")
-    check("ego event panel offers the same 6 actions as an NPC",
+    check("ego event panel offers the same 5 actions as an NPC",
           ego_labels == ["Trajektorie folgen", "Route zuweisen", "Geschw. setzen",
-                         "Abstand halten", "Spurwechsel", "Spurversatz"], str(ego_labels))
+                         "Spurwechsel", "Spurversatz"], str(ego_labels))
     check("ego's event section is visible",
           not page.evaluate("document.getElementById('event-section').classList.contains('hidden')"))
 
@@ -103,8 +103,9 @@ with sync_playwright() as p:
           "(distance_to_ego would be a self-distance, always 0)",
           evs[0]["trigger"] == {"type": "simulation_time", "value": 0}, str(evs[0]["trigger"]))
 
-    # ── Trigger dropdown omits distance_to_ego for the ego only ──────────────
-    seed(page, [speed_event("e1", {"type": "simulation_time", "value": 0})])
+    # ── Trigger dropdown omits distance_to_ego for an ego with no NPC ────────
+    # („Abstand zu Akteur" needs another actor; with an NPC the ego may name it.)
+    seed(page, [speed_event("e1", {"type": "simulation_time", "value": 0})], with_npc=False)
     page.evaluate("AppState.select('obj-1')")
     ego_trigger_opts = page.evaluate("""() => {
         const selects = document.querySelectorAll('#event-list select');
@@ -112,7 +113,7 @@ with sync_playwright() as p:
             [...s.options].some(o => o.value === 'simulation_time'));
         return triggerSelect ? [...triggerSelect.options].map(o => o.value) : null;
     }""")
-    check("ego trigger dropdown has no distance_to_ego option",
+    check("an ego with no NPC is offered no distance_to_ego",
           ego_trigger_opts is not None and "distance_to_ego" not in ego_trigger_opts,
           str(ego_trigger_opts))
 

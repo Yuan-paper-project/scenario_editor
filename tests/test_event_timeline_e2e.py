@@ -64,6 +64,11 @@ def main():
         C("click: preview starts", page.evaluate("Simulate.running"))
         lbl = page.inner_text("#sim-time-label")
         C("click: at the event's time", abs(float(lbl.split(" s")[0]) - t_brake) <= 0.1, (lbl, t_brake))
+        # The panel's axis ends where the preview does. It used to run on the
+        # generator's end rule (10 s still AND past 60 s), so every axis
+        # stretched to 60 s and squeezed a 20 s run into its first third.
+        ends = page.evaluate("[EventTimeline.data.end, Simulate.end]")
+        C("axis: ends where the preview run ends", abs(ends[0] - ends[1]) <= 0.1 and ends[1] < 55, ends)
         page.click("#sim-stop")
         page.wait_for_timeout(600)
 

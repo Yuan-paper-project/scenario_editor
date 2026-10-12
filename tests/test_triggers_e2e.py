@@ -87,14 +87,16 @@ with sync_playwright() as p:
     seed(page, [H.MIN_EVENT], [speed_event("e1", {"type": "simulation_time", "value": 1})])
     page.evaluate(f"AppState.select('{NPC1}')")
     opts = trigger_options(page)
-    check("an NPC is offered all six triggers",
+    check("an NPC is offered all seven triggers",
           opts == ["simulation_time", "distance_to_ego", "distance_to_point",
-                   "ego_speed", "after_event", "event_started"], str(opts))
+                   "ego_speed", "relative_speed", "after_event", "event_started"], str(opts))
     page.evaluate(f"AppState.select('{EGO_ID}')")
     opts = trigger_options(page)
-    check("the ego is offered ego_speed and event_started, but not distance_to_ego",
-          "ego_speed" in opts and "event_started" in opts and "distance_to_ego" not in opts,
-          str(opts))
+    # With an NPC to measure against, the ego gets „Abstand zu Akteur" too
+    # (naming the NPC); without one it does not — test_actions_ext_e2e.py.
+    check("the ego is offered ego_speed, event_started and the actor-relative triggers",
+          "ego_speed" in opts and "event_started" in opts and "distance_to_ego" in opts
+          and "relative_speed" in opts, str(opts))
 
     # ── An NPC may not wait on an ego event ──────────────────────────────────
     seed(page, [speed_event("ea", {"type": "simulation_time", "value": 1})],
@@ -273,8 +275,10 @@ with sync_playwright() as p:
           f2.get("m1") is not None and 0 <= f2["m1"] - t_n1 < 0.11, str(f2))
     check("preview: after_event still waits for completion",
           f1.get("n3") is not None and f1["n3"] - t_n1 > 4.9, str(f1))
-    check("preview: ego_speed fires once the ego passes 8 m/s (after t = 3 s)",
-          f2.get("m2") is not None and 3.0 < f2["m2"] < 3.2, str(f2))
+    # The step to 12 m/s at t > 3 s is a ramp at the ego's max_acceleration
+    # (3 m/s², SimpleVehicleControl), so 8 m/s is passed ~4/3 s later.
+    check("preview: ego_speed fires once the ego passes 8 m/s (≈ 3 + 4/3 s)",
+          f2.get("m2") is not None and 4.2 < f2["m2"] < 4.6, str(f2))
 
     seed(page, [speed_event("ea", {"type": "simulation_time", "value": 1})],
          [speed_event("n1", {"type": "after_event", "event_id": "ea", "actor_ref": EGO_ID})])

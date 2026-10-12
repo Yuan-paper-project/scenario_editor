@@ -1025,12 +1025,28 @@
     // there until every Act's 60 s stop trigger, its own route never complete.
     const runOn = _walkForward(rng, net, exitL.key, exitS, rng.range(60, 90));
     const runOnPose = runOn && _laneAt(runOn.L, runOn.s);
+    // ...unless "on past it" is the ego's own road. An NPC that turns into the
+    // ego's lane runs ahead of it, and 60–90 m on it parks on the ego's route:
+    // measured in CARLA (Town03 junction 655, seed 24) the scripted ego stopped
+    // 5.3 m behind it and waited out the 60 s stop trigger. Then it follows the
+    // corridor to its end and the ego's route ends 60 m short of that, as with
+    // the lead car; a run-on that merges into the ego's path later is refused.
+    let npcWps = runOnPose ? [_routeWp(exitPose), _routeWp(runOnPose)] : [_routeWp(exitPose)];
+    let egoEndD;
+    const endPose = runOnPose || exitPose;   // the walk can dead-end: then the route stops at the exit
+    const pastJ = c.pts.filter(p => p.d > sg.endD);
+    if (pastJ.length > 1 && _distToPolyline(pastJ, endPose.x, endPose.y) < 2.5) {
+      const joinSeg = c.segs.find(s2 => s2.L.key === exitL.key && s2.startD >= sg.endD - 1);
+      if (!joinSeg || c.length - 60 < dX + 30) return null;
+      npcWps = [_routeWp(exitPose), ..._corridorWaypoints(c, joinSeg.startD + exitS)];
+      egoEndD = c.length - 60;
+    }
 
     const type = _p('npc_type', rng.weighted([['car', 6], ['van', 2], ['truck', 1], ['motorcycle', 1], ['police', 0.5], ['ambulance', 0.5]]));
     const npc = _vehicle(type, npcPose, 0);
     _ignoresTraffic(npc);
     npc.events = [
-      _routeEvent(npc, runOnPose ? [_routeWp(exitPose), _routeWp(runOnPose)] : [_routeWp(exitPose)]),
+      _routeEvent(npc, npcWps),
       // A rate ramp at the controller's own acceleration, so the preview's
       // timing and CARLA's agree (a 'time' step is instant in the preview but
       // ramps at 3 m/s² in CARLA).
@@ -1039,6 +1055,7 @@
     return {
       corridor: c, npcs: [npc], props: [],
       conflictD: dX,
+      egoEndD,
       params: {
         npc_type: type, junction: J.junctionId, signalized, oncoming,
         npc_speed: r1(vNpc), npc_run_up_m: r1(npcToX), arrival_offset_s: r2(dt), trigger_m: r1(sol.radius),

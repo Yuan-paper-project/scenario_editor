@@ -242,7 +242,10 @@
     return nearest ? Math.round(nearest.laneYaw) : 0;
   }
 
-  function _nearestLaneProjection(wx, wy, laneTypes = null, maxDistance = Infinity) {
+  /** `wz`, when given, makes the distance 3-D — what CARLA's get_waypoint()
+   * does, and the only way to tell a deck from the street under it. Placement
+   * height deliberately stays 2-D (see groundZAt); route projection does not. */
+  function _nearestLaneProjection(wx, wy, laneTypes = null, maxDistance = Infinity, wz = null) {
     let best = null;
     for (const road of AppState.mapData?.roads || []) {
       for (const lane of road.lanes || []) {
@@ -258,7 +261,9 @@
           const t = Math.max(0, Math.min(1, ((wx - x0) * dx + (wy - y0) * dy) / len2));
           const x = x0 + t * dx;
           const y = y0 + t * dy;
-          const dist = Math.hypot(wx - x, wy - y);
+          const dist = wz === null || wz === undefined
+            ? Math.hypot(wx - x, wy - y)
+            : Math.hypot(wx - x, wy - y, wz - (z0 + t * (z1 - z0)));
           if (dist <= maxDistance && (!best || dist < best.dist)) {
             best = {
               x, y, dist,

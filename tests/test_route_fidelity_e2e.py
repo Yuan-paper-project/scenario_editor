@@ -119,6 +119,47 @@ with sync_playwright() as p:
     check("the previewed ego never drives backwards", not rev, str(rev[:4]))
 
     check("no unexpected JS errors during the run", not errors, str(errors[:3]))
+
+    # ── Routes CARLA was checked against (GlobalRoutePlanner on a live server) ──
+    def route_of(actor):
+        return page.evaluate("""(a) => (Simulate.routeForTesting(a) || [])
+                                  .map(p => [p.x, p.y, p.z || 0])""", actor)
+
+    def routed(aid, x, y, z, yaw, wps):
+        return {"id": aid, "type": "car", "x": x, "y": y, "z": z, "yaw": yaw, "initial_speed": 0,
+                "events": [{"id": "evt-1", "trigger": {"type": "simulation_time", "value": 0},
+                            "action": {"type": "assign_route", "route_strategy": "fastest",
+                                       "waypoints": [{**w, "strategy": "fastest"} for w in wps]}}]}
+
+    # Reported: a junction_conflict car on Town03 road 2 lane -2 previewed a
+    # change into lane -1 and straight back before junction 730; CARLA drives
+    # it straight through (road 2 -> 743 -> 3, lane -2 all the way). The
+    # xodr-derived graph had lane-change edges inside the junction.
+    car = routed("obj-1", -87.3, -174.9, 0.5, 93, [
+        {"x": -87.3, "y": -174.9, "z": 0.5}, {"x": -88.7, "y": -116.9, "z": 0.34},
+        {"x": -88.4, "y": -19.9, "z": 0.36}])
+    pts = route_of(car)
+    stray = [p for p in pts if -172 < p[1] < -126 and p[0] > -86.0]
+    check("the junction_conflict car stays in lane -2 up to junction 730 (no change and back)",
+          len(pts) > 20 and not stray, f"len={len(pts)} stray={stray[:3]}")
+
+    # Standing within 1 m of a lane end, CARLA's seed (next(1)) is in the
+    # successor, waypoint 0 is behind it, and the real route goes round the
+    # block to come back: road 5 is a 0.8 m stub. CARLA's route reaches y -197.
+    stub = routed("obj-9", 220.97, -1.68, 0.5, -179.18, [
+        {"x": 220.97, "y": -1.68, "z": 0.5}, {"x": 69.19, "y": 130.11, "z": 0.51}])
+    pts = route_of(stub)
+    check("a seed past a 0.8 m stub drives CARLA's loop round the block",
+          pts and min(p[1] for p in pts) < -190, f"min y={min(p[1] for p in pts) if pts else None}")
+
+    # A waypoint on a bridge deck projects onto the deck (3-D, like
+    # get_waypoint), not the street under it.
+    deck = page.evaluate("""() => ObjectsManager.nearestLaneProjection(
+        71.8, -136.7, new Set(['driving']), 30, 8.47)?.z""")
+    check("a route waypoint on Town03's elevated road projects onto the deck",
+          deck is not None and deck > 5, f"z={deck}")
+
+    check("no JS errors from the CARLA-checked routes", not errors, str(errors[:3]))
     browser.close()
 
 check.report()

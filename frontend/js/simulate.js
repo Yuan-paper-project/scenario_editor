@@ -7,16 +7,19 @@
  * (SimpleVehicleControl / PedestrianControl, both in
  * ../../scenario_runner/srunner/scenariomanager/actorcontrols/): they bypass
  * CARLA's vehicle physics entirely and write a target velocity straight onto
- * the actor, so speed is a piecewise-constant step function with no ramps —
- * that is exactly reproducible here, not an approximation. The genuinely
+ * the actor. A walker's speed is therefore exactly what was commanded; a
+ * vehicle's is the commanded speed after SimpleVehicleControl's own per-tick
+ * max_acceleration / max_deceleration clamp (_applyControllerLimits) — both
+ * are exactly reproducible here, not approximations. The genuinely
  * unknowable part is road-network topology CARLA's map builder resolves
  * internally (which successor lane a fork-following actor picks, the A*
  * route a `assign_route` action actually drives): this preview does not have
  * that data, so it stops and badges rather than guessing a path it cannot
  * justify. See the "In-editor preview fidelity" plan for the full analysis.
  *
- * All 6 real event triggers (simulation_time, distance_to_ego,
- * distance_to_point, ego_speed, after_event, event_started) are evaluated, including the two rewrites
+ * All 7 real event triggers (simulation_time, distance_to_ego,
+ * distance_to_point, ego_speed, relative_speed, after_event, event_started)
+ * are evaluated, including the two rewrites
  * the backend applies at export time (assign_route forces its own trigger to
  * simulation_time@0; an after_event chained onto a dropped/assign_route
  * event never fires) — mirrored here so the preview matches the .xosc that
@@ -52,6 +55,7 @@
   let _originals  = new Map();  // actorId → {x, y, z, yaw}, to restore on stop
   let _simActors  = new Map();  // actorId → sim actor record (see _makeSimActor)
   let _tickSpeeds = new Map();  // actorId → speed, snapshotted once per tick
+  let _tickPoses  = new Map();  // actorId → {x, y, z}, snapshotted with it
   // `actorId::eventId` → completedAt, snapshotted once per tick. Same reasoning
   // as _tickSpeeds: a cross-actor after_event that read another actor's live
   // fired-map would resolve differently depending on which actor _stepActor
@@ -241,7 +245,25 @@
   // just-rewritten case — the ego self-distance rewrite.
 
   const TRIGGER_TYPES = new Set(['simulation_time', 'distance_to_ego', 'distance_to_point',
-                                 'ego_speed', 'after_event', 'event_started']);
+                                 'ego_speed', 'relative_speed', 'after_event', 'event_started']);
+
+  // SimpleVehicleControl's rate limits when the actor states none — the same
+  // defaults the emitter writes (xml_builder._DYNAMICS_DEFAULTS).
+  const DEFAULT_MAX_ACCEL = 3.0;
+  const DEFAULT_MAX_DECEL = 10.0;
+  // "If the tmp_speed is < 0.5 the vehicle may not properly accelerate" — the
+  // controller bumps a positive command to at least this.
+  const SVC_MIN_PULL_AWAY = 0.5;
+  // ChangeActorLaneOffset.OFFSET_THRESHOLD: a non-continuous offset is reached
+  // within this many metres.
+  const LANE_OFFSET_THRESHOLD_M = 0.1;
+  // How fast the displaced aim point pulls the actor sideways. Measured in CARLA
+  // (Town04 road 40, 8 m/s, 1.75 m, tests/run_actions_ext_carla.py): the
+  // remaining lateral gap decays exponentially with distance driven — it halves
+  // every ~2 m, out and back alike — because SimpleVehicleControl steers
+  // straight at a waypoint a few metres ahead. So the gap shrinks by
+  // 1 − exp(−d / L) per d metres, with this L.
+  const LANE_OFFSET_APPROACH_M = 3.0;
   const ACTION_TYPES  = new Set(['follow_trajectory', 'assign_route', 'set_speed',
                                  'set_distance', 'lane_change', 'lane_offset']);
 
@@ -276,7 +298,10 @@
 
     if (isEgo) {
       for (const ev of events) {
-        if (ev.trigger.type === 'distance_to_ego') ev.trigger = { type: 'simulation_time', value: 0 };
+        if (ev.trigger.type === 'distance_to_ego' &&
+            (!ev.trigger.entity_ref || ev.trigger.entity_ref === actor.id)) {
+          ev.trigger = { type: 'simulation_time', value: 0 };
+        }
       }
     }
 
@@ -299,7 +324,7 @@
       // pretend the chain can proceed.
       if (!target || !_actionEmits(target.event.action, target.actor.type) ||
           (ev.trigger.type === 'after_event' &&
-           (target.event.action || {}).type === 'lane_offset') ||
+           ScenarioRules.neverCompletes(target.event.action)) ||
           !ScenarioRules.mayWaitOnActor(actor, target.actor) ||
           ScenarioRules.afterEventCycles(actor, ev)) {
         ev.trigger.neverFires = true;
@@ -339,8 +364,19 @@
         // regardless of geometry, and a preview that skips this diverges in
         // any scenario that runs that long.
         if (simTime > DISTANCE_TO_EGO_FALLBACK_S) return true;
-        if (!egoPrevPos) return false;
-        return _dist3(_pose(sim), egoPrevPos) < (trigger.value ?? 400);
+        // „Abstand zu Akteur": another actor than the ego is read from the
+        // per-tick pose snapshot, exactly as the ego is.
+        const other = trigger.entity_ref && trigger.entity_ref !== _egoId
+          ? _tickPoses.get(trigger.entity_ref) : egoPrevPos;
+        if (!other) return false;
+        return _dist3(_pose(sim), other) < (trigger.value ?? 400);
+      }
+      case 'relative_speed': {
+        // RelativeVelocityToOtherActor: speed(other) − speed(this), both the
+        // magnitudes CarlaDataProvider reports — hence the snapshot.
+        const diff = _refSpeed(trigger.entity_ref) - (_tickSpeeds.get(sim.id) ?? 0);
+        const limit = trigger.value ?? 0;
+        return trigger.rule === 'lessThan' ? diff < limit : diff > limit;
       }
       case 'distance_to_point': {
         const point = trigger.point;
@@ -389,9 +425,9 @@
 
   // ── Lane geometry (vehicle "no waypoints" mode + lane_change) ───────────────
 
-  function _laneAnchor(x, y) {
+  function _laneAnchor(x, y, z = null) {
     return ObjectsManager.nearestLaneProjection(
-      x, y, new Set(['driving']), LANE_SEARCH_MAX_DIST_M
+      x, y, new Set(['driving']), LANE_SEARCH_MAX_DIST_M, z
     );
   }
 
@@ -630,7 +666,9 @@
    * are different points.
    */
   function _resolveLaneRef(x, y, z) {
-    const near = _laneAnchor(x, y);
+    // 3-D, like the map.get_waypoint() every trace_route endpoint goes through:
+    // a waypoint on a bridge deck must not route from the street beneath it.
+    const near = _laneAnchor(x, y, z);
     if (!near || !near.road) return null;
     return {
       roadId: Number(near.road.id), sectionId: near.lane.sectionId, laneId: near.lane.laneId,
@@ -655,34 +693,98 @@
    * seed, which the runtime's heading filter uses as its initial reference.
    */
   function _seedAssignRouteStart(sim) {
-    const near = _laneAnchor(sim.x, sim.y);
+    const near = _laneAnchor(sim.x, sim.y, sim.z);
     if (!near || !near.road) return null;
 
-    const walked = _walkDirLine(near.lane.directionLine, near.x, near.y, near.z,
-                                near.segIndex, ROUTE_SEED_AHEAD_M);
-    let seedX = walked.x, seedY = walked.y, seedZ = walked.z;
+    // The seed is a waypoint ON a known lane, so its ref is built from that lane
+    // rather than re-projected: a seed that has crossed into a successor sits
+    // on the shared boundary point, where the nearest-lane projection hands
+    // back the lane it just left. That mattered — standing within 1 m of a lane
+    // end, CARLA's seed is in the successor, waypoint 0 (the actor's own pose)
+    // is then BEHIND it, and the real route drives round the block to come
+    // back to it (Town03 road 5 is a 0.8 m stub: a 194 m loop the preview did
+    // not show).
+    const refOf = (road, lane, p) => ({
+      roadId: Number(road.id), sectionId: lane.sectionId, laneId: lane.laneId,
+      x: p.x, y: p.y, z: p.z, rawX: p.x, rawY: p.y, rawZ: p.z,
+    });
+
+    let road = near.road, lane = near.lane;
+    const dl0 = lane.directionLine;
+    const segT = Math.hypot(near.x - dl0[near.segIndex - 1][0], near.y - dl0[near.segIndex - 1][1])
+      / (Math.hypot(dl0[near.segIndex][0] - dl0[near.segIndex - 1][0],
+                    dl0[near.segIndex][1] - dl0[near.segIndex - 1][1]) || 1);
+    let walked = _walkDirLineS(dl0, near.segIndex, segT, ROUTE_SEED_AHEAD_M);
+    if (!walked) { // no s on this payload's points — fall back to arc length
+      const w = _walkDirLine(dl0, near.x, near.y, near.z, near.segIndex, ROUTE_SEED_AHEAD_M);
+      walked = { ...w, remaining: ROUTE_SEED_AHEAD_M - w.consumed };
+    }
     let headingRad = (walked.yaw !== null ? walked.yaw : near.laneYaw) * Math.PI / 180;
 
-    if (walked.ranOut) {
-      // The lane ended inside that metre — .next() would return the successor.
-      const record = LaneGraph.laneRecord(AppState.laneGraph, Number(near.road.id),
-                                          near.lane.sectionId, near.lane.laneId);
-      const succ = _preferredSuccessor(AppState.laneGraph, record);
-      if (succ) {
-        const found = _findLaneByRef(succ);
-        if (found && (found.lane.directionLine || []).length >= 2) {
-          const [sx, sy, sz = 0] = found.lane.directionLine[0];
-          seedX = sx; seedY = sy; seedZ = sz;
-          const [nx, ny] = found.lane.directionLine[1];
-          headingRad = Math.atan2(ny - sy, nx - sx);
-        }
+    // .next(1.0) walks on through as many successors as the metre reaches.
+    for (let hop = 0; walked.ranOut && hop < 8; hop++) {
+      const graph = AppState.laneGraph;
+      const record = LaneGraph.laneRecord(graph, Number(road.id), lane.sectionId, lane.laneId);
+      let succ = _preferredSuccessor(graph, record);
+      if (!succ && graph && graph.source === 'xodr') {
+        // An unranked fork. Path-less driving refuses to guess here, but the
+        // seed cannot: past ANY successor, waypoint 0 (the actor's pose) is
+        // behind the seed and CARLA routes round to it, so keeping the actor's
+        // own point would hide a loop CARLA certainly drives. next()[0] was
+        // the highest-numbered road at 73% of the forks in the 8 probed towns.
+        const succs = LaneGraph.realSuccessors(record);
+        succ = succs.length ? succs.reduce((a, b) => (b.roadId > a.roadId ? b : a)) : null;
       }
-      // No usable successor (none, or an unranked xodr fork) -> CARLA's
-      // IndexError path: keep the actor's own waypoint.
+      const found = succ ? _findLaneByRef(succ) : null;
+      if (!found || (found.lane.directionLine || []).length < 2) {
+        // No successor -> CARLA's IndexError path: the seed is the actor's
+        // own waypoint.
+        return { ref: refOf(near.road, near.lane, near), headingRad: near.laneYaw * Math.PI / 180 };
+      }
+      road = found.road; lane = found.lane;
+      const next = _walkDirLineS(lane.directionLine, 1, 0, walked.remaining);
+      if (!next) break;
+      walked = next;
+      if (walked.yaw !== null) headingRad = walked.yaw * Math.PI / 180;
     }
 
-    const ref = _resolveLaneRef(seedX, seedY, seedZ);
-    return ref ? { ref, headingRad } : null;
+    return { ref: refOf(road, lane, walked), headingRad };
+  }
+
+  /**
+   * Walk `ds` along a lane in OpenDRIVE s — what Waypoint.next(d) advances —
+   * from `t` of the way along segment `idx` (dirLine[idx-1] -> dirLine[idx]).
+   * Not arc length: on the inside of a curve a lane is shorter than its s
+   * span, so an arc-length metre runs off the end of a lane that next(1)
+   * stays inside (Town04's ramps). Returns {x, y, z, yaw, ranOut, remaining}
+   * with `remaining` the s still to walk past the end, or null when the
+   * points carry no s (an older render payload).
+   */
+  function _walkDirLineS(dirLine, idx, t, ds) {
+    if (dirLine.length < 2 || dirLine[0].length < 4) return null;
+    const sAt = (i) => dirLine[i][3];
+    const sign = sAt(dirLine.length - 1) >= sAt(0) ? 1 : -1;
+    const s0 = sAt(idx - 1) + (sAt(idx) - sAt(idx - 1)) * t;
+    const target = s0 + sign * ds;
+    for (let i = idx; i < dirLine.length; i++) {
+      const a = dirLine[i - 1], b = dirLine[i];
+      // The lane's own end is exclusive: next() landing exactly on it already
+      // returns the successor (a generated actor 1 m before a fork does this).
+      const last = i === dirLine.length - 1;
+      if ((target - b[3]) * sign < (last ? -1e-6 : 1e-9)) {
+        const span = b[3] - a[3];
+        const f = span ? Math.max(0, Math.min(1, (target - a[3]) / span)) : 1;
+        return {
+          x: a[0] + (b[0] - a[0]) * f, y: a[1] + (b[1] - a[1]) * f, z: a[2] + (b[2] - a[2]) * f,
+          yaw: Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI, ranOut: false, remaining: 0,
+        };
+      }
+    }
+    const a = dirLine[dirLine.length - 2], b = dirLine[dirLine.length - 1];
+    return {
+      x: b[0], y: b[1], z: b[2], yaw: Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI,
+      ranOut: true, remaining: Math.abs(target - b[3]),
+    };
   }
 
   /**
@@ -791,7 +893,16 @@
       // sim.speed when they fire, exactly as BasicControl.update_target_speed()
       // overwrites _target_speed. An actor with no events gets no Act at all,
       // so for it this is the only speed it ever has.
-      speed: Math.max(0, actor.initial_speed || 0),
+      // `target` is what the atomics command (BasicControl._target_speed), and
+      // `speed` what the actor actually drives after SimpleVehicleControl's
+      // rate limits. A vehicle spawns at rest and pulls up to its Init speed at
+      // max_acceleration; PedestrianControl sets the speed outright, so a walker
+      // starts at it.
+      target: Math.max(0, actor.initial_speed || 0),
+      speed: MapView.isWalkerType(actor.type) ? Math.max(0, actor.initial_speed || 0) : 0,
+      lastCmd: null,               // SimpleVehicleControl._last_target_speed
+      maxAccel: actor.max_acceleration ?? DEFAULT_MAX_ACCEL,
+      maxDecel: actor.max_deceleration ?? DEFAULT_MAX_DECEL,
       events,
       fired: new Map(),           // eventId → {firedAt, completedAt|null}
       activeSpeedEventId: null,
@@ -801,6 +912,8 @@
       speedRampTarget: 0,          // ._target_speed as snapshotted in initialise()
       speedRelativeRef: null,      // entity id to keep tracking; null ⇒ absolute target
       speedRelativeDelta: 0,
+      speedRelativeFactor: null,   // speedTargetValueType="factor"; null ⇒ delta
+      speedContinuous: false,      // continuous="true": tracks for good, never completes
       activePathEventId: null,
       pathKind: null,              // 'follow_trajectory' | 'assign_route'
       waypoints: null,
@@ -812,7 +925,9 @@
       // path-following maths keeps running on the centreline exactly as
       // SimpleVehicleControl's own waypoint list does — the controller offsets
       // its aim point, it does not re-plan around the displaced position.
-      laneOffset: 0,
+      laneOffset: 0,               // the offset actually driven, eased toward laneOffsetTarget
+      laneOffsetTarget: 0,         // what the controller's _offset is set to
+      laneOffsetReturns: false,    // continuous="false": completes on reaching, then resets to 0
       activeLaneOffsetEventId: null,
       laneFollow: null,            // {lane, dirLine, idx} anchor while path-less
       badge: null,
@@ -852,6 +967,8 @@
     sim.activeSpeedEventId = null;
     sim.speedRelativeRef = null;
     sim.speedRelativeDelta = 0;
+    sim.speedRelativeFactor = null;
+    sim.speedContinuous = false;
     sim.speedRampFrom = 0;
     sim.speedRampTarget = 0;
   }
@@ -874,7 +991,8 @@
       if (prev && prev.completedAt == null) prev.completedAt = simTime;
       sim.activeLaneOffsetEventId = null;
     }
-    if (reset) sim.laneOffset = 0;
+    if (reset) sim.laneOffsetTarget = 0;
+    sim.laneOffsetReturns = false;
   }
 
   /** The mirror of the rule above, in the other direction: ActorControl's
@@ -898,6 +1016,20 @@
   function _applyEventAction(sim, ev, simTime) {
     sim.fired.set(ev.id, { firedAt: simTime, completedAt: null });
     const action = ev.action;
+    if (sim.goalStopped && !sim.isWalker) {
+      // SimpleVehicleControl._reached_goal is a one-way latch: run_step returns
+      // zero velocity before it reads any target. The atomic still runs (a
+      // timed set_speed even completes), it just moves nothing.
+      sim.badge = { icon: '⏹', text: 'Wirkungslos — steht nach Pfadende (CARLA hält das Fahrzeug dort fest)' };
+      if (action.type !== 'set_speed') {
+        // A path action's ChangeActorWaypoints sees check_reached_waypoint_goal()
+        // still true and ends at once; a lane change or offset never gets to.
+        if (action.type === 'follow_trajectory' || action.type === 'assign_route') {
+          sim.fired.get(ev.id).completedAt = simTime;
+        }
+        return;
+      }
+    }
 
     if (action.type === 'set_speed') {
       _supersedeSpeedEvent(sim, simTime);
@@ -908,13 +1040,20 @@
       const isRelative = target.mode === 'relative';
       sim.speedRelativeRef = isRelative ? (target.entity_ref || _egoId) : null;
       sim.speedRelativeDelta = isRelative ? (target.delta ?? 0) : 0;
+      sim.speedRelativeFactor = isRelative && target.value_type === 'factor' ? (target.factor ?? 1) : null;
+      sim.speedContinuous = isRelative && target.continuous === true;
       sim.activeSpeedEventId = ev.id;
       sim.speedEventDuration = (action.dynamics && action.dynamics.value) ?? 5.0;
-      sim.speedEventDimension = (action.dynamics && action.dynamics.dimension) || 'time';
+      // The emitter forces a continuous follow to a plain step ('time'): with
+      // continuous="true" the atomic's ramp branch is skipped anyway.
+      sim.speedEventDimension = sim.speedContinuous ? 'time'
+        : (action.dynamics && action.dynamics.dimension) || 'time';
 
-      const resolvedTarget = isRelative
-        ? _refSpeed(sim.speedRelativeRef) + sim.speedRelativeDelta
-        : Math.max(0, target.value ?? 10);
+      // A negative absolute target is „Rückwärts" — vehicles only (the backend
+      // rejects it for a walker, whose controller raises on it).
+      const absolute = Math.max(0, target.value ?? 10) *
+        (target.reverse === true && !sim.isWalker ? -1 : 1);
+      const resolvedTarget = isRelative ? _relativeTarget(sim) : absolute;
 
       if (sim.speedEventDimension === 'rate') {
         // The rate branch does NOT step: initialise() commands _start_speed and
@@ -922,11 +1061,13 @@
         // then overwrites its own per-tick relative re-sample with the ramp, so
         // a relative target stops tracking the moment a rate is used — that is
         // the atomic's real behaviour, not a shortcut taken here.
-        sim.speedRampFrom = sim.speed;
+        // _start_speed is CarlaDataProvider.get_velocity — a magnitude.
+        sim.speedRampFrom = Math.abs(sim.speed);
         sim.speedRampTarget = resolvedTarget;
         sim.speedRelativeRef = null;
+        sim.target = sim.speedRampFrom;
       } else {
-        sim.speed = resolvedTarget;
+        sim.target = resolvedTarget;
       }
 
     } else if (action.type === 'follow_trajectory' || action.type === 'assign_route') {
@@ -961,8 +1102,8 @@
         // only, stamped on a separate _last_waypoint_command).
         _supersedeSpeedEvent(sim, simTime);
         sim.waypoints = rawPoints.map(p => ({ x: p.x, y: p.y, z: p.z ?? 0.2 }));
-        sim.speed = _avgTrajectorySpeed(rawPoints);
-        sim.badge = null;
+        sim.target = _avgTrajectorySpeed(rawPoints);
+        if (!sim.goalStopped || sim.isWalker) sim.badge = null;
       }
 
       while (sim.waypoints.length &&
@@ -1011,10 +1152,12 @@
     _supersedeWaypointEvents(sim, simTime);
 
     const magnitude = Math.max(0, action.offset ?? 1.0);
-    sim.laneOffset = action.direction === 'right' ? magnitude : -magnitude;
+    sim.laneOffsetTarget = action.direction === 'right' ? magnitude : -magnitude;
+    sim.laneOffsetReturns = action.continuous === false;
     sim.activeLaneOffsetEventId = ev.id;
+    if (sim.goalStopped) return;
     sim.badge = magnitude > 0
-      ? { icon: '⇥', text: `Spurversatz ${UIUtils.fmt(magnitude)} m ${action.direction === 'right' ? 'rechts' : 'links'} (dauerhaft)` }
+      ? { icon: '⇥', text: `Spurversatz ${UIUtils.fmt(magnitude)} m ${action.direction === 'right' ? 'rechts' : 'links'} (${sim.laneOffsetReturns ? 'hin & zurück' : 'dauerhaft'})` }
       : { icon: '⇥', text: 'Zurück zur Spurmitte' };
   }
 
@@ -1035,6 +1178,7 @@
       // than pretend a lane change happened.
       sim.frozen = true;
       sim.speed = 0;
+      sim.target = 0;
       sim.badge = { icon: '⚠', text: `Spurwechsel ${dirLabel} nicht möglich — keine Nachbarspur in Fahrtrichtung` };
       return;
     }
@@ -1088,6 +1232,12 @@
             _completeLaneChange(sim);
           } else {
             sim.speed = 0; // dead stop on _reached_goal, not a coast
+            sim.target = 0;
+            // ChangeActorWaypoints reports SUCCESS on check_reached_waypoint_goal()
+            // — this tick — so an after_event on the path fires now. It used to
+            // never complete here, and nothing chained onto a path ever fired.
+            const pathRec = sim.activePathEventId && sim.fired.get(sim.activePathEventId);
+            if (pathRec && pathRec.completedAt == null) pathRec.completedAt = _simTime;
             // _reached_goal is sticky: run_step returns zero velocity from
             // here on whatever target speed the atomics keep writing, so a
             // relative tracker must not drive this actor off again.
@@ -1104,6 +1254,73 @@
       sim.yaw = Math.atan2(dy, dx) * 180 / Math.PI;
       sim.traveled += step;
       remaining -= step;
+    }
+  }
+
+  /** A negative speed: SimpleVehicleControl still aims at the waypoint ahead and
+   * scales the direction to it by the (negative) speed, so the vehicle backs
+   * away from it without turning. Over the short distances anyone reverses,
+   * that is straight back along the current heading. The lane-follow anchor and
+   * any waypoints are left alone, so driving forward again resumes them. */
+  function _advanceReverse(sim, dt) {
+    const rad = (sim.yaw || 0) * Math.PI / 180;
+    const step = sim.speed * dt;  // negative
+    sim.x += Math.cos(rad) * step;
+    sim.y += Math.sin(rad) * step;
+    sim.traveled += Math.abs(step);
+  }
+
+  /** The relative set_speed target as ChangeActorTargetSpeed computes it from
+   * the reference's (snapshotted) speed: + delta, or × factor. */
+  function _relativeTarget(sim) {
+    const ref = _refSpeed(sim.speedRelativeRef);
+    return sim.speedRelativeFactor != null ? ref * sim.speedRelativeFactor : ref + sim.speedRelativeDelta;
+  }
+
+  /**
+   * SimpleVehicleControl._set_new_velocity's rate limits, literally: the
+   * commanded speed may fall by at most max_deceleration·dt and rise by at most
+   * max_acceleration·dt per tick, measured against the LAST COMMANDED speed
+   * (not the measured one), with the controller's 0.5 m/s pull-away bump. The
+   * branch is chosen by comparing the target to the measured speed — a
+   * magnitude — which is why a reverse command (negative) always takes the
+   * deceleration branch. A walker's PedestrianControl has no limits at all.
+   * `want` is the target after any reacting-ego braking.
+   */
+  function _applyControllerLimits(sim, want, dt) {
+    if (sim.isWalker) { sim.speed = Math.max(0, want); return; }
+    const current = Math.abs(sim.speed);
+    if (sim.lastCmd == null) sim.lastCmd = current;
+    let cmd = want;
+    if (want < current) {
+      cmd = Math.max(want, sim.lastCmd - dt * sim.maxDecel);
+    } else {
+      const tmp = Math.min(want, sim.lastCmd + dt * sim.maxAccel);
+      cmd = Math.max(tmp, Math.min(SVC_MIN_PULL_AWAY, want));
+    }
+    sim.lastCmd = cmd;
+    sim.speed = cmd;
+  }
+
+  /** Ease the driven offset toward the controller's, per metre travelled (an
+   * exponential approach, as measured in CARLA), and
+   * finish a non-continuous offset the way the patched ChangeActorLaneOffset
+   * does: within OFFSET_THRESHOLD it reports SUCCESS and terminate() sets the
+   * offset back to 0. */
+  function _advanceLaneOffset(sim, travelled, simTime) {
+    const diff = sim.laneOffsetTarget - sim.laneOffset;
+    if (diff !== 0) {
+      sim.laneOffset += diff * (1 - Math.exp(-travelled / LANE_OFFSET_APPROACH_M));
+      if (Math.abs(sim.laneOffsetTarget - sim.laneOffset) < 0.005) sim.laneOffset = sim.laneOffsetTarget;
+    }
+    if (sim.laneOffsetReturns && sim.activeLaneOffsetEventId &&
+        Math.abs(sim.laneOffset - sim.laneOffsetTarget) < LANE_OFFSET_THRESHOLD_M) {
+      const rec = sim.fired.get(sim.activeLaneOffsetEventId);
+      if (rec && rec.completedAt == null) rec.completedAt = simTime;
+      sim.activeLaneOffsetEventId = null;
+      sim.laneOffsetReturns = false;
+      sim.laneOffsetTarget = 0;
+      sim.badge = { icon: '⇥', text: 'Spurversatz erreicht — zurück zur Spurmitte' };
     }
   }
 
@@ -1161,6 +1378,7 @@
       if (_continueLaneFollowAtFork(sim)) return;
       sim.frozen = true;
       sim.speed = 0;
+      sim.target = 0;
       // Under-predicts on purpose when no graph is cached for this town:
       // without it, this preview cannot tell a genuine fork from a road
       // that simply continues, so it stops at the end of the known lane
@@ -1171,6 +1389,9 @@
   }
 
   function _advancePosition(sim, dt) {
+    // The vehicle goal latch: nothing moves it again (see _applyEventAction).
+    if (sim.goalStopped && !sim.isWalker) { sim.speed = 0; return; }
+    if (sim.speed < 0) { _advanceReverse(sim, dt); return; }
     if (sim.waypoints && sim.waypoints.length) { _advanceWaypoints(sim, dt); return; }
     if (sim.speed <= 0) return; // stationary — also the honest state for an
                                  // assign_route with no set_speed yet
@@ -1182,16 +1403,15 @@
   //
   // Off, the preview ego never reacts ("what if the system under test does
   // nothing"). On, it is a
-  // simple braking driver: it follows its commanded speed (what the events
-  // set) but brakes for anything in its path, at most REACT_DECEL, to stop
-  // REACT_STANDOFF_M short of it, and pulls away again at REACT_ACCEL. That
+  // simple braking driver: its target (what the events set) is capped by the
+  // braking room to anything in its path, to stop REACT_STANDOFF_M short of it,
+  // and the controller limits (max_deceleration / max_acceleration) do the
+  // actual braking and pulling away, as consider_obstacles does in CARLA. That
   // shows whether a conflict is avoidable at all. CARLA's scripted ego does
   // its own obstacle braking (consider_obstacles); this is not a model of it.
-  // The commanded speed lives in `cmdSpeed`, the driven one in `speed`, so
-  // the event logic above never sees the brake.
-  const REACT_DECEL = 8.0;          // m/s², hard but tyre-limited
+  // The commanded speed lives in `target`, the driven one in `speed`, so the
+  // event logic above never sees the brake.
   const REACT_PLAN_DECEL = 6.0;     // m/s², what it plans a stop with
-  const REACT_ACCEL = 3.0;          // m/s², max_acceleration of the controller
   const REACT_STANDOFF_M = 2.0;     // bumper gap it stops at
   const REACT_LOOKAHEAD_M = 60;
   let _reactiveEgo = false;
@@ -1234,15 +1454,12 @@
     return Math.sqrt(Math.max(0, 2 * REACT_PLAN_DECEL * (gapMin - REACT_STANDOFF_M)));
   }
 
-  function _reactEgo(sim, dt) {
-    const cmd = sim.speed;
-    sim.cmdSpeed = cmd;
-    const want = Math.min(cmd, _egoAllowedSpeed(sim));
-    const cur = sim.driven ?? cmd;
-    const next = want < cur ? Math.max(want, cur - REACT_DECEL * dt) : Math.min(want, cur + REACT_ACCEL * dt);
-    sim.driven = Math.max(0, next);
-    sim.speed = sim.driven;
-    const braking = sim.driven < cmd - 0.3;
+  /** The reacting ego's speed cap this tick: its commanded target, held under
+   * the braking room to the nearest thing in its path. Like consider_obstacles,
+   * it only lowers the target; the controller limits then do the braking. */
+  function _reactEgoTarget(sim) {
+    const want = Math.min(sim.target, _egoAllowedSpeed(sim));
+    const braking = want < sim.target - 0.3;
     if (braking && !sim.reactBadge) {
       sim.reactBadge = true;
       sim.badge = { icon: '⏹', text: 'Ego bremst — Hindernis im Fahrweg' };
@@ -1250,12 +1467,11 @@
       sim.reactBadge = false;
       if (sim.badge && sim.badge.text.startsWith('Ego bremst')) sim.badge = null;
     }
+    return want;
   }
 
   function _stepActor(sim, dt, egoPrevPos, simTime) {
     if (sim.frozen) return;
-    // The reacting ego's events act on the COMMANDED speed, never on the brake.
-    if (_reactiveEgo && sim.isEgo && sim.cmdSpeed != null) sim.speed = sim.cmdSpeed;
 
     if (sim.hasNoEvents) {
       // events: [] — no Act is emitted for this actor at all, so the Init
@@ -1264,7 +1480,7 @@
       // so an actor that never reacts to anything reads as authored, not broken.
       if (!sim.noEventsBadgeShown) {
         sim.noEventsBadgeShown = true;
-        sim.badge = sim.speed > 0
+        sim.badge = sim.target > 0
           ? { icon: '▶', text: 'Kein Event — fährt nur mit Startgeschwindigkeit' }
           : { icon: '⏸', text: 'Kein Event — steht still' };
       }
@@ -1290,9 +1506,7 @@
       if (sim.activeSpeedEventId) {
         const rec = sim.fired.get(sim.activeSpeedEventId);
         if (rec && rec.completedAt == null) {
-          if (sim.speedRelativeRef && !sim.goalStopped) {
-            sim.speed = _refSpeed(sim.speedRelativeRef) + sim.speedRelativeDelta;
-          }
+          if (sim.speedRelativeRef && !sim.goalStopped) sim.target = _relativeTarget(sim);
           if (sim.speedEventDimension === 'rate') {
             // commanded = start ± rate·elapsed, clamped at the target. Not
             // clamped to ≥0 — the target already bounds it, and a negative
@@ -1303,8 +1517,10 @@
             const commanded = sign > 0
               ? Math.min(ramped, sim.speedRampTarget)
               : Math.max(ramped, sim.speedRampTarget);
-            if (!sim.goalStopped) sim.speed = commanded;
+            if (!sim.goalStopped) sim.target = commanded;
             if (commanded === sim.speedRampTarget) rec.completedAt = simTime;
+          } else if (sim.speedContinuous) {
+            // continuous="true": neither duration nor distance may end it.
           } else if (sim.speedEventDimension === 'time' &&
               simTime - rec.firedAt >= sim.speedEventDuration) {
             rec.completedAt = simTime;
@@ -1313,8 +1529,11 @@
       }
     }
 
-    if (_reactiveEgo && sim.isEgo) _reactEgo(sim, dt);
+    const want = _reactiveEgo && sim.isEgo ? _reactEgoTarget(sim) : sim.target;
+    if (!(sim.goalStopped && !sim.isWalker)) _applyControllerLimits(sim, want, dt);
+    const before = sim.traveled;
     _advancePosition(sim, dt);
+    _advanceLaneOffset(sim, sim.traveled - before, simTime);
   }
 
   // ── Simulation lifecycle ──────────────────────────────────────────────────────
@@ -1369,10 +1588,14 @@
 
   function _snapshotSpeeds() {
     _tickSpeeds.clear();
+    _tickPoses.clear();
     _tickCompleted.clear();
     _tickStarted.clear();
     for (const sim of _simActors.values()) {
-      _tickSpeeds.set(sim.id, sim.speed);
+      // A magnitude, like CarlaDataProvider.get_velocity — reversing counts positive.
+      _tickSpeeds.set(sim.id, Math.abs(sim.speed));
+      const p = _pose(sim);
+      _tickPoses.set(sim.id, { x: p.x, y: p.y, z: sim.z });
       for (const [eventId, rec] of sim.fired) {
         _tickStarted.set(`${sim.id}::${eventId}`, rec.firedAt);
         if (rec.completedAt != null) _tickCompleted.set(`${sim.id}::${eventId}`, rec.completedAt);
@@ -1859,7 +2082,7 @@
    * tick state). scenarioGenerator.js measures conflicts off the tracks.
    */
   function runHeadless({ dt = 0.05, maxTime = 40, ego = AppState.ego, npcs = AppState.npcs,
-                         reactiveEgo = false, props = [] } = {}) {
+                         reactiveEgo = false, props = [], stopWhenIdle = false } = {}) {
     // `ego`/`npcs` default to the editor's scenario; the generator passes a
     // candidate it has not loaded, so it can score one before committing it.
     // _makeSimActor reads only the actor it is given, and cross-actor lookups
@@ -1888,6 +2111,13 @@
       let ended = 'time';
       let still = 0;
       const frozenAt = {};
+      // stopWhenIdle ends the run where the preview's own timeline does
+      // (_simulateTimeline): nothing moved and no event fired for
+      // TAIL_AFTER_ACTIVITY_S, and none is left that could still fire. The
+      // Ablauf panel asks for it so its axis matches the preview bar's; the
+      // generator's scoring keeps the old rule.
+      const seen = new Set();
+      let lastActivity = 0;
       for (_simTime = 0; _simTime < maxTime;) {
         _simTime += dt;
         const egoPrevPos = egoSim ? { ..._pose(egoSim), z: egoSim.z } : null;
@@ -1902,6 +2132,23 @@
           if (Math.abs(sim.speed) > 0.05 && !sim.frozen && !sim.goalStopped) moving = true;
         }
         if (egoSim && egoSim.traveled >= ACT_TEARDOWN_DISTANCE_M) { ended = 'teardown'; break; }
+        if (stopWhenIdle) {
+          let active = moving;
+          let pending = false;
+          for (const sim of _simActors.values()) {
+            for (const ev of sim.events) {
+              if (!sim.fired.has(ev.id)) {
+                if (!ev.trigger.neverFires && !sim.frozen) pending = true;
+              } else if (!seen.has(`${sim.id}::${ev.id}`)) {
+                seen.add(`${sim.id}::${ev.id}`);
+                active = true;
+              }
+            }
+          }
+          if (active) lastActivity = _simTime;
+          if (!pending && _simTime - lastActivity >= TAIL_AFTER_ACTIVITY_S) { ended = 'idle'; break; }
+          continue;
+        }
         // Everything has been standing still for 10 s and no event can still
         // move it before the distance fallback — nothing more will happen.
         still = moving ? 0 : still + dt;

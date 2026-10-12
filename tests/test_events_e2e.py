@@ -98,10 +98,10 @@ with sync_playwright() as p:
     labels = page.evaluate(
         "[...document.querySelectorAll('#event-action-grid .event-action-button')]"
         ".map(b => b.textContent)")
-    check("event panel offers 6 actions", len(labels) == 6, str(labels))
+    check("event panel offers 5 actions (set_distance hidden)", len(labels) == 5, str(labels))
     check("action grid lists the documented actions",
           labels == ["Trajektorie folgen", "Route zuweisen", "Geschw. setzen",
-                     "Abstand halten", "Spurwechsel", "Spurversatz"], str(labels))
+                     "Spurwechsel", "Spurversatz"], str(labels))
 
     # One path-producing event per actor: once a trajectory or route exists,
     # both path buttons stay in the grid but go disabled — hiding them reflowed
@@ -113,9 +113,9 @@ with sync_playwright() as p:
     labels = page.evaluate(
         "[...document.querySelectorAll('#event-action-grid .event-action-button')]"
         ".map(b => b.textContent)")
-    check("all 6 actions stay listed once one path event exists",
+    check("all 5 actions stay listed once one path event exists",
           labels == ["Trajektorie folgen", "Route zuweisen", "Geschw. setzen",
-                     "Abstand halten", "Spurwechsel", "Spurversatz"], str(labels))
+                     "Spurwechsel", "Spurversatz"], str(labels))
     disabled = page.evaluate(
         "[...document.querySelectorAll('#event-action-grid .event-action-button')]"
         ".filter(b => b.disabled).map(b => b.textContent)")
@@ -450,16 +450,19 @@ with sync_playwright() as p:
                          target: {mode: 'absolute', value: 0}}}]},
         npcs: [{id: 'obj-2', type: 'car', x: 265.364, y: 1.967, z: 0.2, yaw: 180,
                 initial_speed: 8, events: [
-          {id: 'e1', trigger: {type: 'simulation_time', value: 0.4},
+          {id: 'e1', trigger: {type: 'simulation_time', value: 2.0},
            action: {type: 'lane_offset', direction: 'left', offset: 2.0}},
-          {id: 'e2', trigger: {type: 'simulation_time', value: 2.5},
+          {id: 'e2', trigger: {type: 'simulation_time', value: 4.5},
            action: {type: 'lane_offset', direction: 'right', offset: 2.0}}]}],
         staticObjects: [], trafficSignals: [],
     })""")
     page.wait_for_timeout(200)
     centre_y = page.evaluate("AppState.findById('obj-2').y")
+    # The car pulls up to 8 m/s at 3 m/s² and the offset eases in per metre
+    # driven (simulate.js _advanceLaneOffset), so both are sampled well after
+    # their events: left at ~3.6 s, right at ~6 s.
     page.click("#sim-play")
-    page.wait_for_timeout(1400)
+    page.wait_for_timeout(3600)
     left_y = page.evaluate("AppState.findById('obj-2').y")
     # Left of an east-bound vehicle is -y: the editor's frame IS CARLA's, which
     # is left-handed, so right is +y and get_right_vector() takes the positive

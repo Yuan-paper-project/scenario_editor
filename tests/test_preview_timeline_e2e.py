@@ -158,6 +158,30 @@ with sync_playwright() as p:
     n1 = page.evaluate("document.querySelectorAll('#layer-overpass .ovp-level').length")
     check("Town01 (flat, no crossings) has no overpass", n1 == 0, str(n1))
 
+    # Narrow windows: every bar control stays inside the card and the map. Below
+    # 1340 px the strip right of the ruler is under 560 px, and „Ego bremst" /
+    # „Ablauf" used to spill out under the properties panel.
+    for w in (1600, 1280, 1100, 1024):
+        page.set_viewport_size({"width": w, "height": 800})
+        page.wait_for_timeout(200)
+        bad = page.evaluate("""() => {
+            const R = e => e.getBoundingClientRect();
+            const card = R(document.getElementById('sim-controls'));
+            const map = R(document.getElementById('map-container'));
+            const ruler = R(document.getElementById('scale-ruler'));
+            const out = [...document.querySelectorAll('#sim-controls button, #sim-controls .sim-progress-bar')]
+              .filter(e => e.offsetParent)
+              .filter(e => { const b = R(e); return b.left < card.left - 0.5 || b.right > card.right + 0.5
+                                                 || b.right > map.right + 0.5; })
+              .map(e => e.id || e.className);
+            const overlap = !(ruler.right <= card.left || ruler.left >= card.right
+                              || ruler.bottom <= card.top || ruler.top >= card.bottom);
+            return { out, overlap };
+        }""")
+        check(f"{w} px: preview bar controls inside the card and the map", not bad["out"], str(bad["out"]))
+        check(f"{w} px: scale ruler clear of the preview bar", not bad["overlap"])
+    page.set_viewport_size(H.VIEWPORT)
+
     check("no JS errors", not errors, str(errors[:3]))
     browser.close()
 

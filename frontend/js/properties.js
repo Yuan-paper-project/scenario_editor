@@ -39,6 +39,9 @@
   const obeyRow           = document.getElementById('obey-row');
   const propObeyLights     = document.getElementById('prop-obey-lights');
   const propObeyObstacles  = document.getElementById('prop-obey-obstacles');
+  const dynamicsRow        = document.getElementById('dynamics-row');
+  const propMaxAccel       = document.getElementById('prop-max-accel');
+  const propMaxDecel       = document.getElementById('prop-max-decel');
 
   const npcSection     = document.getElementById('props-npc-section');
 
@@ -453,11 +456,15 @@
     // with before the toggles existed.
     propObeyLights.checked    = actor.obey_traffic_lights !== false;
     propObeyObstacles.checked = actor.obey_obstacles !== false;
+    propMaxAccel.value = UIUtils.fmt(actor.max_acceleration ?? DEFAULT_MAX_ACCEL);
+    propMaxDecel.value = UIUtils.fmt(actor.max_deceleration ?? DEFAULT_MAX_DECEL);
     _syncing = false;
 
     // Only simple_vehicle_control reads these; a walker is on
     // PedestrianControl, which reads neither. Same split as lane_offset.
     obeyRow.classList.toggle('hidden',
+      !isScenarioActor || !ScenarioRules.honoursLaneOffset(actor.type));
+    dynamicsRow.classList.toggle('hidden',
       !isScenarioActor || !ScenarioRules.honoursLaneOffset(actor.type));
 
     // .props-group is a bare 2-column grid with no per-row wrapper, so the
@@ -704,6 +711,25 @@
 
   [propX, propY, propZ, propYaw].forEach(inp => {
     inp.addEventListener('change', _onPosChange);
+  });
+
+  // simple_vehicle_control's rate limits. Absent = these defaults in every
+  // layer (scenario_io._DYNAMICS_DEFAULTS, xml_builder._DYNAMICS_DEFAULTS,
+  // simulate.js), the values every vehicle was exported with before the fields
+  // existed. Floored at 0.1: at 0 the speed could never change.
+  const DEFAULT_MAX_ACCEL = 3.0;
+  const DEFAULT_MAX_DECEL = 10.0;
+  [[propMaxAccel, 'max_acceleration'], [propMaxDecel, 'max_deceleration']].forEach(([input, key]) => {
+    input.addEventListener('change', () => {
+      if (_syncing) return;
+      const id = AppState.selectedId;
+      if (!id || !AppState.findById(id)) return;
+      const parsed = parseFloat(input.value);
+      const fallback = key === 'max_acceleration' ? DEFAULT_MAX_ACCEL : DEFAULT_MAX_DECEL;
+      const val = Math.max(0.1, Math.min(50, Number.isFinite(parsed) ? parsed : fallback));
+      input.value = UIUtils.fmt(val);
+      AppState.updateById(id, { [key]: val });
+    });
   });
 
   [[propObeyLights, 'obey_traffic_lights'], [propObeyObstacles, 'obey_obstacles']]

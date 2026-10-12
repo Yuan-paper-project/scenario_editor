@@ -144,8 +144,26 @@ _MAX_LANE_OFFSET_M = 10.0
 # ('(EVENT)<name>-END' / '-START'), so the two share every rule below except the
 # lane_offset ban, which is about completion only.
 _EVENT_REF_TRIGGERS = {"after_event", "event_started"}
+
+# simple_vehicle_control rate limits, see _normalize_actor and
+# xml_builder._DYNAMICS_DEFAULTS (same numbers).
+_DYNAMICS_DEFAULTS = {"max_acceleration": 3.0, "max_deceleration": 10.0}
+
+
+def _never_completes(action: dict) -> bool:
+    """True for an action whose Event never reports completeState on its own:
+    a held lane_offset (continuous) and a continuous relative set_speed. Both
+    end only when superseded, so after_event may not name one. Mirrored by
+    ScenarioRules.neverCompletes (frontend/js/app.js)."""
+    kind = action.get("type")
+    if kind == "lane_offset":
+        return action.get("continuous") is not False
+    if kind == "set_speed":
+        target = action.get("target") or {}
+        return target.get("mode") == "relative" and target.get("continuous") is True
+    return False
 _TRIGGER_KINDS = {"simulation_time", "distance_to_ego", "distance_to_point",
-                  "ego_speed", *_EVENT_REF_TRIGGERS}
+                  "ego_speed", "relative_speed", *_EVENT_REF_TRIGGERS}
 # SpeedCondition rules offered for ego_speed. equalTo is valid OpenSCENARIO but
 # a measured speed is almost never exactly equal to anything.
 _EGO_SPEED_RULES = {"greaterThan", "lessThan"}
@@ -205,6 +223,34 @@ def _normalize_structured_event(
         rule = trigger.get("rule", "greaterThan")
         event["trigger"]["rule"] = rule if rule in _EGO_SPEED_RULES else "greaterThan"
         event["trigger"]["value"] = max(0.0, min(100.0, float(trigger.get("value", 10.0))))
+    elif trigger_kind == "relative_speed":
+        # speed(entity_ref) - speed(acting actor), RelativeSpeedCondition with
+        # the other actor as the triggering entity. A difference to oneself is
+        # always 0 — a condition that is either true on tick 1 or never — so a
+        # self-reference (including an omitted ref on a hero event) is a 400.
+        rule = trigger.get("rule", "greaterThan")
+        event["trigger"]["rule"] = rule if rule in _EGO_SPEED_RULES else "greaterThan"
+        event["trigger"]["value"] = max(-100.0, min(100.0, float(trigger.get("value", 0.0))))
+        event["trigger"]["entity_ref"] = _entity_ref(
+            trigger.get("entity_ref"), actor_refs, valid_refs, where, forbid=self_ref
+        )
+    elif trigger_kind == "distance_to_ego":
+        # „Abstand zu Akteur": the distance from `entity_ref` (default hero) to
+        # the acting actor. Omitted, it is hero, which is every payload written
+        # before the field existed. A hero event naming hero (or nothing) is
+        # left without a ref for the self-distance coercion in
+        # _normalize_after_event_chains; an NPC naming itself is a 400.
+        event["trigger"]["value"] = max(0.0, float(trigger.get("value", 400.0)))
+        raw_ref = trigger.get("entity_ref")
+        if raw_ref not in (None, ""):
+            ref = _entity_ref(raw_ref, actor_refs, valid_refs, where)
+            if ref == self_ref and self_ref != "hero":
+                raise ValueError(
+                    f"{where}: distance_to_ego names the acting entity itself "
+                    f"('{ref}') — a distance to oneself is always 0"
+                )
+            if ref != "hero":
+                event["trigger"]["entity_ref"] = ref
     else:
         default_value = 400.0 if trigger_kind == "distance_to_ego" else 0.0
         event["trigger"]["value"] = max(0.0, float(trigger.get("value", default_value)))
@@ -284,16 +330,43 @@ def _normalize_structured_event(
         dynamics = action.get("dynamics") if isinstance(action.get("dynamics"), dict) else {}
         mode = "relative" if target.get("mode") == "relative" else "absolute"
         speed_target = {"mode": mode}
+        dimension = dynamics.get("dimension", "time")
+        if dimension not in {"distance", "time", "rate"}:
+            dimension = "time"
         if mode == "relative":
             speed_target["entity_ref"] = _entity_ref(
                 target.get("entity_ref"), actor_refs, valid_refs, where
             )
-            speed_target["delta"] = max(-100.0, min(100.0, float(target.get("delta", 0.0))))
+            value_type = "factor" if target.get("value_type") == "factor" else "delta"
+            speed_target["value_type"] = value_type
+            if value_type == "factor":
+                speed_target["factor"] = max(0.0, min(10.0, float(target.get("factor", 1.0))))
+            else:
+                speed_target["delta"] = max(-100.0, min(100.0, float(target.get("delta", 0.0))))
+            continuous = target.get("continuous") is True
+            speed_target["continuous"] = continuous
+            # ChangeActorTargetSpeed re-applies a relative target every tick.
+            # Against the acting actor itself that compounds (+delta or ×factor
+            # per tick) — unless `rate` is set, whose ramp overwrites the
+            # re-sample with a one-shot target snapshotted at initialise().
+            # `continuous` skips that ramp, so it compounds as well.
+            if speed_target["entity_ref"] == self_ref and (dimension != "rate" or continuous):
+                raise ValueError(
+                    f"{where}: a set_speed relative to the acting actor itself "
+                    f"needs the 'rate' dynamics and must not be continuous — "
+                    f"otherwise the target compounds every tick"
+                )
         else:
             speed_target["value"] = max(0.0, min(100.0, float(target.get("value", 10.0))))
-        dimension = dynamics.get("dimension", "time")
-        if dimension not in {"distance", "time", "rate"}:
-            dimension = "time"
+            if target.get("reverse") is True:
+                # PedestrianControl raises NotImplementedError on a negative
+                # target speed, killing the run.
+                if actor_type in _WALKER_ACTOR_TYPES:
+                    raise ValueError(
+                        f"{where}: reverse speed is not available for actor type "
+                        f"'{actor_type}' — only vehicles can drive backwards"
+                    )
+                speed_target["reverse"] = True
         if dimension == "rate":
             # ChangeActorTargetSpeed's rate branch ends the atomic when the
             # ramped speed *reaches* the target, never on a clock. A rate of 0
@@ -340,6 +413,10 @@ def _normalize_structured_event(
             "type": "lane_offset",
             "direction": "right" if action.get("direction") == "right" else "left",
             "offset": max(0.0, min(_MAX_LANE_OFFSET_M, float(action.get("offset", 1.0)))),
+            # False = „bis erreicht, dann zurück": completes on reaching the
+            # offset and resets to 0 (needs the local ScenarioRunner patch, see
+            # _add_lane_offset_action). Absent/True is the held offset.
+            "continuous": action.get("continuous") is not False,
         }
     else:
         dynamics = action.get("dynamics") if isinstance(action.get("dynamics"), dict) else {}
@@ -391,6 +468,16 @@ def _normalize_actor(
     # one off; a walker's are carried through and ignored by the emitter.
     for key in ("obey_traffic_lights", "obey_obstacles"):
         actor[key] = actor.get(key) is not False
+
+    # simple_vehicle_control's max_acceleration / max_deceleration (m/s²).
+    # Defaults are what every vehicle was emitted with before the fields
+    # existed. Floored at 0.1: a limit of 0 means the speed can never change.
+    for key, default in _DYNAMICS_DEFAULTS.items():
+        try:
+            value = float(actor.get(key, default))
+        except (TypeError, ValueError):
+            value = default
+        actor[key] = max(0.1, min(50.0, value))
 
     for idx, event in enumerate(actor["events"]):
         if not isinstance(event, dict):
@@ -466,15 +553,14 @@ def _normalize_after_event_chains(actors: list[tuple[dict, str, str]]) -> None:
                 f"distance_to_point or ego_speed instead"
             )
 
-    # A lane_offset is always emitted continuous="true" (the only mode that does
-    # anything with an AbsoluteTargetLaneOffset), so its Event never completes
-    # on its own and "after the Spurversatz" is not a start condition the editor
-    # offers at all. Rejected outright rather than rewritten: unlike a route
-    # there is no stand-in trigger that says the same thing. Its START is well
-    # defined, so event_started may name one.
+    # A held lane_offset and a continuous relative set_speed never complete on
+    # their own (_never_completes), so "after" either one is not a start
+    # condition the editor offers at all. Rejected outright rather than
+    # rewritten: unlike a route there is no stand-in trigger that says the same
+    # thing. Their START is well defined, so event_started may name one.
     offset_refs = {
         ref for ref, event in events_by_ref.items()
-        if event.get("action", {}).get("type") == "lane_offset"
+        if _never_completes(event.get("action", {}))
     }
     for ref, event in events_by_ref.items():
         trigger = event.get("trigger", {})
@@ -483,7 +569,8 @@ def _normalize_after_event_chains(actors: list[tuple[dict, str, str]]) -> None:
         target_ref = _after_event_target(trigger, ref[0])
         if target_ref in offset_refs:
             raise ValueError(
-                f"{ref[0]}.{ref[1]}: after_event waits for lane_offset "
+                f"{ref[0]}.{ref[1]}: after_event waits for "
+                f"{events_by_ref[target_ref]['action']['type']} "
                 f"{target_ref[0]}.{target_ref[1]}, which never completes — "
                 f"use a simulation_time or distance trigger instead"
             )
@@ -525,7 +612,9 @@ def _normalize_after_event_chains(actors: list[tuple[dict, str, str]]) -> None:
         if entity_name != "hero":
             continue
         for event in actor["events"]:
-            if event.get("trigger", {}).get("type") == "distance_to_ego":
+            trigger = event.get("trigger", {})
+            if (trigger.get("type") == "distance_to_ego"
+                    and trigger.get("entity_ref") in (None, "", "hero")):
                 event["trigger"] = {"type": "simulation_time", "value": 0.0}
 
 

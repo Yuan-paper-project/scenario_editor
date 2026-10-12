@@ -289,6 +289,33 @@ def preview_lock(page):
     page.click("#sim-lanes-toggle")
 
 
+def load_during_preview(page, tmpdir):
+    """Laden while the preview runs must stop it first. Left running, it kept
+    animating the loaded actors (two hand-made saves share obj-1, obj-2, ...)
+    and its Stop wrote the OLD scenario's authored poses onto them."""
+    import json
+    import os
+    page.evaluate("ScenarioGenerator.generate('lead_brake', 9)")
+    other = page.evaluate("AppState.toJSON()")
+    page.evaluate("ScenarioGenerator.generate('cut_in', 3)")
+    cur = page.evaluate("AppState.toJSON()")
+    other["ego"]["id"] = cur["ego"]["id"]
+    other["npcs"][0]["id"] = cur["npcs"][0]["id"]
+    path = os.path.join(tmpdir, "other.json")
+    with open(path, "w") as fh:
+        json.dump(other, fh)
+    page.click("#sim-play")
+    page.wait_for_timeout(1200)
+    page.set_input_files("#btn-load-input", path)
+    page.wait_for_timeout(600)
+    C("load during preview: the preview stops", not page.evaluate("Simulate.running"))
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(300)
+    ego = page.evaluate("[AppState.ego.x, AppState.ego.y]")
+    C("load during preview: the loaded ego keeps the file's pose",
+      ego == [other["ego"]["x"], other["ego"]["y"]], (ego, other["ego"]["x"], other["ego"]["y"]))
+
+
 def main():
     with sync_playwright() as pw:
         browser, page, errors = H.open_editor(pw, "Town03")
@@ -298,6 +325,9 @@ def main():
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             map_switch(page, tmp)
+            H.select_map(page, "Town04")
+            page.wait_for_function("AppState.laneGraph !== null", timeout=60000)
+            load_during_preview(page, tmp)
         H.select_map(page, "Town01")
         trajectory_speed(page)
         C("no JS errors", not [e for e in errors if "404" not in e], errors[:5])

@@ -34,8 +34,15 @@
     const edgeByPair = new Map();  // "from:to" -> edge
     for (const edge of graph.edges) {
       if (!adjacency.has(edge.from)) adjacency.set(edge.from, []);
-      adjacency.get(edge.from).push({ to: edge.to, edge });
-      edgeByPair.set(`${edge.from}:${edge.to}`, edge);
+      const pair = `${edge.from}:${edge.to}`;
+      const list = adjacency.get(edge.from);
+      // A networkx DiGraph keeps one edge per pair: a repeat add_edge updates
+      // the attributes in place without moving it in the adjacency order,
+      // which A*'s tie-breaking depends on.
+      const existing = edgeByPair.has(pair) ? list.findIndex(a => a.to === edge.to) : -1;
+      if (existing >= 0) list[existing] = { to: edge.to, edge };
+      else list.push({ to: edge.to, edge });
+      edgeByPair.set(pair, edge);
     }
     const lanesByKey = new Map(graph.lanes.map(l => [_laneKey(l.roadId, l.sectionId, l.laneId), l]));
 
@@ -86,8 +93,12 @@
     return Math.hypot(a.x - b.x, a.y - b.y, (a.z || 0) - (b.z || 0));
   }
 
+  /** _distance_heuristic: np.linalg.norm(l1 - l2) on the node vertices.
+   * Written as sqrt(dot) rather than Math.hypot so the float comes out
+   * bit-identical — A* ties are decided on exact f values (see _astar). */
   function _heuristic(a, b) {
-    return _dist3(a, b);
+    const dx = a.x - b.x, dy = a.y - b.y, dz = (a.z || 0) - (b.z || 0);
+    return Math.sqrt(dx * dx + dy * dy + dz * dz);
   }
 
   /** Ports _find_closest_in_list — index of the entry nearest `cur`. */
@@ -100,38 +111,78 @@
     return bestIdx;
   }
 
-  /** Plain-array A* — these graphs run to hundreds of nodes, not the tens of
-   * thousands a binary heap would be worth. Returns an array of node ids, or
-   * null if no path connects them. */
+  /**
+   * Literal port of networkx.astar_path (2.8.8, what carla-venv runs), down to
+   * its tie-breaking. That is the part that matters: edge lengths are integer
+   * sample counts and lane changes cost 0, so a route very often has several
+   * equal-cost answers, and networkx picks among them by its heap order —
+   * (f, push counter) — and by the adjacency order of the graph. The earlier
+   * "first minimum of a Set" search returned a different, equally short path
+   * for ~1 in 4 random Town03 routes, often one with lane changes CARLA does
+   * not make. Returns an array of node ids, or null if no path connects them.
+   */
   function _astar(idx, startId, goalId) {
     const goalNode = idx.nodeById.get(goalId);
     if (!idx.nodeById.has(startId) || !goalNode) return null;
 
-    const open = new Set([startId]);
-    const cameFrom = new Map();
-    const gScore = new Map([[startId, 0]]);
-    const fScore = new Map([[startId, _heuristic(idx.nodeById.get(startId), goalNode)]]);
-
-    while (open.size) {
-      let current = null, currentF = Infinity;
-      for (const n of open) {
-        const f = fScore.has(n) ? fScore.get(n) : Infinity;
-        if (f < currentF) { currentF = f; current = n; }
+    // Binary min-heap of [f, counter, node, dist, parent].
+    const heap = [];
+    const less = (a, b) => a[0] < b[0] || (a[0] === b[0] && a[1] < b[1]);
+    const push = (item) => {
+      heap.push(item);
+      let i = heap.length - 1;
+      while (i > 0) {
+        const p = (i - 1) >> 1;
+        if (!less(heap[i], heap[p])) break;
+        [heap[i], heap[p]] = [heap[p], heap[i]]; i = p;
       }
-      if (current === goalId) {
-        const path = [current];
-        while (cameFrom.has(current)) { current = cameFrom.get(current); path.unshift(current); }
-        return path;
-      }
-      open.delete(current);
-      for (const { to, edge } of idx.adjacency.get(current) || []) {
-        const tentativeG = gScore.get(current) + (edge.length || 1);
-        if (tentativeG < (gScore.has(to) ? gScore.get(to) : Infinity)) {
-          cameFrom.set(to, current);
-          gScore.set(to, tentativeG);
-          fScore.set(to, tentativeG + _heuristic(idx.nodeById.get(to), goalNode));
-          open.add(to);
+    };
+    const pop = () => {
+      const top = heap[0], last = heap.pop();
+      if (heap.length) {
+        heap[0] = last;
+        let i = 0;
+        for (;;) {
+          const l = 2 * i + 1, r = l + 1;
+          let m = i;
+          if (l < heap.length && less(heap[l], heap[m])) m = l;
+          if (r < heap.length && less(heap[r], heap[m])) m = r;
+          if (m === i) break;
+          [heap[i], heap[m]] = [heap[m], heap[i]]; i = m;
         }
+      }
+      return top;
+    };
+
+    let counter = 0;
+    push([0, counter++, startId, 0, null]);
+    const enqueued = new Map(); // node -> [cost, h]
+    const explored = new Map(); // node -> parent
+
+    while (heap.length) {
+      const [, , cur, dist, parent] = pop();
+      if (cur === goalId) {
+        const path = [cur];
+        for (let n = parent; n !== null; n = explored.get(n)) path.push(n);
+        return path.reverse();
+      }
+      if (explored.has(cur)) {
+        if (explored.get(cur) === null) continue;
+        if (enqueued.get(cur)[0] < dist) continue;
+      }
+      explored.set(cur, parent);
+      for (const { to, edge } of idx.adjacency.get(cur) || []) {
+        const ncost = dist + edge.length;
+        let h;
+        if (enqueued.has(to)) {
+          const [qcost, qh] = enqueued.get(to);
+          if (qcost <= ncost) continue;
+          h = qh;
+        } else {
+          h = _heuristic(idx.nodeById.get(to), goalNode);
+        }
+        enqueued.set(to, [ncost, h]);
+        push([ncost + h, counter++, to, ncost, cur]);
       }
     }
     return null;

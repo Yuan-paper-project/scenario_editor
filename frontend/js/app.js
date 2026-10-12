@@ -663,6 +663,10 @@
    * the file is for another one, and drop any parked scenario of the file's
    * own town — the file replaces it, as it does the live one. */
   function beforeLoadFile(fileTown) {
+    // Stop a running preview whatever the town: left running, it kept writing
+    // poses onto the loaded actors (ids restart at obj-1, so they collide), and
+    // its Stop then put the OLD scenario's authored poses back onto them.
+    window.Simulate?.stop();
     if (fileTown && AppState.map && fileTown !== AppState.map) leaveMap();
     if (fileTown && _parked.delete(fileTown)) _emitParked();
   }
@@ -796,6 +800,8 @@
     [['type'],              'Typwechsel'],
     [['prop'],              'Typwechsel'],
     [['initial_speed'],     'Startgeschwindigkeit'],
+    [['max_acceleration'],  'Max. Beschleunigung'],
+    [['max_deceleration'],  'Max. Verzögerung'],
     // Last, so a bare {yaw} still reads 'Drehen': the Spawnpunkt fields commit
     // all four together (_onPosChange), and naming the panel section is more
     // use than picking one of the four to name.
@@ -1212,6 +1218,66 @@
       return !WALKER_ACTION_TYPES.has(actorType);
     },
 
+    /** Can this actor type drive backwards? PedestrianControl raises on a
+     * negative target speed; every <Vehicle> just reverses its velocity. */
+    canReverse(actorType) {
+      return !WALKER_ACTION_TYPES.has(actorType);
+    },
+
+    /**
+     * Does this action's Event never report completeState on its own? A held
+     * lane_offset (continuous, the default) and a continuous relative set_speed
+     * end only when something supersedes them, so after_event may never name
+     * one; event_started may. Mirrored by _never_completes
+     * (backend/scenario_io.py) as a 400.
+     */
+    neverCompletes(action) {
+      if (!action) return false;
+      if (action.type === 'lane_offset') return action.continuous !== false;
+      if (action.type === 'set_speed') {
+        const target = action.target || {};
+        return target.mode === 'relative' && target.continuous === true;
+      }
+      return false;
+    },
+
+    /**
+     * A relative set_speed naming the acting actor itself compounds every tick
+     * (ChangeActorTargetSpeed re-applies the relative target per tick) unless
+     * the `rate` ramp snapshots it once at initialise. Continuous skips that
+     * ramp, so it compounds too.
+     */
+    selfSpeedCompounds(actor, action) {
+      if (!actor || !action || action.type !== 'set_speed') return false;
+      const target = action.target || {};
+      if (target.mode !== 'relative' || target.entity_ref !== actor.id) return false;
+      return ((action.dynamics || {}).dimension !== 'rate') || target.continuous === true;
+    },
+
+    /**
+     * A non-blocking warning for `ev`, or null: the file exports, but the event
+     * cannot do anything in CARLA. SimpleVehicleControl latches `_reached_goal`
+     * at the end of its waypoint list and from then on writes zero velocity
+     * before reading any target — nothing ever clears it. So on a vehicle, an
+     * event that starts when its own trajectory COMPLETES (which is that very
+     * moment) is dead on arrival. Other timings can only be told by running the
+     * preview, which badges an event that fires after the stop.
+     */
+    eventWarning(actor, ev, events) {
+      if (!actor || !ev || WALKER_ACTION_TYPES.has(actor.type)) return null;
+      const trigger = ev.trigger || {};
+      if (trigger.type !== 'after_event') return null;
+      const target = _afterEventTarget(actor, trigger, events);
+      if (!target || target.actor.id !== actor.id) return null;
+      if ((target.event.action || {}).type !== 'follow_trajectory') return null;
+      return {
+        code: 'after_own_path_end',
+        short: 'Wirkungslos — steht nach Pfadende',
+        message: 'das Fahrzeug bleibt am Ende seiner Trajektorie endgültig stehen '
+          + '(SimpleVehicleControl), ein danach startendes Event bewegt es nicht mehr',
+      };
+    },
+
 
     afterEventKey: _afterEventKey,
 
@@ -1329,6 +1395,39 @@
         };
       }
 
+      if (action.type === 'set_speed' && (action.target || {}).reverse === true &&
+          (action.target || {}).mode !== 'relative' && !this.canReverse(type)) {
+        return {
+          code: 'reverse_not_vehicle',
+          short: 'Rückwärts nur für Fahrzeuge möglich',
+          message: 'rückwärts fahren können nur Fahrzeuge — Personen können es nicht',
+        };
+      }
+      if (this.selfSpeedCompounds(actor, action)) {
+        return {
+          code: 'self_speed_compounds',
+          short: 'Eigene Geschw. nur mit Rate, nicht dauerhaft',
+          message: 'eine Geschwindigkeit relativ zur eigenen braucht die Dynamik „Rate" und '
+            + 'darf nicht dauerhaft folgen — sonst schaukelt sie sich jeden Tick auf',
+        };
+      }
+      if ((trigger.type === 'distance_to_ego' || trigger.type === 'relative_speed') && actor) {
+        const ref = trigger.entity_ref || (AppState.ego && AppState.ego.id);
+        if (trigger.entity_ref && !AppState.findById(trigger.entity_ref)) {
+          return {
+            code: 'trigger_actor_missing',
+            short: 'Auslöser feuert nie — Akteur fehlt',
+            message: 'der Auslöser misst gegen einen Akteur, den es nicht mehr gibt',
+          };
+        }
+        if (ref === actor.id && !(trigger.type === 'distance_to_ego' && type === 'ego')) {
+          return {
+            code: 'trigger_self_ref',
+            short: 'Auslöser misst gegen sich selbst',
+            message: 'der Auslöser vergleicht den Akteur mit sich selbst — das ist immer 0',
+          };
+        }
+      }
       if (trigger.type === 'distance_to_point' && !_isTriggerPoint(trigger.point)) {
         return {
           code: 'no_trigger_point',
@@ -1372,16 +1471,20 @@
             message: 'ein NPC wartet auf ein Ego-Event — ein vom AV gefahrenes Ego hat keine Events',
           };
         }
-        // A lane_offset is emitted continuous="true", so its Event never
+        // A held lane_offset or a continuous follow (neverCompletes) never
         // completes on its own — it is never a valid after_event target. Its
         // START is perfectly well defined, so event_started may name one. The
         // dropdown never offers the former and the backend rejects it with a
         // 400; this catches a save file or an LLM payload before the export does.
-        if (trigger.type === 'after_event' && targetAction.type === 'lane_offset') {
-          return {
+        if (trigger.type === 'after_event' && this.neverCompletes(targetAction)) {
+          return targetAction.type === 'lane_offset' ? {
             code: 'after_lane_offset',
             short: 'Auslöser feuert nie — Spurversatz endet nicht',
             message: 'der Auslöser wartet auf einen Spurversatz, der dauerhaft gilt und nie endet',
+          } : {
+            code: 'after_continuous_speed',
+            short: 'Auslöser feuert nie — Folgen endet nicht',
+            message: 'der Auslöser wartet auf ein dauerhaftes Geschwindigkeit-Folgen, das nie endet',
           };
         }
         if (!this.actionEmits(targetAction, target.actor.type)) {
