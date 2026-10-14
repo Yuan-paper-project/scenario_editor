@@ -7,3 +7,5 @@ __pycache__/
 maps/*/lane_graph.json
 NOTES.md
 PROGRESS_SUMMARY.txt
+# SUMO nets built on demand from each .xodr (backend/bg_traffic.py)
+maps/**/sumo/

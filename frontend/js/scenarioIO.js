@@ -246,10 +246,19 @@
     btnExport.textContent = 'Exportiere\u2026';
 
     try {
-      const blob = await Api.exportScenario(params);
       const town = AppState.map || 'scenario';
-      downloadBlob(blob, `${town}_scenario.xosc`);
-      Toast.success(`Exportiert: ${town}_scenario.xosc`);
+      if (window.BgTraffic && BgTraffic.active) {
+        // With background traffic the .xosc travels with its trajectories:
+        // run.sh replays <name>.bgtraffic.json when it sits next to <name>.xosc.
+        const { blob, vehicles } = await BgTraffic.exportBundle(params);
+        downloadBlob(blob, `${town}_scenario.zip`);
+        Toast.success(`Exportiert: ${town}_scenario.zip — .xosc + Hintergrundverkehr (${vehicles} Fahrzeuge). `
+          + 'Beide Dateien in denselben Ordner entpacken; run.sh spielt den Verkehr dann mit ab.', 7000);
+      } else {
+        const blob = await Api.exportScenario(params);
+        downloadBlob(blob, `${town}_scenario.xosc`);
+        Toast.success(`Exportiert: ${town}_scenario.xosc`);
+      }
     } catch (err) {
       Toast.error(`Export fehlgeschlagen: ${err.message}`);
     } finally {

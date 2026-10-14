@@ -33,6 +33,7 @@ from backend.map_renderer import (
 )
 from backend.lane_graph_builder import build_lane_graph_from_xodr
 from backend.scenario_io import export_batch_zip, export_to_xosc, export_route_xml
+from backend import bg_traffic
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 
@@ -347,6 +348,67 @@ async def export_batch(request: Request):
         media_type="application/zip",
         filename=body.get("filename") or "scenarios.zip",
         headers={"X-Scenarios-Ok": str(n_ok), "X-Scenarios-Failed": str(n_failed)},
+        background=BackgroundTask(os.remove, zip_path),
+    )
+
+
+# ── Background traffic (SUMO trajectories replayed as CARLA puppets) ─────────
+
+def _xodr_for(town: str) -> Path:
+    path = XODR_PATHS.get(town)
+    if path is None:
+        candidate = _UPLOADS_DIR / f"{town}.xodr"
+        path = candidate if candidate.exists() else None
+    if path is None:
+        raise HTTPException(status_code=404, detail=f"Unknown town: {town}")
+    return Path(path)
+
+
+def _bg_traffic_or_http(town: str, request_body: dict) -> dict:
+    try:
+        return bg_traffic.generate(town, _xodr_for(town), request_body)
+    except bg_traffic.BgTrafficError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/bg_traffic")
+def generate_bg_traffic(body: dict):
+    """Background traffic for the preview: {town, seed, count, clearance,
+    keepout: [{w, pts}]} → trajectories (see backend/bg_traffic.py). A plain
+    `def`, so FastAPI runs the SUMO subprocesses in its thread pool."""
+    return _bg_traffic_or_http(body.get("town") or "", body)
+
+
+@app.post("/api/export/bundle")
+def export_bundle(body: dict):
+    """The .xosc plus the background traffic it is run with, zipped:
+    <map>_scenario.xosc and <map>_scenario.bgtraffic.json. run.sh picks the
+    traffic file up by that name, beside the .xosc. The traffic comes from the
+    same cache the preview filled, so the export is the traffic it showed."""
+    import zipfile
+    params = body.get("params") or {}
+    traffic_req = body.get("bg_traffic") or {}
+    map_name = params.get("map", "scenario")
+    traffic = _bg_traffic_or_http(map_name, traffic_req)
+    try:
+        xosc_path = export_to_xosc(params)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Export failed: {e}")
+    zip_path = xosc_path[:-len(".xosc")] + ".zip"
+    stem = f"{map_name}_scenario"
+    try:
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.write(xosc_path, f"{stem}.xosc")
+            zf.writestr(f"{stem}.bgtraffic.json", json.dumps(traffic, separators=(",", ":")))
+    finally:
+        os.remove(xosc_path)
+    return FileResponse(
+        zip_path,
+        media_type="application/zip",
+        filename=f"{stem}.zip",
+        headers={"X-Bg-Traffic-Vehicles": str(len(traffic["vehicles"]))},
         background=BackgroundTask(os.remove, zip_path),
     )
 

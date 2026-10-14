@@ -230,7 +230,7 @@ def kill_stragglers():
     60 s TimeFallback instead of their real condition, and it looks like a
     trigger bug rather than contamination.
     """
-    for pattern in ("scenario_runner.py", "automatic_control_1.py"):
+    for pattern in ("scenario_runner.py", "automatic_control_1.py", "bg_traffic_player.py"):
         subprocess.run(["pkill", "-f", pattern], capture_output=True)
     time.sleep(1.0)
 

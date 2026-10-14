@@ -27,7 +27,7 @@ bash run.sh 8080     # custom port
 
 - Always start from the repo root — the app is imported as `backend.main`, so `uvicorn main:app` from inside `backend/` will not work. `run.sh` handles this with `cd "$(dirname "$0")"`.
 - **`.vscode/launch.json` passes no `--host`/`--port`**, so debugger runs land on uvicorn's default **8000** and bind loopback only, while `run.sh` uses **9090** on `0.0.0.0`. On a remote/SSH box the debugger's server is unreachable without a forwarded port — a hung browser tab usually means this, not a broken app.
-- **There is no linter and no CI**, and no unit tests. Automated coverage is `tests/test_normalization.py` (pure Python) plus twenty Playwright end-to-end suites that need a running editor, and `tests/run_carla_cases.py`, which needs a running CARLA (see Verification). Everything else is verified manually.
+- **There is no linter and no CI**, and no unit tests. Automated coverage is `tests/test_normalization.py` (pure Python) plus twenty-one Playwright end-to-end suites that need a running editor, and `tests/run_carla_cases.py`, which needs a running CARLA (see Verification). Everything else is verified manually.
 - All map geometry is parsed once at startup into `MAP_CACHE` (`preload_maps`, `backend/main.py`). Changes to `map_renderer.py` only take effect on restart — `--reload` does this automatically on save.
 - **`--reload` watches every `*.py` in the repo — `tests/` included.** Writing or editing a test file while a suite runs restarts the server under it: the in-flight request dies (seen as a batch-export download that never arrives), and on 2026-10-09 the restarted worker then wedged outright — ~90 connections unread in CLOSE-WAIT, no response, and after it was killed the reloader left a zombie and never respawned. Only a fresh `run.sh` recovers. When editing tests and running suites in parallel, run the suites against a server **without** `--reload` (`.venv/bin/uvicorn backend.main:app --port 9091`, `EDITOR_URL=http://localhost:9091`).
 - **`--reload` only watches this repo.** Editing `../llm-scenario-gen` — including `prop_catalog.yaml`, which `xml_builder` reads once at import — requires a **manual restart**. Frontend files are read per request, so a catalogue edit appears instantly in the UI while the backend still serves the old data. That asymmetry is easy to misread as a bug.
@@ -959,15 +959,15 @@ out; props carry a separate invisible hit circle, so clickability is not the blo
 
 ## Frontend conventions
 
-**No build step, no bundler, no npm.** Each `frontend/js/*.js` is an IIFE attaching one global: `AppState`, `Api`, `MapView`, `ObjectsManager`, `EventPanel`, `TrafficSignals`, `ScenarioTemplates`, `PropCatalog`, `LaneGraph`, `Dropdown`, `SpecialBuildings`, `AerialMap`, `ScenarioGenerator`, `EventTimeline`, plus `Toast` / `Confirm` / `UndoStack` / `UIUtils` / `ScenarioRules` from `app.js`. `Simulate` also exports `seek` / `pause` / `play` / `paused` / `time` / `end` and `onTime(fn)` (called with the view time on every shown frame, `null` on Stop — the Ablauf playhead and highlight use it), `routeGeometry(actor, ev)` — the lane-following route `mapView.js` draws — and `runHeadless()`, the whole preview run to completion in one call (see the generator section). `ScenarioIO` exports `buildParams` / `validate` / `downloadBlob` for the generator's batch, beside the `buildParamsForTesting` test hook. Two globals exist only as test hooks and are called by no UI code: `Simulate.routeForTesting` (`tests/test_route_fidelity_e2e.py`, asserts on a computed route without running the animation) and `ScenarioIO.buildParamsForTesting` (`tests/test_events_e2e.py`, builds the export payload without the click, so a payload the client-side gate refuses can still be handed to the backend). Several files (`toolbar.js`, `properties.js`, `weather.js`, `mapImport.js`, `welcome.js`, `layerMenu.js`) export nothing else and simply bind DOM listeners on load.
+**No build step, no bundler, no npm.** Each `frontend/js/*.js` is an IIFE attaching one global: `AppState`, `Api`, `MapView`, `ObjectsManager`, `EventPanel`, `TrafficSignals`, `ScenarioTemplates`, `PropCatalog`, `LaneGraph`, `Dropdown`, `SpecialBuildings`, `AerialMap`, `ScenarioGenerator`, `EventTimeline`, `BgTraffic`, plus `Toast` / `Confirm` / `UndoStack` / `UIUtils` / `ScenarioRules` from `app.js`. `Simulate` also exports `seek` / `pause` / `play` / `paused` / `time` / `end` and `onTime(fn)` (called with the view time on every shown frame, `null` on Stop — the Ablauf playhead and highlight use it), `routeGeometry(actor, ev)` — the lane-following route `mapView.js` draws — and `runHeadless()`, the whole preview run to completion in one call (see the generator section). `ScenarioIO` exports `buildParams` / `validate` / `downloadBlob` for the generator's batch, beside the `buildParamsForTesting` test hook. Two globals exist only as test hooks and are called by no UI code: `Simulate.routeForTesting` (`tests/test_route_fidelity_e2e.py`, asserts on a computed route without running the animation) and `ScenarioIO.buildParamsForTesting` (`tests/test_events_e2e.py`, builds the export payload without the click, so a payload the client-side gate refuses can still be handed to the backend). Several files (`toolbar.js`, `properties.js`, `weather.js`, `mapImport.js`, `welcome.js`, `layerMenu.js`) export nothing else and simply bind DOM listeners on load.
 
-- **Script order in `frontend/index.html` (the `<script>` block near the end) is load-bearing** — `app.js` first, dependents after; `propCatalog.js` must precede `toolbar.js`, which renders the prop tiles from it, and `aerialMap.js` must precede `mapView.js`, whose `renderMap` / `_applyTransform` call into it unguarded. `scenarioGenerator.js` goes after `simulate.js` (it calls `Simulate.routeGeometry` / `runHeadless`) and after `dropdown.js`, whose delegated `[data-menu-item]` close is what shuts its menu. `eventTimeline.js` goes after `simulate.js` (it inserts `#sim-lanes` into `#map-bottom-stack` above `#sim-controls` and appends its toggle to the bar). A new module must be added there or it never runs.
+- **Script order in `frontend/index.html` (the `<script>` block near the end) is load-bearing** — `app.js` first, dependents after; `propCatalog.js` must precede `toolbar.js`, which renders the prop tiles from it, and `aerialMap.js` must precede `mapView.js`, whose `renderMap` / `_applyTransform` call into it unguarded. `scenarioGenerator.js` goes after `simulate.js` (it calls `Simulate.routeGeometry` / `runHeadless`) and after `dropdown.js`, whose delegated `[data-menu-item]` close is what shuts its menu. `eventTimeline.js` goes after `simulate.js` (it inserts `#sim-lanes` into `#map-bottom-stack` above `#sim-controls` and appends its toggle to the bar). `bgTraffic.js` goes after both `simulate.js` and `scenarioIO.js` (it subscribes to `Simulate.onTime`; the export button calls `BgTraffic.exportBundle`). A new module must be added there or it never runs.
 - **The header's dropdowns share one mechanism.** `dropdown.js` (global `Dropdown`) owns toggle-on-button, close-on-outside-click and close-on-Esc; the Esc handler is on the **capture phase** and `stopPropagation`s, so closing a menu does not also cancel a path being drawn in `mapView`. A menu needs no module of its own — `dropdown.js` auto-binds any `[data-dropdown]` wrapper holding a `[data-dropdown-button]` and a `[data-dropdown-panel]` (this is how **Datei**, **Generieren** and **Umgebung** work), and a row marked `data-menu-item` closes the menu after its own handler runs. A menu with extra behaviour calls `Dropdown.bind()` itself instead; **Ebenen** does, and must therefore *not* also carry `data-dropdown` or it binds twice. Shared classes are `.menu` / `.menu-btn` / `.menu-panel` / `.menu-item`; `.menu-panel-right` right-aligns a panel near the window edge.
 - **The nine map-layer checkboxes live in the Ebenen dropdown** (`#layer-toggles` → `#layer-menu-btn` + `#layer-menu-panel`, "Ebenen N/9"; the pill counts checkboxes, so it needs no edit when one is added). `Tempolimits` (`#toggle-speeds`) is the only one that starts **unchecked**. Ownership is split: `layerMenu.js` owns only the count pill and `Alle`/`Keine`, while `mapView.js`'s `_setupLayerToggles` still binds each `#toggle-*` checkbox to its SVG layer by id, exactly as when they were inline in the header. Keep those ids: they are the contract between the two files (and `tests/test_props_e2e.py` asserts `#toggle-props` exists). `Alle`/`Keine` set `.checked` directly, which fires **no** event, so it dispatches a synthetic `change` per box — drop that and the pill updates while the map does not. `#layer-toggles` itself stays `hidden` until a map loads (`mapImport.js`, `_setupLayerToggles`).
 - **The Datei menu holds `#btn-save` / `#btn-load-input` / `#btn-import-map-input` / `#btn-export-route`, and their ids are unchanged** — `scenarioIO.js` binds them by id and does not care that they now live in a popup. **`#btn-new-scenario` („Neues Szenario (alles entfernen)") is its first row**: `AppState.clearScenario()` — ego, NPCs,
 props, signal Schaltungen and the generator recipe on the **current town only**, weather/time kept — as one undo step, after a confirm (Strg
 skips it; an empty scenario just toasts). `#btn-export` deliberately stays a top-level primary button: it is the app's goal, and `tests/_harness.py` clicks it directly and waits on its `.disabled`.
-- **Weather and time of day are the header's `Umgebung` menu (`#env-menu`), not a bar under the map.** The full-width `#weather-bar` footer is gone (it cost 68 px of map height for something set rarely), and with it `--footer-h`. `weather.js` still binds the same `w-time` / `w-<key>` / `wv-<key>` ids, adds six presets (`PRESETS`, the same values as `scenarioGenerator.js`'s `WEATHER_PRESETS` — keep the two in step) and writes `Regen · Nacht` onto the button (`#env-summary`); a weather that matches no preset exactly reads `Eigenes Wetter`. A preset sets **all seven** keys, the others to 0. `Schnee` / `Staub` stay offered by decision even though CARLA 0.9.15 renders neither. **Fog only renders below a 1 km visual range**: ScenarioRunner sets `fog_density = 100` iff `visualRange < 1000` (`openscenario_parser.get_weather`), and `weather_mapper.py` used to map fog 0–1 onto 100 km–0, so „Nebel" (0.7 → 30 km) and every generator „nebel" batch ran in clear air. It now maps onto 1000 m–10 m (0.2 → 800 m, 0.7 → 300 m). The dust-storm range still uses the old 5 km scale and so still renders nothing below 0.8.
+- **Weather and time of day are the header's `Umgebung` menu (`#env-menu`), not a bar under the map.** The full-width `#weather-bar` footer is gone (it cost 68 px of map height for something set rarely), and with it `--footer-h`. `weather.js` still binds the same `w-time` / `w-<key>` / `wv-<key>` ids, adds six presets (`PRESETS`, the same values as `scenarioGenerator.js`'s `WEATHER_PRESETS` — keep the two in step) and writes `Regen · Nacht` onto the button (`#env-summary`); a weather that matches no preset exactly reads `Eigenes Wetter`. A preset sets **all seven** keys, the others to 0. `Schnee` / `Staub` stay offered by decision even though CARLA 0.9.15 renders neither. **Fog only renders below a 1 km visual range**: ScenarioRunner sets `fog_density = 100` iff `visualRange < 1000` (`openscenario_parser.get_weather`), and `weather_mapper.py` used to map fog 0–1 onto 100 km–0, so „Nebel" (0.7 → 30 km) and every generator „nebel" batch ran in clear air. It now maps onto 1000 m–10 m (0.2 → 800 m, 0.7 → 300 m). The dust-storm range still uses the old 5 km scale and so still renders nothing below 0.8. The menu's last section is **Hintergrundverkehr** (`#bg-enabled`, `#bg-count`, `#bg-seed`, `#bg-clearance`, `#bg-status`) — see its own section.
 - **Undo/redo also have header buttons** (`#btn-undo` / `#btn-redo`), sharing `mapView.js`'s `_stepHistory` with `Strg+Z` / `Strg+Y`. `UndoStack` emits nothing, so `_refreshHistoryButtons` re-reads `UndoStack.length` / `redoLength` once per frame after any AppState event.
 - **The header is one row at every width** — nothing in it may wrap. Below 1340 px `.app-title` is hidden, below 1180 px the road count and the weather summary text too. A new header control must fit that budget or go into a menu.
 - **Each town keeps its own scenario for the session.** Poses belong to the town they were placed on (they
@@ -1891,6 +1891,196 @@ this and is refused for walkers in three layers (emitter, backend, `ScenarioRule
   `pgrep -af carla-port=2010` after a session. A run whose hero "never spawned" or whose telemetry
   sidecar timed out was a map load, not the scenario — re-run it.
 
+## Background traffic („Hintergrundverkehr", `backend/bg_traffic.py`, `frontend/js/bgTraffic.js`)
+
+Random traffic on the rest of the map, **generated once by SUMO and then replayed** — by the preview
+and, from the same file, by `tools/bg_traffic_player.py` inside the CARLA run, which steers every car
+onto the file's pose on every tick ("puppets"). Neither side decides anything, so the
+preview is exact for the background. The price: **the cars react to nothing.** That is why every car
+whose path ever comes near the scenario is removed, and why this is the scenery option — once an AV
+stack drives the ego, it may leave the predicted paths and a puppet can hit it; reacting traffic then
+means CARLA's Traffic Manager and a preview that runs CARLA itself (not built).
+
+```
+Umgebung menu (AppState.bgTraffic {enabled,count,seed,clearance,radius}) + timed keep-out and ego track from Simulate.runHeadless
+  → POST /api/bg_traffic → bg_traffic.generate(): netconvert → randomTrips → sumo (FCD) → filter, re-simulate
+  → preview draws it (#layer-bg-traffic, Simulate.onTime)
+  → Export .xosc with traffic on → POST /api/export/bundle → <map>_scenario.zip (.xosc + .bgtraffic.json)
+  → run.sh finds <scenario>.bgtraffic.json next to the .xosc → run_selfref_video_test.py --bg-traffic
+  → tools/bg_traffic_player.py beside ScenarioRunner
+```
+
+- **SUMO is the `eclipse-sumo==1.24.0` wheel in `.venv`** (requirements.txt, `run.sh`'s first-run
+  install). `bg_traffic.sumo_home()` uses the wheel or `BG_SUMO_HOME`, **never the shell's
+  `SUMO_HOME`**: on this box it points at a directory that does not exist. Nets are built on first
+  use into `maps/<Town>/sumo/` (gitignored), rebuilt when the `.xodr` or the type file is newer;
+  netconvert's options are CARLA's own (`Co-Simulation/Sumo/util/netconvert_carla.py`), with
+  `backend/sumo_data/opendrive_netconvert.typ.xml` copied from CARLA — one change: **parking lanes
+  allow no vehicles**, or SUMO routes cars through bays at 5 km/h.
+- **The pose conversion is CARLA's `BridgeHelper.get_carla_transform`, verbatim**: FCD gives the
+  *front bumper* and a compass angle in SUMO's frame (net offset applied, y up). Hence the per-blueprint
+  half-lengths in `BLUEPRINTS` (measured on the fail2drive build). Checked against the editor's lane
+  centrelines: median 0–1 cm on Town01/03/04/10HD; the tail (p95 ~0.8 m) is lane changes and SUMO's own
+  junction curves — harmless, since CARLA places the car where the file says either way.
+- **Two shapes, chosen by „Umkreis" (`radius`, default 80 m).** `0` is the whole map: `count` cars,
+  each present for the whole 65 s window (60 s warm-up first; routes get 12 intermediate stops).
+  Otherwise a **bubble that moves with the ego**: a car is in the file only while it is within R of
+  where the *preview* has the ego (leaving at R + 20 m), as one entry `{t0, frames}` per such stretch
+  (`FORMAT_VERSION` 2; the preview hides an entry outside its life, the player spawns it at `t0` and
+  destroys it after its last frame), and **`count` is the average number around the ego**
+  (`stats.visible_avg`, the status line's „Ø"). It exists because whole-map traffic put most cars
+  hundreds of metres from anything the ego sees. Trips are aimed (`_bubble_trips`): from a ring
+  ahead of where the ego will be, past its route, out the far side, so a car enters the bubble at its
+  edge — one that SUMO inserts or parks *inside* it (`popin`/`popout`) is dropped.
+  Cars that pop in, vanish, jump (a teleport) or touch the keep-out are dropped and **the rest is
+  re-simulated**, until a run drops nothing — otherwise a kept car would brake for one that is no
+  longer there. (After `MAX_ITERATIONS` the last round's survivors are kept: each passed every check,
+  but may brake for a car that was dropped — cosmetic.) Removals
+  cascade (a car whose leader is gone drives faster and may now reach the keep-out), so it starts with
+  2× the count, keeps a 25 % reserve while still dropping for cause, trims to `count` only on a clean
+  run, and **tops up** with fresh trips whenever it is short — **in the same re-simulation as the
+  removals**, except in the last `SETTLE_ROUNDS` (4 of `MAX_ITERATIONS` 16), which only remove. Topping
+  up only after a drop-free round was the real limit on density: each removal cascades into a few
+  more, so such rounds rarely came, and Town03 ended at 10–13 of 40 with the neighbouring and
+  oncoming lanes visibly empty (now `lead_brake` 24, Town10HD 24, Town05 36, Town04 37; ~8–18 s
+  per generation). Town03 `cut_out` stays ~13: both NPCs spend a long time in junction 238, and all
+  traffic through it conflicts. Closing a junction turn after repeated drops there was tried and did
+  not help; closing whole edges halved the bubble's traffic (they are the roads round the ego).
+  **Aimed trips pick edges by where a car starts (the first edge's start), ends (the last edge's end)
+  and passes (any point of the middle edge)** — by edge *midpoints* Town05 `cyclist_ahead` 1 got no
+  trip at all (its long edges' midpoints were all > 60 m from the ego) and no traffic; now ~28.
+  A bigger pool up front is worse: it jams the small towns. `stats.dropped` counts the reasons,
+  `stats.rounds` gives `[shown, dropped, trips added]` per simulation.
+- **Three SUMO defaults that each broke it:** lane changes are instant (a 3.5 m sideways jump in one
+  0.1 s step — `--lanechange.duration 3`); duarouter copies the vTypes into its route file and sumo
+  then refuses the second definition (`_resolve_types` strips them, and pins each car to one blueprint);
+  `randomTrips --vehicle-class` cannot be combined with a `type` trip attribute (`--vclass` instead).
+- **The keep-out is in space AND time** (`bgTraffic.js` `_scenarioPaths`, `_KeepOut`): each scripted
+  actor's `runHeadless` track (from its spawn pose at t 0, a point per metre or per second, so a
+  standing actor keeps blocking its spot) as `[x, y, t]`; the part of its authored trajectory/route the
+  preview does not reach, timed at the track's end; and every prop **untimed** `[x, y]`. A car frame
+  at time t is dropped if it comes within `clearance + scripted half-width + car half-width` (centre
+  distance; `clearance` is edge to edge, the menu's „Abstand", **default 0.5 m** — at 1 m a car in the
+  next lane passing a bus, ~0.9 m body to body, was dropped, which halved Town03's traffic) of a
+  segment whose times are within **`KEEPOUT_TIME_S` (8 s)** of t. It used to be purely spatial — over
+  every point the ego would ever pass — and that left 2–20 of 30 requested cars near the ego, because
+  the bubble's own roads were exactly the forbidden ones. Now (30 requested, Umkreis 80): Town03
+  `lead_brake` 12, `cut_out` 17, Town05 `junction_conflict` 23, Town10HD `vru_crossing` 12 (a small
+  network), Town04 `cut_in` 25; Town01 `obstacle` 13 of 20.
+  **The tracks come from a braking ego** (`runHeadless({reactiveEgo})`, the „Ego bremst" model)
+  whenever the ego has „Hindernisse beachten" on, as CARLA's scripted ego does: from the
+  non-reacting one, Town03 `lead_brake`'s preview ego drove through the braking bus and ran ~60 m
+  ahead of the real one, so cars appeared 18 m from it in CARLA and one held 9 s for it. So the
+  bubble follows the braking ego even when Play runs without „Ego bremst". Only the
+  untimed parts pre-filter routes (every edge and junction *turn* they touch, `_write_trip_weights`).
+  The safety net for timing that differs in CARLA is the player's emergency stop.
+- **Regenerated after every scenario edit** (debounced 900 ms; never while a preview runs —
+  `runHeadless` refuses beside it, so it is deferred to Stop). The request body is the cache key on
+  both sides (backend LRU of 12), so undo brings the old traffic straight back and the export reuses
+  exactly what the preview showed. `AppState.bgTraffic` is a setting like weather: in the save file,
+  not in undo; a file without it loads with traffic **off**.
+- **The player** never ticks (ScenarioRunner owns the clock — the `carla_telemetry.py` rule). Its
+  t = 0 is the first tick on which the hero exists. It spawns every car on that tick (`role_name
+  "background"`, lifted 0.6 m onto CARLA's own lane height via `get_waypoint` near SUMO's z, so a
+  deck and the road under it do not mix; a failed spawn is retried higher on the next ticks). From
+  then on it **only sends velocities**: per tick, from the newest snapshot, each car's
+  `ApplyTargetVelocity` is (file pose at the coming tick − where the car actually is) / tick, plus the
+  matching angular velocity; z and pitch are the physics' own (the car stands on its wheels). A closed
+  loop, so it never drifts, and every other controller reads the car's real speed. A car more than
+  2 m off (stuck) is logged once. **Emergency stop**: each tick a car looks 0.5–2 s ahead along its
+  own file trajectory; if that brings it closer to the hero or an NPC (every non-background vehicle or
+  walker) and into a box around it (half-length + 3.5 m along, half-width + 1.6 m across — an
+  adjacent lane does not trigger), it holds at zero velocity and its own clock stops, so it resumes
+  exactly where it was, later; logged per hold, totals at exit. "Closer" is what prevents a deadlock
+  with an ego braking right behind a car that is driving away. It exits when the hero is gone and destroys its cars;
+  `run_carla_cases.kill_stragglers` also kills it. **A car's first ticks are off**: it appears a few
+  ticks after the spawn batch (t = 0.25–0.35 s) at its lifted spawn pose and settles by ~0.5 s.
+- **Velocity only is the one way that does not crash this CARLA build.** Both obvious designs
+  segfault the fail2drive 0.9.15 server (`Signal 11` in its log; in ours the player's "cleanup failed:
+  time-out … simulator" and ScenarioRunner hanging in `world.tick()`):
+  - **physics off + `ApplyTransform`** (what CARLA's own SUMO bridge does): any physics-off vehicle in
+    the world crashes it **the moment two other vehicles collide** — Town05 `junction_conflict` seed
+    3, where the ego touches the red-light runner at t = 11.15 s, crashed every time with puppets and
+    never without; bisected to a *single parked* physics-off car 100 m from the collision, outside
+    every light trigger and behind the NPC's sensor. Ego and NPC drove identically up to the crash.
+  - **physics on + `ApplyTransform` (+ velocity)**: exact and stable in an unrecorded run, but crashed
+    twice ~3–4 s in once run.sh's recorder had cameras on the hero.
+  - Velocity only (ScenarioRunner's own `SimpleVehicleControl` mechanism) and 50 Traffic-Manager cars
+    (the control) both ran the recorded case clean. Diagnose such a crash with the CARLA log, not the
+    scenario: the run looks normal right up to it. **Also note CARLA on this box segfaults on map loads
+    now and then** (see the generator's CARLA verification section) — preload the town (`client.load_world`) before
+    blaming a run.
+- **Measured in CARLA** (`tests/run_bg_traffic_carla.py`, velocity player, recorded through run.sh,
+  2026-10-13; `--baseline` reruns each case with `BG_TRAFFIC=off`):
+
+  | Case | cars | replay error from t = 1 s | events / ego travel / closest ego–NPC, with vs without |
+  |---|---|---|---|
+  | Town05 `junction_conflict` 3 | 50 | median 1 mm, max 8 cm | all 10 identical / 204.6 vs 204.8 m / 3.47 vs 3.48 m |
+  | Town10HD `vru_crossing` 2 | 40 | median 1 mm, max 6 cm | all 8 identical / 179.2 vs 179.1 m / 1.35 vs 1.40 m |
+  | Town03 `lead_brake` 5 | 40 | median 1 mm, p99 3 cm, max 15 cm | ±1 tick / 261.5 vs 262.4 m / 9.27 vs 8.82 m |
+
+  No puppet came nearer the ego than 3.5 m centre to centre (clearance 1 m edge to edge). One Town03
+  car needed two spawn retries. The Town05 case is a real collision with or without traffic.
+
+  Those were whole-map, purely spatial. **Bubble + timed keep-out + emergency stop** (Umkreis 80,
+  30 requested, clearance 0.5; a run ends when the ego's route completes, so entries due later never
+  spawn): Town03 `lead_brake` 5 — 48 entries / 42 spawned, replay median 1 mm, cars appear at a median
+  80 m from the CARLA ego (one at 18 m, where it lags the preview), 2 holds totalling 2.2 s, events
+  identical to the baseline. Town10HD `vru_crossing` 2 — 24 spawned before the run ended at 21.7 s,
+  appear 79–81 m, leave 90–98 m, replay max 8 cm, no holds, ego–walker 1.22 vs 1.35 m. From the
+  non-braking preview ego (before `reactiveEgo`), Town03 had 4 cars appear 18–21 m from the ego and
+  one 9 s hold. **Kill stragglers from a script file** (`run_carla_cases.kill_stragglers`): an orphan
+  ScenarioRunner from an aborted case puts a second hero into the next run — and a killed run can
+  leave the world so that the next case's hero never spawns (seen twice in a row; a re-run was clean).
+  With top-ups during removals (40 requested, 2026-10-13): Town03 `lead_brake` 5 — 80 entries, 75
+  spawned, replay median 2 mm / p95 1.4 cm, one 1.9 s hold, events identical, but the **bus (obstacles
+  on) braked 6.5 → 3.3 m/s at t 40–45 s for a line of puppets 3.4–5 m off its path in a curve** and its
+  route ended 1.75 s later: denser traffic is *seen* by NPC sensors even outside the keep-out. Town03
+  `cut_out` 1 — 62 spawned, events, ego travel and ego–NPC distance identical; the ego stopped at a
+  red light at t 35 s (with and without traffic — the green wave covers only the way to the conflict,
+  and the preview models no lights) and two puppets that reached it held ~10 s each until the end.
+  Town05 `junction_conflict` 3 — 58 of 103 spawned, replay max 9 cm, no holds, conflict identical
+  (ego–NPC 3.48 m, same tick), but right after it the **ego braked 13 → 5 m/s while turning, with
+  puppets in the next lane ~13 m ahead in its frame**, and its route ended 1.1 s later. Town10HD
+  `vru_crossing` 2 — 35 spawned, replay max 10 cm, two holds (2.3 s) for the walker, events within one
+  tick, ego–walker 1.37 vs 1.40 m. The sensor effect is the price of the denser traffic; left as is.
+  Town04 `cut_in` 1 (highway, 109 entries, all spawned) and Town01 `obstacle` 1 (props, 44 of 61):
+  every event at the same tick as the baseline, ego travel identical (268.3 / 233.6 m), no holds,
+  replay max 18 / 9 cm, no puppet nearer the ego than 7.0 / 4.0 m.
+  Town05 `oncoming_drift` 1 and Town02 `vru_crossing` 1: events within one tick, same ego–NPC
+  distance. **Two deadlocks, one cause** — the obstacle sensor of an actor with obstacles on is a
+  straight ray (`hit_radius` 1 m, considered up to `proximity_threshold` 25 m), so **in a curve it
+  hits puppets beside the path, outside the keep-out**: Town10HD `lead_brake` 1 — the lead truck
+  braked for a puppet crossing 3.8 m off its path at t 5 s, the puppet whose file crosses the
+  truck's spot then held for the truck (each waiting for the other until ~24 s), the scenario ran
+  ~20 s behind the preview, and the truck and ego ended stopped behind puppets queued in their
+  lane. Town03 `junction_conflict` 2 — the ego turned past puppets queued at a SUMO red 3.4 m
+  beside its path, stopped, six puppets held for it, nothing moved until 60 s. Not fixed yet (the
+  candidate: a timed keep-out along each obeying actor's sensor ray, and no hold for an actor that
+  stands waiting with the puppet in front of it).
+- **Aimed trips pick edges by where a car starts, ends and passes** (`_bubble_trips`: start point,
+  end point, any point every ~5 m). By edge midpoint, Town05 `cyclist_ahead` 1 — long edges, no
+  midpoint within 60 m of the ego — got no trip and **no traffic at all**.
+  **Deadlock seen on Town10HD `lead_brake` 1** (2026-10-13): a puppet crossing 7 m ahead of the truck
+  in a turn — 3.8 m off its path, outside the keep-out, but inside its obstacle sensor's straight
+  ray (`hit_radius` 1, `proximity_threshold` 25 m, the ray leaves the lane in a curve) — stopped
+  it; a puppet whose recording ran through the truck's spot then held for it while the truck waited
+  for that puppet (~18 s). Its braking events fired 2.5 s early, the scenario fell ~20 s behind the
+  preview, and puppets queued in its lane by SUMO's timing parked it for good: neither route
+  completed. Town03 `junction_conflict` 2 looked the same (7 holds, 62 s, ego route incomplete; not
+  traced). Not fixed: candidates are a keep-out along each obstacle-obeying actor's sensor ray at the
+  same moment, and not holding a car that stands in front of a stopped actor.
+- **The ego's and NPCs' obstacle sensor sees puppets** (`sensor.other.obstacle`, `only_dynamics=True`;
+  measured with physics off, standing or moved by `set_transform`, `tests/probe_puppet_obstacle.py`,
+  and physics-on vehicles are what it is built for). So a puppet that did cut in would be braked for,
+  not driven through.
+- `run.sh`: `<scenario>.bgtraffic.json` beside the `.xosc` is picked up automatically (looked up after
+  its `cd` into scenario_runner, like `SCENARIO_FILE` itself); `BG_TRAFFIC=<file>` overrides,
+  `BG_TRAFFIC=off` disables. The player refuses a file for another town.
+- **Known gaps:** SUMO runs its own signal programs, so a puppet can visibly cross on CARLA's red
+  (it is never near the scenario, by construction); cars only, no walkers; the batch generator does not
+  add traffic; uploaded maps work in the preview but have no CARLA counterpart.
+
 ## Repo notes
 
 - `README_UPDATED.md` is a second, newer README coexisting with `README.md`. Check both before assuming docs are stale.
@@ -1943,7 +2133,7 @@ bash run.sh 9090                 # terminal 1
 bash tests/run_tests.sh          # terminal 2 (EDITOR_URL overrides the target)
 ```
 
-That runs `test_normalization.py` (182 checks, no browser or server needed — the last ten build a real `.xosc` through the sibling repo to pin cross-actor event-reference resolution, `startTransition`, the hero `SpeedCondition`, the `consider_*` properties and a signal trigger at the pole's road height), then `compare_xodr_lane_graph.py` (also no browser/server/CARLA — validates `backend/lane_graph_builder.py` against the locally probed graphs (gitignored; towns without one are skipped)), then the twenty Playwright suites: props (72), prop yaw (23), templates (296), events (82), ego events (75), triggers (47), signal panel (31), actor types (260, grows with the catalogue), elevation (33), route fidelity (13: the original reversal case plus three routes checked against CARLA), undo (44), waypoints (67), generator (~1420: eight types × three seeds × three towns, plus batch, coverage and dialog checks), preview timeline (36: scrubbing, event ticks, keys, Stop/undo, the overpass layer on Town04/05/01, and the bar at 1024–1600 px), generate here (61), recipe (63), user templates (25), event timeline (17), preview lock (62: trajectory speed, Neues Szenario, per-town scenarios, preview view-only, Laden during a preview, Ablauf playhead and card highlight), actions ext (60: hidden `set_distance`, factor/continuous/self-relative speed, Rückwärts, lane-offset presets and Hin & zurück, Abstand zu Akteur, `relative_speed`, acceleration limits in export and preview, the goal latch). All but the first two drive a real browser against a real server and a real export. **Restart the editor first if you changed `../llm-scenario-gen`** — otherwise the frontend shows new catalogue data while the backend exports the old, which looks like a test bug and is not one.
+That runs `test_normalization.py` (182 checks, no browser or server needed — the last ten build a real `.xosc` through the sibling repo to pin cross-actor event-reference resolution, `startTransition`, the hero `SpeedCondition`, the `consider_*` properties and a signal trigger at the pole's road height), then `compare_xodr_lane_graph.py` (also no browser/server/CARLA — validates `backend/lane_graph_builder.py` against the locally probed graphs (gitignored; towns without one are skipped)), then the twenty-one Playwright suites: props (72), prop yaw (23), templates (296), events (82), ego events (75), triggers (47), signal panel (31), actor types (260, grows with the catalogue), elevation (33), route fidelity (13: the original reversal case plus three routes checked against CARLA), undo (44), waypoints (67), generator (~1420: eight types × three seeds × three towns, plus batch, coverage and dialog checks), preview timeline (36: scrubbing, event ticks, keys, Stop/undo, the overpass layer on Town04/05/01, and the bar at 1024–1600 px), generate here (61), recipe (63), user templates (25), event timeline (17), preview lock (62: trajectory speed, Neues Szenario, per-town scenarios, preview view-only, Laden during a preview, Ablauf playhead and card highlight), actions ext (60: hidden `set_distance`, factor/continuous/self-relative speed, Rückwärts, lane-offset presets and Hin & zurück, Abstand zu Akteur, `relative_speed`, acceleration limits in export and preview, the goal latch), background traffic (34: off by default, the bubble around the ego (average count, radius, entry at its edge), Umkreis 0 = whole map, the timed keep-out, determinism and regeneration, exact drawing, the zip export, save/load). All but the first two drive a real browser against a real server and a real export. **Restart the editor first if you changed `../llm-scenario-gen`** — otherwise the frontend shows new catalogue data while the backend exports the old, which looks like a test bug and is not one.
 
 `test_ego_events_e2e.py` is kept separate from `test_events_e2e.py` rather than folded in: the older suite's `EGO` fixture and every one of its assertions assume an inert ego (no events), which was true before the ego became a controllable actor and is the entire premise the new suite tests against.
 

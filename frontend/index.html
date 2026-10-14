@@ -79,7 +79,7 @@
          summary + presets; dropdown.js does the open/close. -->
     <div id="env-menu" class="menu" data-dropdown>
       <button type="button" id="env-menu-btn" class="btn btn-secondary menu-btn"
-              data-dropdown-button title="Wetter und Tageszeit" aria-haspopup="true" aria-expanded="false">
+              data-dropdown-button title="Wetter, Tageszeit und Hintergrundverkehr" aria-haspopup="true" aria-expanded="false">
         <svg class="btn-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><span id="env-summary">Klar · Tagsüber</span> <span class="menu-caret">&#9662;</span>
       </button>
       <div id="env-menu-panel" class="menu-panel env-panel hidden" data-dropdown-panel
@@ -128,6 +128,30 @@
             <input type="range" id="w-dust_storm" min="0" max="1" step="0.05" value="0">
           </div>
           </div>
+        <!-- Background traffic (bgTraffic.js): SUMO-generated cars that CARLA
+             replays exactly, kept clear of the scenario's own paths. -->
+        <div class="env-section-label">Hintergrundverkehr</div>
+        <label class="bg-enable-row" title="Zufälliger Verkehr auf den übrigen Straßen. Er reagiert auf nichts und hält deshalb Abstand zu allen Pfaden des Szenarios.">
+          <input type="checkbox" id="bg-enabled"> Hintergrundverkehr erzeugen
+        </label>
+        <div class="bg-grid">
+          <label for="bg-count">Fahrzeuge</label>
+          <input type="number" id="bg-count" min="1" max="200" step="1" value="30">
+          <label for="bg-seed">Seed</label>
+          <span class="bg-seed-wrap">
+            <input type="number" id="bg-seed" min="0" step="1" value="1">
+            <button type="button" id="bg-reseed" class="btn btn-secondary bg-dice" title="Neuer Seed: anderer Verkehr">&#127922;</button>
+          </span>
+          <label for="bg-clearance">Abstand</label>
+          <span class="bg-unit-wrap" title="Mindestabstand zwischen Hintergrundfahrzeugen und jedem Pfad des Szenarios (Ego, NPCs, Requisiten), von Fahrzeugkante zu Fahrzeugkante">
+            <input type="number" id="bg-clearance" min="0" max="20" step="0.5" value="0.5"> m
+          </span>
+          <label for="bg-radius">Umkreis</label>
+          <span class="bg-unit-wrap" title="Verkehr nur in diesem Umkreis um die Route des Ego-Fahrzeugs (Start, Ziel und mindestens die halbe Zeit). 0 = ganze Karte">
+            <input type="number" id="bg-radius" min="0" max="500" step="10" value="80"> m
+          </span>
+        </div>
+        <div id="bg-status" class="bg-status" aria-live="polite">Aus</div>
       </div>
     </div>
   </div>
@@ -339,6 +363,9 @@
         <g id="layer-intersections"></g>
         <g id="layer-trajectories"></g>
         <g id="layer-props"></g>
+        <!-- Background traffic during a preview (bgTraffic.js); under the
+             scenario's own actors, never hit-tested. -->
+        <g id="layer-bg-traffic"></g>
         <g id="layer-actors"></g>
       </g>
     </svg>
@@ -762,6 +789,7 @@
 <script src="/static/js/simulate.js"></script>
 <script src="/static/js/scenarioGenerator.js"></script>  <!-- after simulate.js (routeGeometry), objects.js, propCatalog.js, dropdown.js -->
 <script src="/static/js/eventTimeline.js"></script>  <!-- after simulate.js (#sim-controls, runHeadless, seek) and eventPanel.js (displayName) -->
+<script src="/static/js/bgTraffic.js"></script>  <!-- after simulate.js (runHeadless, routeGeometry, onTime) and scenarioIO.js (export bundle) -->
 
 <script src="/static/js/specialBuildings.js"></script>  <!-- landmark dots from maps/special_buildings.csv; mapView.js draws them -->
 <script src="/static/js/mapImport.js"></script>

@@ -105,6 +105,11 @@
       wet_road: 0, snowy: 0, dust_storm: 0,
     },
     time: 'daytime',
+    // Background traffic (bgTraffic.js): SUMO cars CARLA replays as puppets.
+    // A setting like weather/time — saved in toJSON()/loadJSON(), kept out of
+    // undo — and only the settings: the trajectories are regenerated from
+    // them and the scenario's paths, by the backend, deterministically.
+    bgTraffic: { enabled: false, count: 30, seed: 1, clearance: 0.5, radius: 80 },
 
     // ── Editor interaction ─────────────────────────────────────
     selectedId:          null,   // id of selected actor/object
@@ -396,6 +401,7 @@
         map: this.map,
         weather: { ...this.weather },
         time: this.time,
+        bgTraffic: { ...this.bgTraffic },
         // Nullable: a scenario may hold only props before an ego is placed.
         ego: this.ego ? this._dumpActor(this.ego) : null,
         npcs: this.npcs.map(n => this._dumpActor(n)),
@@ -509,6 +515,9 @@
       this.map             = data.map || null;
       this.weather         = data.weather ? { ...data.weather } : { ...this.weather };
       this.time            = data.time || 'daytime';
+      // A file from before the feature has no traffic: off, not "keep whatever
+      // the editor had", or loading an old scenario would quietly add cars.
+      this.bgTraffic       = { enabled: false, count: 30, seed: 1, clearance: 0.5, radius: 80, ...(data.bgTraffic || {}) };
       this.ego             = data.ego ? this._migrateEgoTrajectory(this._hydrateActor(data.ego)) : null;
       this.npcs            = (data.npcs || []).map(n => this._hydrateActor(n));
       this.staticObjects   = data.staticObjects || [];

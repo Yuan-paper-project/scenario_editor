@@ -5,7 +5,7 @@ if [ ! -d "$VENV" ]; then
     echo "Creating virtual environment..."
     python3 -m venv "$VENV"
     echo "Installing dependencies..."
-    "$VENV/bin/pip" install -q fastapi "uvicorn[standard]" pyyaml python-multipart
+    "$VENV/bin/pip" install -q fastapi "uvicorn[standard]" pyyaml python-multipart "eclipse-sumo==1.24.0"
     echo "Done."
 fi
 PORT=${1:-9090}

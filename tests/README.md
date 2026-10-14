@@ -18,6 +18,7 @@ one goes red tells you where the problem is:
 | `run_generated_carla.py` | CARLA on :2010 (run.sh's) + editor | whether a generated scenario's triggers fire and the actors meet in CARLA | nothing is asserted; it reports |
 | `run_template_carla.py` | CARLA on :2010 (run.sh's) + editor | the templates with a DRIVING ego (route + start speed): triggers fire, the actor does what the template says, the ego reacts; printed beside the preview's prediction | nothing is asserted; it reports |
 | `probe_generated_spawns.py` | CARLA on :2010 + editor | generated actors CARLA refuses to spawn (scenery the `.xodr` lacks); `--zip/--out` filters a batch | anything after the spawn |
+| `run_bg_traffic_carla.py` | CARLA on :2010 (run.sh's) + editor | background traffic in a real run: each puppet's CARLA pose against the file the preview plays, the closest any comes to the ego/NPCs, and (`--baseline`) the scenario's events and closest approach with and without traffic | nothing is asserted; it reports |
 
 ## Running
 
@@ -63,6 +64,7 @@ still exports the old — which reads as a test bug but is not one.
 | `test_recipe_e2e.py` | 62 | the generated-scenario recipe: every type lists ego speed + its parameters; a panel edit pins the value and rebuilds on the same site as one undo step that restores scenario *and* recipe; × unpins back to the seed's draw; „Variante würfeln" keeps pins and the spot; an unmet pin is flagged; a hand edit warns and the rebuild asks; saved/loaded with the `.json`; refused on another map; the sweep (values, same site, editor untouched, choice × weather, real zip with `sweep_value` in the manifest) |
 | `test_user_templates_e2e.py` | 25 | „Eigene Vorlagen": saving from the event panel stores a chain with no absolute coordinates or editor ids; placing it through the real click keeps the trajectory's shape and turns it with the new actor, re-derives heights, resolves `$self`, exports; offered by the „Ablauf aus Template" picker; a chain naming another NPC is refused; rename, reload, file export/import, delete |
 | `test_event_timeline_e2e.py` | 18 | „Ablauf": a row per actor and a block per fired event, the „nie" count, a connector for a chain; a block click starts the preview at its time; dragging a block changes no trigger and records no undo; the bar keeps its width |
+| `test_bg_traffic_e2e.py` | 34 | Hintergrundverkehr: off by default (plain `.xosc` export, nothing drawn); switched on in the Umgebung menu it is a bubble around the ego (Umkreis 80 m): on average up to `count` cars, none shown beyond radius + 20 m, cars appear at the bubble's edge; Umkreis 0 is `count` cars on the whole map for the whole window; **no car comes within the clearance of where the preview has the ego or an NPC within 8 s, nor of a prop — and cars do use the scenario's roads at other times**; same settings → same traffic, a new seed or a moved NPC regenerates it, undo brings the cached one back; the preview draws every car exactly at the file's pose and Stop removes them; the export is a zip of `.xosc` + the very `.bgtraffic.json` the preview showed; saved with the scenario, an older file loads with it off; a request too big for the town says how many fit |
 
 `test_actor_types_e2e.py`'s count grows with the catalogue; the number above is
 what it reported the last time this file was touched, not a target.
@@ -373,6 +375,19 @@ the world at 0). It calls `load_world`, so it targets a private CARLA on
 ```bash
 cd ~/yungloon/fail2drive/f2d_carla && ./CarlaUE4.sh -carla-port=2050 -RenderOffScreen -nosound &
 /home/dellpro2/Antonio/carla-venv/bin/python tests/probe_carla_props.py
+```
+
+`probe_puppet_obstacle.py` answers the question background traffic rests on:
+does `SimpleVehicleControl`'s obstacle sensor (`sensor.other.obstacle`,
+`only_dynamics=True`) see a car with physics off, standing or moved by
+`set_transform` every tick? It uses whatever town is loaded, switches the world
+to synchronous mode for the probe and restores it, so run it against an idle
+run.sh CARLA (measured 2026-10-13 on Town10HD: 20/20, 19/20 and 20/20 ticks
+seen for physics on / off / moved):
+
+```bash
+PYTHONPATH=/home/dellpro2/yungloon/fail2drive/f2d_carla/PythonAPI/carla \
+  /home/dellpro2/Antonio/carla-venv/bin/python tests/probe_puppet_obstacle.py --port 2010
 ```
 
 `probe_carla_mesh_facing.py` and `probe_carla_mesh_dims.py` are one-off
