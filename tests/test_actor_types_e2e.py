@@ -146,7 +146,7 @@ EGO = {"id": "obj-1", "type": "ego", "x": 300.631, "y": -2.025,
 # refuses off-screen clicks because Playwright would silently clamp them to the
 # viewport edge and place the actor somewhere else entirely.
 #
-# 22 m apart because _placeActor snaps to spawn points within 12 m and the
+# 22 m apart because _placeActor snaps vehicles to a lane within 12 m and the
 # firetruck is 8.5 m long; closer together and a placement click lands on the
 # previous actor's marker, which selects instead of placing.
 #
@@ -237,7 +237,7 @@ with sync_playwright() as p:
     seed(page, [])
     for i, (t, exp) in enumerate(EXPECTED.items()):
         wx, wy = SPOTS[i % len(SPOTS)]
-        # Vehicles snap to the nearest spawn point within 12 m (objects.js
+        # Vehicles snap to the nearest lane centre within 12 m (objects.js
         # _placeActor), which legitimately moves them; road-facing types do not.
         actor = H.place_actor(page, t, wx, wy,
                               tolerance=1.0 if t in ROAD_FACING else 12.5)
@@ -255,7 +255,7 @@ with sync_playwright() as p:
             check(f"{t}: turns to face the road, not along it", perpendicular,
                   f"yaw {actor['yaw']}")
         else:
-            check(f"{t}: takes the lane direction from its spawn point",
+            check(f"{t}: takes the lane direction from its lane snap",
                   not perpendicular, f"yaw {actor['yaw']}")
 
         marker = page.evaluate(
@@ -536,10 +536,14 @@ with sync_playwright() as p:
     check("switchActorType refuses a cross-group swap",
           forced["ok"] is False and forced["type"] == "car", str(forced))
 
-    # Ego and props expose no picker at all.
+    # The ego's picker is the vehicle group only (its vehicleType, see
+    # test_ego_type_e2e.py); props expose no picker at all.
     page.evaluate("AppState.select(AppState.ego.id)")
-    check("ego exposes no type picker",
-          page.locator("#actor-type-row").is_hidden())
+    ego_opts = page.eval_on_selector_all("#actor-type-select option", "os => os.map(o => o.value)")
+    check("ego's type picker offers vehicles only",
+          page.locator("#actor-type-row").is_visible()
+          and "car" in ego_opts and "pedestrian" not in ego_opts and "cyclist" not in ego_opts,
+          str(ego_opts))
     page.evaluate("""() => {
         AppState.staticObjects = [{id: 'prop-1', type: 'prop',
             prop: 'static.prop.constructioncone', x: 285, y: -6, z: 0, yaw: 0}];

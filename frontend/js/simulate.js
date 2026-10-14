@@ -119,6 +119,7 @@
         <span class="sim-row-spacer"></span>
         <button id="sim-ego-react" type="button" class="btn btn-small btn-secondary sim-toggle" aria-pressed="false"
                 title="Aus: das Ego reagiert nicht. Ein: es bremst für alles in seinem Fahrweg — zeigt, ob der Konflikt vermeidbar ist">Ego bremst</button>
+        <a class="help-link" href="/static/help.html#vorschau" target="_blank" rel="noopener" title="Handbuch: Vorschau" aria-label="Handbuch: Vorschau">?</a>
       </div>
       <div class="sim-row sim-row-timeline">
         <div    id="sim-progress-bar" class="sim-progress-bar" role="slider" tabindex="-1" aria-label="Zeitleiste" aria-valuemin="0" title="Klicken zum Springen — startet die Vorschau angehalten"><div id="sim-progress-fill" class="sim-progress-fill"></div></div>
@@ -881,6 +882,7 @@
     return {
       id: actor.id,
       type: actor.type,
+      body: AppState.bodyType(actor),   // footprint type: the ego's vehicleType
       isEgo,
       isWalker: MapView.isWalkerType(actor.type),
       x: actor.x, y: actor.y, z: actor.z ?? 0, yaw: actor.yaw || 0,
@@ -1432,7 +1434,7 @@
     const p = _pose(ego);
     const rad = (ego.yaw || 0) * Math.PI / 180;
     const cx = Math.cos(rad), cy = Math.sin(rad);
-    const me = _footprintOf('ego');
+    const me = _footprintOf(ego.body || 'ego');
     let gapMin = Infinity;
     const consider = (x, y, len, wid) => {
       const dx = x - p.x, dy = y - p.y;
@@ -1446,7 +1448,7 @@
     for (const o of _simActors.values()) {
       if (o === ego) continue;
       const q = _pose(o);
-      const fp = _footprintOf(o.type);
+      const fp = _footprintOf(o.body || o.type);
       consider(q.x, q.y, fp.len, fp.wid);
     }
     for (const o of _staticObstacles) consider(o.x, o.y, o.len, o.wid);
@@ -1571,7 +1573,7 @@
     for (const [id, badge] of Object.entries(badges || {})) {
       if (!badge || !poses[id]) continue;
       const sim = _simActors.get(id);
-      const size = MapView.actorSize(sim ? sim.type : 'car');
+      const size = MapView.actorSize(sim ? (sim.body || sim.type) : 'car');
       const yOff = -Math.max(size.w, size.h) / 2 - 4.5;
       const g = document.createElementNS(SVG_NS, 'g');
       g.setAttribute('transform', `translate(${poses[id].x},${poses[id].y + yOff})`);

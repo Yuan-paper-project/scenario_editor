@@ -549,6 +549,136 @@
     };
   }
 
+  /* Slower vehicle ahead (Euro NCAP CCRm, UN R171 "slower moving target",
+   * NHTSA "closes in on a lead vehicle moving at lower constant speed"): a
+   * vehicle in the ego's lane at a constant, much lower speed — a truck, a
+   * motorcycle, possibly well off the lane centre — that the ego closes in
+   * on. Unlike lead_brake nothing changes when the ego arrives: the closing
+   * speed is the test. */
+  function _slowLead(rng, net, vEgo) {
+    const c = _buildCorridor(rng, net, rng.range(260, 360));
+    if (!c) return null;
+    const type = _p('lead_type', rng.weighted([['car', 4], ['van', 1], ['truck', 2], ['motorcycle', 2]]));
+    // A lead at or near the ego's speed is never caught: cap an override.
+    const vLead = Math.min(_p('lead_speed', vEgo * rng.range(0.2, 0.55)), vEgo * 0.8);
+    const gap0 = _p('initial_gap_m', rng.range(40, 80));   // centre to centre
+    const dCatch = gap0 + vLead * gap0 / (vEgo - vLead);
+    if (dCatch > c.length - 70) return null;
+    // Where the ego closes in, the lane is not a junction: a turn there makes
+    // it a different scenario, and an offset lead cuts the corner.
+    if (!_junctionFree(c, gap0 - 6, gap0 + 6) || !_junctionFree(c, dCatch - 25, dCatch + 10)) return null;
+    const offDraw = rng.chance(0.4) ? rng.range(0.3, 1.0) : 0;
+    const off = _p('lateral_m', offDraw);
+    const side = _p('side', rng.chance(0.5) ? 'right' : 'left');
+
+    const lead = _vehicle(type, _corridorAt(c, gap0), vLead);
+    // It reaches each light before the ego switches it green (_greenWave).
+    lead.obey_traffic_lights = false;
+    const events = [_routeEvent(lead, _corridorWaypoints(c, gap0))];
+    if (off > 0) {
+      // As soon as the ego has started closing in, never off the clock. A
+      // held offset, so the lead stays there for the rest of the run.
+      events.push({
+        id: 'evt-2', trigger: nearEgo(gap0 - 3),
+        action: { type: 'lane_offset', direction: side, offset: r1(off) },
+      });
+    }
+    lead.events = events;
+    return {
+      corridor: c, npcs: [lead], props: [],
+      conflictD: dCatch + 20,
+      egoEndD: c.length - 60,
+      params: {
+        lead_type: type, lead_speed: r1(vLead), speed_diff_kmh: Math.round((vEgo - vLead) * 3.6),
+        initial_gap_m: r1(gap0), lateral_m: r1(off), side,
+      },
+      routedNpcs: [{ actor: lead, corridorFrom: gap0 }],
+      // Nothing releases it: it is a threat from the start.
+      threats: new Map([[lead.id, 'evt-1']]),
+    };
+  }
+
+  /** Parking lanes as {pts, cum, length} lines, built once per network. */
+  function _parkingLanes(net) {
+    if (!net.parking) {
+      net.parking = [];
+      for (const road of AppState.mapData.roads || []) {
+        if (String(road.junction) !== '-1') continue;   // the connectors' 'parking' strips
+        for (const lane of road.lanes || []) {
+          if (lane.type !== 'parking' || (lane.directionLine || []).length < 2) continue;
+          const pts = lane.directionLine.map(([x, y, z = 0]) => ({ x, y, z }));
+          const cum = [0];
+          for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y));
+          net.parking.push({ pts, cum, length: cum[cum.length - 1], bbox: _bbox(lane.directionLine) });
+        }
+      }
+    }
+    return net.parking;
+  }
+
+  /* Pull-out from a parallel parking bay (CARLA leaderboard "parked vehicle
+   * exiting a parallel parking bay cuts in front", NHTSA "leaving a parked
+   * position"). A car stands in a parking lane beside the ego's lane, ahead
+   * of it; when the ego approaches it pulls out into the ego's lane and drives
+   * on along the ego's road at a lower speed. Its route is seed -> a merge
+   * point on the ego's lane -> the ego's corridor, released by a set_speed on
+   * the ego's distance (a route alone does not move an actor). Needs a
+   * parking lane, so Town01/02/04 have no site. */
+  function _pullOut(rng, net, vEgo) {
+    const parking = _parkingLanes(net);
+    if (!parking.length) return null;
+    const c = _buildCorridor(rng, net, rng.range(220, 320));
+    if (!c) return null;
+    const dMin = _egoRunUp(vEgo) + vEgo * 3 + 20;
+    const sites = [];
+    for (let d = dMin; d < c.length - 90; d += 5) {
+      if (!_junctionFree(c, d - 8, d + 40)) continue;
+      const pose = _corridorAt(c, d);
+      for (const side of ['right', 'left']) {
+        const probe = _lateral(pose, (side === 'right' ? 1 : -1) * 3.3);
+        for (const P of parking) {
+          if (probe.x < P.bbox.minX - 2 || probe.x > P.bbox.maxX + 2 || probe.y < P.bbox.minY - 2 || probe.y > P.bbox.maxY + 2) continue;
+          const q = _projectOnLane(P, probe.x, probe.y);
+          // Beside the ego's lane, facing its way, not at a bay's very end.
+          if (!q || q.d > 1.3 || q.s < 4 || q.s > P.length - 4) continue;
+          if (Math.abs(_wrapDeg(q.yaw - pose.yaw)) > 20) continue;
+          sites.push({ d, q, side });
+        }
+      }
+    }
+    if (!sites.length) return null;
+    const { d, q, side } = rng.pick(sites);
+    const type = _p('npc_type', rng.weighted([['car', 6], ['van', 2], ['truck', 0.5]]));
+    const vNpc = _p('npc_speed', vEgo * rng.range(0.45, 0.75));
+    const mergeAhead = rng.range(9, 14);
+    const dMerge = d + mergeAhead;
+    // dt > 0: the car is in the lane that long before the ego reaches the
+    // merge point; it then drives on slower, so the ego closes in on it.
+    const dt = _p('arrival_offset_s', rng.range(0.3, 2.0));
+    const npc = _vehicle(type, { x: q.x, y: q.y, yaw: q.yaw }, 0);
+    // The z of the parking lane itself, not of whatever lane is nearest.
+    npc.z = r2(q.z + 0.5);
+    const tMerge = _timeFromRest(mergeAhead + 2, vNpc);
+    const sol = _solveTrigger(c, dMerge, tMerge + dt, vEgo, npc);
+    if (!sol) return null;
+    // It reaches each light before the ego switches it green (_greenWave).
+    npc.obey_traffic_lights = false;
+    npc.events = [
+      _routeEvent(npc, [_routeWp(_corridorAt(c, dMerge)), ..._corridorWaypoints(c, dMerge + 2)]),
+      _speedEvent('evt-2', nearEgo(sol.radius), vNpc, 'rate', VEHICLE_ACCEL),
+    ];
+    return {
+      corridor: c, npcs: [npc], props: [],
+      conflictD: dMerge + 40,
+      egoEndD: c.length - 60,
+      params: {
+        npc_type: type, side, npc_speed: r1(vNpc), merge_m: r1(mergeAhead),
+        arrival_offset_s: r2(dt), trigger_m: r1(sol.radius),
+      },
+      routedNpcs: [{ actor: npc, corridorFrom: dMerge + 6 }],
+    };
+  }
+
   /* Cut-in. A slower car in a same-direction neighbour lane, ahead of the ego,
    * changes into the ego's lane once the ego has closed in on it. */
   function _cutIn(rng, net, vEgo) {
@@ -634,6 +764,100 @@
     };
   }
 
+  /** Corridor-distance the closer gains on the ego in `t` seconds when it
+   * ramps at `a` from the ego's speed to `dv` faster. */
+  function _closing(t, dv, a = VEHICLE_ACCEL) {
+    const tr = dv / a;
+    return t <= tr ? a * t * t / 2 : dv * dv / (2 * a) + dv * (t - tr);
+  }
+
+  /* Lane change into a car approaching from behind (UN R171: "must detect and
+   * yield to a high-speed vehicle approaching from the rear in the target
+   * lane", the blind-spot and filtering-motorcycle cases; NHTSA "misjudged the
+   * distance and speed of vehicle B"). The ego's own events say it changes
+   * lanes at a point; a car in the target lane behind it, at the ego's speed,
+   * surges as the ego nears that point and is beside or just behind it when
+   * the ego moves over. An ego that changes regardless is hit; the system
+   * under test has to wait until it has passed.
+   *
+   * Both cars start at the same speed, so they keep their gap through the
+   * spawn ramp (the same acceleration limit), and the surge is released by the
+   * ego reaching a point (distance_to_point naming the ego), so the timing
+   * follows the ego wherever it is. The ego starts `g0` up the corridor and
+   * the car beside the corridor's start, on the same lane pair. */
+  function _rearApproach(rng, net, vEgo) {
+    if (!net.multiLane) {
+      net.multiLane = net.startable.filter(L => L.length >= 90 && ['left', 'right'].some(side => {
+        const ref = L.record && L.record[side];
+        const N = ref && net.lanes.get(net.refKey(ref));
+        return N && !N.junction;
+      }));
+    }
+    if (!net.multiLane.length) return null;
+    const start = rng.pick(net.multiLane);
+    const c = _buildCorridor(rng, net, rng.range(220, 320), undefined,
+                             start, rng.range(0, Math.max(0.5, start.length - 140)));
+    if (!c) return null;
+    const sg = c.segs[0];
+    const sides = ['left', 'right'].filter(side => {
+      const ref = sg.L.record && sg.L.record[side];
+      const N = ref && net.lanes.get(net.refKey(ref));
+      const back = N && N.record && N.record[side === 'left' ? 'right' : 'left'];
+      return N && !N.junction && back && net.refKey(back) === sg.key;
+    });
+    if (!sides.length) return null;
+    const side = _p('side', rng.pick(sides));
+    if (!sides.includes(side)) return null;
+    const N = net.lanes.get(net.refKey(sg.L.record[side]));
+
+    const type = _p('npc_type', rng.weighted([['car', 5], ['van', 1], ['motorcycle', 2], ['truck', 0.5]]));
+    const dv = _p('speed_diff', rng.range(3, 8));            // m/s faster than the ego
+    const tRel = rng.range(1.5, 3.0);                          // surge this long before the change
+    const gap = _p('gap_at_change_m', rng.range(2, 12));       // centre behind the ego's then
+    const lcDist = _p('lane_change_m', rng.range(12, 20));
+    const g0 = gap + _closing(tRel, dv);
+    // The surge needs the ego at cruise speed, and the change room on both
+    // lanes: 6 m same-lane run-in, the move, 10 m driven in the target lane
+    // (ChangeActorLateralMotion hangs without it), and a margin.
+    const dRel = g0 + vEgo * vEgo / (2 * VEHICLE_ACCEL) + rng.range(5, 20);
+    const dLc = dRel + vEgo * tRel;
+    if (dLc + 6 + lcDist + 25 > sg.endD) return null;
+    const onN0 = _projectOnLane(N, c.pts[0].x, c.pts[0].y);
+    const lcPose = _corridorAt(c, dLc);
+    const onNLc = _projectOnLane(N, lcPose.x, lcPose.y);
+    if (!onN0 || onN0.d > 6 || !onNLc || onNLc.s + 6 + lcDist + 25 > N.length) return null;
+
+    const npc = _vehicle(type, onN0, vEgo);
+    _ignoresTraffic(npc);
+    const relPose = _corridorAt(c, dRel);
+    npc.events = [{
+      id: 'evt-1',
+      trigger: { type: 'distance_to_point', value: 2.0, entity_ref: '$ego',
+                 point: { name: 'Point 1', x: r1(relPose.x), y: r1(relPose.y), z: r2(relPose.z + WAYPOINT_CLEARANCE) } },
+      action: { type: 'set_speed', dynamics: { shape: 'linear', dimension: 'rate', value: VEHICLE_ACCEL },
+                target: { mode: 'absolute', value: r1(vEgo + dv) } },
+    }];
+    const egoEvents = [{
+      id: 'evt-2',
+      trigger: { type: 'distance_to_point', value: 2.0, entity_ref: '$ego',
+                 point: { name: 'Point 1', x: r1(lcPose.x), y: r1(lcPose.y), z: r2(lcPose.z + WAYPOINT_CLEARANCE) } },
+      action: { type: 'lane_change', direction: side, dynamics: { shape: 'linear', value: r1(lcDist) } },
+    }];
+    return {
+      corridor: c, npcs: [npc], props: [],
+      egoStartD: g0,
+      egoEndD: Math.min(c.length, dLc + 40),
+      egoEvents,
+      conflictD: dLc + lcDist + 10,
+      params: {
+        npc_type: type, side, speed_diff: r1(dv), gap_at_change_m: r1(gap), lane_change_m: r1(lcDist),
+        surge_before_s: r2(tRel),
+      },
+      routedNpcs: [],
+      threats: new Map([[npc.id, 'evt-1']]),
+    };
+  }
+
   /** Lateral offsets (right positive) at which a line across the road at
    * `pose` leaves the carriageway on each side — or null where it does not
    * within `maxM`. */
@@ -700,8 +924,22 @@
     // corridor is turning and the line would cut the corner diagonally.
     const clearance = onCrosswalk ? 3 : 12;
     if (!_junctionFree(c, dConflict - clearance, dConflict + clearance)) return null;
+    return _vruCrossingAt(rng, net, vEgo, c, dConflict, type, v, { onCrosswalk });
+  }
 
-    const pose = _corridorAt(c, dConflict);
+  /** The crossing itself, across the corridor at `dConflict`: kerb to kerb
+   * perpendicular to the corridor there, released on the ego's distance so the
+   * VRU enters the ego's path `arrival_offset_s` before it does. Shared by the
+   * straight-road crossing and the one on the road the ego turns into; the
+   * draws are in the order _vruCrossing always made them, so its seeds are
+   * unchanged. `opts.occluder` false skips the parked-van option (no draw). */
+  function _vruCrossingAt(rng, net, vEgo, c, dConflict, type, v, opts = {}) {
+    const prof = VRU_PROFILES[type];
+    const onCrosswalk = !!opts.onCrosswalk;
+    // A caller may give the crossing line itself (a crosswalk at a turn,
+    // which need not be square to the ego's path there): `pose` is where it
+    // meets the ego's lane, and its yaw the road direction along it.
+    const pose = opts.pose || _corridorAt(c, dConflict);
     const edges = _carriagewayEdges(net, pose);
     if (edges.right === null || edges.left === null) return null;
     const fromRight = _p('from', rng.chance(0.65) ? 'right' : 'left') === 'right';
@@ -801,8 +1039,9 @@
     const npcs = [vru];
     const sceneryIds = new Set();
     let occluded = false;
-    const occDraw = type !== 'cyclist' && rng.chance(0.5);
-    if (type !== 'cyclist' && _p('occluded', occDraw)) {
+    const canOcclude = type !== 'cyclist' && opts.occluder !== false;
+    const occDraw = canOcclude && rng.chance(0.5);
+    if (canOcclude && _p('occluded', occDraw)) {
       const upstream = _corridorAt(c, dConflict - rng.range(5, 9));
       const edgeOff = fromRight ? edges.right : edges.left;
       const probe = _lateral(upstream, edgeOff - Math.sign(edgeOff) * 1.5);
@@ -827,6 +1066,71 @@
       sceneryIds,
       onsets: new Map([[vru.id, kerbEdge]]),
     };
+  }
+
+  /* VRU crossing where the ego turns. The ego turns left or right at a
+   * junction, and a pedestrian or cyclist crosses the road it turns into just
+   * past the junction exit — on the crosswalk there when the map paints one —
+   * released so it is in the ego's path as the ego comes out of the turn.
+   * Euro NCAP CPTA / CBTA, NHTSA pre-crash "turning, encounters a pedestrian /
+   * pedalcyclist", the CARLA leaderboard's "turn yielding to bicycles". */
+  function _turnVru(rng, net, vEgo) {
+    const c = _buildCorridor(rng, net, rng.range(200, 300));
+    if (!c) return null;
+    const type = _p('vru_type', rng.weighted([['pedestrian', 5], ['child', 2], ['cyclist', 3]]));
+    const v = _p('speed', rng.range(...VRU_PROFILES[type].speed));
+    const turnWant = _p('turn', null);
+    const dMin = _egoRunUp(vEgo) + vEgo * 3;
+    const turns = c.segs.filter(sg => sg.L.junction && sg.startD > dMin && sg.endD < c.length - 30
+      && _turnKind(sg.L) !== 'straight' && (!turnWant || _turnKind(sg.L) === turnWant));
+    if (!turns.length) return null;
+    const sg = rng.pick(turns);
+    // The crosswalk across the exit road, when the map paints one: that is
+    // where people cross at a corner, and where the kerb has no railing. A
+    // crossing moved a few metres off it (onto the exit road proper) put a
+    // walker against a Town05 corner barrier the .xodr does not have, and in
+    // CARLA it never moved.
+    const crosswalks = (AppState.mapData.crosswalks || []).map(cw => {
+      let best = null;
+      for (const p of c.pts) {
+        if (p.d < sg.endD - 6 || p.d > sg.endD + 15) continue;
+        const dd = Math.hypot(p.x - cw.x, p.y - cw.y);
+        if (dd < 6 && (!best || dd < best.dd)) best = { dd, d: p.d, cw };
+      }
+      return best;
+    }).filter(Boolean);
+    const onCrosswalk = crosswalks.length > 0;
+    let dConflict, pose = null;
+    if (onCrosswalk) {
+      const { d, cw } = rng.pick(crosswalks);
+      dConflict = d;
+      // The crossing runs along the crosswalk. Its `heading` is either the
+      // walking or the stripe direction; the road direction is whichever of
+      // the two axes is closer to the exit road's, signed like it.
+      const roadYaw = _corridorAt(c, Math.max(d, sg.endD + 3)).yaw;
+      let yaw = [cw.heading, cw.heading + 90, cw.heading + 180, cw.heading + 270]
+        .reduce((b, y) => (Math.abs(_wrapDeg(y - roadYaw)) < Math.abs(_wrapDeg(b - roadYaw)) ? y : b));
+      if (Math.abs(_wrapDeg(yaw - roadYaw)) > 30) return null;
+      // Where the crosswalk's axis meets the ego's lane: nearest point on it
+      // to the corridor at d.
+      const at = _corridorAt(c, d);
+      const ux = -Math.sin(yaw / DEG), uy = Math.cos(yaw / DEG);   // across the road
+      const t = (at.x - cw.x) * ux + (at.y - cw.y) * uy;
+      pose = { x: cw.x + t * ux, y: cw.y + t * uy, z: at.z, yaw: _wrapDeg(yaw) };
+    } else {
+      // Kerb to kerb is perpendicular to the corridor, so the exit road has to
+      // be out of the junction and straight across the crossing.
+      dConflict = sg.endD + rng.range(3, 9);
+      if (!_junctionFree(c, dConflict - 2, dConflict + 8)) return null;
+      const a = _corridorAt(c, dConflict - 2), b = _corridorAt(c, dConflict + 6);
+      if (Math.abs(_wrapDeg(b.yaw - a.yaw)) > 15) return null;
+    }
+
+    const res = _vruCrossingAt(rng, net, vEgo, c, dConflict, type, v, { onCrosswalk, occluder: false, pose });
+    if (!res) return null;
+    const { occluded, ...params } = res.params;
+    res.params = { turn: _turnKind(sg.L), junction: sg.L.junctionId, ...params };
+    return res;
   }
 
   /** Proper intersection of two polylines: [{x, y, sA, sB}] (first only). */
@@ -964,6 +1268,47 @@
     return null;
   }
 
+  /** 'left' | 'right' | 'straight' for a junction connector, from the change
+   * of heading across it. The map is y-down, so a left turn is a NEGATIVE
+   * change of yaw. 45° either way is a turn; a slight bend is still straight. */
+  function _turnKind(L) {
+    const d = _wrapDeg(_laneAt(L, L.length).yaw - _laneAt(L, 0).yaw);
+    return d < -45 ? 'left' : d > 45 ? 'right' : 'straight';
+  }
+
+  // The conflict shapes the regulations and crash typologies name (Euro NCAP
+  // CCFtap / CCFhol, NHTSA LTAP/OD and SCP, UN R171's turn-across-path and
+  // crossing cases). `ego`/`npc` are the turn each one makes; `approach` is
+  // where the NPC comes from relative to the ego.
+  const JUNCTION_LAYOUTS = {
+    crossing:          { label: 'Querverkehr, beide geradeaus', ego: 'straight', npc: 'straight', approach: 'side' },
+    ego_left_oncoming: { label: 'Ego biegt links ab, Gegenverkehr', ego: 'left', npc: 'straight', approach: 'oncoming' },
+    npc_left_oncoming: { label: 'Gegenverkehr biegt links ab', ego: 'straight', npc: 'left', approach: 'oncoming' },
+    ego_left_crossing: { label: 'Ego biegt links ab, Querverkehr', ego: 'left', npc: 'straight', approach: 'side' },
+    ego_right_crossing: { label: 'Ego biegt rechts ab, Querverkehr', ego: 'right', npc: 'straight', approach: 'side' },
+  };
+
+  /** Where the NPC comes from, seen from the ego approaching the junction:
+   * 'left' | 'right' | 'oncoming' | 'behind'. One coming from the ego's left
+   * travels toward its right, i.e. a heading +90° from the ego's (y-down). */
+  function _npcFrom(J, C) {
+    const d = _wrapDeg(_laneAt(C, 0).yaw - _laneAt(J, 0).yaw);
+    if (Math.abs(d) >= 135) return 'oncoming';
+    if (Math.abs(d) <= 45) return 'behind';
+    return d > 0 ? 'left' : 'right';
+  }
+
+  /** Which JUNCTION_LAYOUTS entry an ego connector J and an NPC connector C
+   * make, or 'other'. */
+  function _junctionLayout(J, C, approachDiff) {
+    const e = _turnKind(J), n = _turnKind(C);
+    const app = approachDiff >= 150 ? 'oncoming' : approachDiff >= 50 && approachDiff <= 130 ? 'side' : null;
+    if (app === 'side' && n === 'straight') return e === 'straight' ? 'crossing' : `ego_${e}_crossing`;
+    if (app === 'oncoming' && e === 'left' && n === 'straight') return 'ego_left_oncoming';
+    if (app === 'oncoming' && e === 'straight' && n === 'left') return 'npc_left_oncoming';
+    return 'other';
+  }
+
   /* Junction cross traffic. The ego's corridor crosses a junction; another
    * vehicle approaches on a connector that crosses the ego's, released so both
    * reach the crossing point at about the same time. The NPC ignores lights
@@ -975,7 +1320,14 @@
     const c = _buildCorridor(rng, net, rng.range(200, 300));
     if (!c) return null;
     const dMin = _egoRunUp(vEgo) + vEgo * 3;
-    const juncSegs = c.segs.filter(sg => sg.L.junction && sg.startD > dMin && sg.endD < c.length - 15);
+    // A pinned layout narrows the junctions to ones where the ego makes the
+    // turn it needs. Unpinned, nothing is filtered and no extra draw is made,
+    // so every seed still builds what it built before the layout existed.
+    const wantLayout = _p('layout', null);
+    const egoNeeds = JUNCTION_LAYOUTS[wantLayout]?.ego;
+    const wantFrom = _p('npc_from', null);
+    const juncSegs = c.segs.filter(sg => sg.L.junction && sg.startD > dMin && sg.endD < c.length - 15
+      && (!egoNeeds || _turnKind(sg.L) === egoNeeds));
     if (!juncSegs.length) return null;
     const sg = rng.pick(juncSegs);
     const J = sg.L;
@@ -990,10 +1342,14 @@
       if (Math.hypot(cStart.x - jStart.x, cStart.y - jStart.y) < 3) continue;   // same approach
       const approachDiff = Math.abs(_wrapDeg(cStart.yaw - jStart.yaw));
       if (approachDiff < 30) continue;
-      options.push({ C, X, oncoming: approachDiff >= 150 });
+      const layout = _junctionLayout(J, C, approachDiff);
+      if (wantLayout && layout !== wantLayout) continue;
+      const from = _npcFrom(J, C);
+      if (wantFrom && from !== wantFrom) continue;
+      options.push({ C, X, oncoming: approachDiff >= 150, layout, from });
     }
     if (!options.length) return null;
-    const { C, X, oncoming } = rng.pick(options);
+    const { C, X, oncoming, layout, from } = rng.pick(options);
     // At a signalized junction the ego gets a forced green (_greenWave) and
     // the NPC ignores lights, so a perpendicular conflict there is a
     // red-light runner — a real case, not an artefact.
@@ -1057,7 +1413,7 @@
       conflictD: dX,
       egoEndD,
       params: {
-        npc_type: type, junction: J.junctionId, signalized, oncoming,
+        layout, npc_from: from, npc_type: type, junction: J.junctionId, signalized, oncoming,
         npc_speed: r1(vNpc), npc_run_up_m: r1(npcToX), arrival_offset_s: r2(dt), trigger_m: r1(sol.radius),
       },
       routedNpcs: [{ actor: npc, passes: X }],
@@ -1080,16 +1436,38 @@
     };
   }
 
+  /** 'curve' where the corridor turns by more than 12° over the 30 m around
+   * `d`, else 'straight'. */
+  function _siteKind(c, d) {
+    const a = _corridorAt(c, d - 15), b = _corridorAt(c, d + 15);
+    return Math.abs(_wrapDeg(b.yaw - a.yaw)) > 12 ? 'curve' : 'straight';
+  }
+
   /* Obstacle in the lane: lost cargo, a work-zone taper narrowing the lane,
    * or a broken-down vehicle with a warning triangle. Static, so it needs no
    * trigger at all. */
   function _obstacle(rng, net, vEgo) {
     const c = _buildCorridor(rng, net, rng.range(180, 280));
     if (!c) return null;
-    const dObs = rng.range(_egoRunUp(vEgo) + 25, c.length - 30);
+    let dObs = rng.range(_egoRunUp(vEgo) + 25, c.length - 30);
+    // A pinned site (UN R171 / R157 put targets in a curve) moves the obstacle
+    // to a stretch of that shape; unpinned nothing extra is drawn and the
+    // site is only reported.
+    const siteWant = _p('site', null);
+    if (siteWant) {
+      const fits = [];
+      for (let d = _egoRunUp(vEgo) + 25; d < c.length - 30; d += 4) {
+        if (_siteKind(c, d) === siteWant && _junctionFree(c, d - 30, d + 15)) fits.push(d);
+      }
+      if (!fits.length) return null;
+      dObs = rng.pick(fits);
+    }
     if (!_junctionFree(c, dObs - 30, dObs + 15)) return null;
     const pose = _corridorAt(c, dObs);
-    const variant = _p('variant', rng.weighted([['cargo', 1], ['workzone', 1], ['breakdown', 1]]));
+    // The last three weights add up to the old 'breakdown' weight, so a seed
+    // that drew cargo or a work zone before still does.
+    const variant = _p('variant', rng.weighted([['cargo', 1], ['workzone', 1], ['breakdown', 0.6],
+                                                ['stationary_vru', 0.2], ['queue', 0.2]]));
     // which edge of the lane it sits toward
     const side = _p('side', rng.chance(0.7) ? 'right' : 'left') === 'right' ? 1 : -1;
     const props = [];
@@ -1123,16 +1501,46 @@
       const sign = _prop('static.prop.warningconstruction', signAt.x, signAt.y, pose.yaw + 180);
       if (sign) props.push(sign);
       Object.assign(params, { taper_m: r1(taper), intrusion_m: r1(intrusion), cones: nCones });
-    } else {
-      const off = side * rng.range(0, 1.0);
+    } else if (variant === 'breakdown') {
+      const off = side * _p('lateral_m', rng.range(0, 1.0));
       const at = _lateral(pose, off);
-      const type = rng.weighted([['car', 3], ['van', 2], ['truck', 1]]);
-      npcs.push(_vehicle(type, { x: at.x, y: at.y, yaw: pose.yaw + rng.range(-8, 8) }, 0));
+      const type = _p('vehicle_type', rng.weighted([['car', 3], ['van', 2], ['truck', 1]]));
+      const skew = rng.range(-8, 8);
       const triAt = _lateral(_corridorAt(c, dObs - rng.range(15, 30)), side * 1.2);
+      // Last draw of the attempt, so every draw above is what it always was.
+      // A car facing the ego (UN R171: "stationary vehicle facing toward the
+      // VUT") shows its front, not its tail lights, to a camera.
+      const facing = _p('facing', rng.chance(0.15) ? 'oncoming' : 'same');
+      npcs.push(_vehicle(type, { x: at.x, y: at.y, yaw: pose.yaw + skew + (facing === 'oncoming' ? 180 : 0) }, 0));
       const tri = _prop('static.prop.warningaccident', triAt.x, triAt.y, pose.yaw + 180);
       if (tri) props.push(tri);
-      Object.assign(params, { vehicle_type: type, lateral_m: r1(off) });
+      Object.assign(params, { vehicle_type: type, lateral_m: r1(Math.abs(off)), facing });
+    } else if (variant === 'stationary_vru') {
+      // A pedestrian standing in the lane with its back to the ego, or a bike
+      // stopped in it (UN R171 stationary-target cases). No events: no Act,
+      // start speed 0, so it stands for the whole run.
+      const type = _p('vru_type', rng.weighted([['pedestrian', 3], ['child', 1], ['cyclist', 2]]));
+      const off = side * _p('lateral_m', rng.range(0, 0.8));
+      const at = _lateral(pose, off);
+      const vru = _vehicle(type, { x: at.x, y: at.y, yaw: pose.yaw }, 0);
+      npcs.push(vru);
+      Object.assign(params, { vru_type: type, lateral_m: r1(Math.abs(off)) });
+    } else {
+      // A queue: a motorcycle and, a few metres beyond it, a car, both stopped
+      // in the lane (UN R157: "stopped sequentially within the same lane").
+      // The motorcycle is the one the ego meets first, and the one a sensor
+      // tuned to cars misses.
+      const gap = rng.range(6, 10);
+      const first = _p('vehicle_type', 'motorcycle');
+      const off = side * _p('lateral_m', rng.range(0, 0.5));
+      const a1 = _lateral(pose, off);
+      const a2 = _lateral(_corridorAt(c, dObs + gap), 0);
+      if (!_junctionFree(c, dObs, dObs + gap + 10)) return null;
+      npcs.push(_vehicle(first, { x: a1.x, y: a1.y, yaw: pose.yaw }, 0));
+      npcs.push(_vehicle('car', { x: a2.x, y: a2.y, yaw: _corridorAt(c, dObs + gap).yaw }, 0));
+      Object.assign(params, { vehicle_type: first, queue_gap_m: r1(gap), lateral_m: r1(Math.abs(off)) });
     }
+    params.site = _siteKind(c, dObs);
     params.distance_m = r1(dObs);
     params.side = side > 0 ? 'right' : 'left';
     if (!props.length && !npcs.length) return null;
@@ -1304,10 +1712,36 @@
       _routeEvent(npc, [...swing, _routeWp(exitPose)]),
       _speedEvent('evt-2', nearEgo(sol.radius), vNpc, 'rate', VEHICLE_ACCEL),
     ];
+
+    // Why it swings out: a car parked at the kerb of its own lane, which it
+    // goes round (CARLA leaderboard "oncoming vehicle invading the lane due to
+    // an obstacle"). Drawn last, so every draw above is what it always was.
+    // Pushed toward the kerb just far enough that the swing clears it by
+    // 0.4 m — at 80% of the peak offset, which is what the half-cosine still
+    // gives a car length either side of it — or left out where that would
+    // put it off the lane.
+    const npcs = [npc];
+    const sceneryIds = new Set();
+    const causeDraw = rng.chance(0.4);
+    const parkType = rng.weighted([['car', 3], ['van', 2], ['truck', 1]]);
+    let cause = _p('cause', causeDraw ? 'parked' : 'none');
+    if (cause === 'parked') {
+      const kerb = (MapView.actorSize(type).h + MapView.actorSize(parkType).h) / 2 + 0.4 - 0.8 * offset;
+      const at = oncAt(dX - lenHold / 2);
+      if (at && kerb <= 1.0) {
+        const q = _lateral(at.pose, Math.max(0.3, kerb));   // right of the oncoming lane's travel = its kerb
+        const parked = _vehicle(parkType, { x: q.x, y: q.y, yaw: at.pose.yaw }, 0);
+        npcs.push(parked);
+        sceneryIds.add(parked.id);
+      } else {
+        cause = 'none';
+      }
+    }
     return {
-      corridor: c, npcs: [npc], props: [],
+      corridor: c, npcs, props: [], sceneryIds,
       conflictD: dX + 10,
       params: {
+        cause,
         npc_type: type, npc_speed: r1(vNpc), offset_m: r1(offset),
         swing_in_m: r1(lenIn), hold_m: r1(lenHold), swing_out_m: r1(lenOut),
         npc_run_up_m: r1(toPeak), arrival_offset_s: r2(dt), trigger_m: r1(sol.radius),
@@ -1488,6 +1922,13 @@
       num('hold_s', 'Hält', 's', 1, 10, 0.5),
       bool('resumes', 'Fährt wieder an'),
     ],
+    slow_lead: [
+      choice('lead_type', 'Vorausfahrzeug', VEHICLE_OPTS),
+      num('lead_speed', 'Tempo', 'm/s', 1, 11, 0.5),
+      num('initial_gap_m', 'Vorsprung', 'm', 30, 100, 1),
+      num('lateral_m', 'Seitlich versetzt', 'm', 0, 1.2, 0.1),
+      choice('side', 'Seite', SIDE_OPTS),
+    ],
     cut_in: [
       choice('npc_type', 'Fahrzeug', VEHICLE_OPTS.filter(([k]) => k !== 'bus')),
       num('npc_speed', 'Tempo', 'm/s', 3, 10, 0.5),
@@ -1503,14 +1944,36 @@
       bool('occluded', 'Verdeckt (parkendes Fahrzeug)'),
       num('stops_in_lane_s', 'Bleibt stehen', 's (0 = nein)', 0, 4, 0.5),
     ],
+    turn_vru: [
+      choice('turn', 'Ego biegt ab', [['left', 'links'], ['right', 'rechts']]),
+      choice('vru_type', 'Person', [['pedestrian', 'Fußgänger'], ['child', 'Kind'], ['cyclist', 'Radfahrer']]),
+      num('speed', 'Tempo', 'm/s', 0.8, 6, 0.1),
+      choice('from', 'Kommt von', SIDE_OPTS),
+      num('arrival_offset_s', 'Zeitversatz', 's', -0.5, 0.8, 0.05),
+      num('stops_in_lane_s', 'Bleibt stehen', 's (0 = nein)', 0, 4, 0.5),
+    ],
+    pull_out: [
+      choice('npc_type', 'Fahrzeug', [['car', 'Auto'], ['van', 'Transporter'], ['truck', 'Lkw']]),
+      num('npc_speed', 'Tempo', 'm/s', 3, 12, 0.5),
+      num('arrival_offset_s', 'Vorsprung', 's', 0.3, 2, 0.1),
+    ],
     junction_conflict: [
+      choice('layout', 'Konstellation', [...Object.entries(JUNCTION_LAYOUTS).map(([k, v]) => [k, v.label]),
+                                          ['other', 'Andere']]),
+      choice('npc_from', 'Kommt von', [['left', 'links'], ['right', 'rechts'], ['oncoming', 'vorn (Gegenverkehr)']]),
       choice('npc_type', 'Fahrzeug', [...VEHICLE_OPTS.filter(([k]) => k !== 'bus'), ['police', 'Polizei'], ['ambulance', 'Rettungswagen']]),
       num('npc_speed', 'Tempo', 'm/s', 7, 13, 0.5),
       num('arrival_offset_s', 'Zeitversatz', 's', -0.6, 0.8, 0.05),
     ],
     obstacle: [
-      choice('variant', 'Art', [['cargo', 'Ladung'], ['workzone', 'Baustelle'], ['breakdown', 'Pannenfahrzeug']]),
+      choice('variant', 'Art', [['cargo', 'Ladung'], ['workzone', 'Baustelle'], ['breakdown', 'Pannenfahrzeug'],
+                                ['stationary_vru', 'Stehende Person / Rad'], ['queue', 'Stehende Kolonne']]),
+      choice('site', 'Ort', [['straight', 'Gerade'], ['curve', 'Kurve']]),
       choice('side', 'Seite', SIDE_OPTS),
+      choice('vehicle_type', 'Fahrzeug', [...VEHICLE_OPTS.filter(([k]) => k !== 'bus')]),
+      choice('vru_type', 'Person', [['pedestrian', 'Fußgänger'], ['child', 'Kind'], ['cyclist', 'Radfahrer']]),
+      num('lateral_m', 'Seitlich versetzt', 'm', 0, 1.5, 0.1),
+      choice('facing', 'Ausrichtung', [['same', 'Fahrtrichtung'], ['oncoming', 'entgegen']]),
     ],
     oncoming_drift: [
       choice('npc_type', 'Fahrzeug', VEHICLE_OPTS.filter(([k]) => k !== 'bus')),
@@ -1518,6 +1981,14 @@
       num('offset_m', 'Ausschwenken', 'm', 1.2, 2.8, 0.1),
       num('hold_m', 'Bleibt drüben', 'm', 0, 6, 0.5),
       num('arrival_offset_s', 'Zeitversatz', 's', -0.4, 0.6, 0.05),
+      choice('cause', 'Grund', [['none', 'keiner'], ['parked', 'parkendes Fahrzeug']]),
+    ],
+    rear_approach: [
+      choice('npc_type', 'Fahrzeug', [['car', 'Auto'], ['van', 'Transporter'], ['motorcycle', 'Motorrad'], ['truck', 'Lkw']]),
+      choice('side', 'Ego wechselt nach', SIDE_OPTS),
+      num('speed_diff', 'Schneller als Ego', 'm/s', 3, 8, 0.5),
+      num('gap_at_change_m', 'Abstand beim Wechsel', 'm', 2, 12, 0.5),
+      num('lane_change_m', 'Spurwechsel über', 'm', 12, 20, 1),
     ],
     cut_out: [
       choice('lead_type', 'Vorausfahrzeug', [['car', 'Auto'], ['van', 'Transporter'], ['truck', 'Lkw']]),
@@ -1558,13 +2029,17 @@
 
   const TYPES = {
     lead_brake:        { label: 'Vorausfahrzeug bremst', build: _leadBrake },
+    slow_lead:         { label: 'Langsames Fahrzeug voraus', build: _slowLead },
     cut_in:            { label: 'Einscheren',            build: _cutIn },
     vru_crossing:      { label: 'Querende Person',       build: _vruCrossing },
+    turn_vru:          { label: 'Abbiegen, Fußgänger/Rad quert', build: _turnVru },
     junction_conflict: { label: 'Querverkehr Kreuzung',  build: _junctionConflict },
     obstacle:          { label: 'Hindernis auf Spur',    build: _obstacle },
     oncoming_drift:    { label: 'Gegenverkehr driftet',  build: _oncomingDrift },
     cyclist_ahead:     { label: 'Radfahrer voraus',      build: _cyclistAhead },
     cut_out:           { label: 'Ausscheren vor Stauende', build: _cutOut },
+    pull_out:          { label: 'Ausparken vor Ego',     build: _pullOut },
+    rear_approach:     { label: 'Spurwechsel, Fahrzeug von hinten', build: _rearApproach },
   };
 
   // ── Checks ───────────────────────────────────────────────────────────────────
@@ -1591,6 +2066,14 @@
   function _routeFollowsCorridor(actor, c, dFrom, dTo = c.length) {
     const route = _routeOf(actor);
     if (!route || route.length < 2) return false;
+    // ...and does not leave it. Every corridor point being near the route
+    // does not rule out a detour: a last waypoint just short of a junction can
+    // project onto a connector the router only reaches by driving round the
+    // block (Town03 slow_lead seed 2: a ~300 m corridor, a 1 km route), and
+    // that loop then runs past other actors' route ends.
+    let len = 0;
+    for (let i = 1; i < route.length; i++) len += Math.hypot(route[i].x - route[i - 1].x, route[i].y - route[i - 1].y);
+    if (len > (dTo - dFrom) + 40) return false;
     for (let d = dFrom + 4; d < dTo - 4; d += 4) {
       const p = _corridorAt(c, d);
       if (_distToPolyline(route, p.x, p.y) > ROUTE_TOLERANCE_M) return false;
@@ -1653,7 +2136,7 @@
       const s = PropCatalog.planSize(a.prop);
       return { l: s.len, w: s.wid };
     }
-    const s = MapView.actorSize(a.type);
+    const s = MapView.actorSize(AppState.bodyType(a));
     return { l: s.w, w: s.h };
   }
 
@@ -1828,7 +2311,8 @@
 
   function _build(net, typeKey, seed, opts) {
     seed = Number.isFinite(Number(seed)) && Number(seed) > 0 ? Math.floor(Number(seed)) : _randomSeed();
-    const keys = typeKey ? [typeKey] : Object.keys(TYPES);
+    // An array is a subset to pick from (the batch dialog's type selection).
+    const keys = Array.isArray(typeKey) ? typeKey : typeKey ? [typeKey] : Object.keys(TYPES);
 
     // A focus throws away every candidate whose conflict lands elsewhere, so
     // it gets more tries; each costs one headless run (~20 ms) once built.
@@ -1857,9 +2341,16 @@
       // follows the same corridor (the lead car) is not parked on the ego's
       // own goal when both routes run out.
       const egoEnd = res.egoEndD ?? c.length;
-      const ego = _vehicle('ego', _corridorAt(c, 0), vEgo);
-      ego.events = [_routeEvent(ego, _corridorWaypoints(c, 0, egoEnd))];
-      if (!_routeFollowsCorridor(ego, c, 0, egoEnd)) continue;
+      // A type may start the ego further up its corridor, with another actor
+      // behind it (rear_approach), and give it events of its own after the
+      // route. '$ego' in a trigger names the ego, whose id exists only now.
+      const egoStart = res.egoStartD ?? 0;
+      const ego = _vehicle('ego', _corridorAt(c, egoStart), vEgo);
+      ego.events = [_routeEvent(ego, _corridorWaypoints(c, egoStart, egoEnd)), ...(res.egoEvents || [])];
+      for (const a of [ego, ...res.npcs]) {
+        for (const ev of a.events || []) if (ev.trigger?.entity_ref === '$ego') ev.trigger.entity_ref = ego.id;
+      }
+      if (!_routeFollowsCorridor(ego, c, egoStart, egoEnd)) continue;
 
       if (!_spawnsClear(ego, res.npcs, res.props)) continue;
 
@@ -2240,24 +2731,34 @@
    * and toJSON read AppState, but nothing needs to render or record them.
    */
   async function generateBatch({
-    count = 50, typeKey = null, seed = null,
+    count = 50, typeKey = null, typeKeys = null, seed = null,
     balance = true, varyWeather = true, maps = 'current',
     onProgress = () => {}, isCancelled = () => false,
   } = {}) {
     const baseSeed = Number(seed) > 0 ? Math.floor(Number(seed)) : _randomSeed();
     const rng = new Rng(baseSeed);
-    const towns = maps === 'carla'
-      ? CARLA_TOWNS.filter(t => [...document.getElementById('map-select').options].some(o => o.value === t))
+    // `maps`: 'current', 'carla', or an array of town names (the dialog's
+    // selection). Towns missing from #map-select are dropped.
+    const available = new Set([...document.getElementById('map-select').options].map(o => o.value));
+    const towns = Array.isArray(maps) ? maps.filter(t => available.has(t))
+      : maps === 'carla' ? CARLA_TOWNS.filter(t => available.has(t))
       : [AppState.map];
+    if (!towns.length) towns.push(AppState.map);
+    // `typeKeys`: the selected subset; `typeKey` (one type) is the older form.
+    const allTypes = Object.keys(TYPES);
+    let types = (typeKeys || (typeKey ? [typeKey] : allTypes)).filter(k => TYPES[k]);
+    if (!types.length) types = allTypes;
+    const subset = types.length < allTypes.length ? types : null;
     const dims = {
       town: towns,
-      type: typeKey ? [typeKey] : Object.keys(TYPES),
+      type: types,
       weather: varyWeather ? Object.keys(WEATHER_PRESETS) : ['__keep'],
       time: varyWeather ? TIMES : ['__keep'],
     };
     let plan = coveragePlan(count, dims, rng);
-    // Without balancing the type is the generator's own random pick instead.
-    if (!balance && !typeKey) plan = plan.map(p => ({ ...p, type: null }));
+    // Without balancing the type is the generator's own random pick instead,
+    // from the selected subset (one selected type stays that type).
+    if (!balance && types.length > 1) plan = plan.map(p => ({ ...p, type: subset }));
     // One map load per town, not one per scenario.
     plan = plan.map((p, i) => ({ ...p, i })).sort((a, b) => towns.indexOf(a.town) - towns.indexOf(b.town) || a.i - b.i);
 
@@ -2284,12 +2785,13 @@
         }
         const s = baseSeed + item.i;
         // A type this map cannot host (cut-in on single-lane Town01) falls
-        // back to any type rather than leaving a hole in the batch.
+        // back to another SELECTED type rather than leaving a hole in the
+        // batch; with a single type selected there is nothing to fall back to.
         let r = build(item.type, s);
         let fellBack = false;
-        if (!r && item.type) { r = build(null, s); fellBack = !!r; }
+        if (!r && typeof item.type === 'string' && types.length > 1) { r = build(subset, s); fellBack = !!r; }
         if (!r) {
-          skipped.push({ town: item.town, type: item.type, seed: s, reason: 'kein passender Ort' });
+          skipped.push({ town: item.town, type: Array.isArray(item.type) ? null : item.type, seed: s, reason: 'kein passender Ort' });
           onProgress(k + 1, plan.length, entries.length);
           await _tick();
           continue;
@@ -2344,13 +2846,85 @@
   let _batchRunning = false;
   let _batchCancel = false;
 
+  // Typ and Karten are checkbox dropdowns built like the Ebenen menu: the
+  // button shows the selection and an n/N pill, the panel Alle/Keine and one
+  // .layer-toggle row per option. The checkboxes ARE the state; they persist
+  // between openings because the panel is only rebuilt when its options change.
+  const _multiSelects = {};
+
+  function _multiSelect(id, opts) {
+    const wrap = document.getElementById(id);
+    let ms = _multiSelects[id];
+    if (!ms) {
+      const button = wrap.querySelector('.multi-select-btn');
+      const panel = wrap.querySelector('.multi-select-panel');
+      ms = _multiSelects[id] = {
+        wrap, button, panel, list: wrap.querySelector('.multi-select-options'),
+        dd: Dropdown.bind({ button, panel, wrap }),
+        boxes: () => [...wrap.querySelectorAll('.multi-select-options input')],
+        values: () => ms.boxes().filter(b => b.checked).map(b => b.value),
+        set: pred => { ms.boxes().forEach(b => { b.checked = !!pred(b.value); }); ms.refresh(); },
+        refresh() {
+          const boxes = ms.boxes(), on = boxes.filter(b => b.checked);
+          wrap.querySelector('.multi-select-count').textContent = `${on.length}/${boxes.length}`;
+          wrap.querySelector('.multi-select-summary').textContent =
+            !on.length ? 'Keine Auswahl'
+            : on.length === boxes.length ? `Alle ${ms.noun}`
+            : on.length === 1 ? on[0].dataset.label
+            : `${on.length} ${ms.noun}`;
+        },
+      };
+      panel.addEventListener('change', () => ms.refresh());
+      panel.addEventListener('click', e => {
+        if (e.target.closest('[data-ms-all]')) ms.set(() => true);
+        else if (e.target.closest('[data-ms-none]')) ms.set(() => false);
+        else if (e.target.closest('[data-ms-carla]')) ms.set(v => CARLA_TOWNS.includes(v));
+      });
+    }
+    ms.noun = opts.noun;
+    const sig = opts.items.map(it => it.value).join('|');
+    if (ms.sig !== sig) {
+      const prev = ms.sig ? new Set(ms.values()) : null;
+      ms.list.innerHTML = '';
+      for (const it of opts.items) {
+        const row = document.createElement('label');
+        row.className = 'layer-toggle';
+        const box = document.createElement('input');
+        box.type = 'checkbox';
+        box.value = it.value;
+        box.dataset.label = it.label;
+        box.checked = prev ? prev.has(it.value) : opts.checked(it.value);
+        row.append(box, document.createTextNode(' ' + it.label));
+        if (it.note) {
+          const note = document.createElement('span');
+          note.className = 'multi-select-note';
+          note.textContent = it.note;
+          row.append(note);
+        }
+        ms.list.append(row);
+      }
+      ms.sig = sig;
+      if (!ms.values().length) ms.set(opts.checked);
+    }
+    ms.refresh();
+    return ms;
+  }
+
   function _openBatch() {
     if (!AppState.mapData) { Toast.error('Zuerst eine Karte laden'); return; }
-    const sel = document.getElementById('gen-batch-type');
-    if (!sel.options.length) {
-      sel.add(new Option('Beliebig', ''));
-      for (const [key, t] of Object.entries(TYPES)) sel.add(new Option(t.label, key));
-    }
+    _multiSelect('gen-batch-type', {
+      noun: 'Typen',
+      items: Object.entries(TYPES).map(([key, t]) => ({ value: key, label: t.label })),
+      checked: () => true,
+    });
+    const towns = [...document.getElementById('map-select').options].map(o => o.value).filter(Boolean);
+    const maps = _multiSelect('gen-batch-maps', {
+      noun: 'Karten',
+      items: towns.map(t => ({ value: t, label: t, note: CARLA_TOWNS.includes(t) ? '' : 'nicht in CARLA' })),
+      checked: t => t === AppState.map,
+    });
+    // A fresh dialog on another town starts on that town if nothing is chosen.
+    if (!maps.values().length) maps.set(t => t === AppState.map);
     document.getElementById('gen-batch-progress').classList.add('hidden');
     document.getElementById('gen-batch-overlay').classList.remove('hidden');
     document.getElementById('gen-batch-count').focus();
@@ -2366,6 +2940,10 @@
     if (_batchRunning) return;
     const val = id => document.getElementById(id).value;
     const count = Math.max(1, Math.min(1000, Math.floor(Number(val('gen-batch-count')) || 0)));
+    const typeKeys = _multiSelects['gen-batch-type'].values();
+    const towns = _multiSelects['gen-batch-maps'].values();
+    if (!typeKeys.length) { Toast.error('Mindestens einen Typ auswählen'); return; }
+    if (!towns.length) { Toast.error('Mindestens eine Karte auswählen'); return; }
     const startBtn = document.getElementById('gen-batch-start');
     const status = document.getElementById('gen-batch-status');
     const fill = document.getElementById('gen-batch-bar-fill');
@@ -2375,8 +2953,8 @@
     startBtn.disabled = true;
     try {
       const res = await generateBatch({
-        count, typeKey: val('gen-batch-type') || null,
-        seed: val('gen-batch-seed') || null, maps: val('gen-batch-maps'),
+        count, typeKeys,
+        seed: val('gen-batch-seed') || null, maps: towns,
         balance: document.getElementById('gen-batch-balance').checked,
         varyWeather: document.getElementById('gen-batch-weather').checked,
         onProgress: (done, total, made) => {
@@ -2396,7 +2974,9 @@
         return;
       }
       status.textContent = `${res.entries.length} Szenarien werden exportiert …`;
-      const town = val('gen-batch-maps') === 'carla' ? 'alle_karten' : AppState.map;
+      const town = towns.length === 1 ? towns[0]
+        : towns.length === CARLA_TOWNS.length && towns.every(t => CARLA_TOWNS.includes(t)) ? 'alle_karten'
+        : `${towns.length}_karten`;
       const filename = `szenarien_${town}_${res.entries.length}_s${res.seed}.zip`;
       const out = await Api.exportBatch({ scenarios: res.entries, filename });
       ScenarioIO.downloadBlob(out.blob, filename);
@@ -2422,6 +3002,8 @@
     // must not also cancel a tool or a path being drawn behind it.
     document.addEventListener('keydown', e => {
       if (e.key !== 'Escape' || document.getElementById('gen-batch-overlay').classList.contains('hidden')) return;
+      // An open Typ/Karten dropdown takes this Esc (its own capture handler).
+      if (Object.values(_multiSelects).some(ms => ms.dd.isOpen())) return;
       e.stopPropagation();
       _closeBatch();
     }, true);
@@ -2472,7 +3054,13 @@
     const r = AppState.generated;
     if (!r || !PARAMS[r.type]) return '';
     const pins = r.overrides || {};
-    const rows = [EGO_SPEED, ...PARAMS[r.type]].map(spec => {
+    // A parameter this build never used (the person type of a breakdown, the
+    // vehicle of a standing pedestrian) is left out unless it is pinned: a
+    // select with no matching option would show its first one as if it had
+    // been chosen.
+    const used = spec => spec === EGO_SPEED || r.params?.[spec.key] !== undefined
+      || Object.prototype.hasOwnProperty.call(pins, spec.key);
+    const rows = [EGO_SPEED, ...PARAMS[r.type]].filter(used).map(spec => {
       const pinned = Object.prototype.hasOwnProperty.call(pins, spec.key);
       const unpin = pinned
         ? `<button type="button" class="gen-recipe-unpin" data-recipe-unpin="${spec.key}" title="Festgelegten Wert lösen — wieder zufällig aus dem Seed">×</button>`

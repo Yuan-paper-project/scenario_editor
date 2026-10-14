@@ -765,7 +765,10 @@
 
   function _renderActorTypeRow(actor) {
     if (!actorTypeRow || !actorTypeSelect) return;
-    const group = actor ? AppState.switchGroupFor(actor.type) : null;
+    // The ego is offered the vehicle group (its vehicleType); a walker or bike
+    // ego is not a thing the hero <Vehicle> under simple_vehicle_control can be.
+    const isEgo = actor?.type === 'ego';
+    const group = isEgo ? 'vehicle' : (actor ? AppState.switchGroupFor(actor.type) : null);
     actorTypeRow.classList.toggle('hidden', !group);
     if (!group) return;
 
@@ -787,7 +790,7 @@
       }
     }
     _syncing = true;
-    actorTypeSelect.value = actor.type;
+    actorTypeSelect.value = AppState.bodyType(actor);
     _syncing = false;
   }
 
@@ -796,7 +799,10 @@
     const id = AppState.selectedId;
     if (!id) return;
     // switchActorType re-checks the group itself and is a no-op if not allowed.
-    if (!AppState.switchActorType(id, actorTypeSelect.value)) {
+    const ok = AppState.ego?.id === id
+      ? AppState.setEgoVehicleType(actorTypeSelect.value)
+      : AppState.switchActorType(id, actorTypeSelect.value);
+    if (!ok) {
       render();   // resync the select back to the actor's unchanged type
       return;
     }

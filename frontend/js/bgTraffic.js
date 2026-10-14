@@ -142,7 +142,7 @@
                                reactiveEgo: egoReacts() })
       : null;
     for (const a of actors) {
-      const w = _halfWidth(a.type);
+      const w = _halfWidth(AppState.bodyType(a));
       const isEgo = a === AppState.ego;
       const track = run && run.tracks[a.id];
       const timed = [{ x: a.x, y: a.y, t: 0 }, ...(track || []).map((p, i) => ({ x: p.x, y: p.y, t: run.times[i] }))];

@@ -12,6 +12,13 @@ separate work) need re-checking against what can actually be authored now
 before this file's conclusions can be trusted. `LaneOffsetAction` (the other
 named gap) is unaffected and remains genuinely missing.
 
+**2026-10-14:** the generator gained types and pins aimed at benchmark cases (junction layouts,
+`turn_vru`, `slow_lead`, `pull_out`, `rear_approach`, standing/queued/curve obstacles, drift around a
+parked car — see CLAUDE.md "Benchmark-driven types and pins"). `tests/test_benchmark_e2e.py` rebuilds
+ten Loop2Scenic entries with them (VVM left-turn and cross-traffic cases, CCFtap, CPTA, CPNCO,
+EncroachingOncomingVehicle, CARLA_Leaderboard_16) — another reason the rollup below is stale. The
+Chat2Scenic benchmark has its own per-line table, `chat2scenic_coverage.csv`.
+
 What this editor can and cannot build, measured against the
 [Loop2Scenic benchmark](https://yuangao-tum.github.io/loop2scenic-bench/) — 250
 scenario descriptions across five query modalities, tagged with a 50-type

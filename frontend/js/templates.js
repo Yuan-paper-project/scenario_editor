@@ -414,7 +414,7 @@
     renderPanel() {
       return `
         <div class="templates-panel">
-          <p class="templates-hint">Template wählen, dann Akteur auf der Karte platzieren. Wege und Dauern werden am Klickpunkt aus der Straße berechnet.</p>
+          <p class="templates-hint">Template wählen, dann Akteur auf der Karte platzieren. Wege und Dauern werden am Klickpunkt aus der Straße berechnet. <a class="help-link" href="/static/help.html#templates" target="_blank" rel="noopener" title="Handbuch: Templates" aria-label="Handbuch: Templates">?</a></p>
           ${this._generatorSectionHtml()}
           ${this._userSectionHtml()}
           ${this._sectionHtml('template-auto-body', 'Auto · Spur & Position', [

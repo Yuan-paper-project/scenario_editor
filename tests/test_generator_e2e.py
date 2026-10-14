@@ -37,10 +37,11 @@ from playwright.sync_api import sync_playwright
 
 import _harness as H
 
-TYPES = ["lead_brake", "cut_in", "vru_crossing", "junction_conflict", "obstacle",
-         "oncoming_drift", "cyclist_ahead", "cut_out"]
-# town -> types that map cannot host (no same-direction lane pair on Town01)
-TOWNS = {"Town03": set(), "Town05": set(), "Town01": {"cut_in", "cut_out"}}
+TYPES = ["lead_brake", "slow_lead", "cut_in", "vru_crossing", "turn_vru", "junction_conflict", "obstacle",
+         "oncoming_drift", "cyclist_ahead", "cut_out", "pull_out", "rear_approach"]
+# town -> types that map cannot host (no same-direction lane pair, no parking
+# lane on Town01)
+TOWNS = {"Town03": set(), "Town05": set(), "Town01": {"cut_in", "cut_out", "pull_out", "rear_approach"}}
 SEEDS = [1, 2, 3]
 CONFLICT_M = 3.0      # centre-to-centre; a car is 4.5 m long, so this is a hit
 OBSTACLE_M = 2.5      # nearest prop to the ego's track
@@ -97,7 +98,7 @@ GEN_AND_MEASURE = ("""([t, s]) => {
       const [ji] = near(wps[1]);
       endBlocksEgo = ed < 2.5 && ei >= ji;
     }
-    return { id: npc.id, type: npc.type, events: npc.events, hasEvents: npc.events.length > 0, endBlocksEgo,
+    return { id: npc.id, type: npc.type, speed: npc.initial_speed, events: npc.events, hasEvents: npc.events.length > 0, endBlocksEgo,
              fired: t0 != null, min, reach,
              obeyLights: npc.obey_traffic_lights !== false, obeyObstacles: npc.obey_obstacles !== false,
              strategies: wps.map(w => w.strategy), handoffs,
@@ -148,8 +149,17 @@ def check_scenario(town, t, s, r, page):
 
     ego = r["ego"]
     evs = ego["events"]
-    C(f"{tag}: ego has one assign_route event",
-      len(evs) == 1 and evs[0]["action"]["type"] == "assign_route", json.dumps(evs)[:200])
+    if t == "rear_approach":
+        # The ego's own lane change is the scenario: a route, then a
+        # lane_change released by the ego reaching a point.
+        C(f"{tag}: ego has a route, then a lane change on its own position",
+          len(evs) == 2 and evs[0]["action"]["type"] == "assign_route"
+          and evs[1]["action"]["type"] == "lane_change"
+          and evs[1]["trigger"]["type"] == "distance_to_point"
+          and evs[1]["trigger"]["entity_ref"] == ego["id"], json.dumps(evs)[:300])
+    else:
+        C(f"{tag}: ego has one assign_route event",
+          len(evs) == 1 and evs[0]["action"]["type"] == "assign_route", json.dumps(evs)[:200])
     wps = evs[0]["action"]["waypoints"] if evs else []
     C(f"{tag}: ego route has >=2 waypoints, seed 'fastest'",
       len(wps) >= 2 and wps[0]["strategy"] == "fastest")
@@ -164,7 +174,7 @@ def check_scenario(town, t, s, r, page):
             # ego-relative trigger, so it is not clock-timed either.
             ok = (trig in ("distance_to_ego", "after_event")
                   or (trig == "simulation_time" and act == "assign_route")
-                  or (trig == "distance_to_point" and ev["trigger"].get("entity_ref") == n["id"]))
+                  or (trig == "distance_to_point" and ev["trigger"].get("entity_ref") in (n["id"], ego["id"])))
             C(f"{tag}: {n['type']} {ev['id']} timed off the ego, not the clock",
               ok, f"{trig}/{act}")
             if trig == "after_event":
@@ -222,6 +232,29 @@ def check_scenario(town, t, s, r, page):
     else:
         active = [n for n in r["npcs"] if n["hasEvents"]]
         C(f"{tag}: has an NPC with events", len(active) >= 1)
+        if t == "slow_lead":
+            # Nothing releases a slow lead: it is slower than the ego from the
+            # start, so the criticality gate (contact or a near miss) is the
+            # check that it is caught.
+            lead = active[0] if active else None
+            C(f"{tag}: slow lead drives slower than the ego",
+              lead and 0 < r["info"]["params"]["lead_speed"] < ego["initial_speed"],
+              (r["info"]["params"], ego["initial_speed"]))
+            C(f"{tag}: slow lead follows the ego's corridor on a route",
+              lead and lead["events"][0]["action"]["type"] == "assign_route" and lead["routeOk"])
+            active = []
+        if t == "rear_approach":
+            # The surge is released by the EGO reaching a point, not by a
+            # distance to it; the criticality gate measures the conflict.
+            n = active[0] if active else None
+            ev = n["events"][0] if n else None
+            C(f"{tag}: rear car surges when the ego reaches a point",
+              ev and ev["trigger"]["type"] == "distance_to_point" and ev["trigger"]["entity_ref"] == ego["id"]
+              and ev["action"]["type"] == "set_speed" and ev["action"]["target"]["value"] > ego["initial_speed"],
+              json.dumps(ev)[:300])
+            C(f"{tag}: rear car starts at the ego's speed, behind it",
+              n and abs(n["speed"] - ego["initial_speed"]) < 0.01, n and (n["speed"], ego["initial_speed"]))
+            active = []
         if t == "cut_out":
             # The lead's swerve is positional, not distance_to_ego, and the
             # stopped car's drive-off fires only once the ego is right behind
@@ -367,11 +400,59 @@ def main():
         page.locator(".gen-batch-item").click()
         C("dialog: opens from the menu", page.locator("#gen-batch-overlay").is_visible())
         page.fill("#gen-batch-count", "4")
-        with page.expect_download(timeout=60000) as dl:
+        C("dialog: Typ starts with every type selected",
+          page.inner_text("#gen-batch-type .multi-select-count") == f"{len(TYPES)}/{len(TYPES)}",
+          page.inner_text("#gen-batch-type .multi-select-count"))
+        C("dialog: Karten starts on the current map only",
+          page.inner_text("#gen-batch-maps .multi-select-summary") == "Town03",
+          page.inner_text("#gen-batch-maps .multi-select-summary"))
+        # Typ: Keine, then tick two types by clicking their rows.
+        page.click("#gen-batch-type-btn")
+        C("dialog: Typ opens a checkbox list", page.locator("#gen-batch-type .multi-select-panel").is_visible())
+        page.click("#gen-batch-type [data-ms-none]")
+        C("dialog: Keine clears the types", page.inner_text("#gen-batch-type .multi-select-summary") == "Keine Auswahl")
+        page.click("#gen-batch-type label:has(input[value='lead_brake'])")
+        page.click("#gen-batch-type label:has(input[value='obstacle'])")
+        C("dialog: two ticked types read '2 Typen'",
+          page.inner_text("#gen-batch-type .multi-select-summary") == "2 Typen")
+        page.keyboard.press("Escape")
+        C("dialog: Esc closes the dropdown, not the dialog",
+          page.locator("#gen-batch-type .multi-select-panel").is_hidden()
+          and page.locator("#gen-batch-overlay").is_visible())
+        # Karten: add Town05 to Town03.
+        page.click("#gen-batch-maps-btn")
+        page.click("#gen-batch-maps label:has(input[value='Town05'])")
+        page.click("#gen-batch-title")   # outside click closes it
+        C("dialog: an outside click closes the dropdown", page.locator("#gen-batch-maps .multi-select-panel").is_hidden())
+        C("dialog: two maps read '2 Karten'", page.inner_text("#gen-batch-maps .multi-select-summary") == "2 Karten")
+        with page.expect_download(timeout=120000) as dl:
             page.click("#gen-batch-start")
         C("dialog: downloads a zip", dl.value.suggested_filename.endswith(".zip"), dl.value.suggested_filename)
+        z = zipfile.ZipFile(dl.value.path())
+        rows = list(csv.DictReader(io.StringIO(z.read("manifest.csv").decode())))
+        C("dialog: batch uses only the selected types",
+          rows and {r["type"] for r in rows} <= {"lead_brake", "obstacle"}, {r["type"] for r in rows})
+        C("dialog: batch uses only the selected maps, both of them",
+          {r["town"] for r in rows} == {"Town03", "Town05"}, {r["town"] for r in rows})
         page.wait_for_timeout(300)
         C("dialog: closes when done", page.locator("#gen-batch-overlay").is_hidden())
+        page.click("#gen-menu-btn")
+        page.locator(".gen-batch-item").click()
+        C("dialog: selection is kept when reopened",
+          page.inner_text("#gen-batch-type .multi-select-summary") == "2 Typen"
+          and page.inner_text("#gen-batch-maps .multi-select-summary") == "2 Karten")
+        page.click("#gen-batch-type-btn")
+        page.click("#gen-batch-type [data-ms-none]")
+        page.keyboard.press("Escape")
+        page.click("#gen-batch-start")
+        page.wait_for_timeout(300)
+        C("dialog: no type selected refuses to start",
+          page.locator("#gen-batch-overlay").is_visible()
+          and page.locator("#gen-batch-progress").is_hidden())
+        page.click("#gen-batch-type-btn")
+        page.click("#gen-batch-type [data-ms-all]")
+        page.keyboard.press("Escape")
+        page.click("#gen-batch-cancel")
 
         # ── Every type on every town ────────────────────────────────────────
         for town, impossible in TOWNS.items():

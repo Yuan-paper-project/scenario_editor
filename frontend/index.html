@@ -95,7 +95,7 @@
             <option value="nighttime">Nacht</option>
           </select>
         </div>
-        <div class="env-section-label">Voreinstellung</div>
+        <div class="env-section-label">Voreinstellung <a class="help-link" href="/static/help.html#umgebung" target="_blank" rel="noopener" title="Handbuch: Umgebung und Hintergrundverkehr" aria-label="Handbuch: Umgebung und Hintergrundverkehr">?</a></div>
         <div id="env-presets" class="env-presets"></div>
         <div class="env-section-label">Feinabstimmung</div>
         <div class="env-sliders">
@@ -156,7 +156,26 @@
     </div>
   </div>
   <div class="header-right">
-    <button id="btn-help" class="btn btn-secondary btn-with-icon" title="Anleitung anzeigen"><svg class="btn-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M6.2 6.3a1.9 1.9 0 1 1 2.6 1.8c-.5.2-.8.6-.8 1.1v.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="11.6" r=".85" fill="currentColor"/></svg>Hilfe</button>
+    <!-- Hilfe: the six-step Schnellstart (welcome.js binds #btn-help), the full
+         Handbuch in its own tab (help.html), and the shortcut overlay. -->
+    <div id="help-menu" class="menu" data-dropdown>
+      <button type="button" id="help-menu-btn" class="btn btn-secondary btn-with-icon menu-btn"
+              data-dropdown-button title="Anleitung und Tastenkürzel" aria-haspopup="true" aria-expanded="false"><svg class="btn-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M6.2 6.3a1.9 1.9 0 1 1 2.6 1.8c-.5.2-.8.6-.8 1.1v.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><circle cx="8" cy="11.6" r=".85" fill="currentColor"/></svg>Hilfe <span class="menu-caret">&#9662;</span></button>
+      <div id="help-menu-panel" class="menu-panel hidden" data-dropdown-panel role="menu" aria-label="Hilfe">
+        <button type="button" id="btn-help" class="menu-item" data-menu-item role="menuitem"
+                title="Die sechs Schritte vom Start">
+          <span class="menu-item-icon">&#9654;</span> Schnellstart
+        </button>
+        <a id="btn-handbook" class="menu-item" data-menu-item role="menuitem" href="/static/help.html"
+           target="_blank" rel="noopener" title="Alle Funktionen im Detail — öffnet in neuem Tab">
+          <span class="menu-item-icon">&#128214;</span> Handbuch
+        </a>
+        <button type="button" id="btn-shortcuts" class="menu-item" data-menu-item role="menuitem"
+                title="Übersicht aller Tastenkürzel (?)">
+          <span class="menu-item-icon">&#9000;</span> Tastenkürzel
+        </button>
+      </div>
+    </div>
     <!-- Random scenario generator. The type rows are filled in by
          scenarioGenerator.js from its own TYPES table, so a new type needs no
          markup; the seed field reproduces a scenario exactly. -->
@@ -176,6 +195,7 @@
           <label for="gen-seed">Seed</label>
           <input type="number" id="gen-seed" min="1" step="1" placeholder="zufällig"
                  title="Leer lassen für ein neues Szenario; ein Seed erzeugt dasselbe Szenario erneut">
+          <a class="help-link" href="/static/help.html#generieren" target="_blank" rel="noopener" title="Handbuch: Generieren, Rezepte und Serien" aria-label="Handbuch: Generieren, Rezepte und Serien">?</a>
         </div>
       </div>
     </div>
@@ -481,7 +501,7 @@
         <div class="props-hint traffic-signal-hint">Eine Schaltung setzt die Ampel einmal um, sobald das Ego näher als der Abstand an ihr ist. Danach läuft ihr normaler Zyklus weiter.</div>
       </div>
 
-      <!-- Akteurstyp — nur für NPCs, gefüllt von properties.js -->
+      <!-- Akteurstyp — NPCs und Ego (Ego: nur Fahrzeuge), gefüllt von properties.js -->
       <div id="actor-type-row" class="props-group hidden">
         <label>Typ</label>
         <select id="actor-type-select"></select>
@@ -561,6 +581,7 @@
             <span class="collapsible-title">Events<span id="event-count" class="event-count">0</span><span id="event-warn" class="event-warn hidden">0</span></span>
             <span class="collapse-indicator" aria-hidden="true">-</span>
           </button>
+          <a class="help-link" href="/static/help.html#events" target="_blank" rel="noopener" title="Handbuch: Events, Auslöser und Aktionen" aria-label="Handbuch: Events, Auslöser und Aktionen">?</a>
           <div id="event-section-body" class="collapsible-body">
             <div id="event-action-grid" class="event-action-grid"></div>
             <div id="event-list" class="event-list"></div>
@@ -581,7 +602,7 @@
   <div class="welcome-card">
     <div class="welcome-header">
       <div class="welcome-logo">
-        <svg viewBox="0 0 48 48" width="48" height="48">
+        <svg viewBox="0 0 48 48" width="40" height="40">
           <rect x="8" y="18" width="32" height="16" rx="3" fill="#4488ff"/>
           <rect x="13" y="12" width="22" height="11" rx="2" fill="#6aacff"/>
           <circle cx="15" cy="35" r="4.5" fill="#1a1e26"/>
@@ -592,97 +613,24 @@
       </div>
       <div>
         <h1 class="welcome-title">OpenSCENARIO Editor</h1>
-        <p class="welcome-subtitle">Visueller Szenario-Editor für autonomes Fahren (CARLA)</p>
+        <p class="welcome-subtitle">Testszenarien für CARLA zusammenklicken — in sechs Schritten.</p>
       </div>
     </div>
 
-    <p class="welcome-intro">
-      Erstellen Sie komplexe Testszenarien für autonome Fahrzeuge im OpenSCENARIO 1.0-Format
-      — ohne eine einzige Zeile Code zu schreiben. Platzieren Sie Akteure, zeichnen Sie Trajektorien
-      und exportieren Sie direkt für den CARLA ScenarioRunner.
+    <ol class="welcome-steps">
+      <li><strong>Karte wählen</strong> — Stadt auf der leeren Karte anklicken oder eine <em>.xodr</em> hineinziehen.</li>
+      <li><strong>Ego platzieren</strong> — <em>Ego</em> links wählen, auf eine Spur klicken. Fahrzeugtyp rechts unter <em>Typ</em>.</li>
+      <li><strong>Verkehr hinzufügen</strong> — Fahrzeuge, Personen, Requisiten setzen. Oder rechts unter <em>Templates</em> / oben <em>Generieren</em> ein fertiges Szenario.</li>
+      <li><strong>Events geben</strong> — Akteur wählen, rechts <em>WENN</em> Auslöser → <em>DANN</em> Aktion (Route, Tempo, Spurwechsel …).</li>
+      <li><strong>Umgebung</strong> — oben <em>Umgebung</em>: Wetter-Voreinstellung, Tageszeit und <em>Hintergrundverkehr</em>.</li>
+      <li><strong>Prüfen &amp; exportieren</strong> — <kbd>Leertaste</kbd> spielt die Vorschau, dann <em>Export .xosc</em>. <em>Datei</em> speichert als .json.</li>
+    </ol>
+
+    <p class="welcome-keys">
+      <kbd>Esc</kbd> abbrechen · <kbd>Enter</kbd> Pfad fertig · <kbd>Entf</kbd> löschen ·
+      <kbd>Strg+Z</kbd> rückgängig · <kbd>F</kbd> Ansicht · <kbd>?</kbd> alle Tastenkürzel
     </p>
-
-    <div class="welcome-steps">
-      <div class="welcome-step">
-        <div class="step-num">1</div>
-        <div class="step-body">
-          <strong>Karte auswählen</strong>
-          <span>Eine CARLA-Stadtkarte direkt auf der leeren Karte anklicken (oder im Dropdown oben wählen) — oder eine eigene <strong>.xodr</strong> auf die Karte ziehen.</span>
-        </div>
-      </div>
-      <div class="welcome-step">
-        <div class="step-num">2</div>
-        <div class="step-body">
-          <strong>Ego-Fahrzeug platzieren</strong>
-          <span>Klicken Sie auf <em>Ego</em> in der linken Werkzeugleiste, dann auf die Karte. Das Fahrzeug rastet automatisch am nächsten Startpunkt ein.</span>
-        </div>
-      </div>
-      <div class="welcome-step">
-        <div class="step-num">3</div>
-        <div class="step-body">
-          <strong>Ego steuern</strong>
-          <span>Ego auswählen → rechts unter <em>Events</em> auf <em>Route zuweisen</em> (folgt den Fahrspuren) oder <em>Trajektorie folgen</em> klicken → Wegpunkte auf die Karte setzen → <kbd>Enter</kbd> oder <em>Fertig</em>.</span>
-        </div>
-      </div>
-      <div class="welcome-step">
-        <div class="step-num">4</div>
-        <div class="step-body">
-          <strong>Verkehr und Hindernisse hinzufügen</strong>
-          <span>Fahrzeuge, Einsatzfahrzeuge, Fußgänger und Radfahrer platzieren und ihnen Events geben (WENN Auslöser → DANN Aktion). Fertige Abläufe unter <em>Templates</em> rechts, Leitkegel &amp; Co. im Tab <em>Requisiten</em> — oder <em>Generieren</em> erzeugt ein komplettes Testszenario.</span>
-        </div>
-      </div>
-      <div class="welcome-step">
-        <div class="step-num">5</div>
-        <div class="step-body">
-          <strong>Umgebung konfigurieren</strong>
-          <span>Im Menü <em>Umgebung</em> oben: Tageszeit, eine Wetter-Voreinstellung (Klar, Regen, Nebel …) oder Feinabstimmung per Regler (je 0–1).</span>
-        </div>
-      </div>
-      <div class="welcome-step">
-        <div class="step-num">6</div>
-        <div class="step-body">
-          <strong>Vorschau &amp; Export</strong>
-          <span>Mit <em>▶ Abspielen</em> animieren Sie das Szenario; die Zeitleiste daneben lässt sich ziehen, ihre Striche markieren, wann Events starten. Exportieren Sie als <strong>.xosc</strong> (OpenSCENARIO), als Route-<strong>.xml</strong> (Autoware) oder speichern Sie als <strong>.json</strong> zum Weitarbeiten.</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="welcome-formats">
-      <div class="format-card">
-        <div class="format-icon">📄</div>
-        <div class="format-info">
-          <strong>.xosc</strong>
-          <span>OpenSCENARIO 1.0 — für CARLA ScenarioRunner</span>
-        </div>
-      </div>
-      <div class="format-card">
-        <div class="format-icon">🗺️</div>
-        <div class="format-info">
-          <strong>.xml</strong>
-          <span>Route-Datei — für Autoware &amp; CARLA-Planer</span>
-        </div>
-      </div>
-      <div class="format-card">
-        <div class="format-icon">💾</div>
-        <div class="format-info">
-          <strong>.json</strong>
-          <span>Szenario speichern &amp; wieder laden</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="welcome-shortcuts">
-      <span class="shortcut-pill"><kbd>Esc</kbd> Abbrechen</span>
-      <span class="shortcut-pill"><kbd>Enter</kbd> Pfad beenden</span>
-      <span class="shortcut-pill"><kbd>Leertaste</kbd> Vorschau</span>
-      <span class="shortcut-pill"><kbd>Entf</kbd> Löschen</span>
-      <span class="shortcut-pill"><kbd>Strg+Z</kbd> Rückgängig</span>
-      <span class="shortcut-pill"><kbd>Strg+Shift+Z</kbd> Wiederholen</span>
-      <span class="shortcut-pill"><kbd>F</kbd> Ansicht</span>
-      <span class="shortcut-pill"><kbd>R</kbd> Lineal</span>
-      <span class="shortcut-pill"><kbd>Shift+R</kbd> Messungen löschen</span>
-      <span class="shortcut-pill"><kbd>?</kbd> Tastenkürzel</span>
-    </div>
+    <p class="welcome-more"><a id="welcome-handbook" href="/static/help.html" target="_blank" rel="noopener">Ausführliches Handbuch →</a></p>
 
     <div class="welcome-actions">
       <label class="welcome-check">
@@ -744,13 +692,37 @@
     <div class="gen-batch-grid">
       <label for="gen-batch-count">Anzahl</label>
       <input type="number" id="gen-batch-count" min="1" max="1000" step="1" value="50" required>
-      <label for="gen-batch-type">Typ</label>
-      <select id="gen-batch-type"></select>
-      <label for="gen-batch-maps">Karten</label>
-      <select id="gen-batch-maps">
-        <option value="current">Nur aktuelle Karte</option>
-        <option value="carla">Alle CARLA-Karten</option>
-      </select>
+      <label for="gen-batch-type-btn">Typ</label>
+      <div class="menu multi-select" id="gen-batch-type">
+        <button type="button" id="gen-batch-type-btn" class="btn btn-secondary menu-btn multi-select-btn" aria-haspopup="true" aria-expanded="false">
+          <span class="multi-select-summary"></span>
+          <span class="layer-menu-count multi-select-count"></span>
+          <span class="menu-caret">&#9662;</span>
+        </button>
+        <div class="menu-panel multi-select-panel hidden" role="group" aria-label="Szenariotypen">
+          <div class="layer-menu-actions">
+            <button type="button" class="layer-menu-action" data-ms-all title="Alle auswählen">Alle</button>
+            <button type="button" class="layer-menu-action" data-ms-none title="Auswahl leeren">Keine</button>
+          </div>
+          <div class="multi-select-options"></div>
+        </div>
+      </div>
+      <label for="gen-batch-maps-btn">Karten</label>
+      <div class="menu multi-select" id="gen-batch-maps">
+        <button type="button" id="gen-batch-maps-btn" class="btn btn-secondary menu-btn multi-select-btn" aria-haspopup="true" aria-expanded="false">
+          <span class="multi-select-summary"></span>
+          <span class="layer-menu-count multi-select-count"></span>
+          <span class="menu-caret">&#9662;</span>
+        </button>
+        <div class="menu-panel multi-select-panel hidden" role="group" aria-label="Karten">
+          <div class="layer-menu-actions multi-select-actions-3">
+            <button type="button" class="layer-menu-action" data-ms-all title="Alle auswählen">Alle</button>
+            <button type="button" class="layer-menu-action" data-ms-carla title="Nur die Karten, die der CARLA-Server mitbringt">CARLA</button>
+            <button type="button" class="layer-menu-action" data-ms-none title="Auswahl leeren">Keine</button>
+          </div>
+          <div class="multi-select-options"></div>
+        </div>
+      </div>
       <label for="gen-batch-seed">Start-Seed</label>
       <input type="number" id="gen-batch-seed" min="1" step="1" placeholder="zufällig">
     </div>

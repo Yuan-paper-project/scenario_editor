@@ -14,7 +14,7 @@
    * buttons in index.html; sections become <optgroup>s in the type picker.
    *
    * The split is load-bearing, not cosmetic: every 'vehicle' type is snapped to
-   * a spawn point at placement while every 'vru' type is in ROAD_FACING_TYPES
+   * a lane centre at placement while every 'vru' type is in ROAD_FACING_TYPES
    * (objects.js) and placed freely, so a within-group swap can keep the existing
    * pose untouched. assign_route is likewise vehicle-only downstream
    * (_ROUTE_ACTION_TYPES in ../llm-scenario-gen/generator/event_builders.py), so
@@ -347,6 +347,30 @@
     // ── Actor type switching ──────────────────────────────────
 
     ACTOR_TYPE_GROUPS,
+
+    /**
+     * The vehicle archetype an actor is drawn, simulated and exported as. The
+     * ego keeps `type: 'ego'` as its identity (dozens of checks key on it) and
+     * carries its body in `vehicleType`, absent meaning 'car' — so every save
+     * file from before the field existed loads as the car it always was.
+     */
+    bodyType(actor) {
+      if (!actor) return 'car';
+      return actor.type === 'ego' ? (actor.vehicleType || 'car') : actor.type;
+    },
+
+    /**
+     * Change the ego's vehicle type. Any type in the 'vehicle' group: the ego is
+     * always a <Vehicle> under simple_vehicle_control, and every one of those
+     * types is lane-snapped and routable, so the pose and every event stay
+     * valid. One updateById, so it is one undo step.
+     */
+    setEgoVehicleType(nextType) {
+      if (!this.ego || this.switchGroupFor(nextType) !== 'vehicle') return false;
+      if (this.bodyType(this.ego) === nextType) return false;
+      this.updateById(this.ego.id, { vehicleType: nextType });
+      return true;
+    },
 
     /** Switch group an actor type belongs to, or null if it cannot be swapped. */
     switchGroupFor(type) {

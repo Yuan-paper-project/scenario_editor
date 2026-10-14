@@ -36,6 +36,11 @@
     open();
   });
 
+  // Hilfe → Tastenkürzel: dieselbe Übersicht wie die Taste „?".
+  document.getElementById('btn-shortcuts')?.addEventListener('click', () => {
+    document.getElementById('shortcuts-overlay')?.classList.remove('hidden');
+  });
+
   // Beim Laden prüfen, ob Modal angezeigt werden soll
   if (!localStorage.getItem(STORAGE_KEY)) {
     open();

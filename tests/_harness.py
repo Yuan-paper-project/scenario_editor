@@ -164,8 +164,8 @@ def place_actor(page, tool, wx, wy, tolerance=2.5):
     """Arm an actor tool and click at a WORLD point; return the placed actor.
 
     Verifies the actor landed near where we aimed. The tolerance is looser than
-    the props suite's 1.5 m because actor placement snaps to spawn points and
-    to lane centres (objects.js `_placeActor`), which legitimately moves it.
+    the props suite's 1.5 m because vehicle placement snaps to the nearest lane
+    centre (objects.js `_placeActor`), which legitimately moves it.
     """
     page.click('[data-toolbar-tab="actors"]')
     page.click(f'.tool-btn[data-tool="{tool}"]')

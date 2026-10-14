@@ -25,8 +25,8 @@ import _harness as H
 
 C = H.Checks()
 TOWN = "Town05"
-TYPES = ["lead_brake", "cut_in", "vru_crossing", "junction_conflict", "obstacle",
-         "oncoming_drift", "cut_out", "cyclist_ahead"]
+TYPES = ["lead_brake", "slow_lead", "cut_in", "vru_crossing", "turn_vru", "junction_conflict", "obstacle",
+         "oncoming_drift", "cut_out", "cyclist_ahead", "pull_out", "rear_approach"]
 
 STATE = """() => ({ g: AppState.generated, ego: AppState.ego && { x: AppState.ego.x, y: AppState.ego.y },
                     npcs: JSON.stringify(AppState.npcs), undo: UndoStack.length })"""
@@ -63,9 +63,12 @@ def main():
             if not C(f"{t}: generated", info is not None):
                 continue
             show_overview(page)
-            keys = page.evaluate("t => ScenarioGenerator.PARAMS[t]", t)
+            # Every parameter this build used, in PARAMS order; one it never
+            # used (a breakdown's person type) is left out unless pinned.
+            keys = page.evaluate("""t => ScenarioGenerator.PARAMS[t].filter(k => k === 'ego_speed'
+                                     || AppState.generated.params[k] !== undefined)""", t)
             shown = page.evaluate("() => [...document.querySelectorAll('[data-recipe-key]')].map(e => e.dataset.recipeKey)")
-            C(f"{t}: panel lists ego speed + every parameter", shown == keys, (shown, keys))
+            C(f"{t}: panel lists ego speed + every parameter the build used", shown == keys, (shown, keys))
             g = page.evaluate("AppState.generated")
             C(f"{t}: recipe stores type, seed, attempt, site", g["type"] == t and g["seed"] == 5
               and isinstance(g["attempt"], int) and g["near"] is not None, g)

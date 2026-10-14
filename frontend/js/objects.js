@@ -3,10 +3,11 @@
  *              and path waypoint drawing.
  *
  * Interactions:
- *   - Click on map with active tool → place actor at nearest spawn point (or cursor)
- *     Pedestrians/cyclists stay at the clicked point and face the nearest road.
+ *   - Click on map with active tool → place a vehicle on the nearest lane centre,
+ *     facing the lane (Shift: at the cursor). Pedestrians/cyclists stay at the
+ *     clicked point and face the nearest road.
  *   - Click on existing actor → select it
- *   - Drag actor body → move actor
+ *   - Drag actor body → move actor (vehicles snap to a lane; Shift: free)
  *   - Drag yaw arrow head → rotate actor
  *   - In path drawing mode → click on map to add waypoint
  */
@@ -102,11 +103,13 @@
           templatePlacement.maxDistance
         )
       : null;
-    const spawnSnap = roadFacing || templatePlacement ? null : AppState.nearestSpawn(wx, wy, 12);
-    const snap = laneSnap || spawnSnap;
+    const vehicleSnap = roadFacing || templatePlacement || shiftKey ? null : _vehicleLaneSnap(wx, wy);
+    const snap = laneSnap || vehicleSnap;
     const x = snap ? snap.x : Math.round(wx * 10) / 10;
     const y = snap ? snap.y : Math.round(wy * 10) / 10;
-    let yaw = roadFacing ? _roadFacingYaw(wx, wy) : 0;
+    // Shift on a vehicle: the position is the click, but it still faces along
+    // the nearest lane rather than due east.
+    let yaw = roadFacing ? _roadFacingYaw(wx, wy) : (shiftKey ? _roadAlongYaw(wx, wy) : 0);
     if (templatePlacement?.orientation === 'along-lane') yaw = _roadAlongYaw(wx, wy);
     if (snap) yaw = snap.yaw ?? snap.laneYaw;
     // A snap already carries the surface height of the exact point it snapped
@@ -282,6 +285,71 @@
     return best;
   }
 
+  /* Vehicle lane snap ─────────────────────────────────────────────────────────
+   *
+   * A vehicle (ego included) is placed and dragged onto the nearest driving or
+   * parking lane centreline, facing that lane's travel direction; Shift places
+   * or drags it freely and leaves its yaw alone. Walkers and props are never
+   * snapped — they belong on kerbs and crossings.
+   *
+   * Placement used to snap to the nearest *spawn point* within 12 m — a
+   * discrete sample, so a car could land metres from the click — and a drag did
+   * not snap at all: the car kept its old yaw wherever it was dropped, across
+   * lanes and onto the verge.
+   *
+   * Inside a junction several connectors overlap, and "nearest" flips between
+   * them from one mousemove to the next. So among the lanes within
+   * VEHICLE_SNAP_TIE_M of the nearest one, the one whose heading is closest to
+   * `prevYaw` (the vehicle's current yaw on a drag) wins: dragging a car through
+   * a junction keeps it on the connector it is already following.
+   */
+  const VEHICLE_SNAP_LANE_TYPES = new Set(['driving', 'parking']);   // not 'bidirectional', a wall
+  const VEHICLE_SNAP_MAX_DIST   = 12;
+  const VEHICLE_SNAP_TIE_M      = 1.0;
+
+  function _vehicleLaneSnap(wx, wy, prevYaw = null) {
+    const perLane = [];
+    for (const road of AppState.mapData?.roads || []) {
+      for (const lane of road.lanes || []) {
+        if (!VEHICLE_SNAP_LANE_TYPES.has(lane.type)) continue;
+        const line = lane.directionLine || [];
+        let best = null;
+        for (let i = 1; i < line.length; i++) {
+          const [x0, y0, z0 = 0] = line[i - 1];
+          const [x1, y1, z1 = 0] = line[i];
+          // Cheap reject before the projection: the segment's box, grown by
+          // the snap radius, must contain the point.
+          if (wx < Math.min(x0, x1) - VEHICLE_SNAP_MAX_DIST || wx > Math.max(x0, x1) + VEHICLE_SNAP_MAX_DIST ||
+              wy < Math.min(y0, y1) - VEHICLE_SNAP_MAX_DIST || wy > Math.max(y0, y1) + VEHICLE_SNAP_MAX_DIST) continue;
+          const dx = x1 - x0, dy = y1 - y0;
+          const len2 = dx * dx + dy * dy;
+          if (len2 <= 0) continue;
+          const t = Math.max(0, Math.min(1, ((wx - x0) * dx + (wy - y0) * dy) / len2));
+          const x = x0 + t * dx, y = y0 + t * dy;
+          const dist = Math.hypot(wx - x, wy - y);
+          if (dist <= VEHICLE_SNAP_MAX_DIST && (!best || dist < best.dist)) {
+            best = { x, y, z: z0 + t * (z1 - z0), dist, laneYaw: Math.atan2(dy, dx) * 180 / Math.PI };
+          }
+        }
+        if (best) perLane.push(best);
+      }
+    }
+    if (!perLane.length) return null;
+    const nearest = Math.min(...perLane.map(c => c.dist));
+    const close = perLane.filter(c => c.dist <= nearest + VEHICLE_SNAP_TIE_M);
+    let pick = close.reduce((a, b) => (a.dist <= b.dist ? a : b));
+    if (Number.isFinite(prevYaw) && close.length > 1) {
+      const turn = c => Math.abs(_wrapDeg(c.laneYaw - prevYaw));
+      pick = close.reduce((a, b) => (turn(a) <= turn(b) ? a : b));
+    }
+    return {
+      x: Math.round(pick.x * 10) / 10,
+      y: Math.round(pick.y * 10) / 10,
+      z: pick.z,
+      yaw: Math.round(_wrapDeg(pick.laneYaw) * 10) / 10,
+    };
+  }
+
   /* Ground height ─────────────────────────────────────────────────────────────
    *
    * Every z the editor writes is the OpenDRIVE road surface at (x, y) plus a
@@ -454,6 +522,10 @@
           actorId: id,
           startWorld: { ...world },
           startActorPos: { x: actor.x, y: actor.y },
+          // Vehicles snap to a lane while dragged (Shift: free); walkers and
+          // props move freely, as they are placed.
+          laneSnap: actor.type !== 'prop' && !ROAD_FACING_TYPES.has(actor.type),
+          snap: null,
         };
         AppState.select(id);
         document.body.classList.add('dragging-actor');
@@ -472,10 +544,21 @@
     if (_dragState.type === 'actor') {
       const dx = world.x - _dragState.startWorld.x;
       const dy = world.y - _dragState.startWorld.y;
-      AppState.updateById(_dragState.actorId, {
-        x: Math.round((_dragState.startActorPos.x + dx) * 10) / 10,
-        y: Math.round((_dragState.startActorPos.y + dy) * 10) / 10,
-      });
+      const x = Math.round((_dragState.startActorPos.x + dx) * 10) / 10;
+      const y = Math.round((_dragState.startActorPos.y + dy) * 10) / 10;
+      if (!_dragState.laneSnap) {
+        AppState.updateById(_dragState.actorId, { x, y });
+      } else {
+        const actor = AppState.findById(_dragState.actorId);
+        const snap = e.shiftKey ? null : _vehicleLaneSnap(x, y, actor?.yaw);
+        _dragState.snap = snap;
+        // Always the same three keys, snapped or not: the undo entry coalesces
+        // on id + patch keys, and an alternating key set would split one drag
+        // into several entries.
+        AppState.updateById(_dragState.actorId, snap
+          ? { x: snap.x, y: snap.y, yaw: snap.yaw }
+          : { x, y, yaw: actor?.yaw ?? 0 });
+      }
 
     } else if (_dragState.type === 'waypoint') {
       ObjectsManager.movePathPoint(
@@ -508,9 +591,13 @@
           // would be a second entry — different patch keys, so it does not
           // coalesce — and one Strg+Z would put the height back without the
           // position.
+          // A lane snap carries the height of the lane it snapped to, which is
+          // the right one under an overpass where the nearest-in-2-D lane may not be.
+          const snap = _dragState.snap;
           UndoStack.suspend();
           AppState.updateById(actor.id, {
-            z: _surfaceZFor(actor.type, actor.x, actor.y, actor.prop),
+            z: snap ? _roundZ(snap.z + _clearanceFor(actor.type))
+                    : _surfaceZFor(actor.type, actor.x, actor.y, actor.prop),
           });
           UndoStack.resume();
         }
@@ -976,5 +1063,9 @@
     // which sidesteps the fact that road.lanes is flattened across lane
     // sections with no section marker (see CLAUDE.md).
     nearestLaneProjection: _nearestLaneProjection,
+    // The vehicle placement/drag snap: {x, y, z, yaw} on the nearest driving or
+    // parking lane centre within 12 m, or null. `prevYaw` breaks ties between
+    // overlapping junction connectors (tests/test_vehicle_snap_e2e.py).
+    vehicleLaneSnap: _vehicleLaneSnap,
   };
 })();

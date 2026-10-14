@@ -3,7 +3,9 @@
     .venv/bin/python3 tests/run_generated_carla.py Town03:cut_in:3 Town05:vru_crossing:7
     .venv/bin/python3 tests/run_generated_carla.py --sample 6 --towns Town03,Town05
 
-Each spec is town:type:seed, optionally :weather:time with a generator
+Each spec is town:type:seed, optionally followed by @{json} with pinned
+recipe values (Town03:junction_conflict:2@{"layout":"ego_left_oncoming"}),
+optionally :weather:time (before the @) with a generator
 weather preset (klar, bewoelkt, regen, starkregen, nebel, nass) and an
 editor time key (daytime, morning, dusk, nighttime). The scenario is built through the real editor
 (ScenarioGenerator.generate, then the export endpoint), run through
@@ -34,7 +36,8 @@ import _harness as H  # noqa: E402
 import carla_analysis as A  # noqa: E402
 import run_carla_cases as R  # noqa: E402
 
-TYPES = ["lead_brake", "cut_in", "vru_crossing", "junction_conflict", "obstacle"]
+TYPES = ["lead_brake", "cut_in", "vru_crossing", "junction_conflict", "obstacle",
+         "slow_lead", "turn_vru", "pull_out"]
 
 PREDICT = """() => {
   const run = Simulate.runHeadless({ dt: 0.05, maxTime: 45 });
@@ -54,10 +57,11 @@ def build(specs):
     built = []
     with sync_playwright() as p:
         browser, page, errors = H.open_editor(p, specs[0][0])
-        for town, typ, seed, weather, tod in specs:
+        for town, typ, seed, weather, tod, pins in specs:
             H.select_map(page, town)
             page.wait_for_function("AppState.laneGraph !== null", timeout=60000)
-            info = page.evaluate("([t, s]) => ScenarioGenerator.generate(t, s)", [typ, seed])
+            info = page.evaluate("([t, s, o]) => ScenarioGenerator.generate(t, s, o ? { overrides: o } : {})",
+                                 [typ, seed, pins])
             if weather:
                 page.evaluate("([w, t]) => { AppState.weather = ScenarioGenerator.weatherPreset(w); AppState.time = t; }",
                               [weather, tod or "daytime"])
@@ -68,7 +72,8 @@ def build(specs):
             scenario = page.evaluate("AppState.toJSON()")
             xosc = H.xosc_from_params(page, page.evaluate("ScenarioIO.buildParamsForTesting()"))
             npc_types = [n["type"] for n in scenario["npcs"]]
-            built.append({"name": f"gen-{town}-{typ}-{seed}" + (f"-{weather}-{tod}" if weather else ""),
+            pin_tag = "-" + "-".join(f"{k}{v}" for k, v in sorted(pins.items())) if pins else ""
+            built.append({"name": f"gen-{town}-{typ}-{seed}" + (f"-{weather}-{tod}" if weather else "") + pin_tag,
                           "town": town, "type": typ,
                           "seed": seed, "info": info, "xosc": xosc, "scenario": scenario,
                           "predicted": predicted, "npc_types": npc_types,
@@ -115,11 +120,12 @@ def main():
 
     specs = []
     for s in args.specs:
+        s, _, pins = s.partition("@")
         parts = s.split(":") + [None, None]
-        specs.append((parts[0], parts[1], int(parts[2]), parts[3], parts[4]))
+        specs.append((parts[0], parts[1], int(parts[2]), parts[3], parts[4], json.loads(pins) if pins else None))
     rnd = random.Random(12345)
     for _ in range(args.sample):
-        specs.append((rnd.choice(args.towns.split(",")), rnd.choice(TYPES), rnd.randint(1, 10**6), None, None))
+        specs.append((rnd.choice(args.towns.split(",")), rnd.choice(TYPES), rnd.randint(1, 10**6), None, None, None))
     if not specs:
         ap.error("give town:type:seed specs or --sample N")
 

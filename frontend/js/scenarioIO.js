@@ -125,8 +125,9 @@
 
     // Shared shape for the ego and every NPC — the ego is a scenario actor
     // with events exactly like an NPC, not a special case. `typeOverride`
-    // exists only because the ego's internal type ('ego') is coerced to 'car'
-    // at export; the backend and emitter never see the literal 'ego'.
+    // exists only because the ego's internal type ('ego') is replaced by its
+    // vehicleType (AppState.bodyType) at export; the backend and emitter never
+    // see the literal 'ego'.
     const dumpActor = (actor, typeOverride) => ({
       id: actor.id, type: typeOverride || actor.type,
       x: actor.x, y: actor.y, z: actor.z??0.2, yaw: actor.yaw??0,
@@ -158,7 +159,7 @@
       // Drives dateTime + sun azimuth/elevation via compute_weather(). Without
       // it the backend defaults to 'daytime' and the dropdown does nothing.
       time:    AppState.time || 'daytime',
-      ego: dumpActor(ego, ego.type === 'ego' ? 'car' : ego.type),
+      ego: dumpActor(ego, AppState.bodyType(ego)),
       trafficSignals: (AppState.trafficSignals||[])
         .filter(sig => (sig.events||[]).length > 0)
         // z is the pole's road height: the trigger is a 3-D distance from it.

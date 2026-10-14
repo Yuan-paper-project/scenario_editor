@@ -1,0 +1,124 @@
+file,line,now,before,how
+CARLA_Leaderboard,1,no,no,loss of control: no ego friction/dynamics model (weather 'nass' only wets the road)
+CARLA_Leaderboard,2,yes,random,junction_conflict layout=ego_left_oncoming
+CARLA_Leaderboard,3,yes,random,junction_conflict layout=ego_right_crossing npc_from=left
+CARLA_Leaderboard,4,partial,partial,junction_conflict layout=crossing at a non-signalized junction; priority negotiation is the AV's
+CARLA_Leaderboard,5,yes,yes,junction_conflict layout=crossing at a signalized junction (NPC runs the red)
+CARLA_Leaderboard,6,yes,no,turn_vru vru_type=cyclist
+CARLA_Leaderboard,7,partial,partial,ego route down an on-ramp by hand + background traffic; no generator type
+CARLA_Leaderboard,8,partial,partial,cut_in (a lane change; no on-ramp merge type)
+CARLA_Leaderboard,9,partial,partial,cut_in (neighbour lane is moving; no static queue)
+CARLA_Leaderboard,10,partial,partial,ego route to an off-ramp by hand + background traffic; no generator type
+CARLA_Leaderboard,11,no,no,emergency vehicle from behind: no type
+CARLA_Leaderboard,12,yes,yes,obstacle variant=workzone/breakdown on a multi-lane corridor
+CARLA_Leaderboard,13,partial,partial,obstacle on a two-way road; no oncoming car paired with it
+CARLA_Leaderboard,14,no,no,door opening: no CARLA action for it
+CARLA_Leaderboard,15,yes,partial,slow_lead lateral_m=1.0 (cyclist_ahead before)
+CARLA_Leaderboard,16,partial,partial,slow_lead lateral_m on a two-way road; no oncoming car paired
+CARLA_Leaderboard,17,yes,partial,oncoming_drift cause=parked
+CARLA_Leaderboard,18,partial,partial,lead_brake (no obstacle in front of the lead)
+CARLA_Leaderboard,19,yes,yes,obstacle variant=cargo
+CARLA_Leaderboard,20,yes,yes,vru_crossing occluded=true
+CARLA_Leaderboard,21,yes,no,turn_vru
+CARLA_Leaderboard,22,partial,partial,obstacle (straight or curve; not right after a turn)
+CARLA_Leaderboard,23,yes,template,pull_out (Ausparken template before)
+CARLA_Leaderboard,24,no,no,ego leaving a parking bay: the generator's ego always starts on a driving lane
+NHTSA_Crash,1,yes,yes,vru_crossing on a multi-lane corridor
+NHTSA_Crash,2,partial,partial,ego as red-light runner: ego obey_traffic_lights off by hand; generator forces the ego green
+NHTSA_Crash,3,yes,yes,vru_crossing occluded=true
+NHTSA_Crash,4,no,no,turning car cuts the corner into a waiting car: no type
+NHTSA_Crash,5,no,no,same as line 4
+NHTSA_Crash,6,yes,yes,lead_brake
+NHTSA_Crash,7,partial,partial,obstacle variant=breakdown/queue (stopped car not at a red light)
+NHTSA_Crash,8,partial,partial,lead_brake (not a start-stop at a junction)
+NHTSA_Crash,9,yes,yes,lead_brake + weather nass
+NHTSA_Crash,10,partial,partial,cut_in
+NHTSA_Crash,11,yes,yes,cut_in
+NHTSA_Crash,12,yes,yes,cut_in
+NHTSA_Crash,13,yes,yes,cut_in
+NHTSA_Crash,14,no,no,same-direction car turns across the ego from the next lane: no layout
+NHTSA_Crash,15,yes,random,junction_conflict layout=ego_left_oncoming
+NHTSA_Crash,16,yes,random,junction_conflict layout=ego_left_oncoming
+NHTSA_PreCrash,1,no,no,loss of control
+NHTSA_PreCrash,2,no,no,loss of control
+NHTSA_PreCrash,3,yes,yes,junction_conflict layout=crossing (signalized)
+NHTSA_PreCrash,4,partial,partial,junction_conflict layout=crossing at a non-signalized junction; stop signs are drawn but not modelled
+NHTSA_PreCrash,5,no,no,road departure
+NHTSA_PreCrash,6,no,no,road departure
+NHTSA_PreCrash,7,no,no,ego reversing off the road
+NHTSA_PreCrash,8,yes,no,turn_vru turn=left vru_type=pedestrian
+NHTSA_PreCrash,9,yes,yes,vru_crossing
+NHTSA_PreCrash,10,yes,no,turn_vru turn=right vru_type=cyclist
+NHTSA_PreCrash,11,partial,partial,vru_crossing cyclist (not at a junction)
+NHTSA_PreCrash,12,no,no,ego reversing into a vehicle
+NHTSA_PreCrash,13,no,no,ego turning left across a same-direction car
+NHTSA_PreCrash,14,partial,partial,cut_in seen from the other car
+NHTSA_PreCrash,15,no,no,ego drifting into an adjacent car
+NHTSA_PreCrash,16,partial,partial,oncoming_drift seen from the other car
+NHTSA_PreCrash,17,yes,yes,oncoming_drift
+NHTSA_PreCrash,18,partial,partial,slow_lead (the ego's lane change is the AV's)
+NHTSA_PreCrash,19,partial,partial,lead_brake with resumes (no accelerating-lead type)
+NHTSA_PreCrash,20,yes,partial,slow_lead
+NHTSA_PreCrash,21,yes,yes,lead_brake
+NHTSA_PreCrash,22,partial,partial,obstacle variant=breakdown (kept 30 m clear of junctions)
+NHTSA_PreCrash,23,yes,random,junction_conflict layout=ego_left_oncoming (signalized)
+NHTSA_PreCrash,24,yes,random,junction_conflict layout=ego_right_crossing npc_from=left
+NHTSA_PreCrash,25,yes,random,junction_conflict layout=ego_left_oncoming (non-signalized)
+NHTSA_PreCrash,26,partial,partial,junction_conflict layout=crossing at a non-signalized junction; stop not modelled
+NHTSA_PreCrash,27,yes,random,junction_conflict layout=ego_left_crossing
+NHTSA_PreCrash,28,partial,partial,obstacle (not in a turn)
+NHTSA_PreCrash,29,yes,yes,obstacle
+NHTSA_PreCrash,30,no,no,ego leaving a parked position
+NHTSA_PreCrash,31,yes,yes,obstacle + time nighttime
+UN_R152,1,yes,random,junction_conflict layout=npc_left_oncoming
+UN_R152,2,no,no,lead turns off at a corner: no type
+UN_R152,3,partial,no,obstacle variant=stationary_vru/breakdown site=curve (no guard pipes)
+UN_R152,4,partial,partial,obstacle variant=workzone (sign + taper)
+UN_R157,1,yes,yes,cut_in
+UN_R157,2,yes,yes,cut_out
+UN_R157,3,yes,yes,lead_brake
+UN_R157,4,partial,partial,cyclist_ahead swerves / lane_offset by hand
+UN_R157,5,yes,no,obstacle variant=breakdown vehicle_type=motorcycle site=curve
+UN_R157,6,yes,yes,vru_crossing speed=1.4
+UN_R157,7,yes,no,obstacle variant=queue
+UN_R157,8,yes,yes,lead_brake end_speed=0
+UN_R157,9,yes,yes,cut_out
+UN_R157,10,yes,yes,cut_in
+UN_R157,11,yes,yes,cut_out
+UN_R157,12,partial,partial,cut_out reveals a stopped car (not a slow motorcycle)
+UN_R171,1,partial,partial,slow_lead (the ego's lane change is the AV's)
+UN_R171,2,no,no,ego lane change delayed by oncoming traffic: no type
+UN_R171,3,no,no,rear vehicle in the target lane: no type
+UN_R171,4,no,no,motorcycle filtering from behind: no type
+UN_R171,5,no,no,car in the blind spot: no type
+UN_R171,6,no,no,two cars merging into one gap: no type
+UN_R171,7,partial,partial,ego lane change only
+UN_R171,8,yes,yes,obstacle variant=breakdown lateral_m=0
+UN_R171,9,yes,no,obstacle variant=breakdown site=curve lateral_m=0.5
+UN_R171,10,yes,no,obstacle variant=breakdown site=curve facing=oncoming
+UN_R171,11,yes,no,obstacle variant=breakdown site=curve lateral_m=1.0
+UN_R171,12,yes,no,obstacle variant=breakdown vehicle_type=truck site=curve
+UN_R171,13,yes,partial,slow_lead (ego_speed 16 + lead_speed 2.1 = 50 km/h)
+UN_R171,14,yes,partial,slow_lead lead_type=truck/motorcycle
+UN_R171,15,yes,no,slow_lead lateral_m=0.8
+UN_R171,16,yes,partial,slow_lead (difference up to ~68 km/h at ego_speed 20)
+UN_R171,17,yes,yes,cut_out stopped_type=truck
+UN_R171,18,yes,yes,cut_out stopped_type=truck
+UN_R171,19,yes,yes,cut_out cut_margin_m small
+UN_R171,20,partial,partial,cut_out (ego speed capped at 20 m/s = 72 km/h)
+UN_R171,21,yes,yes,cut_out lane_change_m=8
+UN_R171,22,yes,yes,cut_in
+UN_R171,23,yes,yes,cut_in npc_type=truck
+UN_R171,24,yes,yes,cut_in
+UN_R171,25,partial,partial,cut_in (ego speed capped at 20 m/s)
+UN_R171,26,yes,yes,cut_in lane_change_m=10
+UN_R171,27,yes,no,obstacle variant=stationary_vru vru_type=pedestrian
+UN_R171,28,yes,no,obstacle variant=stationary_vru lateral_m=1.5
+UN_R171,29,yes,no,obstacle variant=stationary_vru + ego_speed 20
+UN_R171,30,yes,no,obstacle variant=stationary_vru vru_type=cyclist
+UN_R171,31,yes,yes,vru_crossing speed=1.4
+UN_R171,32,partial,partial,vru_crossing cyclist (cyclists get no occluder)
+UN_R171,33,partial,partial,vru_crossing on a crosswalk (ego going straight; turn_vru only covers turning)
+UN_R171,34,partial,partial,as line 32 at a junction
+UN_R171,35,yes,random,junction_conflict layout=ego_left_oncoming npc_type=motorcycle
+UN_R171,36,yes,yes,junction_conflict layout=crossing

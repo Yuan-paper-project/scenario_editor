@@ -1272,7 +1272,8 @@
 
   function _renderActor(actor) {
     const col  = ACTOR_COLORS[actor.type] || ACTOR_COLORS.car;
-    const size = ACTOR_SIZES[actor.type]  || ACTOR_SIZES.car;
+    // The ego keeps its own colour but takes its vehicle type's footprint.
+    const size = ACTOR_SIZES[AppState.bodyType(actor)] || ACTOR_SIZES.car;
     const sel  = AppState.selectedId === actor.id;
 
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');

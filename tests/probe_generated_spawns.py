@@ -106,6 +106,7 @@ def main():
     ap.add_argument("--count", type=int, default=120)
     ap.add_argument("--seed", type=int, default=9)
     ap.add_argument("--maps", default="carla", choices=["carla", "current"])
+    ap.add_argument("--type", default=None, help="only this generator type (default: all, balanced)")
     ap.add_argument("--port", type=int, default=2010)
     ap.add_argument("--zip", help="probe this batch zip instead of generating one")
     ap.add_argument("--out", help="write a copy of the batch with only fully spawning scenarios")
@@ -126,13 +127,13 @@ def _generate(args):
     with sync_playwright() as p:
         browser, page, errors = H.open_editor(p, "Town03")
         page.wait_for_function("AppState.laneGraph !== null", timeout=60000)
-        res = page.evaluate("""async ([n, s, m]) => {
-          const res = await ScenarioGenerator.generateBatch({ count: n, seed: s, maps: m });
+        res = page.evaluate("""async ([n, s, m, t]) => {
+          const res = await ScenarioGenerator.generateBatch({ count: n, seed: s, maps: m, typeKey: t });
           const out = await Api.exportBatch({ scenarios: res.entries, filename: 'p.zip' });
           const buf = new Uint8Array(await out.blob.arrayBuffer());
           let bin = ''; for (const c of buf) bin += String.fromCharCode(c);
           return { b64: btoa(bin), skipped: res.skipped.length };
-        }""", [args.count, args.seed, args.maps])
+        }""", [args.count, args.seed, args.maps, args.type])
         browser.close()
     return res
 

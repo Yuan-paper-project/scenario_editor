@@ -12,9 +12,14 @@ Update it when you:
 - change a data flow, a serialization format, or the contract with `../llm-scenario-gen`;
 - add a frontend module, a global, or anything that must go in the `index.html` script order;
 - discover a non-obvious behaviour, silent coercion, or operational trap that cost you time — those are the highest-value entries here;
+- change anything a user sees or does in the editor — then update the **Handbuch** (`frontend/help.html`) in the same change. It is the user-facing counterpart of this file and goes stale the same way; see "Help" under Frontend conventions;
 - invalidate a line reference. Prefer `file.js:NN` for things that are hard to grep for; use a symbol name when the name itself is greppable, since names survive edits and line numbers do not.
 
 Keep the existing tone: terse, factual, and biased toward what is surprising rather than what is obvious from reading the code. Delete anything that is no longer true rather than appending a correction next to it.
+
+## Always test what you build
+
+**Every new feature or fix is verified before it is called done** — run the suites it touches against a live editor (see Verification; use a server without `--reload` when editing tests, below), and add or extend a Playwright suite that exercises the new behaviour through the real UI (real clicks and drags, not only `page.evaluate`). Check that a new check can actually fail: a check that passes with the feature switched off proves nothing (the junction tie-break check in `test_vehicle_snap_e2e.py` first passed trivially for exactly that reason). Report what was run and the pass counts; a failure is reported with its output, never glossed.
 
 ## Running
 
@@ -27,7 +32,7 @@ bash run.sh 8080     # custom port
 
 - Always start from the repo root — the app is imported as `backend.main`, so `uvicorn main:app` from inside `backend/` will not work. `run.sh` handles this with `cd "$(dirname "$0")"`.
 - **`.vscode/launch.json` passes no `--host`/`--port`**, so debugger runs land on uvicorn's default **8000** and bind loopback only, while `run.sh` uses **9090** on `0.0.0.0`. On a remote/SSH box the debugger's server is unreachable without a forwarded port — a hung browser tab usually means this, not a broken app.
-- **There is no linter and no CI**, and no unit tests. Automated coverage is `tests/test_normalization.py` (pure Python) plus twenty-one Playwright end-to-end suites that need a running editor, and `tests/run_carla_cases.py`, which needs a running CARLA (see Verification). Everything else is verified manually.
+- **There is no linter and no CI**, and no unit tests. Automated coverage is `tests/test_normalization.py` (pure Python) plus twenty-five Playwright end-to-end suites that need a running editor, and `tests/run_carla_cases.py`, which needs a running CARLA (see Verification). Everything else is verified manually.
 - All map geometry is parsed once at startup into `MAP_CACHE` (`preload_maps`, `backend/main.py`). Changes to `map_renderer.py` only take effect on restart — `--reload` does this automatically on save.
 - **`--reload` watches every `*.py` in the repo — `tests/` included.** Writing or editing a test file while a suite runs restarts the server under it: the in-flight request dies (seen as a batch-export download that never arrives), and on 2026-10-09 the restarted worker then wedged outright — ~90 connections unread in CLOSE-WAIT, no response, and after it was killed the reloader left a zombie and never respawned. Only a fresh `run.sh` recovers. When editing tests and running suites in parallel, run the suites against a server **without** `--reload` (`.venv/bin/uvicorn backend.main:app --port 9091`, `EDITOR_URL=http://localhost:9091`).
 - **`--reload` only watches this repo.** Editing `../llm-scenario-gen` — including `prop_catalog.yaml`, which `xml_builder` reads once at import — requires a **manual restart**. Frontend files are read per request, so a catalogue edit appears instantly in the UI while the backend still serves the old data. That asymmetry is easy to misread as a bug.
@@ -117,13 +122,24 @@ bare string, and the "registry" is the set of lookup tables it appears in.
 | Einsatzfahrzeuge | `police`, `ambulance`, `firetruck` |
 | Personen | `pedestrian`, `child`, `cyclist` |
 
-`ego` is its own type but is **always coerced to `car`** at export
-(`frontend/js/scenarioIO.js`, `buildScenarioParams`), and `_inject_ego` patches only `Vehicle/@name`
-— so ego geometry and `vehicleCategory` are frozen at car values regardless.
-`truck.ego_default` / `bus.ego_default` in the catalogue are unreachable.
-The type coercion is the *only* thing still special about the ego at export —
-it otherwise carries `initial_speed`/`events` exactly
-like an NPC (see "The event model" below).
+**The ego keeps `type: 'ego'` as its identity and carries its body in `vehicleType`**
+(any `vehicle`-group type; absent = `car`, so every older save is a car).
+`AppState.bodyType(actor)` resolves it — `vehicleType` for the ego, `type` for
+anyone else — and **every footprint lookup must go through it** (`_renderActor`,
+the sim record's `body`, `_egoAllowedSpeed`, the generator's `_footprint`,
+`bgTraffic.js`'s keep-out); a bare `ACTOR_SIZES[actor.type]` gets the ego's
+`'ego'` row, which is a car. Do not turn the ego's `type` into `truck`: ~20
+checks key on `type === 'ego'`. The ego stays blue whatever its type.
+`buildScenarioParams` exports `bodyType(ego)` as the ego's `type`;
+`_inject_ego` rewrites the template hero `<Vehicle>`'s `vehicleCategory`,
+Performance, BoundingBox and Axles from `_VEHICLE_PARAMS` (`_apply_vehicle_params`
+— a car writes exactly the template's values, so car exports are byte-identical),
+and the blueprint comes from the catalogue's `ego_default` where one exists
+(`car` → Tesla Model 3, `truck`, `bus`), else `npc_default`. The backend
+400s an ego type outside `_ROUTE_ACTOR_TYPES` (a walker or bike hero would be a
+`<Vehicle>` that cannot drive its own events) and reads a literal `'ego'` as `car`.
+`tests/test_ego_type_e2e.py` pins all of it. Apart from that the ego carries
+`initial_speed`/`events` exactly like an NPC (see "The event model" below).
 
 Adding one means editing both repos. Every lookup below **falls back silently**,
 so a missed table exports a clean, wrong file:
@@ -133,7 +149,7 @@ so a missed table exports a clean, wrong file:
 | `frontend/index.html` (`data-tool=`) | button + inline SVG + German label | unreachable from the UI |
 | `frontend/js/mapView.js` `ACTOR_COLORS` / `ACTOR_SIZES` | map marker | drawn as an orange 4.5 m car |
 | `frontend/js/mapView.js` `WALKER_TYPES` | circle vs rect+windshield | a child renders as a tiny car |
-| `frontend/js/objects.js` `ROAD_FACING_TYPES` | free placement facing the road | teleported to the nearest lane spawn point |
+| `frontend/js/objects.js` `ROAD_FACING_TYPES` | free placement facing the road, and no lane snap on drag | snapped onto the nearest lane centre and turned along it |
 | `frontend/js/app.js` `ACTOR_TYPE_GROUPS` | switchable-type group + German label | placeable, but the type picker never offers it |
 | `../llm-scenario-gen/config/vehicle_catalog.yaml` | archetype → blueprint, **and** the `vehicle_category:` entry | exports as `vehicle.lincoln.mkz_2017` / `vehicleCategory="car"` |
 | `xml_builder.py` `_VEHICLE_PARAMS` or `_PEDESTRIAN_PARAMS` | Performance + BoundingBox + Axles | car physics (69 m/s firetruck) |
@@ -164,10 +180,13 @@ The properties panel's `#actor-type-select` swaps the type of an already-placed
 NPC without touching its id, pose, events, behaviours or trigger settings —
 `AppState.switchActorType` (`frontend/js/app.js`). Swaps are confined to the
 group in `ACTOR_TYPE_GROUPS` (`vehicle` = Fahrzeuge + Einsatzfahrzeuge, `vru` =
-Personen); `ego` and `prop` are in no group and get no picker.
+Personen); `prop` is in no group and gets no picker. **The ego gets the
+`vehicle` group's picker**, but it writes `vehicleType` through
+`AppState.setEgoVehicleType` (one `updateById`, one undo step) rather than
+`switchActorType`, and does not move in any array.
 
 **The group boundary is load-bearing, not cosmetic.** Every `vehicle` type is
-snapped to a spawn point at placement while every `vru` type is in
+snapped to a lane centre at placement and on drag while every `vru` type is in
 `ROAD_FACING_TYPES` and placed freely, so a within-group swap can safely keep
 the existing pose — the swap deliberately does **not** re-snap or re-derive yaw.
 `assign_route` is likewise vehicle-only downstream (`_ROUTE_ACTION_TYPES`), so a
@@ -964,6 +983,7 @@ out; props carry a separate invisible hit circle, so clickability is not the blo
 - **Script order in `frontend/index.html` (the `<script>` block near the end) is load-bearing** — `app.js` first, dependents after; `propCatalog.js` must precede `toolbar.js`, which renders the prop tiles from it, and `aerialMap.js` must precede `mapView.js`, whose `renderMap` / `_applyTransform` call into it unguarded. `scenarioGenerator.js` goes after `simulate.js` (it calls `Simulate.routeGeometry` / `runHeadless`) and after `dropdown.js`, whose delegated `[data-menu-item]` close is what shuts its menu. `eventTimeline.js` goes after `simulate.js` (it inserts `#sim-lanes` into `#map-bottom-stack` above `#sim-controls` and appends its toggle to the bar). `bgTraffic.js` goes after both `simulate.js` and `scenarioIO.js` (it subscribes to `Simulate.onTime`; the export button calls `BgTraffic.exportBundle`). A new module must be added there or it never runs.
 - **The header's dropdowns share one mechanism.** `dropdown.js` (global `Dropdown`) owns toggle-on-button, close-on-outside-click and close-on-Esc; the Esc handler is on the **capture phase** and `stopPropagation`s, so closing a menu does not also cancel a path being drawn in `mapView`. A menu needs no module of its own — `dropdown.js` auto-binds any `[data-dropdown]` wrapper holding a `[data-dropdown-button]` and a `[data-dropdown-panel]` (this is how **Datei**, **Generieren** and **Umgebung** work), and a row marked `data-menu-item` closes the menu after its own handler runs. A menu with extra behaviour calls `Dropdown.bind()` itself instead; **Ebenen** does, and must therefore *not* also carry `data-dropdown` or it binds twice. Shared classes are `.menu` / `.menu-btn` / `.menu-panel` / `.menu-item`; `.menu-panel-right` right-aligns a panel near the window edge.
 - **The nine map-layer checkboxes live in the Ebenen dropdown** (`#layer-toggles` → `#layer-menu-btn` + `#layer-menu-panel`, "Ebenen N/9"; the pill counts checkboxes, so it needs no edit when one is added). `Tempolimits` (`#toggle-speeds`) is the only one that starts **unchecked**. Ownership is split: `layerMenu.js` owns only the count pill and `Alle`/`Keine`, while `mapView.js`'s `_setupLayerToggles` still binds each `#toggle-*` checkbox to its SVG layer by id, exactly as when they were inline in the header. Keep those ids: they are the contract between the two files (and `tests/test_props_e2e.py` asserts `#toggle-props` exists). `Alle`/`Keine` set `.checked` directly, which fires **no** event, so it dispatches a synthetic `change` per box — drop that and the pill updates while the map does not. `#layer-toggles` itself stays `hidden` until a map loads (`mapImport.js`, `_setupLayerToggles`).
+- **Help is three layers, and each has one job.** The header's **Hilfe** menu (`#help-menu`, auto-bound by `dropdown.js`) holds **Schnellstart** (`#btn-help`, the welcome modal, `welcome.js` — six one-line steps, kept under 140 words by `test_ego_type_e2e.py`; anything needing more than a line belongs in the Handbuch, which is how the old 267-word modal happened), **Handbuch** (`#btn-handbook` → `frontend/help.html` in a new tab) and **Tastenkürzel** (`#btn-shortcuts`, the `?` overlay). `help.html` is **standalone** — no editor script, its own inline CSS — so it can sit beside the editor and `Strg+F` searches it; it is served as `/static/help.html` like any frontend file, no restart. Every chapter is a `<section id>` listed in its `<nav>`. **`.help-link` „?" anchors** (`href="/static/help.html#<chapter>"`, `target="_blank"`) sit beside the Events header, in the Umgebung and Generieren menus, in the preview bar (in `simulate.js`'s `controlsHtml`) and in the Templates tab hint (`templates.js`); a link may not go *inside* a `<button>`, which is why the Events one is a sibling of the collapsible header, absolutely positioned. `test_help_e2e.py` resolves every `.help-link` against the page's real ids (a dead chapter would land silently at the top), and checks that every action button and trigger option the editor shows is named in the Handbuch — so renaming a German label fails there until the Handbuch says the same. **No `scroll-behavior: smooth`** on the page: arriving from a „?" it animated ~1.5 s across 4000 px before reaching the chapter.
 - **The Datei menu holds `#btn-save` / `#btn-load-input` / `#btn-import-map-input` / `#btn-export-route`, and their ids are unchanged** — `scenarioIO.js` binds them by id and does not care that they now live in a popup. **`#btn-new-scenario` („Neues Szenario (alles entfernen)") is its first row**: `AppState.clearScenario()` — ego, NPCs,
 props, signal Schaltungen and the generator recipe on the **current town only**, weather/time kept — as one undo step, after a confirm (Strg
 skips it; an empty scenario just toasts). `#btn-export` deliberately stays a top-level primary button: it is the app's goal, and `tests/_harness.py` clicks it directly and waits on its `.disabled`.
@@ -1000,6 +1020,7 @@ skips it; an empty scenario just toasts). `#btn-export` deliberately stays a top
 - **Every map light carries `signalId`, `roads` (the connectors it governs), its road-surface `z`, and `inCarla`.** The emitter places the signal event's trigger point at that `z` (`xml_builder._append_traffic_signal_event`); it used to write z = 0, and since the condition is a 3-D distance, a short radius at an elevated light (Town03 has them 8 m up) never fired. `inCarla` comes from `maps/<town>/carla_traffic_lights.json`, written by `tests/probe_carla_traffic_lights.py` against a live CARLA: **Town10HD's `traffic_light_10`/`_11` exist in the `.xodr` but not in CARLA** (nearest actor 10.8 m away; they also govern no road), and a signal event on one makes ScenarioRunner abort with "Unknown traffic light" — a light is addressed as `pos=x,y` and resolved within 2 m. Such a light is drawn as a ghost (`.not-in-carla`), its panel says so and disables „+ Schaltung", the export gate refuses it, and `validate_scenario_params` raises a 400 (`_reject_phantom_signals`, which reads the same file). Town01–07 match CARLA within 0.85 m. A town with no probe file is not checked.
 - **A traffic light is drawn as a signal head** (`_renderTrafficLight`): dark housing, three lamps, all dark until a signal event forces a state, then exactly the states its events set are lit, plus an accent outline. It used to be an 8 m red disc with a glow, red whether or not anything was configured. The invisible r = 2.4 m circle is its hit target.
 - **Drag and rotate are two disjoint zones on the marker, and the gap between them is real.** The body drags; a handle out past the nose rotates. `_buildYawArrow` (`mapView.js`) takes the caller's **own hit radius** — half the marker for an actor, the prop's invisible grab circle for a prop — and derives `arrowLen = bodyRadius + YAW_HANDLE_GAP + handleR`, so the invariant *(handle inner edge is outside the body, always)* holds by construction at any size rather than by a tuned constant. It did not before: `max(w, 4.5) * 0.8` with a fixed `r = 1.5` grab circle put the handle's inner edge at 2.1 m on a car whose half-length is 2.25 m, and swallowed a small oriented prop whole (arrow 1.6 m out, `r` 1.5, body grab circle 1.2) — that prop could not be dragged at all, every grab rotated it. Two more pieces of the same fix: the shaft is `.yaw-shaft`, `pointer-events: none`, drawn from the body edge instead of from the actor's *centre* where it hit-tested as "rotate" straight across the marker; and `objects.js`'s mousedown matches the single class `.yaw-handle` instead of the old four-way string match on `[class*="arrow"]` and `style === 'cursor:grab'`. **A new part of the arrow is decoration unless it carries `.yaw-handle`.** The mode guard (`activeTool`/`trajectoryMode`/`routeMode`) is now shared by both branches at the top of the handler — the rotate branch had none, so with a tool armed the handle rotated while the body selected.
+- **Vehicles snap to a lane centre when placed AND when dragged; Shift is free** (`_vehicleLaneSnap`, `objects.js`, exported as `ObjectsManager.vehicleLaneSnap`). Every non-walker, non-prop actor — the ego included — lands on the nearest `driving`/`parking` lane centre within 12 m (`VEHICLE_SNAP_MAX_DIST`), facing that lane's travel direction, so dragging a car across a two-way road turns it round. Placement used to snap to the nearest **spawn point** (a discrete sample up to 12 m off the click) and a drag did not snap at all, keeping the old yaw wherever the car was dropped. Shift-click places at the cursor but still along the nearest lane (`_roadAlongYaw`); Shift-drag moves freely and leaves the yaw alone. Beyond 12 m of any lane a drag is free too. Three details carry it: **overlapping junction connectors tie-break on the vehicle's current yaw** — among lanes within 1 m (`VEHICLE_SNAP_TIE_M`) of the nearest, the heading closest to `prevYaw` wins, so a drag through a junction stays on the connector it follows (Town01's overlap points: 67/67 vs 32/67 nearest-only); **the drag patch is always `{x, y, yaw}`**, snapped or not, since the undo key is id + patch keys and an alternating set splits one drag into several entries; and **the mouseup z comes from the snapped lane** (`_dragState.snap`), not `surfaceZFor`'s nearest-lane-in-2-D, which can pick the other level under an overpass. A segment-box pre-filter makes it ~0.4 ms per mousemove on Town03, so it runs every frame. Walkers, props and typed Spawnpunkt X/Y values are never snapped; a template with its own `placement` (`lane-center` over driving/parking/shoulder) keeps that rule.
 - **The drag cursor is a class on `<body>`, not `:active` on the element.** `.actor-group` is `move`, `.yaw-handle` is `grab`, and mousedown adds `body.dragging-actor` / `body.rotating` (removed on mouseup) which force `move` / `grabbing` document-wide. `:active` cannot work here: every `updateById` re-renders the whole actor layer (`AppState.on('actorUpdated')`), so the element the drag started on is detached within a frame — the same reason the trigger-point drag re-derives its z on mouseup rather than trusting the element. `.yaw-handle-ring` draws the grab circle's own boundary on `.yaw-arrow:hover`, so the zone is findable *before* committing to a drag.
 - **`AppState.cancelPlacement(extra)` is the one way to disarm placement**, with `AppState.placementActive` as its predicate. It clears all nine of `activeTool` / `pendingTemplate` / `pendingProp` / `pendingGenerate` / `trajectoryMode` / `activeTrajectoryId` / `routeMode` / `activeRouteId` / `activePathEventId`; three callers need exactly that set — Esc, the `r` ruler toggle (which passes its own `activeTool`) and pressing Play. It records no undo entry (`_isScenarioPatch` ignores editor-only keys), but clearing the draw flags is what fires `objects.js`'s `_discardIncompletePath`, so **a caller that then reads the actors must call it first** or it simulates/exports an event that no longer exists.
 - **The preview answers to `Leertaste` (Play/Pause) and `Esc` (Stop).** Both are one bubble-phase `window` keydown in `simulate.js`, deliberately without `stopPropagation`: `app.js`'s confirm dialog and `dropdown.js`'s menus handle Escape on the **capture** phase and stop it there, so they preempt this for free, and `mapView.js` — loaded first — runs its own Escape branch before it. Space yields to a control **only when the keyboard put focus there** (`UIUtils.keyboardFocused`), and otherwise `preventDefault()`s — which is what stops the browser turning the keydown into a click on the focused button. The blanket `button, [role="option"], a[href]` bail it replaced was a real bug: clicking leaves a button focused, so the last toolbar tile clicked ate every Space and re-armed/disarmed itself (crosshair flickering on and off) while the preview never started, and a clicked panel button or scene row did the same. **`:focus-visible` cannot be used for this** — it was tried first, and its heuristic is "was the most recent interaction a keypress", so pressing Space *itself* flips every control into focus-visible and the next press hands the key back to the button. `app.js` tracks focus modality directly instead: Tab/arrow/Home/End set it, any mousedown clears it. `properties.js`'s scene-row Space reads the same predicate and preempts this handler through `e.defaultPrevented`. `_startSimulation` calls `AppState.cancelPlacement()` on a cold start — `body.simulating` dims the *toolbar*, but the map SVG stays live for pan/zoom, so an armed tool used to survive Play, crosshair and all, and the first click on the animating map placed an actor.
@@ -1555,8 +1576,10 @@ phase 2 (this section) are both implemented; `set_distance` remains out of scope
 Header menu **Generieren** (`#gen-menu-btn`): one row per scenario type, `Beliebiger Typ`, a `Seed`
 field, and **Mehrere generieren …** (the batch dialog, `#gen-batch-overlay`). The goal is bulk test
 scenarios for a perception/planning or end-to-end stack, so **random means randomised parameters of
-a known conflict, never random actions**. Eight types: `lead_brake`, `cut_in`, `vru_crossing`,
-`junction_conflict`, `obstacle`, `oncoming_drift`, `cyclist_ahead`, `cut_out`. Plan and history:
+a known conflict, never random actions**. Twelve types: `lead_brake`, `slow_lead`, `cut_in`,
+`vru_crossing`, `turn_vru`, `junction_conflict`, `obstacle`, `oncoming_drift`, `cyclist_ahead`,
+`cut_out`, `pull_out`, `rear_approach` (the four added from the Chat2Scenic / Loop2Scenic benchmarks
+are in their own section below). Plan and history:
 <https://claude.ai/artifact/GReE895gaqTjULAjrzN8Dm>.
 
 `generate(type, seed, {near, overrides})` replaces the whole scenario as **one undo step**; `build(...)`
@@ -1672,6 +1695,74 @@ are not part of that — `nextId` keeps counting.
 - **The lead car's route runs 60 m past the ego's** (`egoEndD`), and **75% of full stops drive off
   again**: in CARLA a lead that stopped for good blocked the ego for the rest of the run (45 m
   driven, then the 60 s stop trigger).
+
+### Benchmark-driven types and pins (Chat2Scenic, Loop2Scenic)
+
+Added 2026-10-14 to cover the [Chat2Scenic](https://github.com/TUM-AVS/Chat2scenic) benchmark (123
+one-line regulatory descriptions, `Benchmark/*.txt`) and the Loop2Scenic one (`tests/bench/`).
+`tests/bench/chat2scenic_coverage.csv` classifies all 123 (68 buildable now, 36 before; 22 not
+expressible — loss of control, ego leaving a parking bay, door opening, ego lane changes delayed by
+oncoming traffic). `tests/test_benchmark_e2e.py` rebuilds 31 of them and **measures** the geometry
+(the ego turns left, the other car comes from the opposite side and goes straight) rather than reading
+back the generator's own labels.
+
+- **`junction_conflict` `layout` / `npc_from` pins**: `crossing`, `ego_left_oncoming` (LTAP/OD,
+  CCFtap), `npc_left_oncoming`, `ego_left_crossing`, `ego_right_crossing`, `other`; `npc_from` left /
+  right / oncoming. Classified from the connectors' own heading change (`_turnKind`, ±45°; **a left turn
+  is a negative yaw change**, the map is y-down) and the approach angle. Unpinned nothing is filtered and
+  no draw is added, so old seeds are unchanged; pinned, the corridor's junctions are filtered to ones
+  where the ego makes the needed turn.
+- **`slow_lead`** (CCRm): a lead at constant 0.2–0.55 × ego speed, optionally held `lateral_m` off the
+  lane centre by a `lane_offset` released at `distance_to_ego` (gap0 − 3). It has no ego-relative
+  release of its own, so `threats` points `assess` at its route event (t ≈ 0).
+- **`turn_vru`** (CPTA/CBTA): a crossing on the road the ego turns into. It shares `_vruCrossingAt` with
+  `vru_crossing` (draws in the old order, so `vru_crossing` seeds are unchanged). **On a painted
+  crosswalk the crossing follows the crosswalk's own axis** (`opts.pose`), not a line square to the
+  ego's path: moved 4.4 m off it, onto the exit road, a Town05 walker started against corner scenery
+  the `.xodr` does not have and never moved in CARLA (trajectory event RUNNING, speed 0 for 45 s).
+- **`pull_out`**: a car in a `parking` lane beside the ego's lane (`_parkingLanes`, junction
+  connectors' parking strips excluded) routes onto the ego's lane and on along its corridor, released by
+  a `set_speed` rate 3 on `distance_to_ego`. Its z is the parking lane's own. No site on
+  Town01/02/04/07/10HD.
+- **`rear_approach`** (UN R171 lane change into a car from behind): the ego's **own** events say it
+  changes lanes — `assign_route`, then a `lane_change` on `distance_to_point` naming itself — and a car
+  in the target lane, behind it at the ego's speed, surges (`set_speed` rate 3 to +3…8 m/s) when the
+  ego passes a point (`distance_to_point` naming the ego). Both start at the same speed, so the shared
+  spawn ramp keeps their gap. This needed `_build` to take `res.egoStartD` (the ego starts up its
+  corridor, the other car beside the corridor start), `res.egoEvents`, and `'$ego'` as a placeholder
+  `entity_ref` that `_build` resolves once the ego's id exists. The run ends soon after the change,
+  since the ego then has nothing left to do.
+- **`obstacle`**: variants `stationary_vru` (pedestrian/child/cyclist standing with its back to the
+  ego, `events: []`) and `queue` (a motorcycle, then a car 6–10 m on); pins `vehicle_type` (motorcycle
+  allowed), `lateral_m`, `facing` (`oncoming` = a car facing the ego) and `site` (`curve` = more than
+  12° of heading change over 30 m, `_siteKind`). The new variants take their weight out of the old
+  `breakdown` share, so cargo/work-zone seeds are unchanged.
+- **`oncoming_drift` `cause`**: `parked` puts a car at the kerb of the drifting car's own lane, pushed
+  out just far enough that the swing clears it by 0.4 m (or `none` when that would put it off the lane).
+  Drawn last in the attempt, so all earlier draws are unchanged.
+- **`_routeFollowsCorridor` now also rejects a route more than 40 m longer than its corridor stretch.**
+  It only checked that the corridor lies on the route, not the reverse, so a last waypoint just short
+  of a junction could make the router drive round the block (Town03 `slow_lead` seed 2: a 1 km route
+  for a ~300 m corridor) and the loop ran past other actors' route ends. Changed a few old seeds.
+- **The recipe panel hides parameters a build never used** (unless pinned): a `<select>` with no
+  matching option shows its first option as if it had been chosen.
+- **Menu labels must not contain each other**: tests click rows with Playwright `has_text`, which is a
+  substring match — „Abbiegen: querende Person" broke every click on „Querende Person".
+- **Measured in CARLA** (2026-10-14, `run_generated_carla.py`, which now takes `town:type:seed@{json}`
+  pins): left turn across oncoming (Town03) — ego braked to 1.8 m/s at 3.3 m; turn crossing on the
+  crosswalk (Town05) — walker stopped in the lane, ego came to 0.73 m at 4.5 m/s; pull-out (Town03) —
+  ego braked 8.5 → 4.3 m/s and followed; slow motorcycle 1 m off centre (Town04) — ego followed;
+  drift around a parked car (Town03) — ego braked to 1.3 m/s at 2.6 m; standing pedestrian (Town03) —
+  ego stopped 7.1 m short and stood to the 60 s limit (a blocker, like `vehicle-parked`); rear approach
+  (Town04, Town03) — side contact at 1.8 / 2.1 m centre distance during the change. Second round:
+  `npc_left_oncoming` (Town05) — ego braked to 5.2 m/s at 2.8 m; `ego_left_crossing` from the left
+  (Town05) — 1.3 m/s at 2.9 m; `ego_right_crossing` (Town07) — a near miss at 5.5 m, ego unbraked (the
+  preview predicted 6.3 m); `queue` (Town04) and an oncoming-facing car in a curve (Town03) — ego stopped
+  10.3 / 4.8 m short and stood to 60 s; `turn_vru` cyclist (Town05) — ego braked to 0.2 m/s at 3.9 m;
+  `rear_approach` motorcycle (Town06) — contact at 1.7 m; `pull_out` (Town05) — ego slowed to 6.8 m/s and
+  followed at 10 m. **Spawns**: `probe_generated_spawns.py --type <t>` (new flag) over 30 per type on all
+  eight towns — 141/141 built scenarios spawn completely (`pull_out` builds 7 of 30, `rear_approach` 18:
+  the towns without parking lanes / lane pairs).
 
 ### „Konflikt hier erzeugen": a generator type built at a map click
 
@@ -1824,9 +1915,16 @@ its error, not a lost batch.
 - **Weather is a preset, not independent sliders** (`WEATHER_PRESETS`: klar, bewoelkt, regen,
   starkregen, nebel, nass) — rain without a wet road is not a condition anyone drives in. Snow and
   dust are left out (CARLA 0.9.15 renders neither). Times: daytime, morning, dusk, nighttime.
-- **`Alle CARLA-Karten`** switches maps through the real `#map-select` (so the lane graph loads the
-  normal way), grouped so each town loads once — Town01–07 and Town10HD, the towns run.sh's CARLA
-  build ships. 48 scenarios over all eight take ~13 s; 20 on one map ~0.7 s.
+- **`Typ` and `Karten` are checkbox dropdowns** (`_multiSelect` in `scenarioGenerator.js`, the Ebenen
+  menu's classes, `Dropdown.bind`): any subset of types, any subset of `#map-select`'s towns (`CARLA`
+  picks Town01–07 + Town10HD, the towns run.sh's CARLA build ships; others are marked „nicht in CARLA").
+  Defaults: every type, the current map; the selection persists between openings. `generateBatch` takes
+  `typeKeys` (array) and `maps` as an array — `'current'`/`'carla'` and a single `typeKey` still work for
+  the tests and `probe_generated_spawns.py`. With a subset, a type a map cannot host falls back to
+  another **selected** type, unbalanced picks come from the subset (`build` accepts an array of keys),
+  and one selected type has no fallback. The dialog's Esc handler stands down while a dropdown is open.
+  Maps are switched through the real `#map-select` (so the lane graph loads the normal way), grouped
+  so each town loads once. 48 scenarios over all eight take ~13 s; 20 on one map ~0.7 s.
 
 ### What `follow_trajectory`'s speed becomes in CARLA
 
@@ -2133,7 +2231,7 @@ bash run.sh 9090                 # terminal 1
 bash tests/run_tests.sh          # terminal 2 (EDITOR_URL overrides the target)
 ```
 
-That runs `test_normalization.py` (182 checks, no browser or server needed — the last ten build a real `.xosc` through the sibling repo to pin cross-actor event-reference resolution, `startTransition`, the hero `SpeedCondition`, the `consider_*` properties and a signal trigger at the pole's road height), then `compare_xodr_lane_graph.py` (also no browser/server/CARLA — validates `backend/lane_graph_builder.py` against the locally probed graphs (gitignored; towns without one are skipped)), then the twenty-one Playwright suites: props (72), prop yaw (23), templates (296), events (82), ego events (75), triggers (47), signal panel (31), actor types (260, grows with the catalogue), elevation (33), route fidelity (13: the original reversal case plus three routes checked against CARLA), undo (44), waypoints (67), generator (~1420: eight types × three seeds × three towns, plus batch, coverage and dialog checks), preview timeline (36: scrubbing, event ticks, keys, Stop/undo, the overpass layer on Town04/05/01, and the bar at 1024–1600 px), generate here (61), recipe (63), user templates (25), event timeline (17), preview lock (62: trajectory speed, Neues Szenario, per-town scenarios, preview view-only, Laden during a preview, Ablauf playhead and card highlight), actions ext (60: hidden `set_distance`, factor/continuous/self-relative speed, Rückwärts, lane-offset presets and Hin & zurück, Abstand zu Akteur, `relative_speed`, acceleration limits in export and preview, the goal latch), background traffic (34: off by default, the bubble around the ego (average count, radius, entry at its edge), Umkreis 0 = whole map, the timed keep-out, determinism and regeneration, exact drawing, the zip export, save/load). All but the first two drive a real browser against a real server and a real export. **Restart the editor first if you changed `../llm-scenario-gen`** — otherwise the frontend shows new catalogue data while the backend exports the old, which looks like a test bug and is not one.
+That runs `test_normalization.py` (182 checks, no browser or server needed — the last ten build a real `.xosc` through the sibling repo to pin cross-actor event-reference resolution, `startTransition`, the hero `SpeedCondition`, the `consider_*` properties and a signal trigger at the pole's road height), then `compare_xodr_lane_graph.py` (also no browser/server/CARLA — validates `backend/lane_graph_builder.py` against the locally probed graphs (gitignored; towns without one are skipped)), then the twenty-five Playwright suites: props (72), prop yaw (23), templates (296), events (82), ego events (75), triggers (47), signal panel (31), actor types (260, grows with the catalogue), elevation (33), route fidelity (13: the original reversal case plus three routes checked against CARLA), undo (44), waypoints (67), generator (~2000: twelve types × three seeds × three towns, plus batch, coverage and dialog checks), preview timeline (36: scrubbing, event ticks, keys, Stop/undo, the overpass layer on Town04/05/01, and the bar at 1024–1600 px), generate here (61), recipe (63), user templates (25), event timeline (17), preview lock (62: trajectory speed, Neues Szenario, per-town scenarios, preview view-only, Laden during a preview, Ablauf playhead and card highlight), actions ext (60: hidden `set_distance`, factor/continuous/self-relative speed, Rückwärts, lane-offset presets and Hin & zurück, Abstand zu Akteur, `relative_speed`, acceleration limits in export and preview, the goal latch), background traffic (34: off by default, the bubble around the ego (average count, radius, entry at its edge), Umkreis 0 = whole map, the timed keep-out, determinism and regeneration, exact drawing, the zip export, save/load), vehicle snap (22: lane-centre placement and drag with lane yaw, Shift = free, one undo step, walkers unsnapped, the junction heading tie-break), ego type (58: the ego's vehicle-type picker through to marker, export payload and hero `<Vehicle>` for all nine types, undo, save/load, backend 400s, and the compact welcome modal), help (40: the Hilfe menu, the Handbuch's chapters and contents, every „?" link resolving to a chapter with a negative control, every UI action/trigger label named in the Handbuch, anchor landing, and that the links leave the preview bar and Events header intact), benchmark (~260: 31 Chat2Scenic/Loop2Scenic descriptions rebuilt with pinned generator types and their geometry measured, the new menu rows, layout/variant/site pins through the recipe panel, a negative control). All but the first two drive a real browser against a real server and a real export. **Restart the editor first if you changed `../llm-scenario-gen`** — otherwise the frontend shows new catalogue data while the backend exports the old, which looks like a test bug and is not one.
 
 `test_ego_events_e2e.py` is kept separate from `test_events_e2e.py` rather than folded in: the older suite's `EGO` fixture and every one of its assertions assume an inert ego (no events), which was true before the ego became a controllable actor and is the entire premise the new suite tests against.
 

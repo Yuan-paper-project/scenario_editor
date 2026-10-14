@@ -745,6 +745,14 @@ def validate_scenario_params(params: dict) -> dict:
         raise ValueError("Scenario must have an ego vehicle")
     ego = params["ego"]
     ego.setdefault("type", "car")
+    # The editor's internal 'ego' type means the default car. Anything else must
+    # be a routable vehicle: the hero is always a <Vehicle> under
+    # simple_vehicle_control, so a walker (or a bike, which the route planner
+    # will not route) would export a clean file that cannot drive its own events.
+    if ego["type"] in (None, "", "ego"):
+        ego["type"] = "car"
+    if ego["type"] not in _ROUTE_ACTOR_TYPES:
+        raise ValueError(f"ego type '{ego['type']}' is not a vehicle type")
     ego.setdefault("z", 0.2)
     ego.setdefault("yaw", 0.0)
     if "x" not in ego or "y" not in ego:
