@@ -6,26 +6,7 @@
 (() => {
   'use strict';
 
-  // Every generator file reads what earlier ones defined through `shared` and
-  // adds its own with define(). Reading a name that is not defined yet throws,
-  // so a file loaded before the one it depends on fails at load, not later.
-  const _shared = {};
-  window.GeneratorCore = {
-    define(names) {
-      for (const [k, v] of Object.entries(names)) {
-        if (Object.hasOwn(_shared, k)) throw new Error(`GeneratorCore: ${k} defined twice`);
-        _shared[k] = v;
-      }
-    },
-    shared: new Proxy(_shared, {
-      get(target, k) {
-        if (!Object.hasOwn(target, k)) {
-          throw new Error(`GeneratorCore: ${String(k)} is not defined yet (check the script order in index.html)`);
-        }
-        return target[k];
-      },
-    }),
-  };
+  window.GeneratorCore = UIUtils.sharedScope('GeneratorCore');
 
   // ── Physical constants the timing is solved against ──────────────────────────
 
