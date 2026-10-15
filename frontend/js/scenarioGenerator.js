@@ -273,20 +273,26 @@
 
   // ── "Generate here" focus ────────────────────────────────────────────────────
 
-  // Set by build() for one call when the user picked a spot on the map:
-  // {x, y, radius, lanes: [{L, s}]}. Every corridor then runs through one of
-  // `lanes`, and a candidate is kept only when its conflict happens within
-  // `radius` of the click (assess's `at`).
-  let _focus = null;
-  // Set by build() for one call: {key: value} the user pinned in the recipe
-  // panel (already validated against PARAMS by _cleanOverrides). _p() hands
-  // a pinned value back in place of the random draw.
-  let _overrides = null;
+  // Mutable generator state, in one object so every generator file sees the
+  // same values.
+  const _ctx = {
+    // Set by build() for one call when the user picked a spot on the map:
+    // {x, y, radius, lanes: [{L, s}]}. Every corridor then runs through one of
+    // `lanes`, and a candidate is kept only when its conflict happens within
+    // `radius` of the click (assess's `at`).
+    focus: null,
+    // Set by build() for one call: {key: value} the user pinned in the recipe
+    // panel (already validated against PARAMS by _cleanOverrides). _p() hands
+    // a pinned value back in place of the random draw.
+    overrides: null,
+    // The info of the last scenario generate() loaded (ScenarioGenerator.lastInfo).
+    lastInfo: null,
+  };
 
   /** The random `drawn` value, unless the user pinned `key`. The draw is made
    * either way, so pinning one parameter does not shift every later draw. */
   function _p(key, drawn) {
-    return _overrides && Object.hasOwn(_overrides, key) ? _overrides[key] : drawn;
+    return _ctx.overrides && Object.hasOwn(_ctx.overrides, key) ? _ctx.overrides[key] : drawn;
   }
   const FOCUS_RADIUS_M = 40;
   const FOCUS_LANE_REACH_M = [6, 12]; // driving lanes this close to the click; a wider retry from a kerb
@@ -308,7 +314,7 @@
   /** A corridor start `back` metres upstream of a focus lane, and the lane
    * keys from there to that lane — the path _buildCorridor is forced along. */
   function _focusStart(rng, net, targetLen) {
-    const { L: F, s: sF } = rng.pick(_focus.lanes);
+    const { L: F, s: sF } = rng.pick(_ctx.focus.lanes);
     // Far enough back for a run-up and the conflict's own lead-in, short
     // enough that the corridor still runs on well past the click.
     const back = rng.range(50, Math.max(60, Math.min(220, targetLen - 60)));
@@ -354,7 +360,7 @@
     // type's own start lane (a multi-lane or two-way stretch) is a bias for a
     // random draw, not a requirement — its site search runs on the corridor.
     let forced = null;
-    if (_focus) {
+    if (_ctx.focus) {
       const start = _focusStart(rng, net, targetLen);
       if (!start) return null;
       ({ L, s } = start);
@@ -2771,8 +2777,6 @@
     return (h ^ (h >>> 16)) >>> 0 || 1;
   }
 
-  let _lastInfo = null;
-
   function _randomSeed() {
     return Math.floor(Math.random() * 2 ** 31) + 1;
   }
@@ -2794,14 +2798,14 @@
     if (opts.near) {
       const lanes = _focusLanes(net, opts.near.x, opts.near.y);
       if (!lanes.length) return null;
-      _focus = { x: opts.near.x, y: opts.near.y, radius: opts.near.radius ?? FOCUS_RADIUS_M, lanes };
+      _ctx.focus = { x: opts.near.x, y: opts.near.y, radius: opts.near.radius ?? FOCUS_RADIUS_M, lanes };
     }
-    _overrides = _cleanOverrides(typeKey, opts.overrides);
+    _ctx.overrides = _cleanOverrides(typeKey, opts.overrides);
     try {
       return _build(net, typeKey, seed, opts);
     } finally {
-      _focus = null;
-      _overrides = null;
+      _ctx.focus = null;
+      _ctx.overrides = null;
     }
   }
 
@@ -2812,7 +2816,7 @@
 
     // A focus throws away every candidate whose conflict lands elsewhere, so
     // it gets more tries; each costs one headless run (~20 ms) once built.
-    const maxAttempts = MAX_ATTEMPTS + (_focus ? 150 : 0);
+    const maxAttempts = MAX_ATTEMPTS + (_ctx.focus ? 150 : 0);
     // Every attempt draws from its OWN generator, seeded from (seed, attempt):
     // attempt k is then the same corridor and draws whatever happened in
     // attempts 0..k-1. That is what lets the recipe panel rebuild a scenario
@@ -2874,10 +2878,13 @@
       // Pinned values are the user's call: build what they give rather than
       // moving on to another site.
       if (criticality.verdict === 'no_run') continue;
-      if (criticality.verdict !== 'ok' && !_overrides) continue;
+      if (criticality.verdict !== 'ok' && !_ctx.overrides) continue;
       if (
-        _focus &&
-        !(criticality.at && Math.hypot(criticality.at.x - _focus.x, criticality.at.y - _focus.y) <= _focus.radius)
+        _ctx.focus &&
+        !(
+          criticality.at &&
+          Math.hypot(criticality.at.x - _ctx.focus.x, criticality.at.y - _ctx.focus.y) <= _ctx.focus.radius
+        )
       )
         continue;
 
@@ -2894,8 +2901,8 @@
         params: res.params,
       };
       info.forced_green_lights = trafficSignals.length;
-      if (_focus) info.near = { x: r1(_focus.x), y: r1(_focus.y) };
-      if (_overrides) info.overrides = { ..._overrides };
+      if (_ctx.focus) info.near = { x: r1(_ctx.focus.x), y: r1(_ctx.focus.y) };
+      if (_ctx.overrides) info.overrides = { ..._ctx.overrides };
       return { ego, npcs: res.npcs, props: res.props, trafficSignals, info };
     }
     return null;
@@ -2969,7 +2976,7 @@
     if (problems.length) Toast.warn(`Generiertes Szenario hat Probleme: ${problems.join('; ')}`, 8000);
     else if (!opts.quiet) Toast.success(`${result.info.label} generiert · Seed ${result.info.seed}`);
 
-    _lastInfo = result.info;
+    _ctx.lastInfo = result.info;
     AppState.emit('scenarioGenerated', result.info);
     return result.info;
   }
@@ -3949,7 +3956,7 @@
       return coveragePlan(n, dims, new Rng(seed));
     },
     get lastInfo() {
-      return _lastInfo;
+      return _ctx.lastInfo;
     },
   };
 })();
