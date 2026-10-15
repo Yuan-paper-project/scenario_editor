@@ -51,7 +51,7 @@ scenario_editor/
 │       ├── trafficSignals.js Traffic-light selection/event state helpers
 │       ├── weather.js     Weather and time controls
 │       ├── scenarioIO.js  Save/load/export frontend logic
-│       ├── simulate.js    Visual path preview
+│       ├── simCore.js … simulate.js  Visual path preview (nine sim*.js files)
 │       └── welcome.js     Welcome/help modal
 ├── maps/                  Bundled CARLA `.xodr` maps and previews
 ├── example/               Example scenario files

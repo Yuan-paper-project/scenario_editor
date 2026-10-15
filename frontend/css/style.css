@@ -3141,7 +3141,7 @@ button.scene-section-head:hover {
 }
 
 /* ── Simulation controls ─────────────────────────────────── */
-/* Two rows in a FIXED-width card (simulate.js): transport, tempo + toggles
+/* Two rows in a FIXED-width card (simTimeline.js): transport, tempo + toggles
    on top, scrub bar + time below. Nothing in it may change width when a
    preview starts or its state changes — the timeline would move out from
    under a cursor about to scrub it. So the card has a width, the play/pause

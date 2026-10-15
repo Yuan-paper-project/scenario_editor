@@ -675,7 +675,7 @@ with sync_playwright() as p:
     page.wait_for_timeout(200)
     centre_y = page.evaluate("AppState.findById('obj-2').y")
     # The car pulls up to 8 m/s at 3 m/s² and the offset eases in per metre
-    # driven (simulate.js _advanceLaneOffset), so both are sampled well after
+    # driven (simMotion.js _advanceLaneOffset), so both are sampled well after
     # their events: left at ~3.6 s, right at ~6 s.
     page.click("#sim-play")
     page.wait_for_timeout(3600)

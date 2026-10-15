@@ -42,7 +42,7 @@ scenario_editor/
 │       ├── properties.js  Right-panel property editor
 │       ├── weather.js     Weather & time-of-day controls
 │       ├── scenarioIO.js  Save / Load / Export logic
-│       ├── simulate.js    Trajectory preview animation
+│       ├── simCore.js … simulate.js  Trajectory preview animation (nine sim*.js files)
 │       └── welcome.js     Welcome modal + help button
 ├── generate_pptx.py       Generates the project presentation as .pptx
 └── example/               Sample scenario files (Town01)

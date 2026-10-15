@@ -20,7 +20,7 @@
 
   // ── Event normalisation mirror (backend/scenario_io.py) ─────────────────────
   //
-  // simulate.js reads AppState's raw, unexported events — but three rewrites
+  // The preview reads AppState's raw, unexported events — but three rewrites
   // happen only at export time and change WHICH TRIGGER GOVERNS AN EVENT, so a
   // preview that skips them predicts a different scenario than export
   // produces. Order matters and matches _normalize_actor exactly: per-event

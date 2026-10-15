@@ -10,7 +10,7 @@
 
   const SVG_NS = 'http://www.w3.org/2000/svg';
 
-  // ── Playback state ───────────────────────────────────────────────────────────
+  // ── Run state ────────────────────────────────────────────────────────────────
 
   // Run state read by every part of the preview — one shared object rather than
   // reassigned lets, so the stepping, the timeline and playback all see one copy.
