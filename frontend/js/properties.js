@@ -168,7 +168,7 @@
       </div>`;
   }
 
-  // Mirrors mapView.js WALKER_TYPES — only to pick a round swatch over a square
+  // Mirrors mapMarkers.js WALKER_TYPES — only to pick a round swatch over a square
   // one, so a drift here is cosmetic rather than the usual two-tables trap.
   function _isWalker(type) {
     return type === 'pedestrian' || type === 'child' || type === 'cyclist';

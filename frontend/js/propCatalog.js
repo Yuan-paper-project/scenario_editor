@@ -13,7 +13,7 @@
  *          with in a toolbar.
  *   plan — top-down footprint, used for the map marker. The map is a plan
  *          view throughout (roads, lane markings, and vehicle footprints in
- *          mapView._renderActor), and props rotate with yaw the same way
+ *          mapMarkers._renderActor), and props rotate with yaw the same way
  *          actors do, so their marker has to be plan view too.
  *
  * The data is in propData.js, the drawings in propSideShapes.js and propPlanShapes.js.
@@ -223,7 +223,7 @@
       };
       search.addEventListener('input', applyFilter);
       // Esc clears the field and stops there: without stopPropagation it would
-      // also reach mapView's Esc and disarm the prop tool the user just picked.
+      // also reach mapKeys.js's Esc and disarm the prop tool the user just picked.
       search.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && search.value) {
           search.value = '';

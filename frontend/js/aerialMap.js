@@ -21,8 +21,9 @@
               circles are hidden, everything scenario-related stays
      both   — image with the lane outlines drawn over it, see-through
 
-   mapView.js loads after this file and calls AerialMap.load(town) from
-   renderMap and AerialMap.update() from _applyTransform.
+   The map files load after this one and call AerialMap.load(town) from
+   renderMap (mapRender.js) and AerialMap.update() from _applyTransform
+   (mapCore.js).
    ══════════════════════════════════════════════════════════════════ */
 (() => {
   'use strict';

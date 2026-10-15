@@ -2049,7 +2049,7 @@
    *
    * Bubble phase, and no stopPropagation: dialogs.js's confirm dialog and
    * dropdown.js's menus both handle Escape on the CAPTURE phase and stop it
-   * there, so they preempt this for free. mapView.js is loaded first and runs
+   * there, so they preempt this for free. mapKeys.js is loaded first and runs
    * its own Escape branch before this one — harmless during a run, since
    * _startSimulation has already cleared everything it would clear.
    */
@@ -2162,7 +2162,7 @@
    * ChangeActorWaypoints filters it. Returns null when the town has no lane
    * graph or the very first lane lookup fails.
    *
-   * `rawPoints` defaults to the event's own waypoints. mapView.js draws this
+   * `rawPoints` defaults to the event's own waypoints. mapPaths.js draws this
    * instead of the straight chords between the clicks — the clicks are where
    * the route must PASS, not the shape it takes to get there, and a straight
    * line between two of them crosses buildings and oncoming lanes it will
@@ -2191,7 +2191,7 @@
   /**
    * The pose an actor had before the preview picked it up, or null when no
    * preview is running (in which case the actor's own pose IS the authored
-   * one). mapView.js needs it for the same reason routeGeometry does: its
+   * one). mapPaths.js needs it for the same reason routeGeometry does: its
    * cache signature keys on the pose, and a live pose would invalidate the
    * entry on every tick.
    */

@@ -4,7 +4,7 @@
    maps/special_buildings.csv (bus stops, parks, shops, …) is bundled with
    the repo and served as JSON by GET /api/special_buildings. This module
    does nothing but fetch it once at page load and hand it to AppState;
-   mapView.js owns the drawing (layer-buildings) and the "Sonderorte"
+   mapFeatures.js owns the drawing (layer-buildings) and the "Sonderorte"
    checkbox in the Ebenen menu.
 
    The file holds every town's rows at once and is small (~130), so it is

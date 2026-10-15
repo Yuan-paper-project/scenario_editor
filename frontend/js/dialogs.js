@@ -74,7 +74,7 @@
   _confirmOk.addEventListener('click', () => _closeConfirm(true));
 
   // Enter confirms, Escape cancels — from anywhere, not only the focused
-  // button. CAPTURE phase and stopPropagation: mapView's own Escape handler
+  // button. CAPTURE phase and stopPropagation: mapKeys.js's own Escape handler
   // would otherwise also cancel the tool or the path being drawn *behind* the
   // dialog, and Enter would reach the finish-path shortcut.
   window.addEventListener(

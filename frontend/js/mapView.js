@@ -1,5 +1,8 @@
 /**
- * mapView.js — SVG map renderer with pan/zoom and coordinate conversion.
+ * mapView.js — the public MapView object, renderAllActors and the map's AppState subscriptions.
+ *
+ * The map view is eleven files sharing MapCore (mapCore.js … mapView.js, in
+ * index.html's script order); this one loads last and is the only API.
  *
  * Coordinate system:
  *   The SVG viewBox is set to the CARLA bounding box (metres).

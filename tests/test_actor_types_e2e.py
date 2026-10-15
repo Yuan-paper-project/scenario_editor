@@ -173,7 +173,7 @@ EXPECTED = {
     },
 }
 
-# mapView.js ACTOR_SIZES and xml_builder._VEHICLE_PARAMS are two independent
+# mapMarkers.js ACTOR_SIZES and xml_builder._VEHICLE_PARAMS are two independent
 # hand-kept tables, and for every pre-existing type except `car` they disagree:
 # truck 2.6 vs 2.5 wide, bus 9.0 vs 10.0 long, motorcycle 1.0 vs 0.9 wide,
 # cyclist 2.0x0.8 vs 1.7x0.6. Grandfathered rather than fixed — changing them
@@ -189,7 +189,7 @@ FOOTPRINT_DRIFT = {"truck", "bus", "motorcycle", "cyclist"}
 # road-facing one turns to look at the lane, roughly perpendicular to it.
 ROAD_FACING = {"pedestrian", "child", "cyclist"}
 
-# Emitted as <Pedestrian>. mapView.js WALKER_TYPES and xml_builder's
+# Emitted as <Pedestrian>. mapMarkers.js WALKER_TYPES and xml_builder's
 # _PEDESTRIAN_TYPES are two copies of this split; the marker-shape check and
 # the element check below assert they agree.
 WALKERS = {"pedestrian", "child"}
@@ -306,7 +306,7 @@ with sync_playwright() as p:
         )
 
     # ── Placement and map rendering ──────────────────────────────────────────
-    # ACTOR_COLORS and ACTOR_SIZES are module-local to mapView.js, so they are
+    # ACTOR_COLORS and ACTOR_SIZES are module-local to mapMarkers.js, so they are
     # probed through what they actually drive — the rendered marker — rather
     # than read directly.
     # Through the real tool button and a real map click, so this covers

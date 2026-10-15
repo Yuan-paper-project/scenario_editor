@@ -64,7 +64,7 @@ LANE_COLORS: dict[str, str] = {
     "shoulder": "#555555",
     "parking": "#34486a",  # blue tint, like a painted parking zone
     "biking": "#4a6a4a",
-    # Not drivable: drawn concrete/kerb-toned and hatched by mapView.js rather
+    # Not drivable: drawn concrete/kerb-toned and hatched by mapRoadDetail.js rather
     # than in asphalt, or Town03's tunnel median reads as a lane.
     "median": "#8f8a7e",  # raised concrete separator
     "border": "#6b6862",

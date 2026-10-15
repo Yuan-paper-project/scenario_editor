@@ -40,7 +40,7 @@
     });
 
     // Capture phase + stopPropagation: Esc closes the topmost thing, so it must
-    // not also cancel a path being drawn (mapView's own document keydown).
+    // not also cancel a path being drawn (mapKeys.js's own keydown).
     document.addEventListener(
       'keydown',
       (e) => {

@@ -471,12 +471,12 @@
     if (AppState.activeTool || AppState.trajectoryMode || AppState.routeMode) return;
     // Nor during a preview: it writes every actor's pose each tick, and Stop
     // puts the authored poses back — a drag here would be overwritten either
-    // way. mapView pans instead (see its pan-exclusion list).
+    // way. mapInput.js pans instead (see its pan-exclusion list).
     if (window.Simulate?.running) return;
 
     /* A path waypoint of the SELECTED actor: mark it, and drag it.
      *
-     * Only the selected actor's waypoints are hit-testable at all (mapView
+     * Only the selected actor's waypoints are hit-testable at all (mapPaths.js
      * renders everyone else's with pointer-events: none), so this branch can
      * never steal a mousedown aimed at some other actor's path drawn across
      * the same stretch of road. The mark is set here rather than on click so
@@ -502,7 +502,7 @@
      *
      * One class, no string-matching on `style` or `class*="arrow"` as this used
      * to do. `.yaw-handle` is placed a real gap outside the body's own hit
-     * target (mapView.js _buildYawArrow), so this branch and the body branch
+     * target (mapMarkers.js _buildYawArrow), so this branch and the body branch
      * below can never both match the same pixel.
      */
     const handle = e.target.closest('.yaw-handle');
@@ -655,7 +655,7 @@
   // What the banner is currently announcing, so leaving a mode can be detected
   // and acted on. A path event that never got 2 waypoints is discarded here
   // rather than in _finishPathMode(): Esc clears the mode flags directly
-  // (mapView.js), so hanging the check off the *button* would miss it.
+  // (mapKeys.js), so hanging the check off the *button* would miss it.
   let _drawContext = null; // { actorId, eventId, type }
 
   AppState.on('change', (patch) => {
@@ -742,8 +742,8 @@
   });
 
   // Enter finishes a path, so drawing one never needs the mouse to leave the
-  // map: click the waypoints, press Enter. Esc still cancels (mapView.js).
-  // Bound here rather than in mapView's keydown because _finishPathMode and the
+  // map: click the waypoints, press Enter. Esc still cancels (mapKeys.js).
+  // Bound here rather than in mapKeys.js's keydown because _finishPathMode and the
   // banner both live in this module.
   window.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
@@ -820,7 +820,7 @@
     //
     // On its own that seed is what used to make a forgotten path event silently
     // wrong: one waypoint is below the 2 the emitter needs and draws nothing on
-    // the map (mapView skips a path under 2 points), while the card claimed
+    // the map (mapPaths.js skips a path under 2 points), while the card claimed
     // "Pfad gezeichnet". The seed is fine; leaving it *alone* is what is not, so
     // the event is discarded on leaving draw mode instead
     // (_discardIncompletePath), and the card counts against 2 rather than 0.
@@ -947,7 +947,7 @@
 
   /**
    * Move an existing trigger point to (wx, wy) — the end of a marker drag on
-   * the map (mapView.js). The z is re-derived from the elevation profile here
+   * the map (mapTriggerPoints.js). The z is re-derived from the elevation profile here
    * and not on every mousemove, for the same reason an actor's is: the lookup
    * is a linear scan over every lane segment and z has no effect in a top-down
    * view.

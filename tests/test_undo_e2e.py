@@ -53,7 +53,7 @@ def blur(page):
 
 def undo(page):
     # Ctrl+Z is deliberately ignored while a field has focus — the browser's own
-    # text undo owns the keystroke there (mapView.js `inInput`). Step off the
+    # text undo owns the keystroke there (mapKeys.js `inInput`). Step off the
     # field first, as a user reaching for the shortcut would.
     blur(page)
     page.keyboard.press("Control+z")

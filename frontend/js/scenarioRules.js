@@ -40,7 +40,7 @@
    * by the route planner and leaves 'cyclist' out, but a cyclist aliases to
    * 'bike' and is a <Vehicle> on simple_vehicle_control — it honours an offset
    * perfectly well. The rule is exactly "is this a <Pedestrian>", so it is
-   * stated as the exclusion it is. Same split as mapView.js's WALKER_TYPES and
+   * stated as the exclusion it is. Same split as mapMarkers.js's WALKER_TYPES and
    * xml_builder._PEDESTRIAN_TYPES; keep all three in step. */
   const WALKER_ACTION_TYPES = new Set(['pedestrian', 'child']);
 

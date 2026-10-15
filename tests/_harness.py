@@ -213,7 +213,7 @@ def zoom_at(page, wx, wy, ticks):
     """Wheel `ticks` notches with the cursor over world point (wx, wy).
 
     Positive zooms in, negative out. The wheel handler keeps the world point
-    under the cursor fixed (`mapView.js` `_pan.x = cursor.x - world.x * _zoom`),
+    under the cursor fixed (`mapInput.js` `view.pan.x = cursor.x - world.x * view.zoom`),
     so zooming in N ticks and back out N ticks at the SAME world point restores
     the previous view — which is how a caller places one object at street scale
     without disturbing the next one's screen coordinates.

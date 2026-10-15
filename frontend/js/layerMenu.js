@@ -3,7 +3,7 @@
 
    Owns nothing but the popup: open/close, the visible-count pill and the
    Alle/Keine shortcuts. The six checkboxes inside it are still wired by
-   mapView.js's _setupLayerToggles() via their ids, so this file never
+   mapRender.js's _setupLayerToggles() via their ids, so this file never
    touches an SVG layer — it only makes sure a programmatic tick fires the
    'change' event that wiring listens for.
    ══════════════════════════════════════════════════════════════════ */
@@ -26,7 +26,7 @@
   Dropdown.bind({ button: btn, panel, wrap });
 
   // A row click toggles its layer and leaves the panel open — the <label>
-  // does the ticking, so mapView's onchange runs for free.
+  // does the ticking, so mapRender.js's onchange runs for free.
   panel.addEventListener('change', _updateCount);
 
   panel.addEventListener('click', (e) => {
@@ -36,7 +36,7 @@
     for (const cb of boxes()) {
       if (cb.checked === on) continue;
       cb.checked = on;
-      // Assigning .checked fires nothing; mapView listens for 'change'.
+      // Assigning .checked fires nothing; mapRender.js listens for 'change'.
       cb.dispatchEvent(new Event('change', { bubbles: true }));
     }
     _updateCount();

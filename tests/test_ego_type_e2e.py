@@ -22,7 +22,7 @@ from _harness import Checks, assert_on_screen, open_editor, zoom_at  # noqa: E40
 check = Checks()
 
 # type -> (vehicleCategory, BoundingBox length, map marker length) — the emitter's
-# _VEHICLE_PARAMS / vehicle_category table and mapView's ACTOR_SIZES.
+# _VEHICLE_PARAMS / vehicle_category table and mapMarkers.js's ACTOR_SIZES.
 EXPECTED = {
     "car": ("car", 4.5, 4.5),
     "van": ("van", 5.8, 5.8),

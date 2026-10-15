@@ -42,7 +42,7 @@ scenario_editor/
 │       ├── scenarioRules.js  Event rules shared by panel, export gate and preview
 │       ├── uiUtils.js     Shared panel helpers and per-town scenario parking
 │       ├── api.js         Backend HTTP client
-│       ├── mapView.js     SVG map rendering, pan/zoom, paths, traffic lights
+│       ├── mapCore.js … mapView.js  SVG map rendering, pan/zoom, paths, traffic lights (eleven map*.js files)
 │       ├── mapImport.js   Custom `.xodr` import
 │       ├── toolbar.js     Tool palette and map selector
 │       ├── objects.js     Actor placement, path drawing, trigger-point placement

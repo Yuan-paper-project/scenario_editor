@@ -17,7 +17,7 @@
     </select>
     <span id="map-status" class="status-badge">Keine Karte geladen</span>
     <!-- Layer visibility: one dropdown, six checkboxes. The input ids are the
-         contract with mapView.js's _setupLayerToggles(); #layer-toggles is what
+         contract with mapRender.js's _setupLayerToggles(); #layer-toggles is what
          mapImport.js un-hides once a map is loaded. -->
     <div id="layer-toggles" class="menu hidden">
       <button type="button" id="layer-menu-btn" class="btn btn-secondary menu-btn"
@@ -199,7 +199,7 @@
         </div>
       </div>
     </div>
-    <!-- Undo / redo. Same path as Strg+Z / Strg+Y (mapView.js _stepHistory);
+    <!-- Undo / redo. Same path as Strg+Z / Strg+Y (mapInput.js _stepHistory);
          greyed out while the matching stack is empty. -->
     <div class="history-btns" role="group" aria-label="Verlauf">
       <button type="button" id="btn-undo" class="btn btn-secondary icon-btn" disabled
@@ -358,18 +358,16 @@
   <!-- ── MAP CANVAS ── -->
   <main id="map-container">
     <!-- Empty state. toolbar.js fills #map-quick-pick with one button per town
-         once the map list arrives; mapView.js hides the whole block on render. -->
+         once the map list arrives; mapRender.js hides the whole block on render. -->
     <div id="map-overlay-msg">
       <div class="map-empty-title">Karte wählen, um zu beginnen</div>
       <div id="map-quick-pick" class="map-quick-pick"></div>
       <div class="map-empty-sub">oder eine eigene <strong>.xodr</strong> hierher ziehen</div>
     </div>
     <svg id="map-svg" xmlns="http://www.w3.org/2000/svg">
-      <!-- Trajectory arrow markers are created per actor at runtime by
-           mapView.js `_ensureArrowMarker`, which appends into this <defs>. -->
       <defs>
         <!-- Diagonal "do not drive" hatching for median / border / restricted
-             lanes (mapView.js BLOCKED_LANE_TYPES). World units: 1.2 m period. -->
+             lanes (mapRoadDetail.js BLOCKED_LANE_TYPES). World units: 1.2 m period. -->
         <pattern id="hatch-blocked" patternUnits="userSpaceOnUse" width="1.2" height="1.2"
                  patternTransform="rotate(45)">
           <rect width="0.45" height="1.2" fill="rgba(255,255,255,.55)"/>
@@ -389,7 +387,7 @@
         <g id="layer-actors"></g>
       </g>
     </svg>
-    <!-- Kartenansicht: Zoom und Zurücksetzen. Der Zoom ist in mapView.js auf
+    <!-- Kartenansicht: Zoom und Zurücksetzen. Der Zoom ist in mapCore.js auf
          MIN_ZOOM/MAX_ZOOM begrenzt; "Ansicht zurücksetzen" ist der Weg zurück
          aus einer Ansicht, die die Karte nicht mehr enthält — den gab es nicht.
          Bleibt versteckt, bis eine Karte geladen ist (_setupLayerToggles). -->
@@ -754,7 +752,7 @@
 <script src="/static/js/propSideShapes.js"></script>
 <script src="/static/js/propPlanShapes.js"></script>
 <script src="/static/js/propCatalog.js"></script>  <!-- after the three above (reads them at load); before toolbar.js: renders the prop tiles -->
-<script src="/static/js/aerialMap.js"></script>  <!-- before mapView.js: renderMap/_applyTransform call into it -->
+<script src="/static/js/aerialMap.js"></script>  <!-- before the map files: renderMap/_applyTransform call into it -->
 <!-- mapCore.js … mapView.js share MapCore; their order is fixed (a wrong one throws at load).
      mapInput.js before mapRuler.js: its capture-phase click swallow must run before the ruler's. -->
 <script src="/static/js/mapCore.js"></script>
@@ -770,7 +768,7 @@
 <script src="/static/js/mapView.js"></script>
 <script src="/static/js/toolbar.js"></script>
 <script src="/static/js/dropdown.js"></script>  <!-- before layerMenu.js: auto-binds [data-dropdown] menus -->
-<script src="/static/js/layerMenu.js"></script>  <!-- header "Ebenen" dropdown; mapView.js owns the checkbox wiring -->
+<script src="/static/js/layerMenu.js"></script>  <!-- header "Ebenen" dropdown; mapRender.js owns the checkbox wiring -->
 <script src="/static/js/objects.js"></script>
 <script src="/static/js/eventPanel.js"></script>
 <script src="/static/js/properties.js"></script>
@@ -797,7 +795,7 @@
 <script src="/static/js/eventTimeline.js"></script>  <!-- after simulate.js (#sim-controls, runHeadless, seek) and eventPanel.js (displayName) -->
 <script src="/static/js/bgTraffic.js"></script>  <!-- after simulate.js (runHeadless, routeGeometry, onTime) and scenarioIO.js (export bundle) -->
 
-<script src="/static/js/specialBuildings.js"></script>  <!-- landmark dots from maps/special_buildings.csv; mapView.js draws them -->
+<script src="/static/js/specialBuildings.js"></script>  <!-- landmark dots from maps/special_buildings.csv; mapFeatures.js draws them -->
 <script src="/static/js/mapImport.js"></script>
 <script src="/static/js/welcome.js"></script>
 

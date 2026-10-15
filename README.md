@@ -35,7 +35,7 @@ scenario_editor/
 │       ├── scenarioRules.js  Shared event rules
 │       ├── uiUtils.js     Shared panel helpers
 │       ├── api.js         HTTP client
-│       ├── mapView.js     SVG map rendering, pan/zoom, layers
+│       ├── mapCore.js … mapView.js  SVG map rendering, pan/zoom, layers (eleven map*.js files)
 │       ├── mapImport.js   Custom .xodr import (button + drag-and-drop)
 │       ├── toolbar.js     Tool palette + map selector
 │       ├── objects.js     Actor placement + trajectory drawing

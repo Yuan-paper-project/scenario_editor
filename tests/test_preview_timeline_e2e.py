@@ -7,7 +7,7 @@ Two features that only exist in the browser:
      deterministic (the same t gives the same pose, whichever way you got
      there), event ticks appear where events fire, Stop puts every pose back
      and leaves the undo history alone, and the keyboard steps.
-  2. mapView.js draws a road that passes OVER another one in #layer-overpass,
+  2. mapRender.js draws a road that passes OVER another one in #layer-overpass,
      above the ground-level markings, so a bridge hides what it crosses.
 
     bash run.sh 9090            # terminal 1

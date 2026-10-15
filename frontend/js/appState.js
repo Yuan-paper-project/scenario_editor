@@ -128,7 +128,7 @@
     selectedId: null, // id of selected actor/object
     selectedTrafficLightId: null, // id of selected map traffic light
     // The one path waypoint currently under the cursor's attention, shared by
-    // the map (mapView.js) and the event card's waypoint list (eventPanel.js)
+    // the map (mapPaths.js) and the event card's waypoint list (eventPanel.js)
     // so the two always agree on which point is which:
     //   { actorId, eventId, pathType: 'trajectory'|'route', index }
     // Editor-only state, so it records no undo entry (_isScenarioPatch).

@@ -676,7 +676,7 @@ label.btn {
 #layer-roads .lane-hatch {
   pointer-events: none;
 }
-/* Roads passing over another road (mapView.js _roadOverpassLevels): a dark
+/* Roads passing over another road (mapRoadDetail.js _roadOverpassLevels): a dark
    casing under the deck so the bridge reads as being above, not crossing. */
 #layer-overpass {
   pointer-events: none;
@@ -691,7 +691,7 @@ label.btn {
   pointer-events: none;
 }
 
-/* Road furniture from the .xodr (mapView.js _renderRoadMarks & co). */
+/* Road furniture from the .xodr (mapRoadDetail.js _renderRoadMarks & co). */
 #layer-markings,
 #layer-signs,
 #layer-speeds {
@@ -1053,7 +1053,7 @@ label.btn {
    in. Children are stacked, so either can be hidden without the other moving. */
 /* Centred in the strip to the RIGHT of the scale ruler, not on the map's 50%:
    the preview bar (560 px) used to slide over the ruler when it was ~690. 272 px =
-   the ruler's 16 px inset + its widest pill (a bar ≤ ~170 px, mapView.js
+   the ruler's 16 px inset + its widest pill (a bar ≤ ~170 px, mapCore.js
    _NICE_DISTS, plus label and padding) + a gap. On a map too narrow for the
    bar, .sim-controls shrinks (max-width) and the timeline takes the loss. */
 .map-bottom-stack {
@@ -2220,7 +2220,7 @@ input[type="range"]::-webkit-slider-thumb {
 /* ── SVG actor styles ────────────────────────────────────── */
 /* `move`, not `pointer`: the body IS the drag target. Rotating is the yaw
    handle out at the arrow tip, which says `grab` instead — the two zones are
-   physically disjoint (mapView.js _buildYawArrow) and the cursors say which
+   physically disjoint (mapMarkers.js _buildYawArrow) and the cursors say which
    one you are over before you press. */
 .actor-group {
   cursor: move;
@@ -2232,7 +2232,7 @@ input[type="range"]::-webkit-slider-thumb {
   filter: brightness(1.2);
 }
 
-/* Selection mark — corner brackets, built by _buildSelectionMarks (mapView.js)
+/* Selection mark — corner brackets, built by _buildSelectionMarks (mapMarkers.js)
    and shared by actors, props and traffic lights, so one gesture reads the same
    everywhere on the map. It replaced a yellow ring, which competed with the
    map's own yellow lane paint and told you nothing about the object's shape.
@@ -2267,7 +2267,7 @@ input[type="range"]::-webkit-slider-thumb {
   stroke-width: 2.2px;
 }
 
-/* Object labels below the legibility floor (mapView.js LABEL_MIN_PX). The marker
+/* Object labels below the legibility floor (mapCore.js LABEL_MIN_PX). The marker
    itself keeps its true world size — only the text goes.
    `.map-label` is every object's name on the map — an actor's, a prop's, a
    landmark's, a trigger point's. One class, so the legibility floor applies to
@@ -2287,7 +2287,7 @@ input[type="range"]::-webkit-slider-thumb {
   stroke-width: 0.8;
   paint-order: stroke;
   stroke-linejoin: round;
-  /* Capped on screen by mapView.js _updateLabelVisibility (LABEL_MAX_PX); a CSS
+  /* Capped on screen by mapCore.js _updateLabelVisibility (LABEL_MAX_PX); a CSS
      font-size beats the presentation attribute every call site sets, and in SVG
      `px` is a user unit, i.e. a world metre here. The casing scales with it. */
   font-size: var(--map-label-size, 3.2px);
@@ -2301,7 +2301,7 @@ input[type="range"]::-webkit-slider-thumb {
    fades back — a quiet "it is right here" that ends on its own. It is the
    object's own body, the same filter it gets when hovered directly on the map:
    no ring, and nothing added to the actor group at render time.
-   Timings must stay in step with GLOW_MS in mapView.js (0.9s total): brightness
+   Timings must stay in step with GLOW_MS in mapMarkers.js (0.9s total): brightness
    is held to 55% of the timeline (~0.5s) and released over the rest. */
 .actor-glow .actor-body {
   animation: actor-glow-fade 0.9s ease-out 1;
@@ -2346,7 +2346,7 @@ input[type="range"]::-webkit-slider-thumb {
   pointer-events: auto;
   cursor: pointer;
 }
-/* Signal head (mapView.js _renderTrafficLight). The white casing keeps it
+/* Signal head (mapFeatures.js _renderTrafficLight). The white casing keeps it
    legible on both the dark carriageway and the light verge. */
 .traffic-light-housing {
   fill: #2a2f3a;

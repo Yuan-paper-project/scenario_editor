@@ -137,7 +137,7 @@ _ROUTE_ACTOR_TYPES = {
 # exclusion. No alias in _TYPE_ALIASES resolves TO a walker, so unlike the route
 # set this one needs no alias entries.
 #
-# Same split as xml_builder._PEDESTRIAN_TYPES and mapView.js's WALKER_TYPES.
+# Same split as xml_builder._PEDESTRIAN_TYPES and mapMarkers.js's WALKER_TYPES.
 _WALKER_ACTOR_TYPES = {"pedestrian", "child"}
 
 # A lane is ~3.5 m wide, so 10 m covers an oncoming-lane overtake with room to

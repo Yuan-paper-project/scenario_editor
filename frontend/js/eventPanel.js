@@ -1077,7 +1077,7 @@
         // The point is placed on the actor straight away rather than left null:
         // a null point used to reach the backend and be silently defaulted to
         // the map origin (0, 0), where the condition can never fire. It is then
-        // moved by dragging its map marker (mapView.js) — there is no picking
+        // moved by dragging its map marker (mapTriggerPoints.js) — there is no picking
         // mode and no "set the point" button.
         _updateEvent(actor, ev.id, {
           trigger: {
@@ -1549,7 +1549,7 @@
       item.dataset.eventId = eventId;
       item.dataset.pathType = type;
       item.dataset.wpIdx = i;
-      // Focusable so Entf/Backspace reaches mapView's handler straight after a
+      // Focusable so Entf/Backspace reaches mapKeys.js's handler straight after a
       // click on the row: the guard there is "not inside a field", and a row is
       // not a field. Enter re-locates, matching the click.
       item.tabIndex = 0;
