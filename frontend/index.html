@@ -742,7 +742,11 @@
 </div>
 
 <!-- ── JS modules (load order matters) ── -->
-<script src="/static/js/app.js"></script>
+<script src="/static/js/appState.js"></script>
+<script src="/static/js/dialogs.js"></script>
+<script src="/static/js/undo.js"></script>  <!-- after appState.js: subscribes to AppState at load -->
+<script src="/static/js/scenarioRules.js"></script>
+<script src="/static/js/uiUtils.js"></script>
 <script src="/static/js/api.js"></script>
 <script src="/static/js/trafficSignals.js"></script>
 <script src="/static/js/templates.js"></script>
