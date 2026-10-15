@@ -2,6 +2,7 @@
 # Run the static-props end-to-end suites against a running editor.
 #
 #   bash tests/run_tests.sh              # assumes the editor is already on :9090
+#   bash tests/run_tests.sh --quick      # smoke subset, ~1 min: run after every refactoring step
 #   EDITOR_URL=http://localhost:8000 bash tests/run_tests.sh
 #
 # These drive a real browser (Playwright + headless Chromium) against a real
@@ -37,6 +38,16 @@ echo
 
 status=0
 
+if [ "${1:-}" = "--quick" ]; then
+    for t in tests/test_normalization.py tests/check_render_geometry.py; do
+        echo "════ $t"; "$PY" "$t" || status=1; echo
+    done
+    for t in tests/test_smoke_e2e.py tests/test_events_e2e.py tests/test_undo_e2e.py; do
+        echo "════ $t"; EDITOR_URL="$URL" "$PY" "$t" || status=1; echo
+    done
+    exit "$status"
+fi
+
 # Pure-python first: it needs no browser and no server, so a failure here
 # points at the backend rather than at the test setup.
 echo "════ tests/test_normalization.py"
@@ -51,7 +62,7 @@ echo "════ tests/check_render_geometry.py"
 "$PY" tests/check_render_geometry.py || status=1
 echo
 
-for t in tests/test_props_e2e.py tests/test_prop_yaw_e2e.py \
+for t in tests/test_smoke_e2e.py tests/test_props_e2e.py tests/test_prop_yaw_e2e.py \
          tests/test_templates_e2e.py tests/test_events_e2e.py \
          tests/test_ego_events_e2e.py tests/test_triggers_e2e.py \
          tests/test_signal_panel_e2e.py \

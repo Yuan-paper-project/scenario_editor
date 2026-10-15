@@ -25,12 +25,17 @@ one goes red tells you where the problem is:
 ```bash
 bash run.sh 9090                 # terminal 1: the editor
 bash tests/run_tests.sh          # terminal 2: everything except CARLA
+bash tests/run_tests.sh --quick  # ~40 s smoke subset, after every refactoring step
 ```
+
+While editing files, run against a server **without** `--reload`
+(`.venv/bin/uvicorn backend.main:app --port 9091`, `EDITOR_URL=http://localhost:9091`):
+a reload under a running suite kills its requests.
 
 First run only:
 
 ```bash
-.venv/bin/python3 -m pip install playwright
+.venv/bin/python3 -m pip install -r requirements-dev.txt
 .venv/bin/python3 -m playwright install chromium
 ```
 
@@ -46,6 +51,7 @@ still exports the old — which reads as a test bug but is not one.
 
 | File | Checks | Covers |
 |---|---|---|
+| `test_smoke_e2e.py` | 25 | the fast safety net for refactoring: every frontend global defined and every `<script>` served (a global missing after a split fails by name), the API answers, `example/Town01_scenario2.json` through the real Laden input, save-file round trip, a headless and a real Play/Stop preview, Export through the button validated with `xmllint` against `OpenSCENARIO.xsd` (the known `Vertex relativeTime` defect excepted; a broken file must fail), a generated scenario exporting XSD-clean, and one Strg+Z undoing the generation. Shown to fail when a script throws at load |
 | `test_props_e2e.py` | 72 | catalogue contents (79 props, measured `z` lift and pivot offset), toolbar tabs, Requisiten search and folding, sticky placement, Shift lane-snap, selection/properties, prop-type swap, drag without panning, save/load round-trip, `.xosc` export incl. `MiscObject` categories and `yaw_offset`, 400 on unknown/uncatalogued ids, 200 on an id with a space |
 | `test_prop_yaw_e2e.py` | 23 | per-prop facing rules on a **real two-way road** (Town01 road 8, lanes ±1 at exactly 180°), free-vs-Shift orientation, far-from-lane fallback, manual-override persistence |
 | `test_normalization.py` | 155 | `validate_scenario_params` in isolation: every silent coercion, both trigger rewrites, all clamps, the entity-ref mapping that `scenarioIO.js` duplicates, the actor-type whitelist, and the ego's shared `_normalize_actor` path (self-reference rejection, the `distance_to_ego`→`simulation_time` coercion, derived `route_waypoints`) |
