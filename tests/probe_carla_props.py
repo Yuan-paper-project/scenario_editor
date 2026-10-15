@@ -41,7 +41,8 @@ def catalogue_lifts():
     js = open(CATALOG_JS).read()
     return {
         m.group(1): float(m.group(2))
-        for m in re.finditer(r"'(static\.prop\.[^']+)': \{\s*label: '[^']*', group: '[^']*', z: (-?[0-9.]+)", js)
+        # [^{}] keeps the match inside one entry: `z` comes before the nested side/plan objects.
+        for m in re.finditer(r"'(static\.prop\.[^']+)': \{[^{}]*?\bz: (-?[0-9.]+)", js)
     }
 
 
