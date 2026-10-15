@@ -247,7 +247,7 @@ with sync_playwright() as p:
     )
 
     # ── distance_to_point naming the EGO explicitly ──────────────────────────
-    # The dropdown's default (eventPanel.js _defaultPointTriggerActorId) and the
+    # The dropdown's default (eventPanelCore.js _defaultPointTriggerActorId) and the
     # map click handler both write AppState.ego.id here, so this is the ordinary
     # path, not an edge case. buildScenarioParams used to remap actions only and
     # to omit ego.id from the payload, so the ego id fell through BOTH layers and

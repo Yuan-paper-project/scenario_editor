@@ -219,7 +219,7 @@
      *
      * False when the candidate already depends on `ev`, directly or through a
      * chain: pointing at it would close a loop on which no event ever fires.
-     * eventPanel.js omits such an option from the dropdown, which is what makes
+     * eventPanelChains.js omits such an option from the dropdown, which is what makes
      * a cycle unauthorable rather than merely reported.
      */
     canWaitFor(actor, ev, candidateActor, candidate) {

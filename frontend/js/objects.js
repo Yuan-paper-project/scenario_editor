@@ -913,7 +913,7 @@
    * A trigger point at (wx, wy) for one event of `actor`, keeping the event's
    * existing name if it already had one.
    *
-   * Shared by the marker drag (moveTriggerPoint) and by eventPanel.js, which
+   * Shared by the marker drag (moveTriggerPoint) and by eventPanelTriggers.js, which
    * seeds a point the moment the trigger is selected so it is never null — a
    * point-less distance_to_point used to reach the backend and be silently
    * defaulted to the map origin.

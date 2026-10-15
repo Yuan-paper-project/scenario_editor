@@ -982,7 +982,7 @@
       _renderOverviewPanel();
     }
     // Entering or leaving draw mode changes which event card is marked as the
-    // one the map clicks belong to (eventPanel.js `active-draw`).
+    // one the map clicks belong to (eventPanelCards.js `active-draw`).
     if (AppState.selectedId && 'activePathEventId' in patch) {
       render();
     }
