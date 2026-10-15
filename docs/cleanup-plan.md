@@ -1,6 +1,8 @@
 # Cleanup plan
 
-Survey of the codebase as of branch `cleanup` (from `072fe3f`). Nothing here has been changed yet; this is the to-do list for phases 4–6. Rules the cleanup works toward are in `CLAUDE.md` → "Code conventions".
+Survey of the codebase as of branch `cleanup` (from `072fe3f`); the to-do list for phases 4–6.
+
+**Line numbers in this file refer to the code before phase 3's formatting (commit `978f715`).** Formatting moved nearly every line; the section names (each file's `// ──` / `# ──` headers) and symbol names still find them. Current sizes after formatting are in §1's "now" column. Rules the cleanup works toward are in `CLAUDE.md` → "Code conventions".
 
 Line counts are `wc -l`. The sibling repo `../llm-scenario-gen` is out of scope here.
 
@@ -8,31 +10,31 @@ Line counts are `wc -l`. The sibling repo `../llm-scenario-gen` is out of scope 
 
 ### Frontend JS (the main problem: 9 of the 10 biggest source files)
 
-| File | Lines | Natural seams (from its own `// ──` section headers) |
+| File | Lines before (now) | Natural seams (from its own `// ──` section headers) |
 |---|---|---|
-| `frontend/js/scenarioGenerator.js` | 3286 | RNG + lane-network index + corridor (≈1–490) · the twelve scenario-type builders (492–1158) · green wave (1159–1300) · PARAMS/TYPES tables (1903–2045) · conflict check / `assess` (2045–2268) · `build`/`generate` (2268–2518) · parameter sweep (2518–2640) · batch + coverage (2640–2844) · batch dialog (2844–3012) · recipe panel (3012–3182) · header menu (3182–) |
-| `frontend/js/mapView.js` | 2406 | pan/zoom + ruler · road rendering + overpass + road furniture (196–950) · actor rendering (951–1398) · undo/redo key handling (1399–1578) · path/waypoint rendering (1579–1888) · mouse, view controls, layer toggles (1897–2162) · distance ruler tool (2163–2327) |
-| `frontend/js/simulate.js` | 2217 | controls DOM (103–172) · event normalisation mirror + trigger evaluation (238–426) · lane geometry + lane-graph routing (427–877) · per-actor stepping (878–1403) · reacting ego (1404–1540) · lifecycle/timeline/scrubbing (1541–) |
-| `frontend/js/eventPanel.js` | 1942 | card rendering (168–492) · action controls (493–780) · summaries/labels (781–886) · after_event references (887–975) · trigger controls (976–1199) · DOM helpers/toggles (1200–1455) · path controls (1456–1711) · event state/delete sweep (1712–) |
-| `frontend/js/app.js` | 1649 | `AppState` (84–577) · Toast/Confirm (578–654) · per-town park/unpark (655–715) · `UndoStack` (716–1144) · `ScenarioRules` (1145–1542) · `UIUtils` (1543–) — five separate globals in one file; the easiest split in the repo |
-| `frontend/js/propCatalog.js` | 1225 | `PROPS` data table (56–473) · side-view shapes (474–821) · plan-view shapes (822–1008) · `PropCatalog` API + palette panel (1009–). Mostly data. |
-| `frontend/js/objects.js` | 1071 | placement + snapping/yaw rules (88–443) · drag (444–626) · path drawing mode (627–1040) |
-| `frontend/js/properties.js` | 964 | actor panel · scene list (138–681) · input bindings / type pickers / delete · traffic-signal panel (486–681) |
-| `frontend/js/templates.js` | 916 | built-in template table (51–275) · user templates (276–583) · road geometry helpers (584–) |
-| `frontend/js/bgTraffic.js` | 492 | keep-out building · fetch/cache · drawing |
-| `frontend/css/style.css` | 1677 | split per panel/module to match the JS files |
-| `frontend/index.html` | 771 | mostly markup; the inline SVG icons could move out |
+| `frontend/js/scenarioGenerator.js` | 3286 (3955) | RNG + lane-network index + corridor (≈1–490) · the twelve scenario-type builders (492–1158) · green wave (1159–1300) · PARAMS/TYPES tables (1903–2045) · conflict check / `assess` (2045–2268) · `build`/`generate` (2268–2518) · parameter sweep (2518–2640) · batch + coverage (2640–2844) · batch dialog (2844–3012) · recipe panel (3012–3182) · header menu (3182–) |
+| `frontend/js/mapView.js` | 2406 (2681) | pan/zoom + ruler · road rendering + overpass + road furniture (196–950) · actor rendering (951–1398) · undo/redo key handling (1399–1578) · path/waypoint rendering (1579–1888) · mouse, view controls, layer toggles (1897–2162) · distance ruler tool (2163–2327) |
+| `frontend/js/simulate.js` | 2217 (2380) | controls DOM (103–172) · event normalisation mirror + trigger evaluation (238–426) · lane geometry + lane-graph routing (427–877) · per-actor stepping (878–1403) · reacting ego (1404–1540) · lifecycle/timeline/scrubbing (1541–) |
+| `frontend/js/eventPanel.js` | 1942 (2007) | card rendering (168–492) · action controls (493–780) · summaries/labels (781–886) · after_event references (887–975) · trigger controls (976–1199) · DOM helpers/toggles (1200–1455) · path controls (1456–1711) · event state/delete sweep (1712–) |
+| `frontend/js/app.js` | 1649 (1767) | `AppState` (84–577) · Toast/Confirm (578–654) · per-town park/unpark (655–715) · `UndoStack` (716–1144) · `ScenarioRules` (1145–1542) · `UIUtils` (1543–) — five separate globals in one file; the easiest split in the repo |
+| `frontend/js/propCatalog.js` | 1225 (1856) | `PROPS` data table (56–473) · side-view shapes (474–821) · plan-view shapes (822–1008) · `PropCatalog` API + palette panel (1009–). Mostly data. |
+| `frontend/js/objects.js` | 1071 (1130) | placement + snapping/yaw rules (88–443) · drag (444–626) · path drawing mode (627–1040) |
+| `frontend/js/properties.js` | 964 (995) | actor panel · scene list (138–681) · input bindings / type pickers / delete · traffic-signal panel (486–681) |
+| `frontend/js/templates.js` | 916 (1018) | built-in template table (51–275) · user templates (276–583) · road geometry helpers (584–) |
+| `frontend/js/bgTraffic.js` | 492 (561) | keep-out building · fetch/cache · drawing |
+| `frontend/css/style.css` | 1677 (3820) | split per panel/module to match the JS files |
+| `frontend/index.html` | 771 (771) | mostly markup; the inline SVG icons could move out |
 
 ### Backend Python
 
-| File | Lines | Seams |
+| File | Lines before (now) | Seams |
 |---|---|---|
-| `backend/map_renderer.py` | 1142 | OpenDRIVE geometry/lane maths (76–530) · road marks/polylines (531–591) · signals, signs, crosswalks (592–836) · spawn points (837–947) · render-data assembly (948–) |
-| `backend/scenario_io.py` | 1018 | per-event/per-actor normalisation (34–500) · scenario-wide event-reference rules (502–620) · type/prop/signal validation (621–731) · `validate_scenario_params` + export (732–928) · batch zip (929–) |
-| `backend/bg_traffic.py` | 883 | SUMO install/net (123–193) · keep-out (194–385) · trip generation and FCD I/O (386–640) · `generate` loop (680–876) |
-| `backend/lane_graph_builder.py` | 634 | XML extraction (93–307) · successor resolution (308–392) · `build_lane_graph_from_xodr` (395–) |
-| `backend/main.py` | 446 | just over; app setup + map routes vs export/bg-traffic routes |
-| `generate_pptx.py` | 680 | slide deck, unrelated to the editor (see §4) |
+| `backend/map_renderer.py` | 1142 (1183) | OpenDRIVE geometry/lane maths (76–530) · road marks/polylines (531–591) · signals, signs, crosswalks (592–836) · spawn points (837–947) · render-data assembly (948–) |
+| `backend/scenario_io.py` | 1018 (1027) | per-event/per-actor normalisation (34–500) · scenario-wide event-reference rules (502–620) · type/prop/signal validation (621–731) · `validate_scenario_params` + export (732–928) · batch zip (929–) |
+| `backend/bg_traffic.py` | 883 (1045) | SUMO install/net (123–193) · keep-out (194–385) · trip generation and FCD I/O (386–640) · `generate` loop (680–876) |
+| `backend/lane_graph_builder.py` | 634 (701) | XML extraction (93–307) · successor resolution (308–392) · `build_lane_graph_from_xodr` (395–) |
+| `backend/main.py` | 446 (463) | just over; app setup + map routes vs export/bg-traffic routes |
+| `generate_pptx.py` | 680 (917) | slide deck, unrelated to the editor (see §4) |
 
 ### Tests (lower priority — split only where it helps)
 
@@ -74,6 +76,7 @@ Found by searching each definition's name across the frontend, `index.html`, `he
 | `AppState.switchTypesFor` | `app.js:383` | no caller |
 | `_isXodrDrag` | `mapImport.js:84` | defined, never called |
 | `SpecialBuildings.forTown` | `specialBuildings.js:23` | no caller (`mapView` filters by town itself) |
+| `_rulerActive` | `mapView.js` ("Ruler" section) | declared, never read; Biome turned its `let` into `const false` because nothing assigns it either |
 | second `actorColor` key in the `MapView` object | `mapView.js:2368` | duplicates the one at 2344 (Biome `noDuplicateObjectKeys`); identical body, so the later one silently wins |
 
 Also check:
@@ -96,8 +99,10 @@ Also check:
 ## 5. Notes for the later phases
 
 - **Phase 2 is done.** `bash tests/run_tests.sh --quick` (~40 s: normalization, render geometry, `test_smoke_e2e.py`, events, undo) is the check to run after each split. `test_smoke_e2e.py` was shown to fail by name when a script throws at load.
-- **Lint baseline at the end of phase 2** (`bash tools/lint.sh`): ruff format would reformat 55 of 62 Python files; ruff check 124 findings (mostly fixable: import order, unused imports, `raise … from`); pylint 19 modules over 400 lines, 14 functions over 60 statements, 8 over 15 branches; Biome would reformat all 24 frontend files and reports 44 errors / 101 warnings. Of the Biome findings worth a look in phase 6: the duplicate `actorColor` key (above), 15 `useIterableCallbackReturn`, 2 `noAssignInExpressions` (both deliberate, in the seeded RNG), a sparse array literal in `scenarioGenerator.js:3070`. The duplicate `stroke-width` in `style.css:1029` is a deliberate fallback.
+- **Lint baseline at the end of phase 2** (`bash tools/lint.sh`): ruff format would reformat 55 of 62 Python files; ruff check 124 findings (mostly fixable: import order, unused imports, `raise … from`); pylint 19 modules over 400 lines, 14 functions over 60 statements, 8 over 15 branches; Biome would reformat all 24 frontend files and reports 44 errors / 101 warnings (most of them formatting, gone after phase 3). Of the Biome findings worth a look in phase 6: the duplicate `actorColor` key (above), 15 `useIterableCallbackReturn`, 2 `noAssignInExpressions` (both deliberate, in the seeded RNG), a sparse array literal in `scenarioGenerator.js:3070`. The duplicate `stroke-width` in `style.css:1029` is a deliberate fallback.
 - **Run the e2e suites against a server without `--reload`** while editing files. See CLAUDE.md: `--reload` restarting under a running suite has wedged the server before.
-- **Phase 3 is `bash tools/lint.sh --fix`**: ruff for Python, Biome (a pinned static binary, no npm) for JS and CSS. Commit the Python and the frontend formatting separately so each diff is reviewable, and run `--quick` after each.
+- **Phase 3 is done** in four commits: `ruff format`, ruff's safe fixes, Biome format, Biome's safe fixes. Each was checked with `--quick` plus a fingerprint script that hashes every town's render JSON and lane graph and the export payload and `.xosc` of the example file and 12 generated scenarios (17 distinct files): byte-identical after every step. Formatting `style.css` was checked by screenshotting four editor states with the old and new stylesheet: pixel-identical.
+- **Formatting made files longer.** Biome puts one property per line, so `style.css` went from 1677 to 3820 lines and the prop table in `propCatalog.js` from one line per prop to five. Neither can be configured away. Splitting will absorb most of it: CSS per panel, and the `PROPS` table into a data file of its own.
+- **Lint after phase 3** (`bash tools/lint.sh`, formatting clean): ruff 32 findings needing judgement (17 `E702` semicolon statements, 11 `B904` `raise … from`, unused variables/loop variables, `E731` lambdas). Pylint: 20 modules over 400 lines, 14 functions over 60 statements, 8 over 15 branches, 3 too deeply nested, 4 duplicate-code blocks. Biome: 20 errors / 64 warnings — 59 `useOptionalChain` (an unsafe fix, so by hand), 15 `useIterableCallbackReturn`, 4 unused variables, plus the duplicate key, the sparse array and the two deliberate assignments in expressions noted above.
 - **`ruff format` will be a large diff** (hand-aligned lines; quotes are preserved by config). Commit it alone, as planned. `pylint max-module-lines=400` will fail on the five big backend files until phase 4.
 - **Phase 4 for JS** means: a new file per module, each an IIFE that attaches to the *existing* global (e.g. `ScenarioGenerator`), or a new global, plus an `index.html` script-order update. Suggested order, easiest and safest first: `app.js` (already five globals), `propCatalog.js` (data vs code), `scenarioGenerator.js` (UI vs generation), `mapView.js`, `simulate.js`, `eventPanel.js`.

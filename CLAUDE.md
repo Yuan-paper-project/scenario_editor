@@ -30,7 +30,7 @@ These apply to all new and touched code. A cleanup is under way on the `cleanup`
 - **No change-log comments.** No "used to", "was changed to", "fixed on 2026-…", "previously" in code. History belongs in git and, if it is a trap worth knowing, in this file.
 - **Docstrings are short**: one line saying what the function is for, plus a second paragraph only when a caller needs a non-obvious contract (units, coordinate frame, what `None` means).
 - **A refactor moves code or changes it, never both in one step.** While splitting or reorganising: move code only and update imports/script order. Logic changes are a separate commit. Never mix formatting, moving and behaviour changes in one commit.
-- **Run `bash tools/lint.sh` before calling a change done** (and `bash tests/run_tests.sh --quick` against a live editor). It runs `ruff format --check`, `ruff check`, `pylint` (module/function size and duplicate code only — everything else is ruff's job; config in `pyproject.toml`) and Biome on `frontend/js` + `frontend/css` (`biome.json`). `bash tools/lint.sh --fix` applies formatting and safe fixes. Setup: `.venv/bin/pip install -r requirements-dev.txt && bash tools/install_biome.sh` (Biome is a pinned static binary in `.tools/`, gitignored — still no Node/npm). Until the cleanup's formatting phase lands, it fails on the whole tree; judge only the files you touched.
+- **Run `bash tools/lint.sh` before calling a change done** (and `bash tests/run_tests.sh --quick` against a live editor). It runs `ruff format --check`, `ruff check`, `pylint` (module/function size and duplicate code only — everything else is ruff's job; config in `pyproject.toml`) and Biome on `frontend/js` + `frontend/css` (`biome.json`). `bash tools/lint.sh --fix` applies formatting and safe fixes. Setup: `.venv/bin/pip install -r requirements-dev.txt && bash tools/install_biome.sh` (Biome is a pinned static binary in `.tools/`, gitignored — still no Node/npm). Formatting passes on the whole tree; the remaining ruff/Biome findings and every pylint size limit are open cleanup items (`docs/cleanup-plan.md`), so until those are done judge only the files you touched — a change must leave them formatted and add no new finding.
 - **Biome's `noRedundantUseStrict` is off on purpose**: Biome treats every file as an ES module, but these are classic `<script>`s, where `'use strict'` inside the IIFE is what turns strict mode on. Its fix would silently remove it.
 - **A frontend split must keep the IIFE-plus-one-global pattern** and be added to `index.html`'s script block in a working order (see Frontend conventions). A function moved between files that other modules call stays reachable through the same global.
 
@@ -48,18 +48,19 @@ bash run.sh 8080     # custom port
 - **No CI.** Linting and formatting run locally through `bash tools/lint.sh` (see Code conventions). Automated coverage is `tests/test_normalization.py` (pure Python) plus twenty-six Playwright end-to-end suites that need a running editor, and `tests/run_carla_cases.py`, which needs a running CARLA (see Verification). `bash tests/run_tests.sh --quick` is the ~40 s subset (normalization, render geometry, `test_smoke_e2e.py`, events, undo) to run after every refactoring step. Everything else is verified manually.
 - All map geometry is parsed once at startup into `MAP_CACHE` (`preload_maps`, `backend/main.py`). Changes to `map_renderer.py` only take effect on restart — `--reload` does this automatically on save.
 - **`--reload` watches every `*.py` in the repo — `tests/` included.** Writing or editing a test file while a suite runs restarts the server under it: the in-flight request dies (seen as a batch-export download that never arrives), and on 2026-10-09 the restarted worker then wedged outright — ~90 connections unread in CLOSE-WAIT, no response, and after it was killed the reloader left a zombie and never respawned. Only a fresh `run.sh` recovers. When editing tests and running suites in parallel, run the suites against a server **without** `--reload` (`.venv/bin/uvicorn backend.main:app --port 9091`, `EDITOR_URL=http://localhost:9091`).
+- **A repo-wide `ruff format` / `ruff check --fix` rewrites every `*.py` at once and is the surest way to wedge a running `--reload` server** — it happened again on 2026-10-15 (worker left unresponsive, never respawned). Run tree-wide tools with the editor stopped, or test against a `--port 9091` server without `--reload` and restart that by PID afterwards. Never `pkill -f` a pattern that also appears in your own command line.
 - **`--reload` only watches this repo.** Editing `../llm-scenario-gen` — including `prop_catalog.yaml`, which `xml_builder` reads once at import — requires a **manual restart**. Frontend files are read per request, so a catalogue edit appears instantly in the UI while the backend still serves the old data. That asymmetry is easy to misread as a bug.
 
 ## The sibling-repo dependency (read this first)
 
 This repo does **not** stand alone. `.xosc` and route-XML generation are delegated to a sibling repo, `../llm-scenario-gen`, injected into `sys.path` at call time. Nothing in `requirements.txt` hints at this.
 
-- Resolution order (`backend/scenario_io.py:10-12`): `<repo>/../llm-scenario-gen`, else the hardcoded fallback `/home/dellpro2/CC/llm-scenario-gen`.
+- Resolution order (`_LLMGEN`, `backend/scenario_io.py`): `<repo>/../llm-scenario-gen`, else the hardcoded fallback `/home/dellpro2/CC/llm-scenario-gen`.
 - Imported **lazily**, inside the export functions via `_ensure_llmgen_on_path()` — a missing sibling repo fails only at export time (HTTP 500), never at startup.
 - Entry points consumed:
   - `generator.xml_builder.build_xosc(params, out_path)`
   - `generator.route_builder.build_route(params, out_path)`
-  - `preprocessing.map_parser.parse_xodr(path)` — junction centres, `backend/map_renderer.py:528-531`
+  - `preprocessing.map_parser.parse_xodr(path)` — junction centres, `_load_spawn_points` in `backend/map_renderer.py`
 - Consequence: **a new action or trigger type requires a matching change in `llm-scenario-gen`'s `generator/event_builders.py` and `xml_builder.py`.** The editor alone cannot emit it.
 - The hero's controller module (`simple_vehicle_control`) is **template text**, not code — `templates/car.xosc` / `pedestrian.xosc`, not `_inject_ego`. A sibling-repo edit `--reload` will not pick up, same as everything else here.
 
@@ -75,7 +76,7 @@ maps/<Town>/<Town>.xodr
   → POST /api/export → validate_scenario_params() → build_xosc() → .xosc download
 ```
 
-**The Y flip happens exactly once**, in the backend parser (`backend/map_renderer.py:5-6`, applied at lines 513 and 559-560). Downstream — render JSON, `AppState`, the exported `.xosc` — everything is CARLA coordinates with Y pointing down. Do not re-flip in the frontend. **Z is never flipped** — OpenDRIVE and CARLA are both Z-up.
+**The Y flip happens exactly once**, in the backend parser (stated in `backend/map_renderer.py`'s module docstring; applied in `_lateral_point` and in the signal, crosswalk and spawn-point extractors). Downstream — render JSON, `AppState`, the exported `.xosc` — everything is CARLA coordinates with Y pointing down. Do not re-flip in the frontend. **Z is never flipped** — OpenDRIVE and CARLA are both Z-up.
 
 ## Height (z) comes from the OpenDRIVE elevation profile
 
@@ -891,7 +892,7 @@ shared column is the blueprint id; a mismatch fails loudly as a 400 at export, n
 | `../llm-scenario-gen/config/prop_catalog.yaml` | `category`, `mass`, `bbox`, `yaw_offset` | emitter + backend validator |
 
 `prop_spec()` (`../llm-scenario-gen/generator/xml_builder.py`) is the public accessor; `backend/scenario_io.py`
-`_normalize_static_objects` (`:130`) imports it to **reject unknown prop ids with a 400**. That is a
+`_normalize_static_objects` imports it to **reject unknown prop ids with a 400**. That is a
 deliberate break from the silent-coercion pattern used for events — a typo'd blueprint would
 otherwise export cleanly and fail much later inside CARLA as a missing actor.
 
@@ -930,7 +931,7 @@ ScenarioRunner must not put them on the `ActorsWithController` blackboard.
 
 ### Placement orientation is per-prop and per-lane
 
-`_propYawFor` (`objects.js:149`) resolves a `facing` rule against the OpenDRIVE direction of the
+`_propYawFor` (`objects.js`) resolves a `facing` rule against the OpenDRIVE direction of the
 **specific lane** nearest the click:
 
 | Rule | Yaw | Props |
@@ -946,12 +947,12 @@ from the photos, and `along` only commits to the axis. The `streetsign*` meshes 
 info panels, not traffic signs** — they were once dropped from the catalogue (along with
 `chainbarrier`) when filed under a „Verkehrsführung" group; they are back under accurate labels.
 
-This works because `map_renderer.py:639` **reverses `directionLine` for left-side lanes**, so
+This works because `_process_root_to_render_data` (`map_renderer.py`) **reverses `directionLine` for left-side lanes**, so
 `laneYaw` is true lane *travel* direction. Adjacent carriageways therefore yield yaws exactly 180°
 apart and an `oncoming` prop on each side faces its own lane's traffic. Sidewalk lanes carry no
 `directionLine` at all, so kerbside props orient against the nearest *driving* lane.
 
-- Orientation **always** applies (within `PROP_YAW_MAX_DIST`, `objects.js:133`); Shift controls
+- Orientation **always** applies (within `PROP_YAW_MAX_DIST`, `objects.js`); Shift controls
   *position* only. Beyond that distance yaw falls back to 0.
 - Side/bearing is computed from the **original click point**, not the snapped position — snapping puts
   the prop on the centreline where "which side of the lane" degenerates.
