@@ -205,14 +205,14 @@
 
     /** Patch state and emit 'change'. */
     set(patch) {
-      const scenario = _isScenarioPatch(patch);
-      if (scenario) _recordSet();
+      const scenario = UndoStack._isScenarioPatch(patch);
+      if (scenario) UndoStack._recordSet();
       Object.assign(this, patch);
       this.emit('change', patch);
       // After the listeners: one of them can mutate further (objects.js
       // discards an incomplete path on a mode change), and the baseline has to
       // end up describing the state the user is actually looking at.
-      if (scenario) _settle();
+      if (scenario) UndoStack._settle();
     },
 
     /** Find any object by id (ego, npc, or static). */
@@ -225,8 +225,8 @@
 
     /** Update an existing object's fields. */
     updateById(id, patch) {
-      patch = _seedFollowPatch(id, patch);
-      _recordUpdate(id, patch);
+      patch = UndoStack._seedFollowPatch(id, patch);
+      UndoStack._recordUpdate(id, patch);
       if (this.ego && this.ego.id === id) {
         Object.assign(this.ego, patch);
       } else {
@@ -238,12 +238,12 @@
         }
       }
       this.emit('actorUpdated', id);
-      _settle();
+      UndoStack._settle();
     },
 
     /** Remove an object. */
     removeById(id) {
-      _recordRemove(id);
+      UndoStack._recordRemove(id);
       if (this.ego && this.ego.id === id) {
         this.ego = null;
       } else {
@@ -253,7 +253,7 @@
       if (this.selectedId === id) this.selectedId = null;
       if (this.selectedWaypoint?.actorId === id) this.selectedWaypoint = null;
       this.emit('actorRemoved', id);
-      _settle();
+      UndoStack._settle();
     },
 
     /** Select an actor. Pass null to deselect. */
@@ -1096,6 +1096,14 @@
   }
 
   window.UndoStack = {
+    // AppState's mutators record through these; they are not for other callers.
+    _settle,
+    _isScenarioPatch,
+    _recordSet,
+    _seedFollowPatch,
+    _recordUpdate,
+    _recordRemove,
+
     /**
      * End the current coalescing run, so the next edit starts a fresh entry.
      * Bound below to `mousedown` and `change`, which between them precede every
