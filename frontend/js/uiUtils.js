@@ -185,5 +185,12 @@
       while (used.has(`${prefix}-${idx}`)) idx += 1;
       return idx;
     },
+
+    /** An SVG element with the given attributes. */
+    svgEl(tag, attrs) {
+      const e = document.createElementNS('http://www.w3.org/2000/svg', tag);
+      for (const k in attrs) e.setAttribute(k, attrs[k]);
+      return e;
+    },
   };
 })();
