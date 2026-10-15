@@ -74,6 +74,7 @@ Found by searching each definition's name across the frontend, `index.html`, `he
 | `AppState.switchTypesFor` | `app.js:383` | no caller |
 | `_isXodrDrag` | `mapImport.js:84` | defined, never called |
 | `SpecialBuildings.forTown` | `specialBuildings.js:23` | no caller (`mapView` filters by town itself) |
+| second `actorColor` key in the `MapView` object | `mapView.js:2368` | duplicates the one at 2344 (Biome `noDuplicateObjectKeys`); identical body, so the later one silently wins |
 
 Also check:
 
@@ -94,8 +95,9 @@ Also check:
 
 ## 5. Notes for the later phases
 
-- **Phase 2 (safety net) is mostly already there.** `bash tests/run_tests.sh` runs `test_normalization.py` (182 checks, no server), `compare_xodr_lane_graph.py`, `check_render_geometry.py` and 25 Playwright suites against a live editor. What is missing is a fast smoke run. The full run takes a long time, mostly in `test_generator_e2e.py` (~2000 checks). A `--quick` subset (normalization + render geometry + props + events + undo) would be enough to run after each split.
+- **Phase 2 is done.** `bash tests/run_tests.sh --quick` (~40 s: normalization, render geometry, `test_smoke_e2e.py`, events, undo) is the check to run after each split. `test_smoke_e2e.py` was shown to fail by name when a script throws at load.
+- **Lint baseline at the end of phase 2** (`bash tools/lint.sh`): ruff format would reformat 55 of 62 Python files; ruff check 124 findings (mostly fixable: import order, unused imports, `raise … from`); pylint 19 modules over 400 lines, 14 functions over 60 statements, 8 over 15 branches; Biome would reformat all 24 frontend files and reports 44 errors / 101 warnings. Of the Biome findings worth a look in phase 6: the duplicate `actorColor` key (above), 15 `useIterableCallbackReturn`, 2 `noAssignInExpressions` (both deliberate, in the seeded RNG), a sparse array literal in `scenarioGenerator.js:3070`. The duplicate `stroke-width` in `style.css:1029` is a deliberate fallback.
 - **Run the e2e suites against a server without `--reload`** while editing files. See CLAUDE.md: `--reload` restarting under a running suite has wedged the server before.
-- **Phase 3 (`ruff`) only covers Python**, which is about 15% of the code. The big files are JS. There is no npm or build step by design, so a JS formatter (Prettier, Biome) would be the project's first Node dependency. Decide before phase 3. Biome ships as a single binary and could run without npm.
-- **`ruff format` on the backend will be a large diff.** The code uses single quotes and hand-aligned lines in places. Commit it alone, as planned. `pylint max-module-lines=400` will fail on the five big backend files until phase 4.
+- **Phase 3 is `bash tools/lint.sh --fix`**: ruff for Python, Biome (a pinned static binary, no npm) for JS and CSS. Commit the Python and the frontend formatting separately so each diff is reviewable, and run `--quick` after each.
+- **`ruff format` will be a large diff** (hand-aligned lines; quotes are preserved by config). Commit it alone, as planned. `pylint max-module-lines=400` will fail on the five big backend files until phase 4.
 - **Phase 4 for JS** means: a new file per module, each an IIFE that attaches to the *existing* global (e.g. `ScenarioGenerator`), or a new global, plus an `index.html` script-order update. Suggested order, easiest and safest first: `app.js` (already five globals), `propCatalog.js` (data vs code), `scenarioGenerator.js` (UI vs generation), `mapView.js`, `simulate.js`, `eventPanel.js`.
