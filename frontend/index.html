@@ -766,7 +766,22 @@
 <script src="/static/js/scenarioIO.js"></script>
 <script src="/static/js/laneGraph.js"></script>  <!-- before simulate.js: its only consumer -->
 <script src="/static/js/simulate.js"></script>
-<script src="/static/js/scenarioGenerator.js"></script>  <!-- after simulate.js (routeGeometry), objects.js, propCatalog.js, dropdown.js -->
+<!-- The scenario generator, after simulate.js (routeGeometry, runHeadless), objects.js,
+     propCatalog.js, dropdown.js. Each generator file reads what the ones above it
+     define (GeneratorCore), so their order is fixed; scenarioGenerator.js goes last. -->
+<script src="/static/js/generatorCore.js"></script>
+<script src="/static/js/generatorCorridor.js"></script>
+<script src="/static/js/generatorTypesLead.js"></script>
+<script src="/static/js/generatorTypesLaneChange.js"></script>
+<script src="/static/js/generatorTypesVru.js"></script>
+<script src="/static/js/generatorTypesJunction.js"></script>
+<script src="/static/js/generatorTypesObstacle.js"></script>
+<script src="/static/js/generatorParams.js"></script>
+<script src="/static/js/generatorAssess.js"></script>
+<script src="/static/js/generatorBuild.js"></script>
+<script src="/static/js/generatorBatch.js"></script>
+<script src="/static/js/generatorBatchDialog.js"></script>
+<script src="/static/js/scenarioGenerator.js"></script>
 <script src="/static/js/eventTimeline.js"></script>  <!-- after simulate.js (#sim-controls, runHeadless, seek) and eventPanel.js (displayName) -->
 <script src="/static/js/bgTraffic.js"></script>  <!-- after simulate.js (runHeadless, routeGeometry, onTime) and scenarioIO.js (export bundle) -->
 
