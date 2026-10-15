@@ -9,6 +9,7 @@ tpl-lane-change clip.
 Town01 is genuinely flat (every elevation coefficient is 0), so it isolates the
 clearance constants; Town03 exercises the actual interpolation.
 """
+
 import math
 import os
 import sys
@@ -24,8 +25,8 @@ VRU_CLEARANCE = 0.6
 
 # Town03 road 67, the tpl-lane-change straight. Reference-line surface heights
 # measured from the .xodr elevation profile.
-T3_HIGH = (159.0, 193.0)      # surface ~2.63 m
-T3_LOW = (25.0, 193.4)        # surface ~0.00 m
+T3_HIGH = (159.0, 193.0)  # surface ~2.63 m
+T3_LOW = (25.0, 193.4)  # surface ~0.00 m
 
 
 def check(name, cond, extra=""):
@@ -58,8 +59,7 @@ with sync_playwright() as p:
     page = b.new_page(viewport={"width": 1600, "height": 900})
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
-    page.on("console", lambda m: errors.append("console.error: " + m.text)
-            if m.type == "error" else None)
+    page.on("console", lambda m: errors.append("console.error: " + m.text) if m.type == "error" else None)
 
     page.goto(BASE, wait_until="networkidle")
     page.evaluate("document.getElementById('welcome-overlay')?.classList.add('hidden')")
@@ -68,11 +68,9 @@ with sync_playwright() as p:
     # ── Render payload carries elevation ─────────────────────────────────────
     load_map(page, "Town03")
 
-    check("map payload reports an elevation range",
-          page.evaluate("!!AppState.mapData.elevation"))
+    check("map payload reports an elevation range", page.evaluate("!!AppState.mapData.elevation"))
     ev = page.evaluate("AppState.mapData.elevation")
-    check("Town03 range covers the elevated deck",
-          ev["max"] > 8.0 and ev["min"] < 0.0, str(ev))
+    check("Town03 range covers the elevated deck", ev["max"] > 8.0 and ev["min"] < 0.0, str(ev))
 
     dims = page.evaluate("""() => {
         const lens = new Set();
@@ -91,18 +89,18 @@ with sync_playwright() as p:
     }""")
     check("every centerline point is [x,y,z,s]", cl == [4], str(cl))
 
-    check("spawn points carry z",
-          page.evaluate("AppState.mapData.spawnPoints.every(s => typeof s.z === 'number')"))
-    check("some Town03 spawn points sit on the elevated deck",
-          page.evaluate("AppState.mapData.spawnPoints.some(s => s.z > 7.0)"))
+    check("spawn points carry z", page.evaluate("AppState.mapData.spawnPoints.every(s => typeof s.z === 'number')"))
+    check(
+        "some Town03 spawn points sit on the elevated deck",
+        page.evaluate("AppState.mapData.spawnPoints.some(s => s.z > 7.0)"),
+    )
 
     # ── groundZAt reads the surface, not a constant ──────────────────────────
     hi = page.evaluate(f"ObjectsManager.groundZAt({T3_HIGH[0]}, {T3_HIGH[1]})")
     lo = page.evaluate(f"ObjectsManager.groundZAt({T3_LOW[0]}, {T3_LOW[1]})")
     check("groundZAt on the rise reads ~2.6 m", abs(hi - 2.63) < 0.35, f"got {hi}")
     check("groundZAt at the far end reads ~0 m", abs(lo) < 0.35, f"got {lo}")
-    check("the two ends of one road differ by metres", hi - lo > 2.0,
-          f"{hi} vs {lo}")
+    check("the two ends of one road differ by metres", hi - lo > 2.0, f"{hi} vs {lo}")
 
     far = page.evaluate("ObjectsManager.groundZAt(100000, 100000)")
     check("groundZAt falls back to 0 with no road in reach", far == 0, f"got {far}")
@@ -111,19 +109,22 @@ with sync_playwright() as p:
     place(page, "ego", *T3_HIGH)
     ego = page.evaluate("AppState.ego")
     check("ego was placed", ego is not None)
-    check("EGO IS ON THE ROAD, NOT UNDER IT",
-          ego and ego["z"] > 2.0, f"z={ego and ego['z']}")
+    check("EGO IS ON THE ROAD, NOT UNDER IT", ego and ego["z"] > 2.0, f"z={ego and ego['z']}")
     surf = page.evaluate(f"ObjectsManager.groundZAt({ego['x']}, {ego['y']})")
-    check("ego z is surface + vehicle clearance",
-          abs(ego["z"] - (surf + VEHICLE_CLEARANCE)) < 0.02,
-          f"z={ego['z']} surface={surf}")
+    check(
+        "ego z is surface + vehicle clearance",
+        abs(ego["z"] - (surf + VEHICLE_CLEARANCE)) < 0.02,
+        f"z={ego['z']} surface={surf}",
+    )
 
     place(page, "pedestrian", T3_HIGH[0], T3_HIGH[1] + 6)
     ped = page.evaluate("AppState.npcs[AppState.npcs.length-1]")
     surf = page.evaluate(f"ObjectsManager.groundZAt({ped['x']}, {ped['y']})")
-    check("pedestrian gets the larger VRU clearance",
-          abs(ped["z"] - (surf + VRU_CLEARANCE)) < 0.02,
-          f"z={ped['z']} surface={surf}")
+    check(
+        "pedestrian gets the larger VRU clearance",
+        abs(ped["z"] - (surf + VRU_CLEARANCE)) < 0.02,
+        f"z={ped['z']} surface={surf}",
+    )
     check("VRU clearance exceeds vehicle clearance", VRU_CLEARANCE > VEHICLE_CLEARANCE)
 
     # ── Drag re-derives z ────────────────────────────────────────────────────
@@ -145,14 +146,14 @@ with sync_playwright() as p:
         window.dispatchEvent(new MouseEvent('mouseup', {{bubbles: true}}));
     }}""")
     moved = page.evaluate("AppState.ego")
-    check("the drag moved the ego", abs(moved["x"] - T3_LOW[0]) < 3.0,
-          f"x={moved['x']}")
-    check("DRAG RE-DERIVED Z", abs(moved["z"] - z_before) > 1.5,
-          f"{z_before} -> {moved['z']}")
+    check("the drag moved the ego", abs(moved["x"] - T3_LOW[0]) < 3.0, f"x={moved['x']}")
+    check("DRAG RE-DERIVED Z", abs(moved["z"] - z_before) > 1.5, f"{z_before} -> {moved['z']}")
     surf = page.evaluate(f"ObjectsManager.groundZAt({moved['x']}, {moved['y']})")
-    check("dropped z is the new surface + clearance",
-          abs(moved["z"] - (surf + VEHICLE_CLEARANCE)) < 0.02,
-          f"z={moved['z']} surface={surf}")
+    check(
+        "dropped z is the new surface + clearance",
+        abs(moved["z"] - (surf + VEHICLE_CLEARANCE)) < 0.02,
+        f"z={moved['z']} surface={surf}",
+    )
 
     # ── Manual X/Y edit re-derives; manual Z does not get clobbered ──────────
     page.evaluate(f"AppState.select('{ego['id']}')")
@@ -163,9 +164,11 @@ with sync_playwright() as p:
 
     page.fill("#prop-z", "9.75")
     page.dispatch_event("#prop-z", "change")
-    check("a hand-typed z is kept as-is",
-          abs(page.evaluate("AppState.ego.z") - 9.75) < 1e-9,
-          str(page.evaluate("AppState.ego.z")))
+    check(
+        "a hand-typed z is kept as-is",
+        abs(page.evaluate("AppState.ego.z") - 9.75) < 1e-9,
+        str(page.evaluate("AppState.ego.z")),
+    )
 
     # ── Props: catalogue z is an offset, no clearance ────────────────────────
     page.click('[data-toolbar-tab="props"]')
@@ -179,10 +182,12 @@ with sync_playwright() as p:
     }}""")
     cone = page.evaluate("AppState.staticObjects[AppState.staticObjects.length-1]")
     surf = page.evaluate(f"ObjectsManager.groundZAt({cone['x']}, {cone['y']})")
-    check("cone placed on the rise, not at 0",
-          cone["z"] > 2.0, f"z={cone['z']}")
-    check("prop z is the bare surface + its catalogue offset (no clearance)",
-          abs(cone["z"] - surf) < 0.02, f"z={cone['z']} surface={surf}")
+    check("cone placed on the rise, not at 0", cone["z"] > 2.0, f"z={cone['z']}")
+    check(
+        "prop z is the bare surface + its catalogue offset (no clearance)",
+        abs(cone["z"] - surf) < 0.02,
+        f"z={cone['z']} surface={surf}",
+    )
 
     # ── Waypoints and trigger points ─────────────────────────────────────────
     # The ego's path now lives inside a follow_trajectory event, exactly like
@@ -201,33 +206,30 @@ with sync_playwright() as p:
     }}""")
     traj = page.evaluate("AppState.ego.events[0].action.trajectory")
     check("trajectory points were added", len(traj) == 3, str(len(traj)))
-    check("every trajectory point carries a z",
-          all(isinstance(w.get("z"), (int, float)) for w in traj), str(traj))
+    check("every trajectory point carries a z", all(isinstance(w.get("z"), (int, float)) for w in traj), str(traj))
     # Waypoint 1 is the seed on the actor itself, which carries the actor's z
     # rather than a freshly derived one — the gradient check is about the
     # clicked points.
     drawn = traj[1:]
-    check("waypoints follow the road down the gradient",
-          all(w["z"] > 0.4 for w in drawn) and drawn[0]["z"] > drawn[-1]["z"],
-          str([w["z"] for w in drawn]))
+    check(
+        "waypoints follow the road down the gradient",
+        all(w["z"] > 0.4 for w in drawn) and drawn[0]["z"] > drawn[-1]["z"],
+        str([w["z"] for w in drawn]),
+    )
 
     # ── Flat map: only the clearance shows ───────────────────────────────────
     page.evaluate("AppState.loadJSON({map:'Town01', ego:null, npcs:[], staticObjects:[]})")
     load_map(page, "Town01")
-    check("Town01 reports as flat",
-          page.evaluate("AppState.mapData.elevation.max") == 0.0)
-    check("Town01 spawn points are all at z=0",
-          page.evaluate("AppState.mapData.spawnPoints.every(s => s.z === 0)"))
+    check("Town01 reports as flat", page.evaluate("AppState.mapData.elevation.max") == 0.0)
+    check("Town01 spawn points are all at z=0", page.evaluate("AppState.mapData.spawnPoints.every(s => s.z === 0)"))
 
     place(page, "ego", 92.0, 23.0)
     z = page.evaluate("AppState.ego.z")
-    check("flat-map vehicle sits at exactly the clearance",
-          abs(z - VEHICLE_CLEARANCE) < 0.02, f"got {z}")
+    check("flat-map vehicle sits at exactly the clearance", abs(z - VEHICLE_CLEARANCE) < 0.02, f"got {z}")
 
     place(page, "pedestrian", 92.0, 30.0)
     z = page.evaluate("AppState.npcs[AppState.npcs.length-1].z")
-    check("flat-map VRU sits at exactly the VRU clearance",
-          abs(z - VRU_CLEARANCE) < 0.02, f"got {z}")
+    check("flat-map VRU sits at exactly the VRU clearance", abs(z - VRU_CLEARANCE) < 0.02, f"got {z}")
 
     # ── The derived z survives into the save file ────────────────────────────
     page.evaluate("AppState.loadJSON({map:'Town03', ego:null, npcs:[], staticObjects:[]})")
@@ -235,13 +237,14 @@ with sync_playwright() as p:
     place(page, "ego", *T3_HIGH)
     place(page, "car", T3_HIGH[0] - 20, T3_HIGH[1])
     saved = page.evaluate("AppState.toJSON()")
-    check("save file keeps the derived ego z", saved["ego"]["z"] > 2.0,
-          str(saved["ego"]["z"]))
-    check("save file keeps the derived npc z",
-          all(n["z"] > 1.0 for n in saved["npcs"]), str([n["z"] for n in saved["npcs"]]))
+    check("save file keeps the derived ego z", saved["ego"]["z"] > 2.0, str(saved["ego"]["z"]))
+    check(
+        "save file keeps the derived npc z",
+        all(n["z"] > 1.0 for n in saved["npcs"]),
+        str([n["z"] for n in saved["npcs"]]),
+    )
 
-    check("no unexpected JS errors during the run",
-          not [e for e in errors if "favicon" not in e], str(errors[:3]))
+    check("no unexpected JS errors during the run", not [e for e in errors if "favicon" not in e], str(errors[:3]))
     b.close()
 
 for name, ok, extra in checks:

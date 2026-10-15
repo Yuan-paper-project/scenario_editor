@@ -16,6 +16,7 @@ synchronous mode; a second ticking client advances the world underneath it and
 silently corrupts every timing measurement this file exists to produce. Both
 read paths here (on_tick, wait_for_tick) are passive.
 """
+
 import argparse
 import csv
 import math
@@ -34,8 +35,19 @@ except ImportError:
     )
 
 COLUMNS = [
-    "frame", "sim_time", "actor_id", "type_id", "role_name",
-    "x", "y", "z", "yaw", "vx", "vy", "vz", "speed",
+    "frame",
+    "sim_time",
+    "actor_id",
+    "type_id",
+    "role_name",
+    "x",
+    "y",
+    "z",
+    "yaw",
+    "vx",
+    "vy",
+    "vz",
+    "speed",
 ]
 
 
@@ -86,13 +98,13 @@ def main():
     ap.add_argument("--out", required=True, help="CSV output path")
     ap.add_argument("--host", default="localhost")
     ap.add_argument("--port", type=int, default=3000)
-    ap.add_argument("--seconds", type=float, default=0.0,
-                    help="stop after N wall-clock seconds (0 = until signalled)")
-    ap.add_argument("--recorder", default=None,
-                    help="also write CARLA's own binary recording to this path, "
-                         "for replaying a failed assertion by eye")
-    ap.add_argument("--vehicles-only", action="store_true",
-                    help="skip sensors/props/controllers (smaller CSV)")
+    ap.add_argument("--seconds", type=float, default=0.0, help="stop after N wall-clock seconds (0 = until signalled)")
+    ap.add_argument(
+        "--recorder",
+        default=None,
+        help="also write CARLA's own binary recording to this path, for replaying a failed assertion by eye",
+    )
+    ap.add_argument("--vehicles-only", action="store_true", help="skip sensors/props/controllers (smaller CSV)")
     args = ap.parse_args()
 
     client = carla.Client(args.host, args.port)
@@ -100,9 +112,11 @@ def main():
     world = client.get_world()
 
     settings = world.get_settings()
-    print(f"[telemetry] connected to {args.host}:{args.port} "
-          f"map={world.get_map().name} sync={settings.synchronous_mode} "
-          f"fixed_delta={settings.fixed_delta_seconds}")
+    print(
+        f"[telemetry] connected to {args.host}:{args.port} "
+        f"map={world.get_map().name} sync={settings.synchronous_mode} "
+        f"fixed_delta={settings.fixed_delta_seconds}"
+    )
     # Deliberately NOT calling world.apply_settings(): even a no-op write can
     # race ScenarioRunner's own settings handshake.
 
@@ -127,22 +141,27 @@ def main():
                 continue
             tf = actor_snap.get_transform()
             vel = actor_snap.get_velocity()
-            batch.append((
-                snapshot.frame,
-                snapshot.timestamp.elapsed_seconds,
-                actor_snap.id,
-                tf.location.x, tf.location.y, tf.location.z,
-                tf.rotation.yaw,
-                vel.x, vel.y, vel.z,
-            ))
+            batch.append(
+                (
+                    snapshot.frame,
+                    snapshot.timestamp.elapsed_seconds,
+                    actor_snap.id,
+                    tf.location.x,
+                    tf.location.y,
+                    tf.location.z,
+                    tf.rotation.yaw,
+                    vel.x,
+                    vel.y,
+                    vel.z,
+                )
+            )
         with rows_lock:
             rows.append(batch)
 
     callback_id = world.on_tick(on_tick)
 
     # Keep names fresh while the actors still exist (see ActorNames docstring).
-    name_poller = threading.Thread(
-        target=names.poll_until, args=(stop,), daemon=True)
+    name_poller = threading.Thread(target=names.poll_until, args=(stop,), daemon=True)
     name_poller.start()
 
     def handle_signal(_signum, _frame):
@@ -162,13 +181,14 @@ def main():
             # at all, which is indistinguishable from "the scenario has no
             # actors" unless we say so. This is the normal state between runs:
             # ScenarioRunner leaves synchronous_mode on when it exits.
-            if (not warned_idle and not rows
-                    and settings.synchronous_mode
-                    and (time.time() - started) > 3.0):
+            if not warned_idle and not rows and settings.synchronous_mode and (time.time() - started) > 3.0:
                 warned_idle = True
-                print("[telemetry] no ticks after 3s — the world is in "
-                      "synchronous mode and nothing is ticking it. Start the "
-                      "scenario first; this logger never ticks.", file=sys.stderr)
+                print(
+                    "[telemetry] no ticks after 3s — the world is in "
+                    "synchronous mode and nothing is ticking it. Start the "
+                    "scenario first; this logger never ticks.",
+                    file=sys.stderr,
+                )
             time.sleep(0.2)
     finally:
         stop.set()
@@ -187,18 +207,28 @@ def main():
             writer = csv.writer(fh)
             writer.writerow(COLUMNS)
             for batch in batches:
-                for (frame, sim_time, aid, x, y, z, yaw, vx, vy, vz) in batch:
+                for frame, sim_time, aid, x, y, z, yaw, vx, vy, vz in batch:
                     type_id, role = names.get(aid)
-                    is_actor = (type_id.startswith("vehicle.")
-                                or type_id.startswith("walker."))
+                    is_actor = type_id.startswith("vehicle.") or type_id.startswith("walker.")
                     if args.vehicles_only and not is_actor:
                         continue
-                    writer.writerow([
-                        frame, f"{sim_time:.4f}", aid, type_id, role,
-                        f"{x:.4f}", f"{y:.4f}", f"{z:.4f}", f"{yaw:.4f}",
-                        f"{vx:.4f}", f"{vy:.4f}", f"{vz:.4f}",
-                        f"{math.sqrt(vx * vx + vy * vy + vz * vz):.4f}",
-                    ])
+                    writer.writerow(
+                        [
+                            frame,
+                            f"{sim_time:.4f}",
+                            aid,
+                            type_id,
+                            role,
+                            f"{x:.4f}",
+                            f"{y:.4f}",
+                            f"{z:.4f}",
+                            f"{yaw:.4f}",
+                            f"{vx:.4f}",
+                            f"{vy:.4f}",
+                            f"{vz:.4f}",
+                            f"{math.sqrt(vx * vx + vy * vy + vz * vz):.4f}",
+                        ]
+                    )
                     n += 1
                     if role:
                         seen_roles[role] = type_id
@@ -206,19 +236,19 @@ def main():
                         anonymous[aid] = type_id
 
         span = (batches[-1][0][1] - batches[0][0][1]) if batches else 0.0
-        print(f"[telemetry] {n} rows over {len(batches)} ticks "
-              f"({span:.1f}s sim) -> {args.out}")
+        print(f"[telemetry] {n} rows over {len(batches)} ticks ({span:.1f}s sim) -> {args.out}")
         for role, type_id in sorted(seen_roles.items()):
             print(f"[telemetry]   {role:<14} {type_id}")
         # Only vehicles/walkers matter here; the map's traffic lights, speed
         # limit signs and static meshes are legitimately unnamed.
         for aid, type_id in sorted(anonymous.items()):
-            print(f"[telemetry]   warning: actor {aid} ({type_id}) has no "
-                  f"role_name — identify it by type_id + spawn order",
-                  file=sys.stderr)
+            print(
+                f"[telemetry]   warning: actor {aid} ({type_id}) has no "
+                f"role_name — identify it by type_id + spawn order",
+                file=sys.stderr,
+            )
         if not seen_roles:
-            print("[telemetry]   no named actors seen — was a scenario running?",
-                  file=sys.stderr)
+            print("[telemetry]   no named actors seen — was a scenario running?", file=sys.stderr)
 
 
 if __name__ == "__main__":

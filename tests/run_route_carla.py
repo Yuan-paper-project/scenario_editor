@@ -27,6 +27,7 @@ A route actor is judged OK when off_route max < 2.5 m and progress > 0.1.
 Needs the editor (EDITOR_URL) and CARLA on run.sh's port (2010). Not part of
 run_tests.sh.
 """
+
 import argparse
 import json
 import math
@@ -143,8 +144,14 @@ def main():
     for b in build(args.scenarios):
         print(f"\n=== {b['name']} ({b['scenario']['map']}, lane graph: {b['source']})", flush=True)
         res = R.run_case({"name": b["name"]}, b["xosc"], b["scenario"], keep_video=False, timeout=args.timeout)
-        entry = {"name": b["name"], "town": b["scenario"]["map"], "graph": b["source"],
-                 "terminated": not res["timed_out"], "wall_s": round(res["elapsed"]), "actors": {}}
+        entry = {
+            "name": b["name"],
+            "town": b["scenario"]["map"],
+            "graph": b["source"],
+            "terminated": not res["timed_out"],
+            "wall_s": round(res["elapsed"]),
+            "actors": {},
+        }
         try:
             run = A.Run(res["csv"])
         except FileNotFoundError:
@@ -159,9 +166,11 @@ def main():
                 continue
             pts = list(zip(tr.x, tr.y))
             start = next((i for i in range(len(pts)) if math.dist(pts[i], pts[0]) > 1.0), len(pts))
-            moving = pts[max(0, start - 1):]
-            entry["actors"][role] = {"driven_m": round(tr.distance_travelled(), 1),
-                                     **compare(a["route"], a["preview"], moving)}
+            moving = pts[max(0, start - 1) :]
+            entry["actors"][role] = {
+                "driven_m": round(tr.distance_travelled(), 1),
+                **compare(a["route"], a["preview"], moving),
+            }
         print(json.dumps(entry, indent=1), flush=True)
         results.append(entry)
     os.makedirs(os.path.dirname(args.out), exist_ok=True)

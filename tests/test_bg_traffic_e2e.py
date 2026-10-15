@@ -1,22 +1,23 @@
 """Hintergrundverkehr suite: background traffic (bgTraffic.js, backend/bg_traffic.py).
 
-  * off by default: the export is the plain .xosc, the map has no cars;
-  * switched on in the Umgebung menu (Umkreis 80 m by default), it is a bubble
-    that moves with the ego: on average `count` cars around it, no frame shown
-    farther than the radius + 20 m from where the preview has the ego, and a
-    car that appears mid-run drives in at the bubble's edge;
-  * Umkreis 0 is the whole map: `count` cars, each for the whole window;
-  * KEEP-OUT, in space and time: no car ever comes within `clearance` (body
-    edge to body edge) of where the preview has the ego or an NPC within 8 s
-    of that moment, nor of a prop — and cars do use the scenario's roads at
-    other times (that is what keeps the bubble full);
-  * deterministic for the same settings and scenario; a new seed or a moved
-    actor regenerates it;
-  * the preview draws every car exactly at the file's pose, and Stop removes
-    them;
-  * the export is a zip of the .xosc and the very traffic the preview showed;
-  * saved with the scenario; a file from before the feature loads with it off.
+* off by default: the export is the plain .xosc, the map has no cars;
+* switched on in the Umgebung menu (Umkreis 80 m by default), it is a bubble
+  that moves with the ego: on average `count` cars around it, no frame shown
+  farther than the radius + 20 m from where the preview has the ego, and a
+  car that appears mid-run drives in at the bubble's edge;
+* Umkreis 0 is the whole map: `count` cars, each for the whole window;
+* KEEP-OUT, in space and time: no car ever comes within `clearance` (body
+  edge to body edge) of where the preview has the ego or an NPC within 8 s
+  of that moment, nor of a prop — and cars do use the scenario's roads at
+  other times (that is what keeps the bubble full);
+* deterministic for the same settings and scenario; a new seed or a moved
+  actor regenerates it;
+* the preview draws every car exactly at the file's pose, and Stop removes
+  them;
+* the export is a zip of the .xosc and the very traffic the preview showed;
+* saved with the scenario; a file from before the feature loads with it off.
 """
+
 import io
 import json
 import sys
@@ -107,8 +108,7 @@ def main():
         page.wait_for_timeout(400)
 
         # ── off by default ────────────────────────────────────────────────
-        C("default: off", page.evaluate("AppState.bgTraffic.enabled") is False
-          and not page.is_checked("#bg-enabled"))
+        C("default: off", page.evaluate("AppState.bgTraffic.enabled") is False and not page.is_checked("#bg-enabled"))
         page.click("#env-menu-btn")
         C("default: status says Aus", page.inner_text("#bg-status").strip() == "Aus")
         page.keyboard.press("Escape")
@@ -116,8 +116,7 @@ def main():
         C("default: export is the plain .xosc request", isinstance(params, dict) and params.get("map") == "Town03")
         page.click("#sim-play")
         page.wait_for_timeout(500)
-        C("default: preview draws no background cars",
-          page.locator("#layer-bg-traffic .bg-car-group").count() == 0)
+        C("default: preview draws no background cars", page.locator("#layer-bg-traffic .bg-car-group").count() == 0)
         page.click("#sim-stop")
         page.wait_for_timeout(300)
 
@@ -133,33 +132,50 @@ def main():
         bub = page.evaluate(BUBBLE_JS)
         # Town03's lead_brake is the tightest case measured (two actors on one
         # lane through a dense grid): ~11 of 30 fit.
-        C("bubble: on average up to 30 cars around the ego, and more than a handful",
-          d["req"] == 30 and 8 <= bub["avg"] <= 34.5, bub)
+        C(
+            "bubble: on average up to 30 cars around the ego, and more than a handful",
+            d["req"] == 30 and 8 <= bub["avg"] <= 34.5,
+            bub,
+        )
         C("bubble: the stats' average is what the file shows", abs(bub["avg"] - bub["statsAvg"]) < 0.3, bub)
         C("bubble: the status says so", "im Umkreis von 80 m" in status and "Ø" in status, status)
         C("bubble: no car shown farther than radius + 20 m from the ego", bub["farthest"] <= 100.5, bub)
-        C("bubble: a car appearing mid-run drives in at the bubble's edge, not beside the ego",
-          bub["nearestAppear"] >= 70, bub)
+        C(
+            "bubble: a car appearing mid-run drives in at the bubble's edge, not beside the ego",
+            bub["nearestAppear"] >= 70,
+            bub,
+        )
         C("bubble: every entry lies inside the window", bub["outOfWindow"] == 0, bub)
         page.keyboard.press("Escape")
 
         # ── keep-out ──────────────────────────────────────────────────────
         k = page.evaluate(KEEPOUT_JS)
-        C("keep-out: no car within the clearance of a scripted actor within 8 s, nor of a prop",
-          k["worst"] >= k["clearance"] - 0.15, k)
-        C("keep-out: is timed — cars use the scenario's roads when its actors are elsewhere",
-          k["spatial"] < k["clearance"], k)
+        C(
+            "keep-out: no car within the clearance of a scripted actor within 8 s, nor of a prop",
+            k["worst"] >= k["clearance"] - 0.15,
+            k,
+        )
+        C(
+            "keep-out: is timed — cars use the scenario's roads when its actors are elsewhere",
+            k["spatial"] < k["clearance"],
+            k,
+        )
 
         # ── Umkreis 0: the whole map, the whole window ──────────────────────
         page.click("#env-menu-btn")
         page.fill("#bg-radius", "0")
         page.dispatch_event("#bg-radius", "change")
         page.wait_for_function(f"{WAIT_DATA} && BgTraffic.data.focus_radius === 0", timeout=60000)
-        w = page.evaluate("({n: BgTraffic.data.vehicles.length, frames: BgTraffic.data.frames,"
-                          " ok: BgTraffic.data.vehicles.every(v => !v.t0 && v.frames.length === BgTraffic.data.frames)})")
+        w = page.evaluate(
+            "({n: BgTraffic.data.vehicles.length, frames: BgTraffic.data.frames,"
+            " ok: BgTraffic.data.vehicles.every(v => !v.t0 && v.frames.length === BgTraffic.data.frames)})"
+        )
         C("whole map: 30 cars, each for the whole window", w["n"] == 30 and w["ok"], w)
-        C("whole map: the status counts cars", "30 Fahrzeuge" in page.inner_text("#bg-status")
-          and "Umkreis" not in page.inner_text("#bg-status"), page.inner_text("#bg-status"))
+        C(
+            "whole map: the status counts cars",
+            "30 Fahrzeuge" in page.inner_text("#bg-status") and "Umkreis" not in page.inner_text("#bg-status"),
+            page.inner_text("#bg-status"),
+        )
         k = page.evaluate(KEEPOUT_JS)
         C("whole map: keeps clear of the scenario too", k["worst"] >= k["clearance"] - 0.15, k)
         page.fill("#bg-radius", "80")
@@ -178,8 +194,9 @@ def main():
         C("seed: back to seed 1 is the same traffic as before", page.evaluate("BgTraffic.data.key") == key0)
 
         npc = page.evaluate("AppState.npcs[0].id")
-        page.evaluate("id => { const a = AppState.npcs.find(n => n.id === id);"
-                      " AppState.updateById(id, { x: a.x + 0.8 }); }", npc)
+        page.evaluate(
+            "id => { const a = AppState.npcs.find(n => n.id === id); AppState.updateById(id, { x: a.x + 0.8 }); }", npc
+        )
         page.wait_for_function(f"{WAIT_DATA} && BgTraffic.data.key !== '{key0}'", timeout=60000)
         C("edit: moving an NPC regenerates the traffic", page.evaluate("BgTraffic.data.key") != key0)
         k = page.evaluate(KEEPOUT_JS)
@@ -209,8 +226,11 @@ def main():
           });
           return { n: els.length, entries: d.vehicles.length, shown, alive, wrong, worst, t };
         }""")
-        C("preview: exactly the entries alive at that moment are drawn",
-          drawn["n"] == drawn["entries"] and drawn["wrong"] == 0 and drawn["shown"] > 0, drawn)
+        C(
+            "preview: exactly the entries alive at that moment are drawn",
+            drawn["n"] == drawn["entries"] and drawn["wrong"] == 0 and drawn["shown"] > 0,
+            drawn,
+        )
         C("preview: drawn exactly where the file puts it", drawn["worst"] < 0.02, drawn)
         visible = "[...document.querySelectorAll('#layer-bg-traffic .bg-car-group')].filter(g => g.style.display !== 'none').map(g => g.getAttribute('transform')).join('|')"
         t1 = page.evaluate(visible)
@@ -218,8 +238,10 @@ def main():
         page.wait_for_timeout(200)
         t2 = page.evaluate(visible)
         C("preview: cars move with the timeline", t1 != t2)
-        C("preview: cars are not hit-tested",
-          page.evaluate("getComputedStyle(document.getElementById('layer-bg-traffic')).pointerEvents") == "none")
+        C(
+            "preview: cars are not hit-tested",
+            page.evaluate("getComputedStyle(document.getElementById('layer-bg-traffic')).pointerEvents") == "none",
+        )
         page.click("#sim-stop")
         page.wait_for_timeout(300)
         C("stop: cars removed", page.locator("#layer-bg-traffic .bg-car-group").count() == 0)
@@ -234,33 +256,48 @@ def main():
             names = z.namelist()
         except zipfile.BadZipFile:
             names = []
-        C("export: a zip of .xosc + .bgtraffic.json",
-          dl.value.suggested_filename == "Town03_scenario.zip"
-          and sorted(names) == ["Town03_scenario.bgtraffic.json", "Town03_scenario.xosc"], names)
+        C(
+            "export: a zip of .xosc + .bgtraffic.json",
+            dl.value.suggested_filename == "Town03_scenario.zip"
+            and sorted(names) == ["Town03_scenario.bgtraffic.json", "Town03_scenario.xosc"],
+            names,
+        )
         if names:
             bg = json.loads(z.read("Town03_scenario.bgtraffic.json"))
             xosc = z.read("Town03_scenario.xosc").decode()
             C("export: the traffic is the one the preview showed", bg["key"] == key0)
-            C("export: the .xosc is a normal scenario (no background actors in it)",
-              "<ScenarioObject name=\"hero\"" in xosc and "background" not in xosc)
+            C(
+                "export: the .xosc is a normal scenario (no background actors in it)",
+                "<ScenarioObject name=\"hero\"" in xosc and "background" not in xosc,
+            )
 
         # ── save / load ───────────────────────────────────────────────────
         saved = page.evaluate("AppState.toJSON()")
-        C("save: settings in the save file", saved.get("bgTraffic", {}).get("enabled") is True
-          and saved["bgTraffic"]["count"] == 30 and saved["bgTraffic"].get("radius") == 80)
+        C(
+            "save: settings in the save file",
+            saved.get("bgTraffic", {}).get("enabled") is True
+            and saved["bgTraffic"]["count"] == 30
+            and saved["bgTraffic"].get("radius") == 80,
+        )
         old = dict(saved)
         old.pop("bgTraffic")
         page.evaluate("data => { AppState.loadJSON(data); }", old)
         page.wait_for_timeout(300)
-        C("load: a file without the setting loads with traffic off",
-          page.evaluate("AppState.bgTraffic.enabled") is False and not page.is_checked("#bg-enabled"))
+        C(
+            "load: a file without the setting loads with traffic off",
+            page.evaluate("AppState.bgTraffic.enabled") is False and not page.is_checked("#bg-enabled"),
+        )
         page.evaluate("data => { AppState.loadJSON(data); }", saved)
         page.wait_for_timeout(300)
-        C("load: a file with it on switches the menu on", page.is_checked("#bg-enabled")
-          and page.input_value("#bg-count") == "30")
+        C(
+            "load: a file with it on switches the menu on",
+            page.is_checked("#bg-enabled") and page.input_value("#bg-count") == "30",
+        )
 
         # ── a town too small for the request ──────────────────────────────
-        page.evaluate("AppState.bgTraffic = { ...AppState.bgTraffic, count: 200, clearance: 6, radius: 0 }; BgTraffic.ensure()")
+        page.evaluate(
+            "AppState.bgTraffic = { ...AppState.bgTraffic, count: 200, clearance: 6, radius: 0 }; BgTraffic.ensure()"
+        )
         page.wait_for_function(f"{WAIT_DATA} && BgTraffic.data.requested === 200", timeout=120000)
         n = page.evaluate("BgTraffic.data.vehicles.length")
         status = page.inner_text("#bg-status")

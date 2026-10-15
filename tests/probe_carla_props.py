@@ -22,6 +22,7 @@ spawns is destroyed before the next one.
     /home/dellpro2/Antonio/carla-venv/bin/python tests/probe_carla_props.py            # catalogue
     /home/dellpro2/Antonio/carla-venv/bin/python tests/probe_carla_props.py --all      # every static.prop.* in the build
 """
+
 import math, os, re, sys, time
 
 import carla
@@ -29,13 +30,15 @@ import carla
 PORT = int(os.environ.get("CARLA_PORT", "2050"))
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CATALOG_JS = os.path.join(REPO, "frontend", "js", "propCatalog.js")
-SETTLE_TICKS = 80          # 4 s at 0.05 s
+SETTLE_TICKS = 80  # 4 s at 0.05 s
 
 
 def catalogue_lifts():
     js = open(CATALOG_JS).read()
-    return {m.group(1): float(m.group(2)) for m in re.finditer(
-        r"'(static\.prop\.[^']+)': \{\s*label: '[^']*', group: '[^']*', z: (-?[0-9.]+)", js)}
+    return {
+        m.group(1): float(m.group(2))
+        for m in re.finditer(r"'(static\.prop\.[^']+)': \{\s*label: '[^']*', group: '[^']*', z: (-?[0-9.]+)", js)
+    }
 
 
 def flat_site(m):
@@ -55,8 +58,10 @@ def settle(client, world, bp, base, z):
     """ScenarioRunner's spawn + teleport sequence; returns the settled actor's state."""
     tf = carla.Transform(carla.Location(base.x, base.y, base.z + z), carla.Rotation(yaw=0))
     lifted = carla.Transform(carla.Location(base.x, base.y, base.z + z + 0.2), tf.rotation)
-    r = client.apply_batch_sync([carla.command.SpawnActor(bp, lifted).then(
-        carla.command.SetSimulatePhysics(carla.command.FutureActor, True))], True)[0]
+    r = client.apply_batch_sync(
+        [carla.command.SpawnActor(bp, lifted).then(carla.command.SetSimulatePhysics(carla.command.FutureActor, True))],
+        True,
+    )[0]
     if r.error:
         return {"error": r.error}
     a = world.get_actor(r.actor_id)
@@ -102,10 +107,14 @@ def main():
     st = world.get_settings()
     st.synchronous_mode, st.fixed_delta_seconds = True, 0.05
     world.apply_settings(st)
-    print(f"site {base.x:.1f},{base.y:.1f},{base.z:.2f}   lift = catalogue z; "
-          f"base = visual base above road after {SETTLE_TICKS * 0.05:.0f} s\n")
-    print(f"{'blueprint':34s} {'L x W x H (mesh frame)':>22s} {'centre off pivot':>18s} "
-          f"{'lift':>5s} {'base@lift':>9s} {'base@0':>8s}  note")
+    print(
+        f"site {base.x:.1f},{base.y:.1f},{base.z:.2f}   lift = catalogue z; "
+        f"base = visual base above road after {SETTLE_TICKS * 0.05:.0f} s\n"
+    )
+    print(
+        f"{'blueprint':34s} {'L x W x H (mesh frame)':>22s} {'centre off pivot':>18s} "
+        f"{'lift':>5s} {'base@lift':>9s} {'base@0':>8s}  note"
+    )
     try:
         for pid in ids:
             try:
@@ -131,8 +140,10 @@ def main():
             if "error" not in at0 and at0["dz"] < -5:
                 notes.append("FALLS THROUGH THE WORLD at z 0")
             b0 = f"{at0['base']:+8.2f}" if "error" not in at0 else "   error"
-            print(f"{pid:34s} {ex:6.2f} x {ey:5.2f} x {ez:5.2f}   ({cx:+5.2f}, {cy:+5.2f}, {cz:+5.2f}) "
-                  f"{lift:5.2f} {at['base']:+9.2f} {b0}  {'; '.join(notes)}")
+            print(
+                f"{pid:34s} {ex:6.2f} x {ey:5.2f} x {ez:5.2f}   ({cx:+5.2f}, {cy:+5.2f}, {cz:+5.2f}) "
+                f"{lift:5.2f} {at['base']:+9.2f} {b0}  {'; '.join(notes)}"
+            )
     finally:
         st.synchronous_mode, st.fixed_delta_seconds = False, None
         world.apply_settings(st)

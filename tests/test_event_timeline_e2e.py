@@ -1,12 +1,13 @@
 """„Ablauf" suite: the event timeline above the preview bar (eventTimeline.js).
 
-  * the bar's „Ablauf" button opens it; one row per actor, one block per
-    event that fires in the run, an „nie" count for those that do not;
-  * a chained event gets a connector;
-  * a click on a block starts the preview, paused, at that event's time;
-  * blocks cannot be dragged: a drag changes no trigger and records no undo;
-  * the preview bar keeps its width when the panel opens.
+* the bar's „Ablauf" button opens it; one row per actor, one block per
+  event that fires in the run, an „nie" count for those that do not;
+* a chained event gets a connector;
+* a click on a block starts the preview, paused, at that event's time;
+* blocks cannot be dragged: a drag changes no trigger and records no undo;
+* the preview bar keeps its width when the panel opens.
 """
+
 import sys
 
 from playwright.sync_api import sync_playwright
@@ -40,14 +41,20 @@ def main():
         page.click("#sim-lanes-toggle")
         page.wait_for_selector("#sim-lanes:not(.hidden) .sim-lane-row", timeout=5000)
         C("open: panel shown, button pressed", page.get_attribute("#sim-lanes-toggle", "aria-pressed") == "true")
-        C("open: the preview bar keeps its width",
-          abs(page.evaluate("document.getElementById('sim-progress-bar').getBoundingClientRect().width") - bar0) < 0.5)
+        C(
+            "open: the preview bar keeps its width",
+            abs(page.evaluate("document.getElementById('sim-progress-bar').getBoundingClientRect().width") - bar0)
+            < 0.5,
+        )
         d = page.evaluate("""() => { const d = EventTimeline.data; return {
             rows: d.rows.length, actors: 1 + AppState.npcs.length,
             fired: d.rows.reduce((n, r) => n + r.events.filter(e => e.firedAt != null).length, 0),
             never: d.rows.reduce((n, r) => n + r.events.filter(e => e.firedAt == null).length, 0) }; }""")
-        C("rows: one per actor", d["rows"] == d["actors"] and
-          page.locator(".sim-lane-row:not(.sim-lane-axis)").count() == d["actors"], d)
+        C(
+            "rows: one per actor",
+            d["rows"] == d["actors"] and page.locator(".sim-lane-row:not(.sim-lane-axis)").count() == d["actors"],
+            d,
+        )
         C("blocks: one per fired event", page.locator(".sim-lane-block").count() == d["fired"], d)
         nev = page.locator(".sim-lane-never").count()
         C("never-fired events are counted", (nev > 0) == (d["never"] > 0), (nev, d))
@@ -83,9 +90,11 @@ def main():
                 page.wait_for_timeout(600)
             C(f"drag {ev_id}: triggers unchanged", page.evaluate("JSON.stringify(AppState.npcs[0].events)") == ev0)
             C(f"drag {ev_id}: no undo entry", page.evaluate("UndoStack.length") == undo0)
-            C(f"drag {ev_id}: block does not offer dragging",
-              "ziehen" not in (page.get_attribute(BLOCK.format(a=lead, e=ev_id), "title") or "").lower()
-              and page.locator(BLOCK.format(a=lead, e=ev_id) + ".draggable").count() == 0)
+            C(
+                f"drag {ev_id}: block does not offer dragging",
+                "ziehen" not in (page.get_attribute(BLOCK.format(a=lead, e=ev_id), "title") or "").lower()
+                and page.locator(BLOCK.format(a=lead, e=ev_id) + ".draggable").count() == 0,
+            )
 
         page.click("#sim-lanes-toggle")
         C("close: hidden", page.locator("#sim-lanes.hidden").count() == 1)

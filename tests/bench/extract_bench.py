@@ -30,6 +30,7 @@ selecting scenarios — it is attached to the description you actually reproduce
 and the §4 total when weighting a coverage rollup, since that is the taxonomy's
 own statement of what the benchmark is made of.
 """
+
 import csv, html, json, re, sys
 from collections import Counter
 
@@ -51,7 +52,7 @@ def _desc_from_search(search, cid, source, tags):
     """
     s = search
     if s.startswith(cid.lower()):
-        s = s[len(cid):].strip()
+        s = s[len(cid) :].strip()
     for token in [t.lower() for t in tags][::-1] + [source.lower()]:
         if s.endswith(token):
             s = s[: -len(token)].strip()
@@ -64,22 +65,24 @@ def parse(page):
         chunk = DATA_URI.sub("", chunk)
         cid = _text(chunk, "gcid")
         source = re.search(r'data-source="([^"]*)"', chunk).group(1)
-        tags = [html.unescape(t) for t in
-                re.findall(r'<span class="gtag(?: unl)?">([^<]+)</span>', chunk)]
+        tags = [html.unescape(t) for t in re.findall(r'<span class="gtag(?: unl)?">([^<]+)</span>', chunk)]
         desc = _text(chunk, "gdesc", "p")
         search = html.unescape(re.search(r'data-search="([^"]*)"', chunk).group(1))
-        rows.append({
-            "id": cid,
-            "split": re.search(r'data-split="([^"]+)"', chunk).group(1),
-            "source": source,
-            "tags": tags,
-            "context": _text(chunk, "gctx"),
-            "description": desc or _desc_from_search(search, cid, source, tags),
-            "desc_source": "gdesc" if desc else "data-search",
-            "lowercase": not desc,
-            "media": (re.search(r'data-full="([^"]*)"', chunk) or [None, None])[1]
-            if 'data-full="' in chunk else None,
-        })
+        rows.append(
+            {
+                "id": cid,
+                "split": re.search(r'data-split="([^"]+)"', chunk).group(1),
+                "source": source,
+                "tags": tags,
+                "context": _text(chunk, "gctx"),
+                "description": desc or _desc_from_search(search, cid, source, tags),
+                "desc_source": "gdesc" if desc else "data-search",
+                "lowercase": not desc,
+                "media": (re.search(r'data-full="([^"]*)"', chunk) or [None, None])[1]
+                if 'data-full="' in chunk
+                else None,
+            }
+        )
     return rows
 
 
@@ -89,11 +92,13 @@ def parse_s4(page):
     if start < 0:
         return {}
     end = page.find('id="s5"')
-    section = page[start:end if end > start else start + 60_000]
+    section = page[start : end if end > start else start + 60_000]
     out = {}
     for row in re.findall(r"<tr>(.*?)</tr>", section, re.S):
-        cells = [html.unescape(re.sub(r"<[^>]+>", "", c)).strip()
-                 for c in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row, re.S)]
+        cells = [
+            html.unescape(re.sub(r"<[^>]+>", "", c)).strip()
+            for c in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row, re.S)
+        ]
         if len(cells) >= 2 and cells[1].isdigit():
             out[cells[0]] = int(cells[1])
     return out
@@ -105,12 +110,20 @@ def main(src, out):
     json.dump(rows, open(f"{out}/benchmark_index.json", "w"), indent=1)
     with open(f"{out}/benchmark_index.csv", "w", newline="") as fh:
         w = csv.writer(fh)
-        w.writerow(["id", "split", "source", "tags", "context", "description",
-                    "desc_source", "media"])
+        w.writerow(["id", "split", "source", "tags", "context", "description", "desc_source", "media"])
         for r in rows:
-            w.writerow([r["id"], r["split"], r["source"], "|".join(r["tags"]),
-                        r["context"], r["description"], r["desc_source"],
-                        r["media"] or ""])
+            w.writerow(
+                [
+                    r["id"],
+                    r["split"],
+                    r["source"],
+                    "|".join(r["tags"]),
+                    r["context"],
+                    r["description"],
+                    r["desc_source"],
+                    r["media"] or "",
+                ]
+            )
 
     cards = Counter(t for r in rows for t in r["tags"] if t != "unlabelled")
     print(f"{len(rows)} scenarios; splits {dict(Counter(r['split'] for r in rows))}")
@@ -128,14 +141,15 @@ def main(src, out):
     print(f"\n§4 table: {len(s4)} types over {sum(s4.values())} assignments")
     only4 = sorted(set(s4) - set(cards))
     only9 = sorted(set(cards) - set(s4))
-    moved = sorted((t for t in set(s4) & set(cards) if s4[t] != cards[t]),
-                   key=lambda t: -abs(s4[t] - cards[t]))
+    moved = sorted((t for t in set(s4) & set(cards) if s4[t] != cards[t]), key=lambda t: -abs(s4[t] - cards[t]))
     print(f"  in §4 but on no card ({len(only4)}): {', '.join(only4) or 'none'}")
     print(f"  on a card but not in §4 ({len(only9)}): {', '.join(only9) or 'none'}")
-    print(f"  counted differently ({len(moved)}): " + ", ".join(
-        f"{t} {s4[t]}->{cards[t]}" for t in moved[:6]) + (" ..." if len(moved) > 6 else ""))
-    print(f"  cards tagged 'unlabelled': "
-          f"{sum('unlabelled' in r['tags'] for r in rows)}")
+    print(
+        f"  counted differently ({len(moved)}): "
+        + ", ".join(f"{t} {s4[t]}->{cards[t]}" for t in moved[:6])
+        + (" ..." if len(moved) > 6 else "")
+    )
+    print(f"  cards tagged 'unlabelled': {sum('unlabelled' in r['tags'] for r in rows)}")
 
 
 if __name__ == "__main__":

@@ -67,24 +67,24 @@ import xml.etree.ElementTree as ET
 from collections import OrderedDict
 from pathlib import Path
 
-FORMAT_VERSION = 2       # 2: per-car t0 (a car need not exist for the whole window)
-WARMUP_S = 60.0         # simulated before the window starts
-DURATION_S = 65.0       # the window: every Act stops at MaxSimTime 60
-STEP_S = 0.1            # SUMO step and FCD period; consumers interpolate
-POOL_FACTOR = 2         # trips generated per requested car, up front
-MAX_TOPUPS = 3          # rounds of fresh trips when a settled run is short
+FORMAT_VERSION = 2  # 2: per-car t0 (a car need not exist for the whole window)
+WARMUP_S = 60.0  # simulated before the window starts
+DURATION_S = 65.0  # the window: every Act stops at MaxSimTime 60
+STEP_S = 0.1  # SUMO step and FCD period; consumers interpolate
+POOL_FACTOR = 2  # trips generated per requested car, up front
+MAX_TOPUPS = 3  # rounds of fresh trips when a settled run is short
 MAX_ITERATIONS = 16
-SETTLE_ROUNDS = 4       # the last rounds only remove cars (see generate)
+SETTLE_ROUNDS = 4  # the last rounds only remove cars (see generate)
 MAX_COUNT = 200
-JUMP_SLACK_M = 2.0      # a step longer than speed·dt + this is a teleport
+JUMP_SLACK_M = 2.0  # a step longer than speed·dt + this is a teleport
 MAX_FOCUS_RADIUS = 500.0
-KEEPOUT_TIME_S = 8.0         # a car may use a spot on a scripted path this long before/after its actor
+KEEPOUT_TIME_S = 8.0  # a car may use a spot on a scripted path this long before/after its actor
 BUBBLE_GEN_MARGIN_M = 250.0  # candidate trip edges: within the bubble radius + this of the route
-BUBBLE_POOL_FACTOR = 6       # aimed trips: most pass the ego, each for part of the window
+BUBBLE_POOL_FACTOR = 6  # aimed trips: most pass the ego, each for part of the window
 BUBBLE_MAX_TOPUPS = 6
-MAX_TRIPS_PER_ROUND = 600    # SUMO time and FCD size grow with every trip
-BUBBLE_HYSTERESIS_M = 20.0   # a shown car is removed only beyond radius + this
-BUBBLE_INSERT_CLEAR_M = 30.0 # trips departing within radius + this of the ego are not generated
+MAX_TRIPS_PER_ROUND = 600  # SUMO time and FCD size grow with every trip
+BUBBLE_HYSTERESIS_M = 20.0  # a shown car is removed only beyond radius + this
+BUBBLE_INSERT_CLEAR_M = 30.0  # trips departing within radius + this of the ego are not generated
 
 _TYPE_FILE = Path(__file__).parent / "sumo_data" / "opendrive_netconvert.typ.xml"
 
@@ -94,24 +94,24 @@ _TYPE_FILE = Path(__file__).parent / "sumo_data" / "opendrive_netconvert.typ.xml
 # CARLA's centre; every blueprint's box sits on its origin (location.z ≈ extent.z),
 # so a puppet's z is the road surface itself.
 BLUEPRINTS = [
-    ("vehicle.lincoln.mkz_2017",      2.451, 1.064),
-    ("vehicle.audi.a2",               1.853, 0.894),
-    ("vehicle.toyota.prius",          2.257, 1.003),
-    ("vehicle.tesla.model3",          2.396, 1.082),
-    ("vehicle.nissan.micra",          1.817, 0.923),
-    ("vehicle.mercedes.coupe_2020",   2.337, 0.906),
-    ("vehicle.seat.leon",             2.096, 0.908),
-    ("vehicle.citroen.c3",            1.994, 0.925),
-    ("vehicle.mini.cooper_s",         1.903, 0.985),
-    ("vehicle.chevrolet.impala",      2.679, 1.017),
-    ("vehicle.audi.etron",            2.428, 1.016),
-    ("vehicle.nissan.patrol_2021",    2.783, 1.075),
+    ("vehicle.lincoln.mkz_2017", 2.451, 1.064),
+    ("vehicle.audi.a2", 1.853, 0.894),
+    ("vehicle.toyota.prius", 2.257, 1.003),
+    ("vehicle.tesla.model3", 2.396, 1.082),
+    ("vehicle.nissan.micra", 1.817, 0.923),
+    ("vehicle.mercedes.coupe_2020", 2.337, 0.906),
+    ("vehicle.seat.leon", 2.096, 0.908),
+    ("vehicle.citroen.c3", 1.994, 0.925),
+    ("vehicle.mini.cooper_s", 1.903, 0.985),
+    ("vehicle.chevrolet.impala", 2.679, 1.017),
+    ("vehicle.audi.etron", 2.428, 1.016),
+    ("vehicle.nissan.patrol_2021", 2.783, 1.075),
     ("vehicle.jeep.wrangler_rubicon", 1.933, 0.953),
-    ("vehicle.volkswagen.t2_2021",    2.221, 0.887),
-    ("vehicle.mercedes.sprinter",     2.958, 0.994),
-    ("vehicle.ford.mustang",          2.359, 0.947),
-    ("vehicle.dodge.charger_2020",    2.504, 0.941),
-    ("vehicle.audi.tt",               2.091, 0.997),
+    ("vehicle.volkswagen.t2_2021", 2.221, 0.887),
+    ("vehicle.mercedes.sprinter", 2.958, 0.994),
+    ("vehicle.ford.mustang", 2.359, 0.947),
+    ("vehicle.dodge.charger_2020", 2.504, 0.941),
+    ("vehicle.audi.tt", 2.091, 0.997),
 ]
 _BP = {bp: (ex, ey) for bp, ex, ey in BLUEPRINTS}
 
@@ -121,6 +121,7 @@ class BgTrafficError(RuntimeError):
 
 
 # ── SUMO installation ───────────────────────────────────────────────────────
+
 
 def sumo_home() -> Path:
     """SUMO_HOME of the `eclipse-sumo` wheel in this venv, or BG_SUMO_HOME.
@@ -133,10 +134,10 @@ def sumo_home() -> Path:
         return Path(env)
     try:
         import sumo  # the eclipse-sumo wheel
+
         return Path(sumo.SUMO_HOME)
     except Exception as exc:  # pragma: no cover - depends on the install
-        raise BgTrafficError(
-            "SUMO ist nicht installiert (pip install eclipse-sumo==1.24.0 in .venv)") from exc
+        raise BgTrafficError("SUMO ist nicht installiert (pip install eclipse-sumo==1.24.0 in .venv)") from exc
 
 
 def _run(cmd: list[str], cwd: Path) -> None:
@@ -160,23 +161,34 @@ def sumo_net(xodr: Path) -> Path:
     with _net_locks_guard:
         lock = _net_locks.setdefault(str(out), threading.Lock())
     with lock:
-        fresh = (out.exists()
-                 and out.stat().st_mtime >= xodr.stat().st_mtime
-                 and out.stat().st_mtime >= _TYPE_FILE.stat().st_mtime)
+        fresh = (
+            out.exists()
+            and out.stat().st_mtime >= xodr.stat().st_mtime
+            and out.stat().st_mtime >= _TYPE_FILE.stat().st_mtime
+        )
         if fresh:
             return out
         out.parent.mkdir(parents=True, exist_ok=True)
         tmp = out.with_suffix(".tmp.xml")
-        _run([str(sumo_home() / "bin" / "netconvert"),
-              "--opendrive", str(xodr),
-              "--output-file", str(tmp),
-              "--geometry.min-radius.fix",
-              "--geometry.remove",
-              "--opendrive.curve-resolution", "1",
-              "--opendrive.import-all-lanes",
-              "--type-files", str(_TYPE_FILE),
-              "--output.original-names",
-              "--no-warnings"], cwd=out.parent)
+        _run(
+            [
+                str(sumo_home() / "bin" / "netconvert"),
+                "--opendrive",
+                str(xodr),
+                "--output-file",
+                str(tmp),
+                "--geometry.min-radius.fix",
+                "--geometry.remove",
+                "--opendrive.curve-resolution",
+                "1",
+                "--opendrive.import-all-lanes",
+                "--type-files",
+                str(_TYPE_FILE),
+                "--output.original-names",
+                "--no-warnings",
+            ],
+            cwd=out.parent,
+        )
         tmp.replace(out)
         return out
 
@@ -192,6 +204,7 @@ def _net_info(net: Path) -> tuple[tuple[float, float], float]:
 
 
 # ── Keep-out ───────────────────────────────────────────────────────────────
+
 
 class _KeepOut:
     """Segments of a set of paths, each with a half-width, bucketed on a grid
@@ -214,7 +227,7 @@ class _KeepOut:
     def __init__(self, paths: list[dict], clearance: float, window_s: float = 0.0):
         self.clearance = clearance
         self.window = window_s
-        self.segs: list[tuple] = []          # (ax, ay, bx, by, w, t_lo, t_hi) — t None: untimed
+        self.segs: list[tuple] = []  # (ax, ay, bx, by, w, t_lo, t_hi) — t None: untimed
         self.grid: dict[tuple[int, int], list[int]] = {}
         for path in paths or []:
             w = float(path.get("w", 1.0))
@@ -228,7 +241,7 @@ class _KeepOut:
                     lo = hi = None
                 self.segs.append((a[0], a[1], b[0], b[1], w, lo, hi))
         max_w = max((sg[4] for sg in self.segs), default=0.0)
-        self.reach = clearance + max_w + 1.5          # + the widest puppet's half-width
+        self.reach = clearance + max_w + 1.5  # + the widest puppet's half-width
         self.cell = max(10.0, self.reach)
         c = self.cell
         for i, (ax, ay, bx, by, *_rest) in enumerate(self.segs):
@@ -258,7 +271,7 @@ class _KeepOut:
         for i in cell:
             ax, ay, bx, by, w, lo, hi = self.segs[i]
             if t is not None and lo is not None and not (lo - self.window <= t <= hi + self.window):
-                continue                                   # the actor is not there then
+                continue  # the actor is not there then
             dx, dy = bx - ax, by - ay
             L2 = dx * dx + dy * dy
             u = 0.0 if L2 == 0 else max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / L2))
@@ -281,19 +294,21 @@ def _sumolib_net(net: Path):
     if tools not in sys.path:
         sys.path.append(tools)
     import sumolib  # noqa: E402  (lives in SUMO's tools/, not on the default path)
+
     key = str(net)
     mtime = net.stat().st_mtime
     with _sumolib_lock:
         hit = _sumolib_nets.get(key)
         if hit and hit[0] == mtime:
             return hit[1]
-        parsed = sumolib.net.readNet(key, withInternal=True)   # junction lanes: see _write_trip_weights
+        parsed = sumolib.net.readNet(key, withInternal=True)  # junction lanes: see _write_trip_weights
         _sumolib_nets[key] = (mtime, parsed)
         return parsed
 
 
-def _write_trip_weights(net: Path, off, zone: "_KeepOut | None", keepout: "_KeepOut",
-                        prefix: Path) -> tuple[list[str], "_Blocked"]:
+def _write_trip_weights(
+    net: Path, off, zone: "_KeepOut | None", keepout: "_KeepOut", prefix: Path
+) -> tuple[list[str], "_Blocked"]:
     """Where trips may start, end and stop, and what routes must not use.
 
     * randomTrips weight files (<prefix>.src/.dst/.via.xml): 1 for a drivable
@@ -353,8 +368,7 @@ class _Blocked:
         return len(self.edges) + len(self.turns)
 
     def route_ok(self, edges: list[str]) -> bool:
-        return not (self.edges.intersection(edges)
-                    or any((a, b) in self.turns for a, b in zip(edges, edges[1:])))
+        return not (self.edges.intersection(edges) or any((a, b) in self.turns for a, b in zip(edges, edges[1:])))
 
 
 def _drop_routes_using(routes: Path, blocked: "_Blocked") -> int:
@@ -385,12 +399,14 @@ def _densify(shape, step=5.0):
 
 # ── Generation ─────────────────────────────────────────────────────────────
 
+
 def _track_interpolator(track: list):
     """ego_at(t) -> (x, y) from [[t, x, y], …], held at both ends."""
     ts = [p[0] for p in track]
 
     def ego_at(t: float):
         import bisect
+
         i = bisect.bisect_right(ts, t)
         if i <= 0:
             return track[0][1], track[0][2]
@@ -399,6 +415,7 @@ def _track_interpolator(track: list):
         (t0, x0, y0), (t1, x1, y1) = track[i - 1], track[i]
         w = (t - t0) / (t1 - t0) if t1 > t0 else 0.0
         return x0 + (x1 - x0) * w, y0 + (y1 - y0) * w
+
     return ego_at
 
 
@@ -420,8 +437,20 @@ def _bubble_segments(fr, times, ego_at, enter_r: float, leave_r: float) -> list[
     return segs
 
 
-def _bubble_trips(routes: Path, net: Path, off, vtypes: Path, weights: Path, usable: list[str],
-                  ego_at, radius: float, n: int, seed: int, prefix: str, cwd: Path) -> None:
+def _bubble_trips(
+    routes: Path,
+    net: Path,
+    off,
+    vtypes: Path,
+    weights: Path,
+    usable: list[str],
+    ego_at,
+    radius: float,
+    n: int,
+    seed: int,
+    prefix: str,
+    cwd: Path,
+) -> None:
     """Trips aimed at the bubble: each starts in a ring outside it around
     where the ego is about to be, passes an edge inside it, and ends in the
     ring again — so nearly every car drives through once, close to the ego,
@@ -448,6 +477,7 @@ def _bubble_trips(routes: Path, net: Path, off, vtypes: Path, weights: Path, usa
             if where == "end":
                 return math.hypot(e[2][0] - cx, e[2][1] - cy)
             return min(math.hypot(x - cx, y - cy) for x, y in e[3])
+
         cands = [e[0] for e in edges if lo <= d(e) <= hi]
         return rng.choice(cands) if cands else None
 
@@ -455,10 +485,10 @@ def _bubble_trips(routes: Path, net: Path, off, vtypes: Path, weights: Path, usa
     for i in range(n):
         early = i % 5 == 0
         depart = rng.uniform(WARMUP_S - 30.0, WARMUP_S) if early else rng.uniform(WARMUP_S, WARMUP_S + DURATION_S - 8.0)
-        t_meet = max(0.0, depart - WARMUP_S) + 8.0           # ~8 s to drive into the bubble
+        t_meet = max(0.0, depart - WARMUP_S) + 8.0  # ~8 s to drive into the bubble
         ex, ey = ego_at(t_meet)
         if early:
-            src = pick(ex, ey, 0.0, radius + 150.0, "start")          # inserted before the window: anywhere
+            src = pick(ex, ey, 0.0, radius + 150.0, "start")  # inserted before the window: anywhere
         else:
             src = pick(ex, ey, radius + BUBBLE_INSERT_CLEAR_M, radius + 150.0, "start")
         via = pick(ex, ey, 0.0, radius * 0.75, "pass")
@@ -471,15 +501,35 @@ def _bubble_trips(routes: Path, net: Path, off, vtypes: Path, weights: Path, usa
     with open(tfile, "w") as fh:
         fh.write("<routes>\n")
         for depart, tid, src, via, dst in trips:
-            fh.write(f'    <trip id="{tid}" depart="{depart:.2f}" from="{src}" to="{dst}" via="{via}" '
-                     f'type="bg" departLane="best" departSpeed="max"/>\n')
+            fh.write(
+                f'    <trip id="{tid}" depart="{depart:.2f}" from="{src}" to="{dst}" via="{via}" '
+                f'type="bg" departLane="best" departSpeed="max"/>\n'
+            )
         fh.write("</routes>\n")
-    _run([str(sumo_home() / "bin" / "duarouter"),
-          "-n", str(net), "--route-files", str(tfile), "-o", str(routes),
-          "--additional-files", str(vtypes),
-          "--weight-files", str(weights) + ".route.xml", "--weight-attribute", "traveltime",
-          "--remove-loops", "--ignore-errors", "--no-warnings", "--no-step-log",
-          "--alternatives-output", "NUL"], cwd=cwd)
+    _run(
+        [
+            str(sumo_home() / "bin" / "duarouter"),
+            "-n",
+            str(net),
+            "--route-files",
+            str(tfile),
+            "-o",
+            str(routes),
+            "--additional-files",
+            str(vtypes),
+            "--weight-files",
+            str(weights) + ".route.xml",
+            "--weight-attribute",
+            "traveltime",
+            "--remove-loops",
+            "--ignore-errors",
+            "--no-warnings",
+            "--no-step-log",
+            "--alternatives-output",
+            "NUL",
+        ],
+        cwd=cwd,
+    )
 
 
 def _drop_trips_starting_near(routes: Path, net: Path, off, ego_at, clear_r: float) -> None:
@@ -495,7 +545,7 @@ def _drop_trips_starting_near(routes: Path, net: Path, off, ego_at, clear_r: flo
             continue
         t = float(el.get("depart", "0")) - WARMUP_S
         if t < 0:
-            continue                                         # inserted before the window opens
+            continue  # inserted before the window opens
         route = el.find("route")
         edges = (route.get("edges") if route is not None else "").split()
         if not edges:
@@ -512,33 +562,74 @@ def _write_vtypes(path: Path) -> None:
     for bp, ex, ey in BLUEPRINTS:
         lines.append(
             f'  <vType id="{bp}" vClass="passenger" length="{2 * ex:.3f}" width="{2 * ey:.3f}" '
-            f'minGap="2.5" accel="2.6" decel="4.5" sigma="0.5" speedFactor="normc(1,0.1,0.8,1.2)"/>')
+            f'minGap="2.5" accel="2.6" decel="4.5" sigma="0.5" speedFactor="normc(1,0.1,0.8,1.2)"/>'
+        )
     lines.append(f'  <vTypeDistribution id="bg" vTypes="{" ".join(bp for bp, _, _ in BLUEPRINTS)}"/>')
     lines.append('</additional>')
     path.write_text("\n".join(lines) + "\n")
 
 
-def _random_trips(net: Path, out: Path, vtypes: Path, seed: int, n_trips: int, min_distance: float,
-                  cwd: Path, prefix: str, weights: Path | None = None) -> None:
+def _random_trips(
+    net: Path,
+    out: Path,
+    vtypes: Path,
+    seed: int,
+    n_trips: int,
+    min_distance: float,
+    cwd: Path,
+    prefix: str,
+    weights: Path | None = None,
+) -> None:
     home = sumo_home()
     period = WARMUP_S / max(1, n_trips)
     extra = []
     if weights:
-        extra = ["--weights-prefix", str(weights),
-                 "--duarouter-weight-files", str(weights) + ".route.xml",
-                 "--duarouter-weight-attribute", "traveltime"]
-    _run([sys.executable, str(home / "tools" / "randomTrips.py"),
-          "-n", str(net), "-r", str(out), "-o", str(out.with_suffix(".trips.xml")),
-          "--prefix", prefix,
-          "--seed", str(seed), "--begin", "0", "--end", f"{WARMUP_S:.1f}",
-          "--period", f"{period:.4f}",
-          "--min-distance", f"{min_distance:.0f}",
-          "--fringe-factor", "1",
-          "--vclass", "passenger",
-          "--intermediate", "12",   # long routes: a car must last the whole window
-          "--remove-loops", "--validate",
-          "--trip-attributes", 'type="bg" departLane="best" departSpeed="max"',
-          "--additional-files", str(vtypes)] + extra, cwd=cwd)
+        extra = [
+            "--weights-prefix",
+            str(weights),
+            "--duarouter-weight-files",
+            str(weights) + ".route.xml",
+            "--duarouter-weight-attribute",
+            "traveltime",
+        ]
+    _run(
+        [
+            sys.executable,
+            str(home / "tools" / "randomTrips.py"),
+            "-n",
+            str(net),
+            "-r",
+            str(out),
+            "-o",
+            str(out.with_suffix(".trips.xml")),
+            "--prefix",
+            prefix,
+            "--seed",
+            str(seed),
+            "--begin",
+            "0",
+            "--end",
+            f"{WARMUP_S:.1f}",
+            "--period",
+            f"{period:.4f}",
+            "--min-distance",
+            f"{min_distance:.0f}",
+            "--fringe-factor",
+            "1",
+            "--vclass",
+            "passenger",
+            "--intermediate",
+            "12",  # long routes: a car must last the whole window
+            "--remove-loops",
+            "--validate",
+            "--trip-attributes",
+            'type="bg" departLane="best" departSpeed="max"',
+            "--additional-files",
+            str(vtypes),
+        ]
+        + extra,
+        cwd=cwd,
+    )
 
 
 def _routes_without(src: Path, dst: Path, drop: set[str]) -> int:
@@ -557,17 +648,39 @@ def _routes_without(src: Path, dst: Path, drop: set[str]) -> int:
 
 def _simulate(net: Path, routes: list[Path], vtypes: Path, seed: int, cwd: Path) -> Path:
     fcd = cwd / "fcd.xml"
-    _run([str(sumo_home() / "bin" / "sumo"),
-          "-n", str(net), "-r", ",".join(str(r) for r in routes), "-a", str(vtypes),
-          "--begin", "0", "--end", f"{WARMUP_S + DURATION_S:.1f}",
-          "--step-length", f"{STEP_S}",
-          "--seed", str(seed),
-          "--fcd-output", str(fcd),
-          "--device.fcd.begin", f"{WARMUP_S:.1f}",
-          "--fcd-output.attributes", "x,y,z,angle,speed",
-          "--lanechange.duration", "3",   # smooth lane changes; instant ones jump 3.5 m in a step
-          "--time-to-teleport", "300",
-          "--no-step-log", "--no-warnings", "--duration-log.disable"], cwd=cwd)
+    _run(
+        [
+            str(sumo_home() / "bin" / "sumo"),
+            "-n",
+            str(net),
+            "-r",
+            ",".join(str(r) for r in routes),
+            "-a",
+            str(vtypes),
+            "--begin",
+            "0",
+            "--end",
+            f"{WARMUP_S + DURATION_S:.1f}",
+            "--step-length",
+            f"{STEP_S}",
+            "--seed",
+            str(seed),
+            "--fcd-output",
+            str(fcd),
+            "--device.fcd.begin",
+            f"{WARMUP_S:.1f}",
+            "--fcd-output.attributes",
+            "x,y,z,angle,speed",
+            "--lanechange.duration",
+            "3",  # smooth lane changes; instant ones jump 3.5 m in a step
+            "--time-to-teleport",
+            "300",
+            "--no-step-log",
+            "--no-warnings",
+            "--duration-log.disable",
+        ],
+        cwd=cwd,
+    )
     return fcd
 
 
@@ -594,8 +707,9 @@ def _read_fcd(fcd: Path, types: dict[str, str], off) -> tuple[list[float], dict[
             vid = v.get("id")
             bp = types.get(vid) or v.get("type")
             ext_x = _BP.get(bp, (2.4, 1.0))[0]
-            x, y, z, yaw = _to_carla(float(v.get("x")), float(v.get("y")), float(v.get("z", 0.0)),
-                                     float(v.get("angle")), ext_x, off)
+            x, y, z, yaw = _to_carla(
+                float(v.get("x")), float(v.get("y")), float(v.get("z", 0.0)), float(v.get("angle")), ext_x, off
+            )
             tracks.setdefault(vid, []).append((k, x, y, z, yaw, float(v.get("speed", 0.0))))
         el.clear()
     return times, tracks
@@ -633,8 +747,9 @@ _cache_lock = threading.Lock()
 
 
 def _cache_key(town: str, net: Path, req: dict) -> str:
-    blob = json.dumps({"v": FORMAT_VERSION, "town": town, "net": net.stat().st_mtime, **req},
-                      sort_keys=True, separators=(",", ":"))
+    blob = json.dumps(
+        {"v": FORMAT_VERSION, "town": town, "net": net.stat().st_mtime, **req}, sort_keys=True, separators=(",", ":")
+    )
     return hashlib.sha1(blob.encode()).hexdigest()
 
 
@@ -669,12 +784,17 @@ def normalize_request(body: dict) -> dict:
         if pts:
             fpaths.append(pts)
     # track: [[t, x, y], …] — where the ego is when, as the preview predicts it.
-    track = sorted([[round(float(q[0]), 2), round(float(q[1]), 1), round(float(q[2]), 1)]
-                    for q in (focus.get("track") or []) if len(q) >= 3])
-    focus_req = ({"radius": round(radius, 1), "paths": fpaths, "track": track}
-                 if radius > 0 and fpaths and track else None)
-    return {"seed": seed, "count": count, "clearance": round(clearance, 2), "keepout": paths,
-            "focus": focus_req}
+    track = sorted(
+        [
+            [round(float(q[0]), 2), round(float(q[1]), 1), round(float(q[2]), 1)]
+            for q in (focus.get("track") or [])
+            if len(q) >= 3
+        ]
+    )
+    focus_req = (
+        {"radius": round(radius, 1), "paths": fpaths, "track": track} if radius > 0 and fpaths and track else None
+    )
+    return {"seed": seed, "count": count, "clearance": round(clearance, 2), "keepout": paths, "focus": focus_req}
 
 
 def generate(town: str, xodr: Path, body: dict) -> dict:
@@ -694,10 +814,16 @@ def generate(town: str, xodr: Path, body: dict) -> dict:
     zone = _KeepOut([{"w": 0.0, "pts": pts} for pts in focus["paths"]], focus["radius"]) if focus else None
     rng = random.Random(req["seed"])
     result = {
-        "version": FORMAT_VERSION, "town": town, "seed": req["seed"],
-        "requested": req["count"], "clearance": req["clearance"],
-        "focus_radius": 0,   # set below: 0 for the whole map, also when nothing near the route was drivable
-        "dt": STEP_S, "duration": DURATION_S, "key": key, "vehicles": [],
+        "version": FORMAT_VERSION,
+        "town": town,
+        "seed": req["seed"],
+        "requested": req["count"],
+        "clearance": req["clearance"],
+        "focus_radius": 0,  # set below: 0 for the whole map, also when nothing near the route was drivable
+        "dt": STEP_S,
+        "duration": DURATION_S,
+        "key": key,
+        "vehicles": [],
     }
     if req["count"] == 0:
         result["stats"] = {"iterations": 0, "seconds": 0.0}
@@ -716,8 +842,9 @@ def generate(town: str, xodr: Path, body: dict) -> dict:
         if bubble:
             # Candidate edges for the aimed trips (_bubble_trips): within reach
             # of the route, not the scenario's own lanes.
-            gen_zone = _KeepOut([{"w": 0.0, "pts": pts} for pts in focus["paths"]],
-                                focus["radius"] + BUBBLE_GEN_MARGIN_M)
+            gen_zone = _KeepOut(
+                [{"w": 0.0, "pts": pts} for pts in focus["paths"]], focus["radius"] + BUBBLE_GEN_MARGIN_M
+            )
             usable, avoided = _write_trip_weights(net, off, gen_zone, keepout.untimed(), weights)
             if len(usable) < 3:
                 bubble = False
@@ -733,12 +860,25 @@ def generate(town: str, xodr: Path, body: dict) -> dict:
             nonlocal pool, prefiltered
             rf = cwd / f"routes{round_no}.rou.xml"
             if bubble:
-                _bubble_trips(rf, net, off, vtypes, weights, usable, ego_at, radius, n,
-                              req["seed"] + 1000 * round_no, f"r{round_no}_", cwd)
+                _bubble_trips(
+                    rf,
+                    net,
+                    off,
+                    vtypes,
+                    weights,
+                    usable,
+                    ego_at,
+                    radius,
+                    n,
+                    req["seed"] + 1000 * round_no,
+                    f"r{round_no}_",
+                    cwd,
+                )
                 _drop_trips_starting_near(rf, net, off, ego_at, radius + BUBBLE_INSERT_CLEAR_M)
             else:
-                _random_trips(net, rf, vtypes, req["seed"] + 1000 * round_no, n, min_distance, cwd,
-                              f"r{round_no}_", weights)
+                _random_trips(
+                    net, rf, vtypes, req["seed"] + 1000 * round_no, n, min_distance, cwd, f"r{round_no}_", weights
+                )
             prefiltered += _drop_routes_using(rf, avoided)
             new = _resolve_types(rf, req["seed"] + round_no)
             types.update(new)
@@ -752,9 +892,9 @@ def generate(town: str, xodr: Path, body: dict) -> dict:
         reasons = {"absent": 0, "partial": 0, "popin": 0, "popout": 0, "jump": 0, "keepout": 0, "extra": 0}
         times: list[float] = []
         tracks: dict[str, list] = {}
-        spans: dict[str, list[tuple[int, int]]] = {}   # vid -> shown (first, last) indices into its frames
+        spans: dict[str, list[tuple[int, int]]] = {}  # vid -> shown (first, last) indices into its frames
         visible_avg = 0.0
-        rounds: list[list] = []   # per simulation: [cars shown (avg in a bubble), dropped, trips added after]
+        rounds: list[list] = []  # per simulation: [cars shown (avg in a bubble), dropped, trips added after]
         iterations = 0
         settled = False
         for iterations in range(1, MAX_ITERATIONS + 1):
@@ -764,39 +904,46 @@ def generate(town: str, xodr: Path, body: dict) -> dict:
             drop: set[str] = set()
             spans = {}
             if not bubble:
-                drop = set(types) - set(tracks)              # gone before the window
+                drop = set(types) - set(tracks)  # gone before the window
                 reasons["absent"] += len(drop)
             for vid, fr in tracks.items():
                 half_w = _BP.get(types.get(vid), (2.4, 1.0))[1]
                 if bubble:
                     segs = _bubble_segments(fr, times, ego_at, radius, radius + BUBBLE_HYSTERESIS_M)
                     if not segs:
-                        continue                             # never near the ego: not shown, not checked
-                    if segs[0][0] == 0 and fr[0][0] > 0:     # SUMO inserted it inside the bubble
-                        drop.add(vid); reasons["popin"] += 1
+                        continue  # never near the ego: not shown, not checked
+                    if segs[0][0] == 0 and fr[0][0] > 0:  # SUMO inserted it inside the bubble
+                        drop.add(vid)
+                        reasons["popin"] += 1
                         continue
-                    if segs[-1][1] == len(fr) - 1 and fr[-1][0] < n_frames - 1:   # it arrives inside
-                        drop.add(vid); reasons["popout"] += 1
+                    if segs[-1][1] == len(fr) - 1 and fr[-1][0] < n_frames - 1:  # it arrives inside
+                        drop.add(vid)
+                        reasons["popout"] += 1
                         continue
                 else:
                     if len(fr) != n_frames or fr[0][0] != 0:  # pops in or vanishes mid-window
-                        drop.add(vid); reasons["partial"] += 1
+                        drop.add(vid)
+                        reasons["partial"] += 1
                         continue
                     segs = [(0, len(fr) - 1)]
-                shown_frames = [f for a, b in segs for f in fr[a:b + 1]]
-                if any(math.hypot(q[1] - p[1], q[2] - p[2]) > max(p[5], q[5]) * STEP_S + JUMP_SLACK_M
-                       or q[0] != p[0] + 1 for a, b in segs for p, q in zip(fr[a:b], fr[a + 1:b + 1])):
-                    drop.add(vid); reasons["jump"] += 1      # a teleport
+                shown_frames = [f for a, b in segs for f in fr[a : b + 1]]
+                if any(
+                    math.hypot(q[1] - p[1], q[2] - p[2]) > max(p[5], q[5]) * STEP_S + JUMP_SLACK_M or q[0] != p[0] + 1
+                    for a, b in segs
+                    for p, q in zip(fr[a:b], fr[a + 1 : b + 1])
+                ):
+                    drop.add(vid)
+                    reasons["jump"] += 1  # a teleport
                     continue
                 if any(keepout.hits(f[1], f[2], half_w, times[f[0]]) for f in shown_frames):
-                    drop.add(vid); reasons["keepout"] += 1
+                    drop.add(vid)
+                    reasons["keepout"] += 1
                     continue
                 spans[vid] = segs
             shown = sorted(v for v in spans if v not in drop)
             # How many are shown: cars (whole map), or cars around the ego on
             # average over the window (bubble).
-            size = {v: (sum(b - a + 1 for a, b in spans[v]) / max(1, n_frames) if bubble else 1.0)
-                    for v in shown}
+            size = {v: (sum(b - a + 1 for a, b in spans[v]) / max(1, n_frames) if bubble else 1.0) for v in shown}
             amount = sum(size.values())
             # Trim to a reserve while cars are still being removed for cause,
             # and to the requested amount only once a round removed none: every
@@ -806,7 +953,9 @@ def generate(town: str, xodr: Path, body: dict) -> dict:
                 for v in rng.sample(shown, len(shown)):
                     if amount <= target:
                         break
-                    drop.add(v); amount -= size[v]; reasons["extra"] += 1
+                    drop.add(v)
+                    amount -= size[v]
+                    reasons["extra"] += 1
             visible_avg = amount
             rounds.append([round(amount, 1), len(drop), 0])
             # Short of the request: fresh trips, in the same re-simulation as
@@ -816,8 +965,11 @@ def generate(town: str, xodr: Path, body: dict) -> dict:
             # SETTLE_ROUNDS only remove, so the result can still settle.
             short = req["count"] - (amount if not drop else sum(size[v] for v in shown if v not in drop))
             per_car = (amount / len(shown)) if (bubble and shown) else 1.0
-            want_more = (short > (0.1 * req["count"] if bubble else 0) and topups < max_topups
-                         and iterations < MAX_ITERATIONS - (SETTLE_ROUNDS if drop else 0))
+            want_more = (
+                short > (0.1 * req["count"] if bubble else 0)
+                and topups < max_topups
+                and iterations < MAX_ITERATIONS - (SETTLE_ROUNDS if drop else 0)
+            )
             if not drop and not want_more:
                 settled = True
                 break
@@ -834,8 +986,9 @@ def generate(town: str, xodr: Path, body: dict) -> dict:
                 before = pool
                 # a quarter over the shortfall when cars are still being removed
                 need = short + (0.25 * req["count"] if drop else 0)
-                add_trips(topups, min(MAX_TRIPS_PER_ROUND, 4 * req["count"],
-                                      math.ceil(1.5 * need / max(per_car, 0.05))))
+                add_trips(
+                    topups, min(MAX_TRIPS_PER_ROUND, 4 * req["count"], math.ceil(1.5 * need / max(per_car, 0.05)))
+                )
                 rounds[-1][2] = pool - before
 
         final_ids = sorted(v for v in spans if v in types)
@@ -853,22 +1006,32 @@ def generate(town: str, xodr: Path, body: dict) -> dict:
                 # window without a focus; with one, from where it enters the
                 # bubble to where it leaves (a car that comes back is a second
                 # entry, same `car`).
-                result["vehicles"].append({
-                    "id": f"bg{len(result['vehicles'])}",
-                    "car": vid,
-                    "blueprint": bp,
-                    "length": round(2 * ex, 3), "width": round(2 * ey, 3),
-                    "color": colour,
-                    "t0": round(times[fr[a][0]], 3),
-                    "frames": [[round(f[1], 2), round(f[2], 2), round(f[3], 2), round(f[4], 1)]
-                               for f in fr[a:b + 1]],
-                })
+                result["vehicles"].append(
+                    {
+                        "id": f"bg{len(result['vehicles'])}",
+                        "car": vid,
+                        "blueprint": bp,
+                        "length": round(2 * ex, 3),
+                        "width": round(2 * ey, 3),
+                        "color": colour,
+                        "t0": round(times[fr[a][0]], 3),
+                        "frames": [
+                            [round(f[1], 2), round(f[2], 2), round(f[3], 2), round(f[4], 1)] for f in fr[a : b + 1]
+                        ],
+                    }
+                )
         result["frames"] = len(times)
         result["stats"] = {
-            "pool": pool, "topups": topups, "iterations": iterations, "settled": settled,
-            "usable_edges": usable_edges, "blocked": avoided_edges, "prefiltered": prefiltered,
+            "pool": pool,
+            "topups": topups,
+            "iterations": iterations,
+            "settled": settled,
+            "usable_edges": usable_edges,
+            "blocked": avoided_edges,
+            "prefiltered": prefiltered,
             "visible_avg": round(visible_avg, 1),
-            "dropped": reasons, "rounds": rounds,
+            "dropped": reasons,
+            "rounds": rounds,
             "seconds": round(time.monotonic() - started, 2),
         }
     return _remember(key, result)

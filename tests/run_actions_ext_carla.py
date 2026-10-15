@@ -19,6 +19,7 @@ CSV and the OSC log — printed next to what Simulate.runHeadless predicted:
 Needs CARLA on run.sh's port (2010) and the editor (EDITOR_URL, default :9090).
 Not part of run_tests.sh.
 """
+
 import argparse
 import json
 import math
@@ -41,11 +42,15 @@ def car(cid, lane, x, events, **extra):
 
 
 def spd(eid, trigger, target, dim="time", value=30):
-    return {"id": eid, "trigger": trigger,
-            "action": {"type": "set_speed",
-                       "dynamics": {"shape": "linear" if dim == "rate" else "step",
-                                    "dimension": dim, "value": value},
-                       "target": target}}
+    return {
+        "id": eid,
+        "trigger": trigger,
+        "action": {
+            "type": "set_speed",
+            "dynamics": {"shape": "linear" if dim == "rate" else "step", "dimension": dim, "value": value},
+            "target": target,
+        },
+    }
 
 
 def at(t):
@@ -56,47 +61,124 @@ def absolute(v, **kw):
     return {"mode": "absolute", "value": v, **kw}
 
 
-PARKED_EGO = {"id": "obj-1", "type": "ego", "x": -350, "y": LANE[3], "yaw": 0,
-              "events": [spd("e1", at(0), absolute(0), value=60)]}
+PARKED_EGO = {
+    "id": "obj-1",
+    "type": "ego",
+    "x": -350,
+    "y": LANE[3],
+    "yaw": 0,
+    "events": [spd("e1", at(0), absolute(0), value=60)],
+}
 
 CASES = [
-    dict(name="ext-accel",
-         ego=PARKED_EGO,
-         npcs=[car("obj-2", 4, -330, [spd("evt-1", at(1), absolute(12), value=6),
-                                      spd("evt-2", at(8), absolute(0), value=20)],
-                   max_acceleration=6, max_deceleration=2),
-               car("obj-3", 5, -330, [spd("evt-1", at(1), absolute(12), value=6),
-                                      spd("evt-2", at(8), absolute(0), value=20)])]),
-    dict(name="ext-reverse",
-         ego=PARKED_EGO,
-         npcs=[car("obj-2", 4, -280, [spd("evt-1", at(1), absolute(3, reverse=True), value=6),
-                                      spd("evt-2", {"type": "after_event", "event_id": "evt-1"},
-                                          absolute(0), value=5)])]),
-    dict(name="ext-offset",
-         ego=PARKED_EGO,
-         npcs=[car("obj-2", 4, -340,
-                   [{"id": "evt-1", "trigger": at(6),
-                     "action": {"type": "lane_offset", "direction": "left", "offset": 1.75,
-                                "continuous": False}},
-                    spd("evt-2", {"type": "after_event", "event_id": "evt-1"}, absolute(8),
-                        value=5)],
-                   initial_speed=8)]),
-    dict(name="ext-triggers",
-         ego={"id": "obj-1", "type": "ego", "x": -350, "y": LANE[3], "yaw": 0, "initial_speed": 10,
-              "events": [spd("e1", at(0), absolute(10), value=60)]},
-         npcs=[
-             # waits until the ego is > 5 m/s faster than itself (it stands: ego > 5 m/s)
-             car("obj-2", 4, -260, [spd("evt-1", {"type": "relative_speed", "entity_ref": "obj-1",
-                                                  "rule": "greaterThan", "value": 5},
-                                        absolute(5))]),
-             # waits until obj-2 (not the ego) is within 20 m of it
-             car("obj-3", 5, -215, [spd("evt-1", {"type": "distance_to_ego", "value": 20,
-                                                  "entity_ref": "obj-2"}, absolute(4))]),
-             # follows half the ego's speed, for good
-             car("obj-4", 6, -330, [spd("evt-1", at(0), {"mode": "relative", "entity_ref": "obj-1",
-                                                         "value_type": "factor", "factor": 0.5,
-                                                         "continuous": True})]),
-         ]),
+    dict(
+        name="ext-accel",
+        ego=PARKED_EGO,
+        npcs=[
+            car(
+                "obj-2",
+                4,
+                -330,
+                [spd("evt-1", at(1), absolute(12), value=6), spd("evt-2", at(8), absolute(0), value=20)],
+                max_acceleration=6,
+                max_deceleration=2,
+            ),
+            car(
+                "obj-3",
+                5,
+                -330,
+                [spd("evt-1", at(1), absolute(12), value=6), spd("evt-2", at(8), absolute(0), value=20)],
+            ),
+        ],
+    ),
+    dict(
+        name="ext-reverse",
+        ego=PARKED_EGO,
+        npcs=[
+            car(
+                "obj-2",
+                4,
+                -280,
+                [
+                    spd("evt-1", at(1), absolute(3, reverse=True), value=6),
+                    spd("evt-2", {"type": "after_event", "event_id": "evt-1"}, absolute(0), value=5),
+                ],
+            )
+        ],
+    ),
+    dict(
+        name="ext-offset",
+        ego=PARKED_EGO,
+        npcs=[
+            car(
+                "obj-2",
+                4,
+                -340,
+                [
+                    {
+                        "id": "evt-1",
+                        "trigger": at(6),
+                        "action": {"type": "lane_offset", "direction": "left", "offset": 1.75, "continuous": False},
+                    },
+                    spd("evt-2", {"type": "after_event", "event_id": "evt-1"}, absolute(8), value=5),
+                ],
+                initial_speed=8,
+            )
+        ],
+    ),
+    dict(
+        name="ext-triggers",
+        ego={
+            "id": "obj-1",
+            "type": "ego",
+            "x": -350,
+            "y": LANE[3],
+            "yaw": 0,
+            "initial_speed": 10,
+            "events": [spd("e1", at(0), absolute(10), value=60)],
+        },
+        npcs=[
+            # waits until the ego is > 5 m/s faster than itself (it stands: ego > 5 m/s)
+            car(
+                "obj-2",
+                4,
+                -260,
+                [
+                    spd(
+                        "evt-1",
+                        {"type": "relative_speed", "entity_ref": "obj-1", "rule": "greaterThan", "value": 5},
+                        absolute(5),
+                    )
+                ],
+            ),
+            # waits until obj-2 (not the ego) is within 20 m of it
+            car(
+                "obj-3",
+                5,
+                -215,
+                [spd("evt-1", {"type": "distance_to_ego", "value": 20, "entity_ref": "obj-2"}, absolute(4))],
+            ),
+            # follows half the ego's speed, for good
+            car(
+                "obj-4",
+                6,
+                -330,
+                [
+                    spd(
+                        "evt-1",
+                        at(0),
+                        {
+                            "mode": "relative",
+                            "entity_ref": "obj-1",
+                            "value_type": "factor",
+                            "factor": 0.5,
+                            "continuous": True,
+                        },
+                    )
+                ],
+            ),
+        ],
+    ),
 ]
 
 SEED = """(c) => {
@@ -150,8 +232,11 @@ def rate_between(tr, v0, v1):
 
 
 def judge(b, result):
-    out = {"name": b["name"], "terminated": not result["timed_out"] and result["returncode"] == 0,
-           "wall_s": round(result["elapsed"])}
+    out = {
+        "name": b["name"],
+        "terminated": not result["timed_out"] and result["returncode"] == 0,
+        "wall_s": round(result["elapsed"]),
+    }
     try:
         run = A.Run(result["csv"])
     except FileNotFoundError:
@@ -164,16 +249,18 @@ def judge(b, result):
         tr = run.get(role)
         if not tr:
             continue
-        info = {"max_speed": round(max(tr.speed), 2),
-                "z_range": [round(min(tr.z), 2), round(max(tr.z), 2)]}
+        info = {"max_speed": round(max(tr.speed), 2), "z_range": [round(min(tr.z), 2), round(max(tr.z), 2)]}
         if b["name"] == "ext-accel" and role != "hero":
             info["accel_rate_2_10"] = rate_between(tr, 2, 10)
             info["brake_rate_10_2"] = rate_between(tr, 10, 2)
         if b["name"] == "ext-reverse" and role == "adversary":
             info["dx"] = round(tr.x[-1] - tr.x[0], 2)
             info["yaw_range"] = [round(min(tr.yaw), 1), round(max(tr.yaw), 1)]
-            vx = [(tr.x[k + 10] - tr.x[k]) / (tr.t[k + 10] - tr.t[k])
-                  for k in range(0, len(tr.t) - 10, 10) if tr.t[k + 10] > tr.t[k]]
+            vx = [
+                (tr.x[k + 10] - tr.x[k]) / (tr.t[k + 10] - tr.t[k])
+                for k in range(0, len(tr.t) - 10, 10)
+                if tr.t[k + 10] > tr.t[k]
+            ]
             info["min_vx"] = round(min(vx), 2) if vx else None
         if b["name"] == "ext-offset" and role == "adversary":
             y0 = tr.y[0]
@@ -188,8 +275,7 @@ def judge(b, result):
                 for k in range(0, len(tr.t), 40):
                     j = hero.at(tr.t[k])
                     if j is not None:
-                        pairs.append([round(tr.t[k] - t0, 1), round(tr.speed[k], 2),
-                                      round(hero.speed[j], 2)])
+                        pairs.append([round(tr.t[k] - t0, 1), round(tr.speed[k], 2), round(hero.speed[j], 2)])
                 info["speed_vs_ego"] = pairs[:8]
         out[role] = info
     return out
@@ -206,8 +292,9 @@ def main():
     results = []
     for b in built:
         print(f"\n=== {b['name']}", flush=True)
-        res = R.run_case({"name": b["name"], "props": False}, b["xosc"], b["scenario"],
-                         keep_video=False, timeout=args.timeout)
+        res = R.run_case(
+            {"name": b["name"], "props": False}, b["xosc"], b["scenario"], keep_video=False, timeout=args.timeout
+        )
         j = judge(b, res)
         j["preview"] = {"fired": b["predicted"]["fired"], "completed": b["predicted"]["completed"]}
         print(json.dumps(j, indent=1), flush=True)

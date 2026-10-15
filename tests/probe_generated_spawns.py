@@ -25,6 +25,7 @@ unattended. Expect ~1% of scenarios, nearly all crossing pedestrians/cyclists.
 Runs the editor side with this repo's .venv and the CARLA side in a
 subprocess with carla-venv, the same split run_carla_cases.py uses.
 """
+
 import argparse
 import base64
 import io
@@ -75,10 +76,12 @@ print(json.dumps(results))
 
 CARLA_PY = "/home/dellpro2/Antonio/carla-venv/bin/python"
 CARLA_ROOT = "/home/dellpro2/CC/carla_0.9.15"
-CARLA_PYTHONPATH = ":".join([
-    f"{CARLA_ROOT}/PythonAPI/carla/dist/carla-0.9.15-cp310-cp310-linux_x86_64.egg",
-    f"{CARLA_ROOT}/PythonAPI/carla",
-])
+CARLA_PYTHONPATH = ":".join(
+    [
+        f"{CARLA_ROOT}/PythonAPI/carla/dist/carla-0.9.15-cp310-cp310-linux_x86_64.egg",
+        f"{CARLA_ROOT}/PythonAPI/carla",
+    ]
+)
 
 
 def actors_of(xosc):
@@ -96,8 +99,16 @@ def actors_of(xosc):
         ref = priv.get("entityRef")
         wp = priv.find(".//TeleportAction//WorldPosition")
         if ref in bps and wp is not None:
-            out.append({"name": ref, "bp": bps[ref], "x": float(wp.get("x")), "y": float(wp.get("y")),
-                        "z": float(wp.get("z", 0)), "h": float(wp.get("h", 0))})
+            out.append(
+                {
+                    "name": ref,
+                    "bp": bps[ref],
+                    "x": float(wp.get("x")),
+                    "y": float(wp.get("y")),
+                    "z": float(wp.get("z", 0)),
+                    "h": float(wp.get("h", 0)),
+                }
+            )
     return out
 
 
@@ -127,13 +138,16 @@ def _generate(args):
     with sync_playwright() as p:
         browser, page, errors = H.open_editor(p, "Town03")
         page.wait_for_function("AppState.laneGraph !== null", timeout=60000)
-        res = page.evaluate("""async ([n, s, m, t]) => {
+        res = page.evaluate(
+            """async ([n, s, m, t]) => {
           const res = await ScenarioGenerator.generateBatch({ count: n, seed: s, maps: m, typeKey: t });
           const out = await Api.exportBatch({ scenarios: res.entries, filename: 'p.zip' });
           const buf = new Uint8Array(await out.blob.arrayBuffer());
           let bin = ''; for (const c of buf) bin += String.fromCharCode(c);
           return { b64: btoa(bin), skipped: res.skipped.length };
-        }""", [args.count, args.seed, args.maps, args.type])
+        }""",
+            [args.count, args.seed, args.maps, args.type],
+        )
         browser.close()
     return res
 
@@ -141,15 +155,29 @@ def _generate(args):
 def _probe(args, res):
     z = zipfile.ZipFile(io.BytesIO(base64.b64decode(res["b64"])))
     manifest = json.loads(z.read("manifest.json"))
-    cases = [{"name": row["name"], "town": row["town"], "type": row["type"],
-              "actors": actors_of(z.read(row["name"] + ".xosc").decode())}
-             for row in manifest if row["status"] == "ok"]
-    print(f"{len(cases)} scenarios ({res['skipped']} skipped by the generator), "
-          f"{sum(len(c['actors']) for c in cases)} actors")
+    cases = [
+        {
+            "name": row["name"],
+            "town": row["town"],
+            "type": row["type"],
+            "actors": actors_of(z.read(row["name"] + ".xosc").decode()),
+        }
+        for row in manifest
+        if row["status"] == "ok"
+    ]
+    print(
+        f"{len(cases)} scenarios ({res['skipped']} skipped by the generator), "
+        f"{sum(len(c['actors']) for c in cases)} actors"
+    )
 
-    proc = subprocess.run([CARLA_PY, "-c", CARLA_SIDE, str(args.port)], input=json.dumps(cases),
-                          capture_output=True, text=True, env=dict(os.environ, PYTHONPATH=CARLA_PYTHONPATH),
-                          timeout=1800)
+    proc = subprocess.run(
+        [CARLA_PY, "-c", CARLA_SIDE, str(args.port)],
+        input=json.dumps(cases),
+        capture_output=True,
+        text=True,
+        env=dict(os.environ, PYTHONPATH=CARLA_PYTHONPATH),
+        timeout=1800,
+    )
     if proc.returncode != 0:
         print(proc.stderr[-2000:])
         sys.exit(2)
@@ -158,8 +186,10 @@ def _probe(args, res):
     types = {c["name"]: c["type"] for c in cases}
     for r in bad:
         for f in r["failed"]:
-            print(f"  FAIL  {r['name']} ({types[r['name']]}): {f['name']} {f['bp']} "
-                  f"@ ({f['x']:.1f}, {f['y']:.1f}, {f['z']:.2f}) — {f['why']}")
+            print(
+                f"  FAIL  {r['name']} ({types[r['name']]}): {f['name']} {f['bp']} "
+                f"@ ({f['x']:.1f}, {f['y']:.1f}, {f['z']:.2f}) — {f['why']}"
+            )
     print(f"\n{len(results) - len(bad)}/{len(results)} scenarios spawn completely")
     if args.out:
         failed = {r["name"] for r in bad}
@@ -176,6 +206,7 @@ def _probe(args, res):
             cols = list(dict.fromkeys(k for row in manifest for k in row))
             buf = io.StringIO()
             import csv
+
             w = csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
             w.writeheader()
             for row in manifest:

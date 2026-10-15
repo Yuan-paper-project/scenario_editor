@@ -33,6 +33,7 @@ level halves it, the last level fits in one tile. meta.json:
 where (x0, y0) is the CARLA world position of the level-0 image's top-left
 corner and width/height are level-0 pixels.
 """
+
 import json
 import math
 import os
@@ -50,19 +51,18 @@ import carla
 CARLA_HOST = os.environ.get("CARLA_HOST", "localhost")
 CARLA_PORT = int(os.environ.get("CARLA_PORT", "2050"))
 
-PPM = 10.0          # level-0 pixels per metre
-FRAME = 2048        # rendered frame, px (square)
-KEEP = 1024         # central crop kept from each frame, px
-FOV = 8.0           # degrees
-TILE = 512          # pyramid tile size, px
-MARGIN_M = 60.0     # beyond the map's extent; the editor pads its viewBox by 3% (33 m on Town06)
-SETTLE_TICKS = 4    # ticks after each teleport before the frame is used (texture streaming)
+PPM = 10.0  # level-0 pixels per metre
+FRAME = 2048  # rendered frame, px (square)
+KEEP = 1024  # central crop kept from each frame, px
+FOV = 8.0  # degrees
+TILE = 512  # pyramid tile size, px
+MARGIN_M = 60.0  # beyond the map's extent; the editor pads its viewBox by 3% (33 m on Town06)
+SETTLE_TICKS = 4  # ticks after each teleport before the frame is used (texture streaming)
 JPEG_QUALITY = 85
 # Manual exposure, tuned by eye on Town03 (mean ~157/255, ~0.1% clipped). Bloom
 # and lens flare are off: with them on, the water's glare haloed white onto the
 # shore, differently in every frame, so the tile grid showed on Town04's coast.
-EXPOSURE = dict(exposure_mode="manual", shutter_speed=60, iso=100, fstop=7.0,
-                bloom_intensity=0, lens_flare_intensity=0)
+EXPOSURE = dict(exposure_mode="manual", shutter_speed=60, iso=100, fstop=7.0, bloom_intensity=0, lens_flare_intensity=0)
 # NOT 90. A nadir camera under an overhead sun catches the water's specular
 # reflection dead centre in every frame — a saturated hotspot per frame that
 # shows as a checkerboard on Town04's sea. At 80 the reflection leaves the 8°
@@ -73,7 +73,8 @@ SUN_ALTITUDE = 80.0
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MAPS_DIR = REPO_ROOT / "maps"
 sys.path.insert(0, str(REPO_ROOT))
-from backend.map_renderer import build_map_render_data   # stdlib-only, safe in carla-venv
+from backend.map_renderer import build_map_render_data  # stdlib-only, safe in carla-venv
+
 # Town10 is the georeferenced VectorZero map with no CARLA asset — nothing to photograph.
 TOWNS = ["Town01", "Town02", "Town03", "Town04", "Town05", "Town06", "Town07", "Town10HD"]
 
@@ -89,15 +90,14 @@ def _road_extent(cmap, town):
     xs, ys = [], []
     for wp in cmap.generate_waypoints(2.0):
         loc = wp.transform.location
-        xs.append(loc.x); ys.append(loc.y)
+        xs.append(loc.x)
+        ys.append(loc.y)
     b = build_map_render_data(town)["bounds"]
-    return (min(min(xs), b["xMin"]), min(min(ys), b["yMin"]),
-            max(max(xs), b["xMax"]), max(max(ys), b["yMax"]))
+    return (min(min(xs), b["xMin"]), min(min(ys), b["yMin"]), max(max(xs), b["xMax"]), max(max(ys), b["yMax"]))
 
 
 def _ground_z(cmap, x, y):
-    wp = cmap.get_waypoint(carla.Location(x, y, 0.0), project_to_road=True,
-                           lane_type=carla.LaneType.Any)
+    wp = cmap.get_waypoint(carla.Location(x, y, 0.0), project_to_road=True, lane_type=carla.LaneType.Any)
     return wp.transform.location.z if wp else 0.0
 
 
@@ -109,9 +109,18 @@ def capture_town(client, town):
     settings.synchronous_mode = True
     settings.fixed_delta_seconds = 0.05
     world.apply_settings(settings)
-    world.set_weather(carla.WeatherParameters(
-        cloudiness=0, precipitation=0, precipitation_deposits=0, wind_intensity=0,
-        sun_azimuth_angle=0, sun_altitude_angle=SUN_ALTITUDE, fog_density=0, wetness=0))
+    world.set_weather(
+        carla.WeatherParameters(
+            cloudiness=0,
+            precipitation=0,
+            precipitation_deposits=0,
+            wind_intensity=0,
+            sun_azimuth_angle=0,
+            sun_altitude_angle=SUN_ALTITUDE,
+            fog_density=0,
+            wetness=0,
+        )
+    )
 
     xmin, ymin, xmax, ymax = _road_extent(cmap, town)
     step_m = KEEP / PPM
@@ -124,8 +133,7 @@ def capture_town(client, town):
     mosaic = np.zeros((H, W, 3), np.uint8)
 
     bp = world.get_blueprint_library().find("sensor.camera.rgb")
-    for k, v in dict(image_size_x=FRAME, image_size_y=FRAME, fov=FOV,
-                     motion_blur_intensity=0, **EXPOSURE).items():
+    for k, v in dict(image_size_x=FRAME, image_size_y=FRAME, fov=FOV, motion_blur_intensity=0, **EXPOSURE).items():
         bp.set_attribute(k, str(v))
     focal = (FRAME / 2) / math.tan(math.radians(FOV) / 2)
     q = queue.Queue()
@@ -133,7 +141,7 @@ def capture_town(client, town):
     cam.listen(q.put)
     lo = (FRAME - KEEP) // 2
     try:
-        for _ in range(20):          # first load: let the whole level stream in
+        for _ in range(20):  # first load: let the whole level stream in
             world.tick()
         t0 = time.time()
         for r in range(rows):
@@ -141,8 +149,7 @@ def capture_town(client, town):
                 cx = x0 + (c + 0.5) * step_m
                 cy = y0 + (r + 0.5) * step_m
                 alt = _ground_z(cmap, cx, cy) + focal / PPM
-                cam.set_transform(carla.Transform(carla.Location(cx, cy, alt),
-                                                  carla.Rotation(pitch=-90, yaw=-90)))
+                cam.set_transform(carla.Transform(carla.Location(cx, cy, alt), carla.Rotation(pitch=-90, yaw=-90)))
                 frame = None
                 for _ in range(SETTLE_TICKS):
                     frame = world.tick()
@@ -150,8 +157,9 @@ def capture_town(client, town):
                 while img.frame < frame:
                     img = q.get(timeout=30)
                 a = np.frombuffer(img.raw_data, np.uint8).reshape(FRAME, FRAME, 4)
-                mosaic[r * KEEP:(r + 1) * KEEP, c * KEEP:(c + 1) * KEEP] = \
-                    a[lo:lo + KEEP, lo:lo + KEEP, 2::-1]       # BGRA → RGB
+                mosaic[r * KEEP : (r + 1) * KEEP, c * KEEP : (c + 1) * KEEP] = a[
+                    lo : lo + KEEP, lo : lo + KEEP, 2::-1
+                ]  # BGRA → RGB
                 while not q.empty():
                     q.get_nowait()
             print(f"  row {r + 1}/{rows}  ({time.time() - t0:.0f}s)", flush=True)
@@ -175,18 +183,23 @@ def write_pyramid(town, mosaic, x0, y0):
         rows = math.ceil(img.height / TILE)
         for r in range(rows):
             for c in range(cols):
-                tile = img.crop((c * TILE, r * TILE, min((c + 1) * TILE, img.width),
-                                 min((r + 1) * TILE, img.height)))
+                tile = img.crop((c * TILE, r * TILE, min((c + 1) * TILE, img.width), min((r + 1) * TILE, img.height)))
                 tile.save(d / f"{c}_{r}.jpg", quality=JPEG_QUALITY, optimize=True)
         if cols == 1 and rows == 1:
             break
         img = img.resize((max(1, img.width // 2), max(1, img.height // 2)), Image.LANCZOS)
         level += 1
     meta = {
-        "ppm": PPM, "x0": x0, "y0": y0,
-        "width": mosaic.shape[1], "height": mosaic.shape[0],
-        "tileSize": TILE, "levels": level + 1,
-        "source": "carla", "fov": FOV, "sunAltitude": SUN_ALTITUDE,
+        "ppm": PPM,
+        "x0": x0,
+        "y0": y0,
+        "width": mosaic.shape[1],
+        "height": mosaic.shape[0],
+        "tileSize": TILE,
+        "levels": level + 1,
+        "source": "carla",
+        "fov": FOV,
+        "sunAltitude": SUN_ALTITUDE,
         "captured": time.strftime("%Y-%m-%d"),
     }
     (out / "meta.json").write_text(json.dumps(meta, indent=2))

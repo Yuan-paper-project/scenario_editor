@@ -21,6 +21,7 @@ scripted scenario as it was.
 
 Needs CARLA on run.sh's port (2010) and the editor (EDITOR_URL, default :9090).
 """
+
 import argparse
 import csv
 import json
@@ -49,18 +50,33 @@ def build(specs):
             if not info:
                 print(f"[build] {town}:{typ}:{seed} — no scenario on this map")
                 continue
-            page.evaluate("n => { AppState.bgTraffic = { ...AppState.bgTraffic, enabled: true, count: n, seed: 1 }; }", count)
+            page.evaluate(
+                "n => { AppState.bgTraffic = { ...AppState.bgTraffic, enabled: true, count: n, seed: 1 }; }", count
+            )
             page.evaluate("BgTraffic.ensure()")
-            page.wait_for_function("BgTraffic.data && !BgTraffic.busy && BgTraffic.data.town === AppState.map",
-                                   timeout=120000)
+            page.wait_for_function(
+                "BgTraffic.data && !BgTraffic.busy && BgTraffic.data.town === AppState.map", timeout=120000
+            )
             traffic = page.evaluate("BgTraffic.data")
             scenario = page.evaluate("AppState.toJSON()")
             xosc = H.xosc_from_params(page, page.evaluate("ScenarioIO.buildParamsForTesting()"))
-            built.append({"name": f"bg-{town}-{typ}-{seed}", "town": town, "type": typ, "seed": seed,
-                          "xosc": xosc, "scenario": scenario, "traffic": traffic,
-                          "npcs": len(scenario["npcs"]), "props": bool(scenario["staticObjects"])})
-            print(f"[build] {town}:{typ}:{seed}: {len(traffic['vehicles'])} background cars "
-                  f"({traffic['stats']})", flush=True)
+            built.append(
+                {
+                    "name": f"bg-{town}-{typ}-{seed}",
+                    "town": town,
+                    "type": typ,
+                    "seed": seed,
+                    "xosc": xosc,
+                    "scenario": scenario,
+                    "traffic": traffic,
+                    "npcs": len(scenario["npcs"]),
+                    "props": bool(scenario["staticObjects"]),
+                }
+            )
+            print(
+                f"[build] {town}:{typ}:{seed}: {len(traffic['vehicles'])} background cars ({traffic['stats']})",
+                flush=True,
+            )
         if errors:
             print("[build] browser errors:", errors)
         browser.close()
@@ -92,7 +108,8 @@ def analyse(csv_path, traffic, n_npcs):
     by_actor = {}
     for r in rows:
         by_actor.setdefault(r["actor_id"], []).append(
-            (float(r["sim_time"]), float(r["x"]), float(r["y"]), float(r["z"]), r["role_name"]))
+            (float(r["sim_time"]), float(r["x"]), float(r["y"]), float(r["z"]), r["role_name"])
+        )
     roles = {aid: next((x[4] for x in tr if x[4]), "") for aid, tr in by_actor.items()}
     hero = next((a for a, r in roles.items() if r == "hero"), None)
     if hero is None:
@@ -131,7 +148,7 @@ def analyse(csv_path, traffic, n_npcs):
             h = hero_xy.get(round(row[0], 3))
             if h and 0.5 < row[0] - t0 < traffic["duration"] - 0.5:
                 sink.append(math.hypot(row[1] - h[0], row[2] - h[1]))
-        for (ts, xs, ys, _zs, _r) in tr[1:]:
+        for ts, xs, ys, _zs, _r in tr[1:]:
             tt = ts - t0
             if ts - tr[0][0] < SETTLE_S or tt > traffic["duration"] - 0.2:
                 continue
@@ -148,19 +165,25 @@ def analyse(csv_path, traffic, n_npcs):
     if vanish_d:
         out["vanishes_at_hero_m"] = {"min": round(min(vanish_d), 1), "median": round(statistics.median(vanish_d), 1)}
     if spawn_offsets:
-        out["spawn_tick_offset_m"] = {"max": round(max(spawn_offsets), 2),
-                                      "t": round(min(by_actor[a][0][0] for a in bg) - t0, 2)}
+        out["spawn_tick_offset_m"] = {
+            "max": round(max(spawn_offsets), 2),
+            "t": round(min(by_actor[a][0][0] for a in bg) - t0, 2),
+        }
     if errors:
         errors.sort()
-        out["replay_error_m"] = {"median": round(statistics.median(errors), 3),
-                                 "p95": round(errors[int(0.95 * len(errors))], 3),
-                                 "max": round(errors[-1], 3), "samples": len(errors), "worst": worst}
+        out["replay_error_m"] = {
+            "median": round(statistics.median(errors), 3),
+            "p95": round(errors[int(0.95 * len(errors))], 3),
+            "max": round(errors[-1], 3),
+            "samples": len(errors),
+            "worst": worst,
+        }
 
     # Clearance: centre distance from every scripted vehicle to every background car, per frame.
     scripted = [a for a, r in roles.items() if r == "hero" or r.startswith("adversary")]
     frames = {}
     for aid in scripted + bg:
-        for (ts, xs, ys, _zs, _r) in by_actor[aid]:
+        for ts, xs, ys, _zs, _r in by_actor[aid]:
             frames.setdefault(round(ts, 3), {})[aid] = (xs, ys)
     closest = {}
     for ts, poses in frames.items():
@@ -179,8 +202,7 @@ def analyse(csv_path, traffic, n_npcs):
 
 
 def scenario_outcome(result, n_npcs):
-    out = {"terminated": not result["timed_out"] and result["returncode"] == 0,
-           "wall_s": round(result["elapsed"])}
+    out = {"terminated": not result["timed_out"] and result["returncode"] == 0, "wall_s": round(result["elapsed"])}
     try:
         run = A.Run(result["csv"])
     except FileNotFoundError:
@@ -213,8 +235,7 @@ def main():
     built = build(specs)
     results = []
     for b in built:
-        report = {"name": b["name"], "bg_cars": len(b["traffic"]["vehicles"]),
-                  "clearance_m": b["traffic"]["clearance"]}
+        report = {"name": b["name"], "bg_cars": len(b["traffic"]["vehicles"]), "clearance_m": b["traffic"]["clearance"]}
         # run_case writes the .xosc to srunner/examples/scenario_tester/gui_test_<name>.xosc;
         # the traffic goes beside it under the name run.sh looks for.
         name = b["name"]
@@ -223,8 +244,9 @@ def main():
             json.dump(b["traffic"], fh)
         os.environ.pop("BG_TRAFFIC", None)
         print(f"\n=== {name} with {report['bg_cars']} background cars", flush=True)
-        res = R.run_case({"name": name, "props": b["props"]}, b["xosc"], b["scenario"],
-                         keep_video=True, timeout=args.timeout)
+        res = R.run_case(
+            {"name": name, "props": b["props"]}, b["xosc"], b["scenario"], keep_video=True, timeout=args.timeout
+        )
         with open(res["log"]) as fh:
             log = fh.read()
         report["player_log"] = [ln.strip() for ln in log.splitlines() if "[bg_traffic]" in ln]
@@ -236,8 +258,13 @@ def main():
         if args.baseline:
             os.environ["BG_TRAFFIC"] = "off"
             print(f"=== {name} baseline (no traffic)", flush=True)
-            res0 = R.run_case({"name": name + "-baseline", "props": b["props"]}, b["xosc"], b["scenario"],
-                              keep_video=False, timeout=args.timeout)
+            res0 = R.run_case(
+                {"name": name + "-baseline", "props": b["props"]},
+                b["xosc"],
+                b["scenario"],
+                keep_video=False,
+                timeout=args.timeout,
+            )
             os.environ.pop("BG_TRAFFIC", None)
             report["baseline"] = scenario_outcome(res0, b["npcs"])
         print(json.dumps(report, indent=1), flush=True)

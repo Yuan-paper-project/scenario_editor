@@ -12,6 +12,7 @@ through a lane at the click and keeps a candidate only when its conflict
     on), Esc disarms, and a map click builds the scenario as ONE undo step;
   * a click where nothing fits toasts and stays armed for the next click.
 """
+
 import sys
 
 from playwright.sync_api import sync_playwright
@@ -90,12 +91,14 @@ def main():
         page.evaluate("AppState.select(null)")
         page.click('[data-overview-tab="templates"]')
         n = page.evaluate("document.querySelectorAll('[data-generate-here]').length")
-        C("templates tab: one button per type plus 'Beliebig'",
-          n == 1 + len(page.evaluate("Object.keys(ScenarioGenerator.TYPES)")), n)
+        C(
+            "templates tab: one button per type plus 'Beliebig'",
+            n == 1 + len(page.evaluate("Object.keys(ScenarioGenerator.TYPES)")),
+            n,
+        )
         page.click('[data-generate-here="lead_brake"]')
         C("templates tab: arms pendingGenerate", page.evaluate("AppState.pendingGenerate") == "lead_brake")
-        C("armed: the map shows the placement cursor",
-          page.evaluate("MapView.svg.classList.contains('placing')"))
+        C("armed: the map shows the placement cursor", page.evaluate("MapView.svg.classList.contains('placing')"))
         page.keyboard.press("Escape")
         C("Esc disarms", page.evaluate("AppState.pendingGenerate") is None)
         C("Esc drops the placement cursor", not page.evaluate("MapView.svg.classList.contains('placing')"))
@@ -106,25 +109,37 @@ def main():
         undo0 = page.evaluate("UndoStack.length")
         click_world(page, p["x"], p["y"])
         page.wait_for_function("AppState.ego !== null", timeout=30000)
-        C("click: builds a scenario with an ego and an NPC",
-          page.evaluate("!!AppState.ego && AppState.npcs.length >= 1"))
+        C(
+            "click: builds a scenario with an ego and an NPC",
+            page.evaluate("!!AppState.ego && AppState.npcs.length >= 1"),
+        )
         C("click: disarms afterwards", page.evaluate("AppState.pendingGenerate") is None)
-        C("click: one undo step", page.evaluate("UndoStack.length") == undo0 + 1,
-          page.evaluate("UndoStack.length") - undo0)
+        C(
+            "click: one undo step",
+            page.evaluate("UndoStack.length") == undo0 + 1,
+            page.evaluate("UndoStack.length") - undo0,
+        )
         info = page.evaluate("ScenarioGenerator.lastInfo")
-        C("click: built at the clicked spot", info and info.get("near") is not None
-          and abs(info["near"]["x"] - p["x"]) < 3 and abs(info["near"]["y"] - p["y"]) < 3,
-          info and info.get("near"))
-        C("click: the seed field was used and cleared", info["seed"] == 1234
-          and page.input_value("#gen-seed") == "", info["seed"])
+        C(
+            "click: built at the clicked spot",
+            info
+            and info.get("near") is not None
+            and abs(info["near"]["x"] - p["x"]) < 3
+            and abs(info["near"]["y"] - p["y"]) < 3,
+            info and info.get("near"),
+        )
+        C(
+            "click: the seed field was used and cleared",
+            info["seed"] == 1234 and page.input_value("#gen-seed") == "",
+            info["seed"],
+        )
 
         # ── UI: menu checkbox arms instead of generating; replace confirms ──
         ego_before = page.evaluate("JSON.stringify(AppState.ego)")
         page.click("#gen-menu-btn")
         page.check("#gen-pick-spot")
         page.locator("#gen-menu-types .menu-item", has_text="Querende Person").click()
-        C("menu + checkbox: arms instead of generating",
-          page.evaluate("AppState.pendingGenerate") == "vru_crossing")
+        C("menu + checkbox: arms instead of generating", page.evaluate("AppState.pendingGenerate") == "vru_crossing")
         C("menu + checkbox: scenario untouched", page.evaluate("JSON.stringify(AppState.ego)") == ego_before)
 
         # A click far off any road: nothing fits, toast, stays armed.
@@ -134,16 +149,17 @@ def main():
         page.wait_for_timeout(300)
         C("no site: stays armed for another click", page.evaluate("AppState.pendingGenerate") == "vru_crossing")
         C("no site: scenario untouched", page.evaluate("JSON.stringify(AppState.ego)") == ego_before)
-        C("no site: an error toast says so",
-          page.locator(".toast", has_text="an dieser Stelle").count() >= 1)
+        C("no site: an error toast says so", page.locator(".toast", has_text="an dieser Stelle").count() >= 1)
 
         # Over an existing scenario a click asks first; cancelling keeps it.
         click_world(page, spots[1]["x"], spots[1]["y"])
         page.wait_for_selector("#confirm-overlay:not(.hidden)", timeout=5000)
         page.keyboard.press("Escape")
         page.wait_for_timeout(200)
-        C("replace: cancelling the confirm keeps the scenario",
-          page.evaluate("JSON.stringify(AppState.ego)") == ego_before)
+        C(
+            "replace: cancelling the confirm keeps the scenario",
+            page.evaluate("JSON.stringify(AppState.ego)") == ego_before,
+        )
 
         C("no JS errors", not [e for e in errors if "404" not in e], errors[:5])
         browser.close()

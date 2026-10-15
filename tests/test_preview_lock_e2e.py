@@ -1,17 +1,18 @@
 """Preview lock, Ablauf playhead, trajectory speed and scenario clearing.
 
-  * a trajectory has ONE speed field (no per-vertex inputs); setting it
-    writes every vertex, a legacy file shows the effective average, and the
-    collapsed summary states it;
-  * Datei → „Neues Szenario" empties the scenario after a confirm, one undo
-    step brings it back, Strg skips the confirm;
-  * a map switch with a scenario on screen asks first: cancel keeps both the
-    scenario and the selected town, confirm empties it and the history;
-  * during a preview nothing on the map is draggable, and the properties
-    panel is full opacity, scrollable, framed, bannered and not clickable;
-  * the „Ablauf" panel has a playhead that follows the preview and scrubs it,
-    and a block click selects the actor and highlights its card.
+* a trajectory has ONE speed field (no per-vertex inputs); setting it
+  writes every vertex, a legacy file shows the effective average, and the
+  collapsed summary states it;
+* Datei → „Neues Szenario" empties the scenario after a confirm, one undo
+  step brings it back, Strg skips the confirm;
+* a map switch with a scenario on screen asks first: cancel keeps both the
+  scenario and the selected town, confirm empties it and the history;
+* during a preview nothing on the map is draggable, and the properties
+  panel is full opacity, scrollable, framed, bannered and not clickable;
+* the „Ablauf" panel has a playhead that follows the preview and scrubs it,
+  and a block click selects the actor and highlights its card.
 """
+
 import sys
 
 from playwright.sync_api import sync_playwright
@@ -36,13 +37,15 @@ def trajectory_speed(page):
     page.wait_for_timeout(300)
     page.evaluate("AppState.select('obj-1')")
     page.wait_for_timeout(300)
-    C("trajectory: no per-waypoint speed inputs",
-      page.locator("#event-list .waypoint-item input").count() == 0)
+    C("trajectory: no per-waypoint speed inputs", page.locator("#event-list .waypoint-item input").count() == 0)
     inp = page.locator("#event-list .trajectory-speed-input")
     C("trajectory: one speed field", inp.count() == 1)
     # 20 m at 4 m/s (5 s) + 20 m at 8 m/s (2.5 s) → 40 / 7.5 = 5.33
-    C("trajectory: legacy velocities show the effective average",
-      inp.input_value() == "5.5" or abs(float(inp.input_value()) - 5.33) < 0.06, inp.input_value())
+    C(
+        "trajectory: legacy velocities show the effective average",
+        inp.input_value() == "5.5" or abs(float(inp.input_value()) - 5.33) < 0.06,
+        inp.input_value(),
+    )
     inp.fill("7")
     inp.dispatch_event("change")
     page.wait_for_timeout(200)
@@ -77,8 +80,11 @@ def clear_scenario(page):
     st = page.evaluate("""() => ({ego: AppState.ego, npcs: AppState.npcs.length, props: AppState.staticObjects.length,
         sig: AppState.trafficSignals.length, gen: AppState.generated, map: AppState.map,
         markers: document.querySelectorAll('#layer-actors .actor-group, #layer-actors-top .actor-group').length})""")
-    C("clear: everything gone", st["ego"] is None and st["npcs"] == 0 and st["props"] == 0
-      and st["sig"] == 0 and st["gen"] is None, st)
+    C(
+        "clear: everything gone",
+        st["ego"] is None and st["npcs"] == 0 and st["props"] == 0 and st["sig"] == 0 and st["gen"] is None,
+        st,
+    )
     C("clear: map stays", st["map"] == "Town03", st)
     C("clear: no markers left on the map", st["markers"] == 0, st)
     page.keyboard.press("Control+z")
@@ -87,8 +93,10 @@ def clear_scenario(page):
     page.click("#file-menu-btn")
     page.click("#btn-new-scenario", modifiers=["Control"])
     page.wait_for_timeout(200)
-    C("clear: Strg skips the confirm", not page.evaluate("Confirm.isOpen")
-      and page.evaluate("!AppState.ego && AppState.npcs.length === 0"))
+    C(
+        "clear: Strg skips the confirm",
+        not page.evaluate("Confirm.isOpen") and page.evaluate("!AppState.ego && AppState.npcs.length === 0"),
+    )
     page.click("#file-menu-btn")
     page.click("#btn-new-scenario")
     page.wait_for_timeout(100)
@@ -100,15 +108,18 @@ SCENE = """() => JSON.stringify({ego: AppState.ego, npcs: AppState.npcs, props: 
 
 
 def opt_text(page, town):
-    return page.evaluate(f"[...document.getElementById('map-select').options].find(o => o.value === '{town}').textContent")
+    return page.evaluate(
+        f"[...document.getElementById('map-select').options].find(o => o.value === '{town}').textContent"
+    )
 
 
 def switch(page, town):
     page.select_option("#map-select", town)
     page.wait_for_timeout(100)
     C(f"switch to {town}: no question asked", not page.evaluate("Confirm.isOpen"))
-    page.wait_for_function(f"AppState.map === '{town}' && AppState.mapData && AppState.mapData.town === '{town}'",
-                           timeout=60000)
+    page.wait_for_function(
+        f"AppState.map === '{town}' && AppState.mapData && AppState.mapData.town === '{town}'", timeout=60000
+    )
     page.wait_for_timeout(300)
 
 
@@ -120,11 +131,16 @@ def map_switch(page, tmpdir):
     C("map switch: the Town03 scene has history to keep", undo03 > 0, undo03)
 
     switch(page, "Town01")
-    C("map switch: a new town starts empty",
-      page.evaluate("!AppState.ego && AppState.npcs.length === 0 && !AppState.generated"))
+    C(
+        "map switch: a new town starts empty",
+        page.evaluate("!AppState.ego && AppState.npcs.length === 0 && !AppState.generated"),
+    )
     C("map switch: ...with no history", page.evaluate("UndoStack.length + UndoStack.redoLength") == 0)
-    C("map switch: the town left is marked in the selector", opt_text(page, "Town03").endswith("●"),
-      opt_text(page, "Town03"))
+    C(
+        "map switch: the town left is marked in the selector",
+        opt_text(page, "Town03").endswith("●"),
+        opt_text(page, "Town03"),
+    )
     C("map switch: the current town is not", not opt_text(page, "Town01").endswith("●"))
     page.evaluate("""() => { AppState.npcs = [...AppState.npcs, {id: AppState.nextId(), type: 'car',
         x: 300, y: 1.9, z: 0.5, yaw: 180, initial_speed: 0, events: []}]; AppState.set({}); }""")
@@ -132,14 +148,21 @@ def map_switch(page, tmpdir):
 
     switch(page, "Town03")
     C("map switch: coming back restores the scenario", page.evaluate(SCENE) == town03)
-    C("map switch: ...and its undo history", page.evaluate("UndoStack.length") == undo03,
-      (page.evaluate("UndoStack.length"), undo03))
+    C(
+        "map switch: ...and its undo history",
+        page.evaluate("UndoStack.length") == undo03,
+        (page.evaluate("UndoStack.length"), undo03),
+    )
     C("map switch: ...with a toast", page.locator(".toast", has_text="wiederhergestellt").count() >= 1)
-    C("map switch: the actors are drawn",
-      page.locator("#layer-actors .actor-group, #layer-actors-top .actor-group").count()
-      == page.evaluate("1 + AppState.npcs.length"))
-    C("map switch: marks follow (Town01 parked, Town03 live)",
-      opt_text(page, "Town01").endswith("●") and not opt_text(page, "Town03").endswith("●"))
+    C(
+        "map switch: the actors are drawn",
+        page.locator("#layer-actors .actor-group, #layer-actors-top .actor-group").count()
+        == page.evaluate("1 + AppState.npcs.length"),
+    )
+    C(
+        "map switch: marks follow (Town01 parked, Town03 live)",
+        opt_text(page, "Town01").endswith("●") and not opt_text(page, "Town03").endswith("●"),
+    )
     page.keyboard.press("Control+z")
     page.wait_for_timeout(300)
     C("map switch: the restored history undoes", page.evaluate("UndoStack.length") == undo03 - 1)
@@ -165,10 +188,12 @@ def map_switch(page, tmpdir):
     path = f"{tmpdir}/town05.json"
     with open(path, "w") as fh:
         import json
+
         json.dump(data, fh)
     page.set_input_files("#btn-load-input", path)
-    page.wait_for_function("AppState.map === 'Town05' && AppState.mapData && AppState.mapData.town === 'Town05'",
-                           timeout=60000)
+    page.wait_for_function(
+        "AppState.map === 'Town05' && AppState.mapData && AppState.mapData.town === 'Town05'", timeout=60000
+    )
     page.wait_for_timeout(300)
     C("load: another town's file loads its own geometry", page.evaluate("AppState.mapData.town") == "Town05")
     C("load: the town it replaced is parked", opt_text(page, "Town01").endswith("●"))
@@ -193,8 +218,11 @@ def preview_lock(page):
     # Drag the lead's marker: nothing moves, nothing is recorded.
     pose0 = page.evaluate(f"(a => [a.x, a.y, a.yaw])(AppState.findById('{lead}'))")
     undo0 = page.evaluate("UndoStack.length")
-    box = page.locator(f'.actor-group[data-id="{lead}"]').first.bounding_box() \
-        if page.locator(f'.actor-group[data-id="{lead}"]').count() else None
+    box = (
+        page.locator(f'.actor-group[data-id="{lead}"]').first.bounding_box()
+        if page.locator(f'.actor-group[data-id="{lead}"]').count()
+        else None
+    )
     if box is None:
         x, y = H.world_to_screen(page, pose0[0], pose0[1])
     else:
@@ -241,7 +269,10 @@ def preview_lock(page):
     ev0 = page.evaluate(f"JSON.stringify(AppState.findById('{lead}').events)")
     page.locator("#event-list .event-collapse").first.click(force=True)
     page.wait_for_timeout(200)
-    C("panel: a forced click edits nothing", page.evaluate(f"JSON.stringify(AppState.findById('{lead}').events)") == ev0)
+    C(
+        "panel: a forced click edits nothing",
+        page.evaluate(f"JSON.stringify(AppState.findById('{lead}').events)") == ev0,
+    )
     page.evaluate("document.getElementById('properties-panel').scrollTop = 0")
     pb = page.locator("#properties-panel").bounding_box()
     page.mouse.move(pb["x"] + pb["width"] / 2, pb["y"] + pb["height"] / 2)
@@ -252,8 +283,10 @@ def preview_lock(page):
     C("panel: scrolls with the wheel", (not scrollable) or top > 0, (scrollable, top))
     page.keyboard.press("Tab")
     page.keyboard.press("Tab")
-    C("panel: Tab does not reach a field",
-      not page.evaluate("document.getElementById('properties-panel').contains(document.activeElement)"))
+    C(
+        "panel: Tab does not reach a field",
+        not page.evaluate("document.getElementById('properties-panel').contains(document.activeElement)"),
+    )
 
     # Playhead follows the preview and scrubs it.
     def head_frac():
@@ -261,6 +294,7 @@ def preview_lock(page):
             const t = document.querySelector('.sim-lane-axis .sim-lane-track').getBoundingClientRect();
             const hr = h.getBoundingClientRect();
             return (hr.left + hr.width / 2 - t.left) / t.width; }""")
+
     end = page.evaluate("EventTimeline.data.end")
     page.evaluate(f"Simulate.seek({end} * 0.5)")
     page.wait_for_timeout(100)
@@ -277,13 +311,19 @@ def preview_lock(page):
     C("playhead: it moved with the drag", abs(head_frac() - 0.25) < 0.03, head_frac())
     page.mouse.click(tb["x"] + tb["width"] * 0.75, tb["y"] + tb["height"] / 2)
     page.wait_for_timeout(200)
-    C("playhead: a press on the axis jumps there", abs(page.evaluate("Simulate.time") - end * 0.75) < max(0.3, end * 0.03))
+    C(
+        "playhead: a press on the axis jumps there",
+        abs(page.evaluate("Simulate.time") - end * 0.75) < max(0.3, end * 0.03),
+    )
     C("playhead: scrubbing leaves it paused", page.evaluate("Simulate.paused"))
 
     page.click("#sim-stop")
     page.wait_for_timeout(500)
     C("stop: highlight removed", page.locator("#event-list .event-card.timeline-focus").count() == 0)
-    C("stop: banner hidden", page.evaluate("getComputedStyle(document.getElementById('preview-lock-banner')).display") == "none")
+    C(
+        "stop: banner hidden",
+        page.evaluate("getComputedStyle(document.getElementById('preview-lock-banner')).display") == "none",
+    )
     C("stop: playhead back to idle", page.locator(".sim-lane-playhead.idle").count() == 1)
     C("stop: actor back on its pose", page.evaluate(f"(a => [a.x, a.y, a.yaw])(AppState.findById('{lead}'))") == pose0)
     page.click("#sim-lanes-toggle")
@@ -295,6 +335,7 @@ def load_during_preview(page, tmpdir):
     and its Stop wrote the OLD scenario's authored poses onto them."""
     import json
     import os
+
     page.evaluate("ScenarioGenerator.generate('lead_brake', 9)")
     other = page.evaluate("AppState.toJSON()")
     page.evaluate("ScenarioGenerator.generate('cut_in', 3)")
@@ -312,8 +353,11 @@ def load_during_preview(page, tmpdir):
     page.keyboard.press("Escape")
     page.wait_for_timeout(300)
     ego = page.evaluate("[AppState.ego.x, AppState.ego.y]")
-    C("load during preview: the loaded ego keeps the file's pose",
-      ego == [other["ego"]["x"], other["ego"]["y"]], (ego, other["ego"]["x"], other["ego"]["y"]))
+    C(
+        "load during preview: the loaded ego keeps the file's pose",
+        ego == [other["ego"]["x"], other["ego"]["y"]],
+        (ego, other["ego"]["x"], other["ego"]["y"]),
+    )
 
 
 def main():
@@ -323,6 +367,7 @@ def main():
         preview_lock(page)
         clear_scenario(page)
         import tempfile
+
         with tempfile.TemporaryDirectory() as tmp:
             map_switch(page, tmp)
             H.select_map(page, "Town04")

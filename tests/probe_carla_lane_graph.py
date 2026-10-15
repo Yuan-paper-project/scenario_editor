@@ -41,6 +41,7 @@ Town10 has no CARLA counterpart (see CLAUDE.md — it's a custom georeferenced
 map with no CARLA content asset behind it) and is skipped; the frontend falls
 back to phase-1 badging for it, exactly as it does for an uploaded map.
 """
+
 import json
 import os
 import sys
@@ -49,9 +50,9 @@ from pathlib import Path
 
 CARLA_HOST = os.environ.get("CARLA_HOST", "localhost")
 CARLA_PORT = int(os.environ.get("CARLA_PORT", "2010"))
-SAMPLING_RESOLUTION = 2.0     # matches atomic_behaviors.py's GlobalRoutePlanner(map, 2.0)
-LANE_SAMPLE_STEP = 1.0        # generate_waypoints() step — fine enough not to miss short sections
-FORK_QUERY_DISTANCE = 1.0     # next() distance queried from each lane's end point
+SAMPLING_RESOLUTION = 2.0  # matches atomic_behaviors.py's GlobalRoutePlanner(map, 2.0)
+LANE_SAMPLE_STEP = 1.0  # generate_waypoints() step — fine enough not to miss short sections
+FORK_QUERY_DISTANCE = 1.0  # next() distance queried from each lane's end point
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MAPS_DIR = REPO_ROOT / "maps"
@@ -59,9 +60,14 @@ MAPS_DIR = REPO_ROOT / "maps"
 # Bundled folder name -> CARLA's loadable map name. Identity for everything
 # except Town10, which CARLA does not have.
 TOWN_CARLA_NAME = {
-    "Town01": "Town01", "Town02": "Town02", "Town03": "Town03",
-    "Town04": "Town04", "Town05": "Town05", "Town06": "Town06",
-    "Town07": "Town07", "Town10HD": "Town10HD",
+    "Town01": "Town01",
+    "Town02": "Town02",
+    "Town03": "Town03",
+    "Town04": "Town04",
+    "Town05": "Town05",
+    "Town06": "Town06",
+    "Town07": "Town07",
+    "Town10HD": "Town10HD",
 }
 
 import carla  # noqa: E402
@@ -93,21 +99,26 @@ def _extract_routing_graph(grp):
     graph = grp._graph  # noqa: SLF001 — the whole point is to dump this
     road_id_to_edge = grp._road_id_to_edge  # noqa: SLF001
 
-    nodes = [{"id": n, **{k: round(v, 2) for k, v in zip(("x", "y", "z"), data["vertex"])}}
-             for n, data in graph.nodes(data=True)]
+    nodes = [
+        {"id": n, **{k: round(v, 2) for k, v in zip(("x", "y", "z"), data["vertex"])}}
+        for n, data in graph.nodes(data=True)
+    ]
 
     edges = []
     for u, v, data in graph.edges(data=True):
         edge_type = data["type"]
-        edges.append({
-            "from": u, "to": v,
-            "type": edge_type.name if hasattr(edge_type, "name") else str(edge_type),
-            "length": data.get("length", 1),
-            "intersection": bool(data.get("intersection")),
-            "path": [_pose(wp) for wp in (data.get("path") or [])],
-            "entry": {**_lane_ref(data["entry_waypoint"]), **_pose(data["entry_waypoint"])},
-            "exit": {**_lane_ref(data["exit_waypoint"]), **_pose(data["exit_waypoint"])},
-        })
+        edges.append(
+            {
+                "from": u,
+                "to": v,
+                "type": edge_type.name if hasattr(edge_type, "name") else str(edge_type),
+                "length": data.get("length", 1),
+                "intersection": bool(data.get("intersection")),
+                "path": [_pose(wp) for wp in (data.get("path") or [])],
+                "entry": {**_lane_ref(data["entry_waypoint"]), **_pose(data["entry_waypoint"])},
+                "exit": {**_lane_ref(data["exit_waypoint"]), **_pose(data["exit_waypoint"])},
+            }
+        )
 
     road_id_to_edge_out = {
         str(road_id): {
@@ -168,17 +179,21 @@ def _extract_lane_table(carla_map):
         left = wp.get_left_lane()
         right = wp.get_right_lane()
         successors = _walk_to_fork(wp, (road_id, section_id, lane_id))
-        lanes_out.append({
-            "roadId": road_id, "sectionId": section_id, "laneId": lane_id,
-            "s": round(wp.s, 2),  # where along the lane this record was sampled — its END
-            "laneType": str(wp.lane_type),
-            "laneChange": str(wp.lane_change),
-            "left": _lane_ref(left) if (left and left.lane_type == carla.LaneType.Driving) else None,
-            "right": _lane_ref(right) if (right and right.lane_type == carla.LaneType.Driving) else None,
-            # Index 0 is exactly what SimpleVehicleControl's map_wp.next(2.0)[0]
-            # walk would pick with no authored waypoints — see simple_vehicle_control.py.
-            "successors": [_lane_ref(s) for s in successors],
-        })
+        lanes_out.append(
+            {
+                "roadId": road_id,
+                "sectionId": section_id,
+                "laneId": lane_id,
+                "s": round(wp.s, 2),  # where along the lane this record was sampled — its END
+                "laneType": str(wp.lane_type),
+                "laneChange": str(wp.lane_change),
+                "left": _lane_ref(left) if (left and left.lane_type == carla.LaneType.Driving) else None,
+                "right": _lane_ref(right) if (right and right.lane_type == carla.LaneType.Driving) else None,
+                # Index 0 is exactly what SimpleVehicleControl's map_wp.next(2.0)[0]
+                # walk would pick with no authored waypoints — see simple_vehicle_control.py.
+                "successors": [_lane_ref(s) for s in successors],
+            }
+        )
     return lanes_out
 
 
@@ -192,8 +207,11 @@ def probe_town(client, folder_name, carla_name):
     t1 = time.time()
     grp = GlobalRoutePlanner(carla_map, SAMPLING_RESOLUTION)
     routing = _extract_routing_graph(grp)
-    print(f"[{folder_name}] routing graph in {time.time() - t1:.1f}s "
-          f"({len(routing['nodes'])} nodes, {len(routing['edges'])} edges)", flush=True)
+    print(
+        f"[{folder_name}] routing graph in {time.time() - t1:.1f}s "
+        f"({len(routing['nodes'])} nodes, {len(routing['edges'])} edges)",
+        flush=True,
+    )
 
     t2 = time.time()
     lanes = _extract_lane_table(carla_map)

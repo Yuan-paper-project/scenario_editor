@@ -1,4 +1,5 @@
 """Static props regression suite: catalogue, placement, editing, save/load, export."""
+
 import os
 from playwright.sync_api import sync_playwright
 import re as _re
@@ -7,10 +8,12 @@ import sys
 BASE = os.environ.get("EDITOR_URL", "http://localhost:9090")
 fails, checks = [], []
 
+
 def check(name, cond, extra=""):
     checks.append((name, bool(cond), extra))
     if not cond:
         fails.append(f"{name} {extra}")
+
 
 with sync_playwright() as p:
     b = p.chromium.launch()
@@ -27,24 +30,27 @@ with sync_playwright() as p:
     n_props = page.evaluate("PropCatalog.ids().length")
     check("79 props in catalogue", n_props == 79, str(n_props))
     check("six prop groups", page.evaluate("PropCatalog.GROUPS.length") == 6)
-    check("every prop belongs to a declared group",
-          page.evaluate("""() => { const g = PropCatalog.GROUPS.map(x => x.id);
-              return PropCatalog.ids().every(i => g.includes(PropCatalog.get(i).group)); }"""))
-    check("Verkehrsfuehrung group removed",
-          page.evaluate("PropCatalog.GROUPS.filter(g=>g.id==='control').length") == 0)
+    check(
+        "every prop belongs to a declared group",
+        page.evaluate("""() => { const g = PropCatalog.GROUPS.map(x => x.id);
+              return PropCatalog.ids().every(i => g.includes(PropCatalog.get(i).group)); }"""),
+    )
+    check("Verkehrsfuehrung group removed", page.evaluate("PropCatalog.GROUPS.filter(g=>g.id==='control').length") == 0)
     # streetsign* are advertising / info panels, not traffic signs — the reason
     # they were once dropped was a mislabel, so pin the label.
-    check("streetsign is not labelled as a traffic sign",
-          "Verkehr" not in page.evaluate("PropCatalog.label('static.prop.streetsign')"))
+    check(
+        "streetsign is not labelled as a traffic sign",
+        "Verkehr" not in page.evaluate("PropCatalog.label('static.prop.streetsign')"),
+    )
     check("dirtdebris01 kept", page.evaluate("!!PropCatalog.get('static.prop.dirtdebris01')"))
     # No prop has physics: a pivot above the mesh base must be lifted by `z`.
-    check("shoppingcart lifted out of the road (measured 1.08 m)",
-          abs(page.evaluate("PropCatalog.defaultZ('static.prop.shoppingcart')") - 1.08) < 1e-9)
+    check(
+        "shoppingcart lifted out of the road (measured 1.08 m)",
+        abs(page.evaluate("PropCatalog.defaultZ('static.prop.shoppingcart')") - 1.08) < 1e-9,
+    )
     off = page.evaluate("PropCatalog.planOffset('static.prop.container')")
-    check("container carries its measured pivot offset",
-          abs(off["x"]) < 1e-9 and abs(off["y"] - 1.1) < 1e-9, str(off))
-    check("blueprint id with a space resolves",
-          page.evaluate("!!PropCatalog.get('static.prop.bike helmet')"))
+    check("container carries its measured pivot offset", abs(off["x"]) < 1e-9 and abs(off["y"] - 1.1) < 1e-9, str(off))
+    check("blueprint id with a space resolves", page.evaluate("!!PropCatalog.get('static.prop.bike helmet')"))
 
     # every prop declares a known facing rule
     bad = page.evaluate("""() => { const ok=['none','oncoming','along','alongside','toward-road'];
@@ -52,18 +58,16 @@ with sync_playwright() as p:
     check("every prop has a valid facing rule", bad == [], str(bad))
 
     # ── Toolbar tabs ──────────────────────────────────────────────────────────
-    n_tiles = page.evaluate(
-        "document.querySelectorAll('[data-toolbar-panel=\"props\"] .tool-btn').length")
+    n_tiles = page.evaluate("document.querySelectorAll('[data-toolbar-panel=\"props\"] .tool-btn').length")
     check("79 prop tiles rendered", n_tiles == 79, f"got {n_tiles}")
-    check("props panel hidden initially",
-          page.locator('[data-toolbar-panel="props"]').is_hidden())
+    check("props panel hidden initially", page.locator('[data-toolbar-panel="props"]').is_hidden())
     page.click('[data-toolbar-tab="props"]')
-    check("props panel visible after tab click",
-          page.locator('[data-toolbar-panel="props"]').is_visible())
-    check("actors panel hidden after tab click",
-          page.locator('[data-toolbar-panel="actors"]').is_hidden())
-    check("prop tiles have glyph svg",
-          page.evaluate("!!document.querySelector('[data-toolbar-panel=\"props\"] .tool-btn svg')"))
+    check("props panel visible after tab click", page.locator('[data-toolbar-panel="props"]').is_visible())
+    check("actors panel hidden after tab click", page.locator('[data-toolbar-panel="actors"]').is_hidden())
+    check(
+        "prop tiles have glyph svg",
+        page.evaluate("!!document.querySelector('[data-toolbar-panel=\"props\"] .tool-btn svg')"),
+    )
 
     # ── Sections fold, search filters across them ─────────────────────────────
     vis = lambda pid: page.locator(f'.tool-btn[data-prop="{pid}"]').is_visible()
@@ -76,14 +80,15 @@ with sync_playwright() as p:
     page.fill(".prop-search", "container")
     check("search reaches a folded section", vis("static.prop.container"))
     check("search hides non-matching tiles", not vis("static.prop.trafficcone01"))
-    check("search hides sections with no hit",
-          page.locator('.prop-section[data-group="workzone"]').is_hidden())
-    check("search matches the blueprint id too",
-          page.evaluate("""() => { const i = document.querySelector('.prop-search');
+    check("search hides sections with no hit", page.locator('.prop-section[data-group="workzone"]').is_hidden())
+    check(
+        "search matches the blueprint id too",
+        page.evaluate("""() => { const i = document.querySelector('.prop-search');
               i.value = 'trashcan04'; i.dispatchEvent(new Event('input'));
               return [...document.querySelectorAll('[data-toolbar-panel="props"] .tool-btn')]
                 .filter(b => !b.classList.contains('hidden')).map(b => b.dataset.prop); }""")
-          == ["static.prop.trashcan04"])
+        == ["static.prop.trashcan04"],
+    )
     page.fill(".prop-search", "xyzzy")
     check("empty-result note shown", page.locator(".prop-search-empty").is_visible())
     page.focus(".prop-search")
@@ -110,22 +115,28 @@ with sync_playwright() as p:
     page.click('[data-toolbar-tab="props"]')
     page.click('.tool-btn[data-prop="static.prop.trafficcone01"]')
     check("prop tool armed", page.evaluate("AppState.activeTool") == "prop")
-    check("pendingProp set",
-          page.evaluate("AppState.pendingProp") == "static.prop.trafficcone01")
-    check("prop tile shows active",
-          page.evaluate("document.querySelector('.tool-btn[data-prop=\"static.prop.trafficcone01\"]').classList.contains('active')"))
+    check("pendingProp set", page.evaluate("AppState.pendingProp") == "static.prop.trafficcone01")
+    check(
+        "prop tile shows active",
+        page.evaluate(
+            "document.querySelector('.tool-btn[data-prop=\"static.prop.trafficcone01\"]').classList.contains('active')"
+        ),
+    )
 
     for i in range(5):
         page.mouse.click(cx + i * 26, cy + i * 14)
     n = page.evaluate("AppState.staticObjects.length")
     check("5 cones placed (sticky)", n == 5, f"got {n}")
     check("tool still armed after placing", page.evaluate("AppState.activeTool") == "prop")
-    check("prop placement does not steal selection",
-          page.evaluate("AppState.selectedId === (AppState.ego && AppState.ego.id)"))
-    check("5 prop groups in SVG",
-          page.evaluate("document.querySelectorAll('#layer-props .prop-group').length") == 5)
-    check("cone has no yaw arrow (not oriented)",
-          page.evaluate("document.querySelectorAll('#layer-props .yaw-arrow').length") == 0)
+    check(
+        "prop placement does not steal selection",
+        page.evaluate("AppState.selectedId === (AppState.ego && AppState.ego.id)"),
+    )
+    check("5 prop groups in SVG", page.evaluate("document.querySelectorAll('#layer-props .prop-group').length") == 5)
+    check(
+        "cone has no yaw arrow (not oriented)",
+        page.evaluate("document.querySelectorAll('#layer-props .yaw-arrow').length") == 0,
+    )
 
     # ── Shift-click still snaps POSITION ──────────────────────────────────────
     page.keyboard.down("Shift")
@@ -134,10 +145,10 @@ with sync_playwright() as p:
     snapped = page.evaluate("AppState.staticObjects[AppState.staticObjects.length-1]")
     free = page.evaluate(
         "(()=>{const w=MapView.svgToWorld({clientX:%d,clientY:%d});"
-        "return {x:Math.round(w.x*10)/10,y:Math.round(w.y*10)/10};})()" % (cx + 200, cy + 100))
+        "return {x:Math.round(w.x*10)/10,y:Math.round(w.y*10)/10};})()" % (cx + 200, cy + 100)
+    )
     moved = abs(snapped["x"] - free["x"]) > 0.05 or abs(snapped["y"] - free["y"]) > 0.05
-    check("shift-click snapped to lane", moved,
-          f"snapped={snapped['x']},{snapped['y']} free={free['x']},{free['y']}")
+    check("shift-click snapped to lane", moved, f"snapped={snapped['x']},{snapped['y']} free={free['x']},{free['y']}")
 
     page.keyboard.press("Escape")
     check("Escape disarms tool", page.evaluate("AppState.activeTool") is None)
@@ -148,20 +159,23 @@ with sync_playwright() as p:
     page.mouse.click(cx - 220, cy + 140)
     page.keyboard.press("Escape")
     page.fill(".prop-search", "")
-    check("container has yaw arrow (oriented)",
-          page.evaluate("document.querySelectorAll('#layer-props .yaw-arrow').length") == 1)
+    check(
+        "container has yaw arrow (oriented)",
+        page.evaluate("document.querySelectorAll('#layer-props .yaw-arrow').length") == 1,
+    )
 
     # ── Selection: picker and properties coexist ──────────────────────────────
     page.evaluate("AppState.select(AppState.staticObjects[0].id)")
     check("prop selected", page.evaluate("AppState.selectedId") is not None)
-    check("PICKER STILL VISIBLE while prop selected",
-          page.locator('[data-toolbar-panel="props"]').is_visible())
+    check("PICKER STILL VISIBLE while prop selected", page.locator('[data-toolbar-panel="props"]').is_visible())
     check("properties panel visible", page.locator("#props-content").is_visible())
     check("prop-type row visible", page.locator("#prop-type-row").is_visible())
     check("NPC section hidden for prop", page.locator("#props-npc-section").is_hidden())
-    check("title uses prop label",
-          "LEITFASS" in page.evaluate("document.getElementById('props-title').textContent").upper(),
-          page.evaluate("document.getElementById('props-title').textContent"))
+    check(
+        "title uses prop label",
+        "LEITFASS" in page.evaluate("document.getElementById('props-title').textContent").upper(),
+        page.evaluate("document.getElementById('props-title').textContent"),
+    )
 
     page.fill("#prop-z", "0.1")
     page.dispatch_event("#prop-z", "change")
@@ -169,8 +183,10 @@ with sync_playwright() as p:
     check("z=0.1 sticks (not forced to 0.2)", abs(z - 0.1) < 1e-9, f"got {z}")
 
     page.select_option("#prop-type-select", "static.prop.barrel")
-    check("prop type swapped to barrel",
-          page.evaluate("AppState.findById(AppState.selectedId).prop") == "static.prop.barrel")
+    check(
+        "prop type swapped to barrel",
+        page.evaluate("AppState.findById(AppState.selectedId).prop") == "static.prop.barrel",
+    )
 
     # ── Drag; map must not pan ────────────────────────────────────────────────
     tf_before = page.evaluate("document.getElementById('world').getAttribute('transform')")
@@ -183,14 +199,20 @@ with sync_playwright() as p:
         const s = pt.matrixTransform(g.getScreenCTM());
         return [s.x, s.y];
     }})()""")
-    check("prop origin is hit-testable",
-          page.evaluate("([x,y])=>!!document.elementFromPoint(x,y)?.closest('.prop-group')", org))
-    page.mouse.move(org[0], org[1]); page.mouse.down()
-    page.mouse.move(org[0] + 60, org[1] + 40, steps=8); page.mouse.up()
+    check(
+        "prop origin is hit-testable",
+        page.evaluate("([x,y])=>!!document.elementFromPoint(x,y)?.closest('.prop-group')", org),
+    )
+    page.mouse.move(org[0], org[1])
+    page.mouse.down()
+    page.mouse.move(org[0] + 60, org[1] + 40, steps=8)
+    page.mouse.up()
     pos1 = page.evaluate(f"(()=>{{const o=AppState.findById('{pid}');return [o.x,o.y];}})()")
     check("prop moved by drag", pos0 != pos1, f"{pos0} -> {pos1}")
-    check("MAP DID NOT PAN during prop drag",
-          tf_before == page.evaluate("document.getElementById('world').getAttribute('transform')"))
+    check(
+        "MAP DID NOT PAN during prop drag",
+        tf_before == page.evaluate("document.getElementById('world').getAttribute('transform')"),
+    )
 
     # ── Save / load round-trip ────────────────────────────────────────────────
     n_before = page.evaluate("AppState.staticObjects.length")
@@ -198,15 +220,15 @@ with sync_playwright() as p:
     page.evaluate(f"AppState.loadJSON({saved})")
     rt = page.evaluate("AppState.staticObjects")
     check("props survive save/load", len(rt) == n_before, f"{n_before} -> {len(rt)}")
-    check("prop fields survive",
-          all(("prop" in o and "yaw" in o and "z" in o) for o in rt), str(rt[:1]))
+    check("prop fields survive", all(("prop" in o and "yaw" in o and "z" in o) for o in rt), str(rt[:1]))
 
     existing = set(page.evaluate("AppState.staticObjects.map(o=>o.id)"))
-    check("nextId does not collide after loadJSON",
-          page.evaluate("AppState.nextId()") not in existing)
-    check("toJSON survives null ego",
-          page.evaluate("(()=>{try{AppState.ego=null;AppState.toJSON();return true;}"
-                        "catch(e){return String(e);}})()") is True)
+    check("nextId does not collide after loadJSON", page.evaluate("AppState.nextId()") not in existing)
+    check(
+        "toJSON survives null ego",
+        page.evaluate("(()=>{try{AppState.ego=null;AppState.toJSON();return true;}catch(e){return String(e);}})()")
+        is True,
+    )
 
     # ── Export ────────────────────────────────────────────────────────────────
     # The ego carries one trivial event purely so the scenario is exportable:
@@ -231,26 +253,33 @@ with sync_playwright() as p:
     xml = open(dl.value.path()).read()
 
     check("export: 2 MiscObject entries", xml.count("<MiscObject") == 2, str(xml.count("<MiscObject")))
-    check("export: cone is obstacle, not barrier",
-          'miscObjectCategory="obstacle" mass="5.0" name="static.prop.trafficcone01"' in xml)
-    check("export: streetbarrier keeps barrier category",
-          'miscObjectCategory="barrier" mass="200.0" name="static.prop.streetbarrier"' in xml)
-    check("export: prop0 teleport, yaw 90deg -> radians (cone, offset 0)",
-          '<WorldPosition x="12.3" y="-45.6" z="0.0" h="1.570796" />' in xml)
+    check(
+        "export: cone is obstacle, not barrier",
+        'miscObjectCategory="obstacle" mass="5.0" name="static.prop.trafficcone01"' in xml,
+    )
+    check(
+        "export: streetbarrier keeps barrier category",
+        'miscObjectCategory="barrier" mass="200.0" name="static.prop.streetbarrier"' in xml,
+    )
+    check(
+        "export: prop0 teleport, yaw 90deg -> radians (cone, offset 0)",
+        '<WorldPosition x="12.3" y="-45.6" z="0.0" h="1.570796" />' in xml,
+    )
     # streetbarrier carries a measured yaw_offset of +90: yaw 0 -> h = radians(90)
-    check("export: mesh yaw_offset applied (barrier yaw 0 -> h=90deg)",
-          '<WorldPosition x="15.0" y="-46.0" z="0.0" h="1.570796" />' in xml,
-          "yaw_offset not reaching the exported h")
+    check(
+        "export: mesh yaw_offset applied (barrier yaw 0 -> h=90deg)",
+        '<WorldPosition x="15.0" y="-46.0" z="0.0" h="1.570796" />' in xml,
+        "yaw_offset not reaching the exported h",
+    )
     privs = _re.findall(r'<Private entityRef="prop\d+">.*?</Private>', xml, _re.S)
     check("export: 2 prop Private blocks", len(privs) == 2, str(len(privs)))
-    check("export: NO ControllerAction on props",
-          all("ControllerAction" not in q for q in privs))
+    check("export: NO ControllerAction on props", all("ControllerAction" not in q for q in privs))
     story = _re.sub(r'<Init>.*?</Init>', '', xml, flags=_re.S)
-    check("export: no prop in any ManeuverGroup",
-          all(f'entityRef="prop{i}"' not in story for i in range(2)))
+    check("export: no prop in any ManeuverGroup", all(f'entityRef="prop{i}"' not in story for i in range(2)))
 
     def post_status(prop_id):
-        return page.evaluate("""async (pid) => {
+        return page.evaluate(
+            """async (pid) => {
             const p = {schema_version:'1.0', map:'Town01', weather:{},
               ego:{type:'car',x:1,y:2,z:0.2,yaw:0,
                    events:[{id:'keepalive',
@@ -263,17 +292,15 @@ with sync_playwright() as p:
             const r = await fetch('/api/export', {method:'POST',
               headers:{'Content-Type':'application/json'}, body: JSON.stringify(p)});
             return r.status;
-        }""", prop_id)
+        }""",
+            prop_id,
+        )
 
     # calibrator exists in CARLA but is deliberately left out of the catalogue
-    check("export: real-but-uncatalogued prop id -> HTTP 400",
-          post_status("static.prop.calibrator") == 400)
-    check("export: re-added chainbarrier -> HTTP 200",
-          post_status("static.prop.chainbarrier") == 200)
-    check("export: blueprint id with a space -> HTTP 200",
-          post_status("static.prop.bike helmet") == 200)
-    check("export: unknown prop id -> HTTP 400",
-          post_status("static.prop.nonexistent") == 400)
+    check("export: real-but-uncatalogued prop id -> HTTP 400", post_status("static.prop.calibrator") == 400)
+    check("export: re-added chainbarrier -> HTTP 200", post_status("static.prop.chainbarrier") == 200)
+    check("export: blueprint id with a space -> HTTP 200", post_status("static.prop.bike helmet") == 200)
+    check("export: unknown prop id -> HTTP 400", post_status("static.prop.nonexistent") == 400)
 
     unexpected = [e for e in errors if "400 (Bad Request)" not in e]
     check("no unexpected JS errors during whole run", not unexpected, str(unexpected[:3]))
@@ -282,5 +309,5 @@ with sync_playwright() as p:
 print()
 for name, ok, extra in checks:
     print(("  PASS  " if ok else "  FAIL  ") + name + (f"   [{extra}]" if extra and not ok else ""))
-print(f"\n{sum(1 for _,o,_ in checks if o)}/{len(checks)} passed")
+print(f"\n{sum(1 for _, o, _ in checks if o)}/{len(checks)} passed")
 sys.exit(1 if fails else 0)

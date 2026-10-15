@@ -71,6 +71,7 @@ def _carla_round(v: float) -> float:
 
 # ── Union-find (merges lane-boundary node identities that connect) ─────────
 
+
 class _UnionFind:
     def __init__(self):
         self._parent: dict[str, str] = {}
@@ -91,6 +92,7 @@ class _UnionFind:
 
 
 # ── XML extraction ──────────────────────────────────────────────────────────
+
 
 def _forward_side(lane_id: int) -> str:
     """Which XML <link> side ('predecessor'/'successor') a lane's own forward
@@ -176,11 +178,13 @@ def _parse_junction_connections(root: ET.Element) -> dict[tuple[int, int], list[
                 if from_id is None or to_id is None:
                     continue
                 key = (incoming_road, int(from_id))
-                result.setdefault(key, []).append({
-                    'connectingRoadId': connecting_road,
-                    'toLaneId': int(to_id),
-                    'contactPoint': contact_point,
-                })
+                result.setdefault(key, []).append(
+                    {
+                        'connectingRoadId': connecting_road,
+                        'toLaneId': int(to_id),
+                        'contactPoint': contact_point,
+                    }
+                )
     return result
 
 
@@ -218,8 +222,10 @@ def _parse_lane_change_marks(root: ET.Element) -> dict[tuple[int, int, int], str
                         if value == 'none' and rm_value != 'none':
                             value = rm_value
                     result[(road_id, section_id, lane_id)] = {
-                        'none': 'NONE', 'both': 'Both',
-                        'increase': 'Increase', 'decrease': 'Decrease',
+                        'none': 'NONE',
+                        'both': 'Both',
+                        'increase': 'Increase',
+                        'decrease': 'Decrease',
                     }.get(value, 'NONE')
     return result
 
@@ -255,9 +261,12 @@ def _parse_mark_records(root: ET.Element) -> dict[tuple[int, int, int], list[tup
                     except (TypeError, ValueError):
                         continue
                     records = sorted(
-                        (section_s + float(rm.get('sOffset', 0.0)),
-                         _LC_BITS.get((rm.get('laneChange') or '').lower(), _LC_RIGHT | _LC_LEFT))
-                        for rm in lane.findall('roadMark'))
+                        (
+                            section_s + float(rm.get('sOffset', 0.0)),
+                            _LC_BITS.get((rm.get('laneChange') or '').lower(), _LC_RIGHT | _LC_LEFT),
+                        )
+                        for rm in lane.findall('roadMark')
+                    )
                     result[(road_id, section_id, lane_id)] = records
     return result
 
@@ -295,8 +304,7 @@ def _carla_path(evaluate, s0: float, s1: float, step: float) -> list[list[float]
 
     if chord(entry_pt) <= step:
         return evaluate([s0 + sign * min(step, span)])
-    candidates = evaluate([s0 + sign * step * k for k in range(1, int(span / step) + 1)
-                           if step * k < span])
+    candidates = evaluate([s0 + sign * step * k for k in range(1, int(span / step) + 1) if step * k < span])
     out = []
     for p in candidates:
         if chord(p) <= step:
@@ -307,8 +315,12 @@ def _carla_path(evaluate, s0: float, s1: float, step: float) -> list[list[float]
 
 # ── Successor resolution ────────────────────────────────────────────────────
 
+
 def _resolve_lane_successors(
-    road_id: int, section_id: int, lane_id: int, *,
+    road_id: int,
+    section_id: int,
+    lane_id: int,
+    *,
     last_section_id: int,
     road_links: dict[int, dict],
     lane_links: dict[tuple[int, int, int], tuple[int | None, int | None]],
@@ -319,9 +331,8 @@ def _resolve_lane_successors(
     docstring's forward-side rule. Unranked — a real fork yields every
     candidate, in whatever order the XML gives them."""
     side = _forward_side(lane_id)
-    at_road_boundary = (
-        (side == 'successor' and section_id == last_section_id) or
-        (side == 'predecessor' and section_id == 0)
+    at_road_boundary = (side == 'successor' and section_id == last_section_id) or (
+        side == 'predecessor' and section_id == 0
     )
 
     if not at_road_boundary:
@@ -366,7 +377,7 @@ def _derive_left_right(lane_index: dict[tuple[int, int, int], dict]) -> dict[tup
     """(roadId, sectionId, laneId) -> {'left': ref|None, 'right': ref|None},
     per the module docstring's left/right rule."""
     by_road_section: dict[tuple[int, int], list[int]] = {}
-    for (road_id, section_id, lane_id) in lane_index:
+    for road_id, section_id, lane_id in lane_index:
         by_road_section.setdefault((road_id, section_id), []).append(lane_id)
 
     result: dict[tuple[int, int, int], dict] = {}
@@ -391,6 +402,7 @@ def _lane_points(direction_line: list[list[float]]) -> list[dict]:
 
 
 # ── Public entry point ──────────────────────────────────────────────────────
+
 
 def build_lane_graph_from_xodr(xodr_path: Path, roads_out: list[dict], town: str) -> dict:
     """Build a lane_graph.json-shaped dict for `town` from its .xodr file,
@@ -418,9 +430,13 @@ def build_lane_graph_from_xodr(xodr_path: Path, roads_out: list[dict], town: str
                 continue
             key = (road_id, lane['sectionId'], lane['laneId'])
             lane_index[key] = {
-                'roadId': road_id, 'sectionId': lane['sectionId'], 'laneId': lane['laneId'],
-                'type': lane['type'], 'directionLine': direction_line,
-                'sStart': lane['sStart'], 'sEnd': lane['sEnd'],
+                'roadId': road_id,
+                'sectionId': lane['sectionId'],
+                'laneId': lane['laneId'],
+                'type': lane['type'],
+                'directionLine': direction_line,
+                'sStart': lane['sStart'],
+                'sEnd': lane['sEnd'],
                 'isJunction': road_id in junction_roads,
             }
         if max_section >= 0:
@@ -438,7 +454,8 @@ def build_lane_graph_from_xodr(xodr_path: Path, roads_out: list[dict], town: str
         a, b = section_s[road_id][section_id]
         s0, s1 = (a, b) if lane_id < 0 else (b, a)
         evaluate = (lambda el, sec, ln: lambda svals: lane_centre_points(el, sec, ln, svals))(
-            road_elems[road_id], section_id, lane_id)
+            road_elems[road_id], section_id, lane_id
+        )
         entry['s0'], entry['s1'], entry['evaluate'] = s0, s1, evaluate
         entry['ends'] = evaluate([s0, s1])
 
@@ -455,10 +472,14 @@ def build_lane_graph_from_xodr(xodr_path: Path, roads_out: list[dict], town: str
         road_id, section_id, lane_id = key
         last_section_id = section_count_by_road.get(road_id, 1) - 1
         candidates = _resolve_lane_successors(
-            road_id, section_id, lane_id,
+            road_id,
+            section_id,
+            lane_id,
             last_section_id=last_section_id,
-            road_links=road_links, lane_links=lane_links,
-            junction_conns=junction_conns, section_count_by_road=section_count_by_road,
+            road_links=road_links,
+            lane_links=lane_links,
+            junction_conns=junction_conns,
+            section_count_by_road=section_count_by_road,
         )
         resolved = [c for c in candidates if (c['roadId'], c['sectionId'], c['laneId']) in lane_index]
         successors_by_lane[key] = resolved
@@ -510,9 +531,14 @@ def build_lane_graph_from_xodr(xodr_path: Path, roads_out: list[dict], town: str
             # Rounded to whole metres like _build_topology's entryxyz/exitxyz:
             # the vertex is only ever the A* heuristic's input, and CARLA's
             # heuristic runs on the rounded value.
-            nodes.append({'id': canon_id[root_id],
-                          'x': _carla_round(pt['x']), 'y': _carla_round(pt['y']),
-                          'z': _carla_round(pt['z'])})
+            nodes.append(
+                {
+                    'id': canon_id[root_id],
+                    'x': _carla_round(pt['x']),
+                    'y': _carla_round(pt['y']),
+                    'z': _carla_round(pt['z']),
+                }
+            )
         return canon_id[root_id]
 
     # ── LANEFOLLOW edges (one per routable lane) + roadIdToEdge ────────────
@@ -531,19 +557,39 @@ def build_lane_graph_from_xodr(xodr_path: Path, roads_out: list[dict], town: str
         first, last = entry['ends']
         path = _carla_path(entry['evaluate'], entry['s0'], entry['s1'], SAMPLING_RESOLUTION_M)
         lane_path[key] = path
-        edges.append({
-            'from': from_node, 'to': to_node, 'type': 'LANEFOLLOW',
-            # _build_graph's length is a SAMPLE COUNT, not metres. It matters:
-            # lane-change edges cost 0, so near-equal alternatives through a
-            # neighbour lane are decided by exactly this number.
-            'length': len(path) + 1, 'intersection': entry['isJunction'],
-            'path': _lane_points(path),
-            'entry': {'roadId': road_id, 'sectionId': section_id, 'laneId': lane_id,
-                      'x': round(first[0], 3), 'y': round(first[1], 3), 'z': round(first[2], 3)},
-            'exit': {'roadId': road_id, 'sectionId': section_id, 'laneId': lane_id,
-                     'x': round(last[0], 3), 'y': round(last[1], 3), 'z': round(last[2], 3)},
-        })
-        road_id_to_edge.setdefault(str(road_id), {}).setdefault(str(section_id), {})[str(lane_id)] = [from_node, to_node]
+        edges.append(
+            {
+                'from': from_node,
+                'to': to_node,
+                'type': 'LANEFOLLOW',
+                # _build_graph's length is a SAMPLE COUNT, not metres. It matters:
+                # lane-change edges cost 0, so near-equal alternatives through a
+                # neighbour lane are decided by exactly this number.
+                'length': len(path) + 1,
+                'intersection': entry['isJunction'],
+                'path': _lane_points(path),
+                'entry': {
+                    'roadId': road_id,
+                    'sectionId': section_id,
+                    'laneId': lane_id,
+                    'x': round(first[0], 3),
+                    'y': round(first[1], 3),
+                    'z': round(first[2], 3),
+                },
+                'exit': {
+                    'roadId': road_id,
+                    'sectionId': section_id,
+                    'laneId': lane_id,
+                    'x': round(last[0], 3),
+                    'y': round(last[1], 3),
+                    'z': round(last[2], 3),
+                },
+            }
+        )
+        road_id_to_edge.setdefault(str(road_id), {}).setdefault(str(section_id), {})[str(lane_id)] = [
+            from_node,
+            to_node,
+        ]
 
     # ── CHANGELANELEFT/RIGHT edges — GlobalRoutePlanner._lane_change_link,
     # literally: none from a junction lane; otherwise walk the lane's path
@@ -586,23 +632,39 @@ def build_lane_graph_from_xodr(xodr_path: Path, roads_out: list[dict], town: str
             inner_key = (w_road, w_section, w_lane + 1 if w_lane < 0 else w_lane - 1)
             s_here = sample[3]
             for direction, bit, records, edge_type in (
-                    ('right', _LC_RIGHT, mark_records.get(wkey), 'CHANGELANERIGHT'),
-                    ('left', _LC_LEFT, mark_records.get(inner_key), 'CHANGELANELEFT')):
+                ('right', _LC_RIGHT, mark_records.get(wkey), 'CHANGELANERIGHT'),
+                ('left', _LC_LEFT, mark_records.get(inner_key), 'CHANGELANELEFT'),
+            ):
                 if found[direction] or not (_mark_bits_at(records, s_here) & bit):
                     continue
                 ref = lr.get(direction)
                 target_key = (ref['roadId'], ref['sectionId'], ref['laneId']) if ref else None
                 if target_key not in lane_index:
                     continue
-                edges.append({
-                    'from': lane_entry_node[key], 'to': lane_entry_node[target_key],
-                    'type': edge_type, 'length': 0, 'intersection': False,
-                    'path': [],
-                    'entry': {'roadId': w_road, 'sectionId': w_section, 'laneId': w_lane,
-                              'x': round(sample[0], 3), 'y': round(sample[1], 3), 'z': round(sample[2], 3)},
-                    'exit': {'roadId': target_key[0], 'sectionId': target_key[1], 'laneId': target_key[2],
-                             **node_point[entry_raw(target_key)]},
-                })
+                edges.append(
+                    {
+                        'from': lane_entry_node[key],
+                        'to': lane_entry_node[target_key],
+                        'type': edge_type,
+                        'length': 0,
+                        'intersection': False,
+                        'path': [],
+                        'entry': {
+                            'roadId': w_road,
+                            'sectionId': w_section,
+                            'laneId': w_lane,
+                            'x': round(sample[0], 3),
+                            'y': round(sample[1], 3),
+                            'z': round(sample[2], 3),
+                        },
+                        'exit': {
+                            'roadId': target_key[0],
+                            'sectionId': target_key[1],
+                            'laneId': target_key[2],
+                            **node_point[entry_raw(target_key)],
+                        },
+                    }
+                )
                 found[direction] = True
             if found['right'] and found['left']:
                 break
@@ -612,14 +674,19 @@ def build_lane_graph_from_xodr(xodr_path: Path, roads_out: list[dict], town: str
     for key, entry in lane_index.items():
         road_id, section_id, lane_id = key
         lr = left_right.get(key, {'left': None, 'right': None})
-        lanes_out.append({
-            'roadId': road_id, 'sectionId': section_id, 'laneId': lane_id,
-            's': entry['sStart'],
-            'laneType': 'Driving',
-            'laneChange': lane_change_marks.get(key, 'NONE'),
-            'left': lr['left'], 'right': lr['right'],
-            'successors': successors_by_lane.get(key, []),
-        })
+        lanes_out.append(
+            {
+                'roadId': road_id,
+                'sectionId': section_id,
+                'laneId': lane_id,
+                's': entry['sStart'],
+                'laneType': 'Driving',
+                'laneChange': lane_change_marks.get(key, 'NONE'),
+                'left': lr['left'],
+                'right': lr['right'],
+                'successors': successors_by_lane.get(key, []),
+            }
+        )
 
     return {
         'town': town,

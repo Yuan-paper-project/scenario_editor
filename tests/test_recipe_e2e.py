@@ -16,6 +16,7 @@ field per parameter. Pinned here:
   * the recipe is saved to and loaded from the .json save file;
   * on another map the panel says so and does not rebuild.
 """
+
 import json
 import sys
 
@@ -25,8 +26,20 @@ import _harness as H
 
 C = H.Checks()
 TOWN = "Town05"
-TYPES = ["lead_brake", "slow_lead", "cut_in", "vru_crossing", "turn_vru", "junction_conflict", "obstacle",
-         "oncoming_drift", "cut_out", "cyclist_ahead", "pull_out", "rear_approach"]
+TYPES = [
+    "lead_brake",
+    "slow_lead",
+    "cut_in",
+    "vru_crossing",
+    "turn_vru",
+    "junction_conflict",
+    "obstacle",
+    "oncoming_drift",
+    "cut_out",
+    "cyclist_ahead",
+    "pull_out",
+    "rear_approach",
+]
 
 STATE = """() => ({ g: AppState.generated, ego: AppState.ego && { x: AppState.ego.x, y: AppState.ego.y },
                     npcs: JSON.stringify(AppState.npcs), undo: UndoStack.length })"""
@@ -65,13 +78,21 @@ def main():
             show_overview(page)
             # Every parameter this build used, in PARAMS order; one it never
             # used (a breakdown's person type) is left out unless pinned.
-            keys = page.evaluate("""t => ScenarioGenerator.PARAMS[t].filter(k => k === 'ego_speed'
-                                     || AppState.generated.params[k] !== undefined)""", t)
-            shown = page.evaluate("() => [...document.querySelectorAll('[data-recipe-key]')].map(e => e.dataset.recipeKey)")
+            keys = page.evaluate(
+                """t => ScenarioGenerator.PARAMS[t].filter(k => k === 'ego_speed'
+                                     || AppState.generated.params[k] !== undefined)""",
+                t,
+            )
+            shown = page.evaluate(
+                "() => [...document.querySelectorAll('[data-recipe-key]')].map(e => e.dataset.recipeKey)"
+            )
             C(f"{t}: panel lists ego speed + every parameter the build used", shown == keys, (shown, keys))
             g = page.evaluate("AppState.generated")
-            C(f"{t}: recipe stores type, seed, attempt, site", g["type"] == t and g["seed"] == 5
-              and isinstance(g["attempt"], int) and g["near"] is not None, g)
+            C(
+                f"{t}: recipe stores type, seed, attempt, site",
+                g["type"] == t and g["seed"] == 5 and isinstance(g["attempt"], int) and g["near"] is not None,
+                g,
+            )
 
         # ── Edit through the panel: pin, same site, one undo step ───────────
         page.evaluate("ScenarioGenerator.generate('lead_brake', 5)")
@@ -81,16 +102,21 @@ def main():
         after = page.evaluate(STATE)
         C("edit: rebuilt with the pinned value", after["g"]["params"]["decel"] == 7, after["g"]["params"])
         C("edit: value is pinned", after["g"]["overrides"] == {"decel": 7}, after["g"]["overrides"])
-        C("edit: same site (ego start unchanged)",
-          abs(after["ego"]["x"] - before["ego"]["x"]) < 0.01 and abs(after["ego"]["y"] - before["ego"]["y"]) < 0.01,
-          (before["ego"], after["ego"]))
+        C(
+            "edit: same site (ego start unchanged)",
+            abs(after["ego"]["x"] - before["ego"]["x"]) < 0.01 and abs(after["ego"]["y"] - before["ego"]["y"]) < 0.01,
+            (before["ego"], after["ego"]),
+        )
         C("edit: the NPC events changed", after["npcs"] != before["npcs"])
         C("edit: one undo step", after["undo"] == before["undo"] + 1, after["undo"] - before["undo"])
-        C("edit: panel shows the pin marker",
-          page.locator('[data-recipe-row="decel"].pinned').count() == 1)
-        C("edit: other parameters keep their seed values",
-          all(after["g"]["params"][k] == before["g"]["params"][k]
-              for k in ("brake_headway_s", "hold_s", "lead_type")), after["g"]["params"])
+        C("edit: panel shows the pin marker", page.locator('[data-recipe-row="decel"].pinned').count() == 1)
+        C(
+            "edit: other parameters keep their seed values",
+            all(
+                after["g"]["params"][k] == before["g"]["params"][k] for k in ("brake_headway_s", "hold_s", "lead_type")
+            ),
+            after["g"]["params"],
+        )
 
         page.mouse.click(5, 5)
         page.keyboard.press("Control+z")
@@ -106,10 +132,16 @@ def main():
         page.wait_for_timeout(250)
         st = page.evaluate(STATE)
         C("unpin: no pins left", st["g"]["overrides"] == {}, st["g"]["overrides"])
-        C("unpin: value back to the seed's draw", st["g"]["params"]["decel"] == before["g"]["params"]["decel"],
-          (st["g"]["params"]["decel"], before["g"]["params"]["decel"]))
-        C("unpin: scenario identical to the original", st["npcs"].replace('"obj-', '') != "" and
-          json.loads(st["npcs"])[0]["events"] == json.loads(before["npcs"])[0]["events"])
+        C(
+            "unpin: value back to the seed's draw",
+            st["g"]["params"]["decel"] == before["g"]["params"]["decel"],
+            (st["g"]["params"]["decel"], before["g"]["params"]["decel"]),
+        )
+        C(
+            "unpin: scenario identical to the original",
+            st["npcs"].replace('"obj-', '') != ""
+            and json.loads(st["npcs"])[0]["events"] == json.loads(before["npcs"])[0]["events"],
+        )
 
         # ── Variant ─────────────────────────────────────────────────────────
         show_overview(page)
@@ -119,11 +151,17 @@ def main():
         page.wait_for_timeout(400)
         v = page.evaluate(STATE)
         C("variant: new seed", v["g"]["seed"] != 5, v["g"]["seed"])
-        C("variant: pin kept", v["g"]["overrides"].get("hold_s") == 9 and v["g"]["params"]["hold_s"] == 9,
-          v["g"]["overrides"])
+        C(
+            "variant: pin kept",
+            v["g"]["overrides"].get("hold_s") == 9 and v["g"]["params"]["hold_s"] == 9,
+            v["g"]["overrides"],
+        )
         at = v["g"]["criticality"]["at"]
-        C("variant: conflict near the same spot",
-          ((at["x"] - near["x"]) ** 2 + (at["y"] - near["y"]) ** 2) ** 0.5 <= 40, (at, near))
+        C(
+            "variant: conflict near the same spot",
+            ((at["x"] - near["x"]) ** 2 + (at["y"] - near["y"]) ** 2) ** 0.5 <= 40,
+            (at, near),
+        )
 
         # ── A pin the site cannot honour is flagged ─────────────────────────
         page.evaluate("""() => {
@@ -146,8 +184,11 @@ def main():
         page.keyboard.press("Escape")
         page.wait_for_timeout(250)
         C("hand edit: cancelling keeps the edited scenario", page.evaluate("JSON.stringify(AppState.npcs)") == edited)
-        C("hand edit: the field shows the old value again",
-          float(page.locator('[data-recipe-key="decel"]').input_value()) == page.evaluate("AppState.generated.params.decel"))
+        C(
+            "hand edit: the field shows the old value again",
+            float(page.locator('[data-recipe-key="decel"]').input_value())
+            == page.evaluate("AppState.generated.params.decel"),
+        )
 
         # ── Sweep: one scenario per value, same site, editor untouched ──────
         page.evaluate("ScenarioGenerator.generate('lead_brake', 5)")
@@ -163,8 +204,11 @@ def main():
         C("sweep: values evenly spaced", sw["values"] == [3, 5, 7], sw["values"])
         C("sweep: one scenario per value", sw["n"] == 3 and sw["skipped"] == 0, sw)
         C("sweep: each built with its value", sw["got"] == [3, 5, 7], sw["got"])
-        C("sweep: all on the original site",
-          all(abs(x - before["ego"]["x"]) < 0.01 and abs(y - before["ego"]["y"]) < 0.01 for x, y in sw["egos"]), sw["egos"])
+        C(
+            "sweep: all on the original site",
+            all(abs(x - before["ego"]["x"]) < 0.01 and abs(y - before["ego"]["y"]) < 0.01 for x, y in sw["egos"]),
+            sw["egos"],
+        )
         C("sweep: names carry parameter and value", all("decel-" in n for n in sw["names"]), sw["names"])
         after = page.evaluate(STATE)
         C("sweep: editor scenario untouched", after["npcs"] == before["npcs"] and after["undo"] == before["undo"])
@@ -175,7 +219,11 @@ def main():
                    weathers: [...new Set(r.entries.map(e => e.meta.weather))].length,
                    types: [...new Set(r.entries.map(e => e.meta.params.lead_type))] };
         }""")
-        C("sweep (choice × weather): every option", sw2["values"] == ["car", "van", "truck", "bus", "motorcycle"], sw2["values"])
+        C(
+            "sweep (choice × weather): every option",
+            sw2["values"] == ["car", "van", "truck", "bus", "motorcycle"],
+            sw2["values"],
+        )
         C("sweep (choice × weather): 6 weathers each", sw2["weathers"] == 6 and sw2["n"] == len(sw2["types"]) * 6, sw2)
 
         show_overview(page)
@@ -185,27 +233,39 @@ def main():
         page.locator("[data-sweep-steps]").press("Enter")
         page.wait_for_timeout(200)
         C("sweep panel: stays open across re-renders", page.locator(".gen-sweep[open]").count() == 1)
-        C("sweep panel: button counts the scenarios",
-          "3 Szenarien" in page.locator("[data-sweep-run]").inner_text(), page.locator("[data-sweep-run]").inner_text())
+        C(
+            "sweep panel: button counts the scenarios",
+            "3 Szenarien" in page.locator("[data-sweep-run]").inner_text(),
+            page.locator("[data-sweep-run]").inner_text(),
+        )
         with page.expect_download(timeout=60000) as dl:
             page.click("[data-sweep-run]")
         path = dl.value.path()
         import zipfile
+
         z = zipfile.ZipFile(path)
         names = z.namelist()
-        C("sweep panel: zip holds 3 × (.xosc, .json, route) + manifest",
-          sum(n.endswith(".xosc") for n in names) == 3 and "manifest.csv" in names, names)
+        C(
+            "sweep panel: zip holds 3 × (.xosc, .json, route) + manifest",
+            sum(n.endswith(".xosc") for n in names) == 3 and "manifest.csv" in names,
+            names,
+        )
         man = json.loads(z.read("manifest.json"))
         rows = man if isinstance(man, list) else man.get("scenarios", man.get("entries", []))
-        C("sweep panel: manifest records the swept values",
-          sorted(r.get("sweep_value") for r in rows) == [1.0, 5.5, 10.0], rows[:1])
+        C(
+            "sweep panel: manifest records the swept values",
+            sorted(r.get("sweep_value") for r in rows) == [1.0, 5.5, 10.0],
+            rows[:1],
+        )
 
         # ── Save file round trip ────────────────────────────────────────────
         saved = page.evaluate("JSON.stringify(AppState.toJSON())")
         C("save: recipe in the .json", json.loads(saved).get("generated", {}).get("type") == "lead_brake")
         page.evaluate("s => AppState.loadJSON(JSON.parse(s))", saved)
-        C("load: recipe restored", page.evaluate("AppState.generated && AppState.generated.seed") ==
-          json.loads(saved)["generated"]["seed"])
+        C(
+            "load: recipe restored",
+            page.evaluate("AppState.generated && AppState.generated.seed") == json.loads(saved)["generated"]["seed"],
+        )
 
         # ── Another map ─────────────────────────────────────────────────────
         # Switching maps empties the scenario, recipe included (toolbar.js).
@@ -217,11 +277,13 @@ def main():
         page.evaluate("s => { const d = JSON.parse(s); d.map = 'Town03'; AppState.loadJSON(d); }", saved)
         page.wait_for_timeout(500)
         show_overview(page)
-        C("other map: panel says where it was built",
-          page.locator(".gen-recipe-warn", has_text="Town05").count() == 1)
+        C("other map: panel says where it was built", page.locator(".gen-recipe-warn", has_text="Town05").count() == 1)
         npcs0 = page.evaluate("JSON.stringify(AppState.npcs)")
-        C("other map: rebuild refused", page.evaluate("ScenarioGenerator.rebuild({ decel: 5 })") is None
-          and page.evaluate("JSON.stringify(AppState.npcs)") == npcs0)
+        C(
+            "other map: rebuild refused",
+            page.evaluate("ScenarioGenerator.rebuild({ decel: 5 })") is None
+            and page.evaluate("JSON.stringify(AppState.npcs)") == npcs0,
+        )
 
         C("no JS errors", not [e for e in errors if "404" not in e], errors[:5])
         browser.close()

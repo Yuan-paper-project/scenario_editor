@@ -9,6 +9,7 @@ carry their own copies of `check()` and the world->screen transform. That
 duplication is deliberate for now: they are 77 passing checks and rewriting
 them to import from here would be risk without payoff.
 """
+
 import math
 import os
 import sys
@@ -28,13 +29,16 @@ MIN_EVENT = {
     "id": "keepalive",
     "name": "Keepalive",
     "trigger": {"type": "simulation_time", "value": 0},
-    "action": {"type": "set_speed",
-               "target": {"mode": "absolute", "value": 10.0},
-               "dynamics": {"shape": "step", "dimension": "time", "value": 5.0}},
+    "action": {
+        "type": "set_speed",
+        "target": {"mode": "absolute", "value": 10.0},
+        "dynamics": {"shape": "step", "dimension": "time", "value": 5.0},
+    },
 }
 
 
 # ── Result accumulation ──────────────────────────────────────────────────────
+
 
 class Checks:
     def __init__(self):
@@ -100,9 +104,7 @@ def open_editor(playwright, town="Town01"):
     page = browser.new_page(viewport=VIEWPORT, accept_downloads=True)
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
-    page.on("console",
-            lambda m: errors.append("console.error: " + m.text)
-            if m.type == "error" else None)
+    page.on("console", lambda m: errors.append("console.error: " + m.text) if m.type == "error" else None)
 
     page.goto(BASE, wait_until="networkidle")
     page.evaluate("document.getElementById('welcome-overlay')?.classList.add('hidden')")
@@ -137,9 +139,7 @@ def assert_on_screen(page, wx, wy):
     """
     sx, sy = world_to_screen(page, wx, wy)
     if not (0 <= sx <= VIEWPORT["width"] and 0 <= sy <= VIEWPORT["height"]):
-        raise AssertionError(
-            f"world ({wx},{wy}) maps to off-screen ({sx:.0f},{sy:.0f}); "
-            f"zoom/pan first")
+        raise AssertionError(f"world ({wx},{wy}) maps to off-screen ({sx:.0f},{sy:.0f}); zoom/pan first")
     return sx, sy
 
 
@@ -157,7 +157,8 @@ def _assert_npc_added(page, before, what, wx, wy):
         raise AssertionError(
             f"{what} at ({wx},{wy}) added no npc (count stayed {before}); "
             f"the click probably landed on an existing actor's marker — "
-            f"space test points further apart or zoom in")
+            f"space test points further apart or zoom in"
+        )
 
 
 def place_actor(page, tool, wx, wy, tolerance=2.5):
@@ -174,14 +175,11 @@ def place_actor(page, tool, wx, wy, tolerance=2.5):
     page.mouse.click(sx, sy)
     if tool != "ego":
         _assert_npc_added(page, before, f"tool '{tool}'", wx, wy)
-    actor = page.evaluate(
-        "(t) => t === 'ego' ? AppState.ego : AppState.npcs[AppState.npcs.length-1]",
-        tool)
+    actor = page.evaluate("(t) => t === 'ego' ? AppState.ego : AppState.npcs[AppState.npcs.length-1]", tool)
     if actor is None:
         raise AssertionError(f"no actor placed for tool '{tool}' at ({wx},{wy})")
     if abs(actor["x"] - wx) > tolerance or abs(actor["y"] - wy) > tolerance:
-        raise AssertionError(
-            f"{tool} landed at ({actor['x']},{actor['y']}), aimed at ({wx},{wy})")
+        raise AssertionError(f"{tool} landed at ({actor['x']},{actor['y']}), aimed at ({wx},{wy})")
     return actor
 
 
@@ -208,9 +206,7 @@ def place_template(page, template_id, wx, wy, tolerance=14.0):
     if actor is None:
         raise AssertionError(f"template '{template_id}' placed no actor")
     if abs(actor["x"] - wx) > tolerance or abs(actor["y"] - wy) > tolerance:
-        raise AssertionError(
-            f"template '{template_id}' landed at ({actor['x']},{actor['y']}), "
-            f"aimed at ({wx},{wy})")
+        raise AssertionError(f"template '{template_id}' landed at ({actor['x']},{actor['y']}), aimed at ({wx},{wy})")
     return actor
 
 
@@ -259,9 +255,7 @@ def place_prop(page, blueprint, wx, wy, zoom=12, tolerance=1.5):
     if prop is None:
         raise AssertionError(f"prop '{blueprint}' placed nothing at ({wx},{wy})")
     if abs(prop["x"] - wx) > tolerance or abs(prop["y"] - wy) > tolerance:
-        raise AssertionError(
-            f"prop '{blueprint}' landed at ({prop['x']},{prop['y']}), "
-            f"aimed at ({wx},{wy})")
+        raise AssertionError(f"prop '{blueprint}' landed at ({prop['x']},{prop['y']}), aimed at ({wx},{wy})")
     return prop
 
 
@@ -290,10 +284,8 @@ def export_params(page, timeout=30000):
     the UI against.
     """
     page.evaluate("document.getElementById('toast-container')?.replaceChildren()")
-    page.wait_for_function("!document.getElementById('btn-export').disabled",
-                           timeout=timeout)
-    with page.expect_request(
-            lambda r: r.url.endswith("/api/export"), timeout=timeout) as req:
+    page.wait_for_function("!document.getElementById('btn-export').disabled", timeout=timeout)
+    with page.expect_request(lambda r: r.url.endswith("/api/export"), timeout=timeout) as req:
         page.click("#btn-export")
     return req.value.post_data_json
 
@@ -304,12 +296,15 @@ def xosc_from_params(page, params):
     Reading the button's own response body is not an option — the page's fetch
     consumes it, and Playwright then hands back an empty string.
     """
-    return page.evaluate("""async (p) => {
+    return page.evaluate(
+        """async (p) => {
         const r = await fetch('/api/export', {method:'POST',
           headers:{'Content-Type':'application/json'}, body: JSON.stringify(p)});
         if (!r.ok) throw new Error('HTTP ' + r.status + ': ' + (await r.text()).slice(0,300));
         return await r.text();
-    }""", params)
+    }""",
+        params,
+    )
 
 
 def export_download(page, timeout=30000):
@@ -331,14 +326,18 @@ def export_status(page, params):
 
     For asserting rejection paths without going through the UI.
     """
-    return page.evaluate("""async (p) => {
+    return page.evaluate(
+        """async (p) => {
         const r = await fetch('/api/export', {method:'POST',
           headers:{'Content-Type':'application/json'}, body: JSON.stringify(p)});
         return r.status;
-    }""", params)
+    }""",
+        params,
+    )
 
 
 # ── .xosc structural parsing ─────────────────────────────────────────────────
+
 
 def _trigger_of(event):
     """Summarise an <Event>'s StartTrigger as {kind, ...}.
@@ -361,8 +360,7 @@ def _trigger_of(event):
             "kind": "distance_to_ego",
             "value": float(rel.get("value")),
             "target": rel.get("entityRef"),
-            "triggered_by": [e.get("entityRef")
-                             for e in trig.findall(".//TriggeringEntities/EntityRef")],
+            "triggered_by": [e.get("entityRef") for e in trig.findall(".//TriggeringEntities/EntityRef")],
             "fallback_time": fallback,
         }
 
@@ -373,8 +371,7 @@ def _trigger_of(event):
             "kind": "distance_to_point",
             "value": float(dist.get("value")),
             "point": (float(pos.get("x")), float(pos.get("y"))) if pos is not None else None,
-            "triggered_by": [e.get("entityRef")
-                             for e in trig.findall(".//TriggeringEntities/EntityRef")],
+            "triggered_by": [e.get("entityRef") for e in trig.findall(".//TriggeringEntities/EntityRef")],
         }
 
     sb = trig.find(".//StoryboardElementStateCondition")
@@ -419,8 +416,10 @@ def _action_of(event):
             out["entity_ref"] = relative.get("entityRef")
         return out
 
-    for axis, tag in (("longitudinal", "./LongitudinalAction/LongitudinalDistanceAction"),
-                      ("lateral", "./LateralAction/LateralDistanceAction")):
+    for axis, tag in (
+        ("longitudinal", "./LongitudinalAction/LongitudinalDistanceAction"),
+        ("lateral", "./LateralAction/LateralDistanceAction"),
+    ):
         node = pa.find(tag)
         if node is not None:
             return {
@@ -486,12 +485,14 @@ def parse_events(xml_text, entity=None):
         if entity is not None and entity not in actors:
             continue
         for event in mg.iter("Event"):
-            out.append({
-                "name": event.get("name"),
-                "actors": actors,
-                "trigger": _trigger_of(event),
-                "action": _action_of(event),
-            })
+            out.append(
+                {
+                    "name": event.get("name"),
+                    "actors": actors,
+                    "trigger": _trigger_of(event),
+                    "action": _action_of(event),
+                }
+            )
     return out
 
 
@@ -529,10 +530,13 @@ def dangling_entity_refs(xml_text):
     """
     root = ET.fromstring(xml_text)
     names = {o.get("name") for o in root.iter("ScenarioObject")}
-    return sorted({
-        el.get("entityRef") for el in root.iter()
-        if el.get("entityRef") is not None and el.get("entityRef") not in names
-    })
+    return sorted(
+        {
+            el.get("entityRef")
+            for el in root.iter()
+            if el.get("entityRef") is not None and el.get("entityRef") not in names
+        }
+    )
 
 
 def entity_names(xml_text):
@@ -551,8 +555,7 @@ def controller_of(xml_text, entity):
     for private in root.iter("Private"):
         if private.get("entityRef") != entity:
             continue
-        prop = private.find(
-            ".//AssignControllerAction/Controller/Properties/Property[@name='module']")
+        prop = private.find(".//AssignControllerAction/Controller/Properties/Property[@name='module']")
         return None if prop is None else prop.get("value")
     return None
 
@@ -573,22 +576,21 @@ def acts(xml_text):
     root = ET.fromstring(xml_text)
     out = []
     for act in root.iter("Act"):
-        groups = [
-            [e.get("entityRef") for e in mg.findall("./Actors/EntityRef")]
-            for mg in act.findall("ManeuverGroup")
-        ]
+        groups = [[e.get("entityRef") for e in mg.findall("./Actors/EntityRef")] for mg in act.findall("ManeuverGroup")]
         start = act.find("StartTrigger")
         hero_gate = start is not None and start.find(".//TraveledDistanceCondition") is not None
         sim_time = None
         if start is not None:
             for cond in start.iter("SimulationTimeCondition"):
                 sim_time = float(cond.get("value"))
-        out.append({
-            "name": act.get("name"),
-            "groups": groups,
-            "hero_distance_gate": hero_gate,
-            "act_start_sim_time": sim_time,
-        })
+        out.append(
+            {
+                "name": act.get("name"),
+                "groups": groups,
+                "hero_distance_gate": hero_gate,
+                "act_start_sim_time": sim_time,
+            }
+        )
     return out
 
 
@@ -621,8 +623,7 @@ def init_speed_of(xml_text, entity):
     for private in root.iter("Private"):
         if private.get("entityRef") != entity:
             continue
-        target = private.find(
-            ".//LongitudinalAction/SpeedAction/SpeedActionTarget/AbsoluteTargetSpeed")
+        target = private.find(".//LongitudinalAction/SpeedAction/SpeedActionTarget/AbsoluteTargetSpeed")
         return None if target is None else float(target.get("value"))
     return None
 

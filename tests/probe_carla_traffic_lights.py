@@ -16,6 +16,7 @@ no actor within 10 m.
 
 `load_world`s each town, so run it against an idle CARLA.
 """
+
 import argparse
 import json
 import os

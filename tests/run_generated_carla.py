@@ -22,6 +22,7 @@ and how much the ego slowed, and the preview's own prediction beside it.
 Needs CARLA on run.sh's port (2010) and the editor on :9090. Not part of
 run_tests.sh, for the same reasons run_carla_cases.py is not.
 """
+
 import argparse
 import json
 import os
@@ -36,8 +37,7 @@ import _harness as H  # noqa: E402
 import carla_analysis as A  # noqa: E402
 import run_carla_cases as R  # noqa: E402
 
-TYPES = ["lead_brake", "cut_in", "vru_crossing", "junction_conflict", "obstacle",
-         "slow_lead", "turn_vru", "pull_out"]
+TYPES = ["lead_brake", "cut_in", "vru_crossing", "junction_conflict", "obstacle", "slow_lead", "turn_vru", "pull_out"]
 
 PREDICT = """() => {
   const run = Simulate.runHeadless({ dt: 0.05, maxTime: 45 });
@@ -60,11 +60,14 @@ def build(specs):
         for town, typ, seed, weather, tod, pins in specs:
             H.select_map(page, town)
             page.wait_for_function("AppState.laneGraph !== null", timeout=60000)
-            info = page.evaluate("([t, s, o]) => ScenarioGenerator.generate(t, s, o ? { overrides: o } : {})",
-                                 [typ, seed, pins])
+            info = page.evaluate(
+                "([t, s, o]) => ScenarioGenerator.generate(t, s, o ? { overrides: o } : {})", [typ, seed, pins]
+            )
             if weather:
-                page.evaluate("([w, t]) => { AppState.weather = ScenarioGenerator.weatherPreset(w); AppState.time = t; }",
-                              [weather, tod or "daytime"])
+                page.evaluate(
+                    "([w, t]) => { AppState.weather = ScenarioGenerator.weatherPreset(w); AppState.time = t; }",
+                    [weather, tod or "daytime"],
+                )
             if not info:
                 print(f"[build] {town}:{typ}:{seed} — no scenario on this map")
                 continue
@@ -73,19 +76,32 @@ def build(specs):
             xosc = H.xosc_from_params(page, page.evaluate("ScenarioIO.buildParamsForTesting()"))
             npc_types = [n["type"] for n in scenario["npcs"]]
             pin_tag = "-" + "-".join(f"{k}{v}" for k, v in sorted(pins.items())) if pins else ""
-            built.append({"name": f"gen-{town}-{typ}-{seed}" + (f"-{weather}-{tod}" if weather else "") + pin_tag,
-                          "town": town, "type": typ,
-                          "seed": seed, "info": info, "xosc": xosc, "scenario": scenario,
-                          "predicted": predicted, "npc_types": npc_types,
-                          "props": bool(scenario["staticObjects"])})
+            built.append(
+                {
+                    "name": f"gen-{town}-{typ}-{seed}" + (f"-{weather}-{tod}" if weather else "") + pin_tag,
+                    "town": town,
+                    "type": typ,
+                    "seed": seed,
+                    "info": info,
+                    "xosc": xosc,
+                    "scenario": scenario,
+                    "predicted": predicted,
+                    "npc_types": npc_types,
+                    "props": bool(scenario["staticObjects"]),
+                }
+            )
         browser.close()
     return built
 
 
 def judge(b, result):
-    out = {"name": b["name"], "params": b["info"]["params"], "predicted_min_m": b["predicted"],
-           "terminated": not result["timed_out"] and result["returncode"] == 0,
-           "wall_s": round(result["elapsed"])}
+    out = {
+        "name": b["name"],
+        "params": b["info"]["params"],
+        "predicted_min_m": b["predicted"],
+        "terminated": not result["timed_out"] and result["returncode"] == 0,
+        "wall_s": round(result["elapsed"]),
+    }
     try:
         run = A.Run(result["csv"])
     except FileNotFoundError:
@@ -104,8 +120,11 @@ def judge(b, result):
         d, t = A.closest_approach(run, "hero", ref)
         if d is not None:
             j = hero.at(t + (run.act_start() or 0.0)) if hero else None
-            out["closest_m"][ref] = {"d": round(d, 2), "t": round(t, 1),
-                                     "ego_speed_then": round(hero.speed[j], 1) if j is not None else None}
+            out["closest_m"][ref] = {
+                "d": round(d, 2),
+                "t": round(t, 1),
+                "ego_speed_then": round(hero.speed[j], 1) if j is not None else None,
+            }
     return out
 
 

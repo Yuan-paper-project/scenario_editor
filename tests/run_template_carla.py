@@ -15,6 +15,7 @@ run_carla_cases.run_case(), like run_generated_carla.py, and printed beside the
 preview's own prediction. Needs CARLA on run.sh's port (2010) and the editor on
 :9090. Not part of run_tests.sh.
 """
+
 import argparse
 import json
 import math
@@ -49,26 +50,99 @@ T4_LANE5 = (-300.0, 33.6)
 CASES = [
     # name, town, template, spot, ego reference point on the ego's lane,
     # ego start (m behind the ref), route end (m past the ref), ego start speed
-    dict(name="tpl3-pull-out", town="Town03", tpl="vehicle-pull-out", spot=T3_PARK,
-         ego_ref=T3_EGO_LANE, back=60, ahead=60, ego_speed=8.0),
-    dict(name="tpl1-ped-crossing", town="Town01", tpl="pedestrian-crossing", spot=T1_KERB,
-         ego_ref=T1_EGO_LANE, back=55, ahead=60, ego_speed=8.0),
-    dict(name="tpl1-ped-stop-in-lane", town="Town01", tpl="pedestrian-stop-in-lane", spot=T1_KERB,
-         ego_ref=T1_EGO_LANE, back=55, ahead=60, ego_speed=8.0),
-    dict(name="tpl1-child-runs-out", town="Town01", tpl="child-runs-out", spot=T1_KERB,
-         ego_ref=T1_EGO_LANE, back=55, ahead=60, ego_speed=8.0),
-    dict(name="tpl1-cyclist-crossing", town="Town01", tpl="cyclist-crossing", spot=T1_KERB,
-         ego_ref=T1_EGO_LANE, back=55, ahead=60, ego_speed=8.0),
-    dict(name="tpl4-emergency-brake", town="Town04", tpl="vehicle-emergency-brake", spot=T4_LANE4,
-         ego_ref=T4_LANE4, back=45, ahead=150, ego_speed=13.0),
-    dict(name="tpl4-lane-drift", town="Town04", tpl="vehicle-lane-drift", spot=T4_LANE4,
-         ego_ref=T4_LANE4, back=70, ahead=150, ego_speed=13.0),
+    dict(
+        name="tpl3-pull-out",
+        town="Town03",
+        tpl="vehicle-pull-out",
+        spot=T3_PARK,
+        ego_ref=T3_EGO_LANE,
+        back=60,
+        ahead=60,
+        ego_speed=8.0,
+    ),
+    dict(
+        name="tpl1-ped-crossing",
+        town="Town01",
+        tpl="pedestrian-crossing",
+        spot=T1_KERB,
+        ego_ref=T1_EGO_LANE,
+        back=55,
+        ahead=60,
+        ego_speed=8.0,
+    ),
+    dict(
+        name="tpl1-ped-stop-in-lane",
+        town="Town01",
+        tpl="pedestrian-stop-in-lane",
+        spot=T1_KERB,
+        ego_ref=T1_EGO_LANE,
+        back=55,
+        ahead=60,
+        ego_speed=8.0,
+    ),
+    dict(
+        name="tpl1-child-runs-out",
+        town="Town01",
+        tpl="child-runs-out",
+        spot=T1_KERB,
+        ego_ref=T1_EGO_LANE,
+        back=55,
+        ahead=60,
+        ego_speed=8.0,
+    ),
+    dict(
+        name="tpl1-cyclist-crossing",
+        town="Town01",
+        tpl="cyclist-crossing",
+        spot=T1_KERB,
+        ego_ref=T1_EGO_LANE,
+        back=55,
+        ahead=60,
+        ego_speed=8.0,
+    ),
+    dict(
+        name="tpl4-emergency-brake",
+        town="Town04",
+        tpl="vehicle-emergency-brake",
+        spot=T4_LANE4,
+        ego_ref=T4_LANE4,
+        back=45,
+        ahead=150,
+        ego_speed=13.0,
+    ),
+    dict(
+        name="tpl4-lane-drift",
+        town="Town04",
+        tpl="vehicle-lane-drift",
+        spot=T4_LANE4,
+        ego_ref=T4_LANE4,
+        back=70,
+        ahead=150,
+        ego_speed=13.0,
+    ),
     # NPC in lane 5, ego approaching from behind in lane 4: it must change LEFT
     # (towards -y when facing +x) into the ego's lane once the ego is 15 m away.
-    dict(name="tpl4-cut-in", town="Town04", tpl="vehicle-cut-in", spot=T4_LANE5,
-         ego_ref=T4_LANE4, back=50, ahead=150, ego_speed=12.0, ego_first=True),
-    dict(name="tpl4-parked", town="Town04", tpl="vehicle-parked", spot=T4_LANE4,
-         ego_ref=T4_LANE4, back=60, ahead=100, ego_speed=10.0),
+    dict(
+        name="tpl4-cut-in",
+        town="Town04",
+        tpl="vehicle-cut-in",
+        spot=T4_LANE5,
+        ego_ref=T4_LANE4,
+        back=50,
+        ahead=150,
+        ego_speed=12.0,
+        ego_first=True,
+    ),
+    dict(
+        name="tpl4-parked",
+        town="Town04",
+        tpl="vehicle-parked",
+        spot=T4_LANE4,
+        ego_ref=T4_LANE4,
+        back=60,
+        ahead=100,
+        ego_speed=10.0,
+    ),
 ]
 
 SETUP_EGO = """({ref, back, ahead, speed}) => {
@@ -123,12 +197,14 @@ def build(cases):
         for c in cases:
             H.select_map(page, c["town"])
             page.wait_for_function("AppState.laneGraph !== null", timeout=60000)
-            page.evaluate("town => AppState.loadJSON({map: town, weather: {}, time: 'daytime', "
-                          "ego: null, npcs: [], staticObjects: [], trafficSignals: []})", c["town"])
+            page.evaluate(
+                "town => AppState.loadJSON({map: town, weather: {}, time: 'daytime', "
+                "ego: null, npcs: [], staticObjects: [], trafficSignals: []})",
+                c["town"],
+            )
             page.evaluate(f"MapView.centreOn({c['spot'][0]}, {c['spot'][1]}, 120)")
             page.wait_for_timeout(200)
-            ego_args = {"ref": list(c["ego_ref"]), "back": c["back"],
-                        "ahead": c["ahead"], "speed": c["ego_speed"]}
+            ego_args = {"ref": list(c["ego_ref"]), "back": c["back"], "ahead": c["ahead"], "speed": c["ego_speed"]}
             # A template that reads the ego at the click (the cut-in's
             # direction) needs the ego placed first.
             if c.get("ego_first"):
@@ -139,11 +215,13 @@ def build(cases):
             predicted = page.evaluate(PREDICT)
             scenario = page.evaluate("AppState.toJSON()")
             xosc = H.xosc_from_params(page, page.evaluate("ScenarioIO.buildParamsForTesting()"))
-            built.append({**c, "npc": npc, "ego": ego, "predicted": predicted,
-                          "scenario": scenario, "xosc": xosc})
-            print(f"[build] {c['name']}: npc {npc['type']} at ({npc['x']:.1f},{npc['y']:.1f}) "
-                  f"yaw {npc['yaw']:.0f} start {npc['initial_speed']}; ego {ego}; "
-                  f"{len(npc['events'])} events; preview {predicted}", flush=True)
+            built.append({**c, "npc": npc, "ego": ego, "predicted": predicted, "scenario": scenario, "xosc": xosc})
+            print(
+                f"[build] {c['name']}: npc {npc['type']} at ({npc['x']:.1f},{npc['y']:.1f}) "
+                f"yaw {npc['yaw']:.0f} start {npc['initial_speed']}; ego {ego}; "
+                f"{len(npc['events'])} events; preview {predicted}",
+                flush=True,
+            )
         if errors:
             print("[build] JS errors:", errors[:3])
         browser.close()
@@ -151,8 +229,12 @@ def build(cases):
 
 
 def judge(b, result):
-    out = {"name": b["name"], "terminated": not result["timed_out"] and result["returncode"] == 0,
-           "wall_s": round(result["elapsed"]), "preview": b["predicted"]}
+    out = {
+        "name": b["name"],
+        "terminated": not result["timed_out"] and result["returncode"] == 0,
+        "wall_s": round(result["elapsed"]),
+        "preview": b["predicted"],
+    }
     try:
         run = A.Run(result["csv"])
     except FileNotFoundError:
@@ -176,11 +258,13 @@ def judge(b, result):
     d, t = A.closest_approach(run, "hero", "adversary")
     if d is not None:
         j = hero.at(t + (run.act_start() or 0.0)) if hero else None
-        out["closest"] = {"d": round(d, 2), "t": round(t, 1),
-                          "ego_speed_then": round(hero.speed[j], 1) if j is not None else None}
+        out["closest"] = {
+            "d": round(d, 2),
+            "t": round(t, 1),
+            "ego_speed_then": round(hero.speed[j], 1) if j is not None else None,
+        }
     if hero:
-        out["ego_min_speed_after_2s"] = round(min(
-            s for s, tt in zip(hero.speed, hero.t) if tt - hero.t[0] > 2.0), 1)
+        out["ego_min_speed_after_2s"] = round(min(s for s, tt in zip(hero.speed, hero.t) if tt - hero.t[0] > 2.0), 1)
     return out
 
 
@@ -195,8 +279,9 @@ def main():
     results = []
     for b in built:
         print(f"\n=== {b['name']}", flush=True)
-        res = R.run_case({"name": b["name"], "props": False}, b["xosc"], b["scenario"],
-                         keep_video=True, timeout=args.timeout)
+        res = R.run_case(
+            {"name": b["name"], "props": False}, b["xosc"], b["scenario"], keep_video=True, timeout=args.timeout
+        )
         j = judge(b, res)
         print(json.dumps(j, indent=1), flush=True)
         results.append(j)

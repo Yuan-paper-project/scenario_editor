@@ -26,6 +26,7 @@ The other properties pinned here:
     the CARLA towns, and the oncoming drift is a
     fastest/shortest route and both conflict NPCs ignore lights and obstacles.
 """
+
 import base64
 import csv
 import io
@@ -37,18 +38,31 @@ from playwright.sync_api import sync_playwright
 
 import _harness as H
 
-TYPES = ["lead_brake", "slow_lead", "cut_in", "vru_crossing", "turn_vru", "junction_conflict", "obstacle",
-         "oncoming_drift", "cyclist_ahead", "cut_out", "pull_out", "rear_approach"]
+TYPES = [
+    "lead_brake",
+    "slow_lead",
+    "cut_in",
+    "vru_crossing",
+    "turn_vru",
+    "junction_conflict",
+    "obstacle",
+    "oncoming_drift",
+    "cyclist_ahead",
+    "cut_out",
+    "pull_out",
+    "rear_approach",
+]
 # town -> types that map cannot host (no same-direction lane pair, no parking
 # lane on Town01)
 TOWNS = {"Town03": set(), "Town05": set(), "Town01": {"cut_in", "cut_out", "pull_out", "rear_approach"}}
 SEEDS = [1, 2, 3]
-CONFLICT_M = 3.0      # centre-to-centre; a car is 4.5 m long, so this is a hit
-OBSTACLE_M = 2.5      # nearest prop to the ego's track
+CONFLICT_M = 3.0  # centre-to-centre; a car is 4.5 m long, so this is a hit
+OBSTACLE_M = 2.5  # nearest prop to the ego's track
 
 C = H.Checks()
 
-GEN_AND_MEASURE = ("""([t, s]) => {
+GEN_AND_MEASURE = (
+    """([t, s]) => {
   const info = ScenarioGenerator.generate(t, s);
   if (!info) return null;
   const run = Simulate.runHeadless({ dt: 0.05, maxTime: 45 });
@@ -118,7 +132,8 @@ GEN_AND_MEASURE = ("""([t, s]) => {
   }));
   return { info, ego: AppState.ego, npcs, propMin, problems, signals,
            nProps: AppState.staticObjects.length };
-}""").replace("%CONFLICT%", str(CONFLICT_M))
+}"""
+).replace("%CONFLICT%", str(CONFLICT_M))
 
 EXPORT = """async () => {
   const p = ScenarioIO.buildParamsForTesting();
@@ -152,17 +167,23 @@ def check_scenario(town, t, s, r, page):
     if t == "rear_approach":
         # The ego's own lane change is the scenario: a route, then a
         # lane_change released by the ego reaching a point.
-        C(f"{tag}: ego has a route, then a lane change on its own position",
-          len(evs) == 2 and evs[0]["action"]["type"] == "assign_route"
-          and evs[1]["action"]["type"] == "lane_change"
-          and evs[1]["trigger"]["type"] == "distance_to_point"
-          and evs[1]["trigger"]["entity_ref"] == ego["id"], json.dumps(evs)[:300])
+        C(
+            f"{tag}: ego has a route, then a lane change on its own position",
+            len(evs) == 2
+            and evs[0]["action"]["type"] == "assign_route"
+            and evs[1]["action"]["type"] == "lane_change"
+            and evs[1]["trigger"]["type"] == "distance_to_point"
+            and evs[1]["trigger"]["entity_ref"] == ego["id"],
+            json.dumps(evs)[:300],
+        )
     else:
-        C(f"{tag}: ego has one assign_route event",
-          len(evs) == 1 and evs[0]["action"]["type"] == "assign_route", json.dumps(evs)[:200])
+        C(
+            f"{tag}: ego has one assign_route event",
+            len(evs) == 1 and evs[0]["action"]["type"] == "assign_route",
+            json.dumps(evs)[:200],
+        )
     wps = evs[0]["action"]["waypoints"] if evs else []
-    C(f"{tag}: ego route has >=2 waypoints, seed 'fastest'",
-      len(wps) >= 2 and wps[0]["strategy"] == "fastest")
+    C(f"{tag}: ego route has >=2 waypoints, seed 'fastest'", len(wps) >= 2 and wps[0]["strategy"] == "fastest")
     C(f"{tag}: ego has a start speed", ego["initial_speed"] > 0, ego["initial_speed"])
 
     for n in r["npcs"]:
@@ -172,63 +193,77 @@ def check_scenario(town, t, s, r, page):
             # distance_to_point on the actor ITSELF (a walker stopping in the
             # ego's lane) is positional, and the actor only moves because of an
             # ego-relative trigger, so it is not clock-timed either.
-            ok = (trig in ("distance_to_ego", "after_event")
-                  or (trig == "simulation_time" and act == "assign_route")
-                  or (trig == "distance_to_point" and ev["trigger"].get("entity_ref") in (n["id"], ego["id"])))
-            C(f"{tag}: {n['type']} {ev['id']} timed off the ego, not the clock",
-              ok, f"{trig}/{act}")
+            ok = (
+                trig in ("distance_to_ego", "after_event")
+                or (trig == "simulation_time" and act == "assign_route")
+                or (trig == "distance_to_point" and ev["trigger"].get("entity_ref") in (n["id"], ego["id"]))
+            )
+            C(f"{tag}: {n['type']} {ev['id']} timed off the ego, not the clock", ok, f"{trig}/{act}")
             if trig == "after_event":
-                C(f"{tag}: {n['type']} {ev['id']} chains within its own actor",
-                  not ev["trigger"].get("actor_ref"))
+                C(f"{tag}: {n['type']} {ev['id']} chains within its own actor", not ev["trigger"].get("actor_ref"))
 
     # Forced greens for the ego (scenarioGenerator._greenWave): only on real
     # CARLA lights, only green, several per light, all with a real radius.
     for sig in r["signals"]:
-        C(f"{tag}: forced light {sig['id']} is a map light CARLA has",
-          sig["known"] and sig["inCarla"])
-        C(f"{tag}: forced light {sig['id']} only ever goes green, re-asserted",
-          sig["events"] and all(e["state"] == "green" and e["trigger_distance"] > 0
-                                for e in sig["events"]), sig["events"])
-    C(f"{tag}: info counts the forced lights",
-      r["info"].get("forced_green_lights") == len(r["signals"]))
+        C(f"{tag}: forced light {sig['id']} is a map light CARLA has", sig["known"] and sig["inCarla"])
+        C(
+            f"{tag}: forced light {sig['id']} only ever goes green, re-asserted",
+            sig["events"] and all(e["state"] == "green" and e["trigger_distance"] > 0 for e in sig["events"]),
+            sig["events"],
+        )
+    C(f"{tag}: info counts the forced lights", r["info"].get("forced_green_lights") == len(r["signals"]))
     if t == "cut_out":
         lead, stopped = r["npcs"][0], r["npcs"][1]
         lc = lead["events"][0]
-        C(f"{tag}: lead swerves on its own position",
-          lc["action"]["type"] == "lane_change" and lc["trigger"]["type"] == "distance_to_point"
-          and lc["trigger"]["entity_ref"] == lead["id"], json.dumps(lc)[:200])
-        C(f"{tag}: lead ignores obstacles (it would brake for the stopped car)",
-          not lead["obeyObstacles"])
+        C(
+            f"{tag}: lead swerves on its own position",
+            lc["action"]["type"] == "lane_change"
+            and lc["trigger"]["type"] == "distance_to_point"
+            and lc["trigger"]["entity_ref"] == lead["id"],
+            json.dumps(lc)[:200],
+        )
+        C(f"{tag}: lead ignores obstacles (it would brake for the stopped car)", not lead["obeyObstacles"])
 
     # A conflict car must not defuse its own conflict: it runs reds and does
     # not brake for the ego in front of it (scenarioGenerator._ignoresTraffic).
     if t in ("junction_conflict", "oncoming_drift"):
         for n in r["npcs"]:
             if n["hasEvents"]:
-                C(f"{tag}: {n['type']} ignores lights and obstacles",
-                  not n["obeyLights"] and not n["obeyObstacles"])
+                C(f"{tag}: {n['type']} ignores lights and obstacles", not n["obeyLights"] and not n["obeyObstacles"])
     for n in r["npcs"]:
-        C(f"{tag}: {n['type']} route does not end on the ego's route ahead",
-          not n.get("endBlocksEgo"))
+        C(f"{tag}: {n['type']} route does not end on the ego's route ahead", not n.get("endBlocksEgo"))
     if t == "oncoming_drift":
         n = next((n for n in r["npcs"] if n["hasEvents"]), None)
         st = n["strategies"] if n else []
-        C(f"{tag}: drift is a route: fastest legs around a run of >= 4 shortest",
-          len(st) >= 7 and st[0] == st[1] == st[-1] == "fastest"
-          and st[2:-1].count("shortest") >= 4 and "fastest" not in st[2:-1], st)
+        C(
+            f"{tag}: drift is a route: fastest legs around a run of >= 4 shortest",
+            len(st) >= 7
+            and st[0] == st[1] == st[-1] == "fastest"
+            and st[2:-1].count("shortest") >= 4
+            and "fastest" not in st[2:-1],
+            st,
+        )
         C(f"{tag}: drift route is routable in the preview", n and n["routeOk"])
-        C(f"{tag}: the drift hands back to 'fastest' on its own lane centre",
-          n and n["handoffs"] and all(d is not None and d < 0.3 for d in n["handoffs"]),
-          n and n["handoffs"])
+        C(
+            f"{tag}: the drift hands back to 'fastest' on its own lane centre",
+            n and n["handoffs"] and all(d is not None and d < 0.3 for d in n["handoffs"]),
+            n and n["handoffs"],
+        )
         ev = n["events"] if n else []
-        C(f"{tag}: drift car waits at 0 and is released by a ramp on ego distance",
-          len(ev) == 2 and ev[1]["trigger"]["type"] == "distance_to_ego"
-          and ev[1]["action"]["dynamics"]["dimension"] == "rate", json.dumps(ev)[-300:])
+        C(
+            f"{tag}: drift car waits at 0 and is released by a ramp on ego distance",
+            len(ev) == 2
+            and ev[1]["trigger"]["type"] == "distance_to_ego"
+            and ev[1]["action"]["dynamics"]["dimension"] == "rate",
+            json.dumps(ev)[-300:],
+        )
 
     if t == "obstacle":
-        C(f"{tag}: obstacle sits on the ego's path",
-          r["propMin"] is not None and r["propMin"] <= OBSTACLE_M
-          or any(not n["hasEvents"] for n in r["npcs"]), r["propMin"])
+        C(
+            f"{tag}: obstacle sits on the ego's path",
+            r["propMin"] is not None and r["propMin"] <= OBSTACLE_M or any(not n["hasEvents"] for n in r["npcs"]),
+            r["propMin"],
+        )
     else:
         active = [n for n in r["npcs"] if n["hasEvents"]]
         C(f"{tag}: has an NPC with events", len(active) >= 1)
@@ -237,23 +272,35 @@ def check_scenario(town, t, s, r, page):
             # start, so the criticality gate (contact or a near miss) is the
             # check that it is caught.
             lead = active[0] if active else None
-            C(f"{tag}: slow lead drives slower than the ego",
-              lead and 0 < r["info"]["params"]["lead_speed"] < ego["initial_speed"],
-              (r["info"]["params"], ego["initial_speed"]))
-            C(f"{tag}: slow lead follows the ego's corridor on a route",
-              lead and lead["events"][0]["action"]["type"] == "assign_route" and lead["routeOk"])
+            C(
+                f"{tag}: slow lead drives slower than the ego",
+                lead and 0 < r["info"]["params"]["lead_speed"] < ego["initial_speed"],
+                (r["info"]["params"], ego["initial_speed"]),
+            )
+            C(
+                f"{tag}: slow lead follows the ego's corridor on a route",
+                lead and lead["events"][0]["action"]["type"] == "assign_route" and lead["routeOk"],
+            )
             active = []
         if t == "rear_approach":
             # The surge is released by the EGO reaching a point, not by a
             # distance to it; the criticality gate measures the conflict.
             n = active[0] if active else None
             ev = n["events"][0] if n else None
-            C(f"{tag}: rear car surges when the ego reaches a point",
-              ev and ev["trigger"]["type"] == "distance_to_point" and ev["trigger"]["entity_ref"] == ego["id"]
-              and ev["action"]["type"] == "set_speed" and ev["action"]["target"]["value"] > ego["initial_speed"],
-              json.dumps(ev)[:300])
-            C(f"{tag}: rear car starts at the ego's speed, behind it",
-              n and abs(n["speed"] - ego["initial_speed"]) < 0.01, n and (n["speed"], ego["initial_speed"]))
+            C(
+                f"{tag}: rear car surges when the ego reaches a point",
+                ev
+                and ev["trigger"]["type"] == "distance_to_point"
+                and ev["trigger"]["entity_ref"] == ego["id"]
+                and ev["action"]["type"] == "set_speed"
+                and ev["action"]["target"]["value"] > ego["initial_speed"],
+                json.dumps(ev)[:300],
+            )
+            C(
+                f"{tag}: rear car starts at the ego's speed, behind it",
+                n and abs(n["speed"] - ego["initial_speed"]) < 0.01,
+                n and (n["speed"], ego["initial_speed"]),
+            )
             active = []
         if t == "cut_out":
             # The lead's swerve is positional, not distance_to_ego, and the
@@ -262,8 +309,11 @@ def check_scenario(town, t, s, r, page):
             active = []
         for n in active:
             C(f"{tag}: {n['type']} trigger fires in the preview", n["fired"])
-            C(f"{tag}: {n['type']} reaches a non-reacting ego after its trigger",
-              n["min"] <= n["reach"], f"{n['min']:.1f} m > {n['reach']:.1f} m")
+            C(
+                f"{tag}: {n['type']} reaches a non-reacting ego after its trigger",
+                n["min"] <= n["reach"],
+                f"{n['min']:.1f} m > {n['reach']:.1f} m",
+            )
 
     exp = page.evaluate(EXPORT)
     if C(f"{tag}: exports", exp["ok"], f"{exp['status']} {exp['text'][:200]}"):
@@ -283,8 +333,10 @@ def main():
         C("menu: one row per type plus 'any' and the batch row", rows.count() == len(TYPES) + 2, rows.count())
         page.locator("#gen-menu-types .menu-item", has_text="Einscheren").click()
         page.wait_for_function("AppState.ego !== null", timeout=10000)
-        C("menu: empty scenario generates without a confirm",
-          page.evaluate("!Confirm.isOpen && AppState.ego?.events?.[0]?.action?.type === 'assign_route'"))
+        C(
+            "menu: empty scenario generates without a confirm",
+            page.evaluate("!Confirm.isOpen && AppState.ego?.events?.[0]?.action?.type === 'assign_route'"),
+        )
         C("menu: closes after a pick", page.locator("#gen-menu-panel").is_hidden())
         before = page.evaluate("JSON.stringify(AppState.toJSON())")
         page.click("#gen-menu-btn")
@@ -293,14 +345,18 @@ def main():
         C("menu: replacing a scenario asks first", page.evaluate("Confirm.isOpen"))
         page.keyboard.press("Escape")
         page.wait_for_timeout(200)
-        C("menu: cancelling the confirm keeps the scenario",
-          page.evaluate("JSON.stringify(AppState.toJSON())") == before)
+        C(
+            "menu: cancelling the confirm keeps the scenario",
+            page.evaluate("JSON.stringify(AppState.toJSON())") == before,
+        )
         page.click("#gen-menu-btn")
         page.fill("#gen-seed", "4242")
         page.locator("#gen-menu-types .menu-item", has_text="Hindernis auf Spur").click(modifiers=["Control"])
         page.wait_for_timeout(300)
-        C("menu: Strg+click replaces without a confirm, using the typed seed",
-          page.evaluate("!Confirm.isOpen && ScenarioGenerator.lastInfo?.seed === 4242"))
+        C(
+            "menu: Strg+click replaces without a confirm, using the typed seed",
+            page.evaluate("!Confirm.isOpen && ScenarioGenerator.lastInfo?.seed === 4242"),
+        )
         C("menu: the seed field is cleared after use", page.input_value("#gen-seed") == "")
 
         # ── Undo ────────────────────────────────────────────────────────────
@@ -313,14 +369,17 @@ def main():
         page.evaluate("document.activeElement && document.activeElement.blur()")
         page.keyboard.press("Control+z")
         page.wait_for_timeout(250)
-        C("undo: one Strg+Z restores the scenario from before generating",
-          page.evaluate("JSON.stringify(AppState.ego)") == hand
-          and page.evaluate("AppState.npcs.length") == 0)
+        C(
+            "undo: one Strg+Z restores the scenario from before generating",
+            page.evaluate("JSON.stringify(AppState.ego)") == hand and page.evaluate("AppState.npcs.length") == 0,
+        )
         page.keyboard.press("Control+y")
         page.wait_for_timeout(250)
-        C("undo: redo brings the generated scenario back",
-          page.evaluate("AppState.npcs.length") == 1
-          and page.evaluate("AppState.ego.events[0]?.action?.type") == "assign_route")
+        C(
+            "undo: redo brings the generated scenario back",
+            page.evaluate("AppState.npcs.length") == 1
+            and page.evaluate("AppState.ego.events[0]?.action?.type") == "assign_route",
+        )
 
         # ── Determinism and diversity ────────────────────────────────────────
         a = page.evaluate(f"({STRIP_IDS})(ScenarioGenerator.build('vru_crossing', 99))")
@@ -362,29 +421,54 @@ def main():
         page.evaluate("document.activeElement && document.activeElement.blur()")
         page.keyboard.press("Control+z")
         page.wait_for_timeout(250)
-        C("batch: undo history survives (Strg+Z still undoes the edit before it)",
-          page.evaluate("AppState.ego === null || AppState.ego.x !== 20"))
-        C("batch: 10 made, 10 exported, none failed",
-          batch["made"] == 10 and batch["ok"] == 10 and batch["failed"] == 0, batch["made"])
+        C(
+            "batch: undo history survives (Strg+Z still undoes the edit before it)",
+            page.evaluate("AppState.ego === null || AppState.ego.x !== 20"),
+        )
+        C(
+            "batch: 10 made, 10 exported, none failed",
+            batch["made"] == 10 and batch["ok"] == 10 and batch["failed"] == 0,
+            batch["made"],
+        )
         z = zipfile.ZipFile(io.BytesIO(base64.b64decode(batch["b64"])))
         names = z.namelist()
-        C("zip: .xosc + .json + _route.xml per scenario, plus two manifests",
-          len(names) == 10 * 3 + 2 and "manifest.csv" in names and "manifest.json" in names, len(names))
+        C(
+            "zip: .xosc + .json + _route.xml per scenario, plus two manifests",
+            len(names) == 10 * 3 + 2 and "manifest.csv" in names and "manifest.json" in names,
+            len(names),
+        )
         rows = list(csv.DictReader(io.StringIO(z.read("manifest.csv").decode())))
-        C("zip: manifest has one ok row per scenario",
-          len(rows) == 10 and all(r["status"] == "ok" for r in rows), len(rows))
-        C("zip: manifest records seed, type, weather and time",
-          all(k in rows[0] for k in ("seed", "type", "weather", "time", "town")), list(rows[0])[:12])
-        C("zip: manifest carries no difficulty or criticality columns",
-          not any(k in rows[0] for k in ("difficulty", "difficulty_filter", "ttc_s", "decel_mps2", "min_gap_m", "conflict_with")),
-          list(rows[0]))
-        C("zip: file names carry no difficulty",
-          not any(d in n for n in names for d in ("_leicht_", "_mittel_", "_schwer_")), names[:3])
+        C(
+            "zip: manifest has one ok row per scenario",
+            len(rows) == 10 and all(r["status"] == "ok" for r in rows),
+            len(rows),
+        )
+        C(
+            "zip: manifest records seed, type, weather and time",
+            all(k in rows[0] for k in ("seed", "type", "weather", "time", "town")),
+            list(rows[0])[:12],
+        )
+        C(
+            "zip: manifest carries no difficulty or criticality columns",
+            not any(
+                k in rows[0]
+                for k in ("difficulty", "difficulty_filter", "ttc_s", "decel_mps2", "min_gap_m", "conflict_with")
+            ),
+            list(rows[0]),
+        )
+        C(
+            "zip: file names carry no difficulty",
+            not any(d in n for n in names for d in ("_leicht_", "_mittel_", "_schwer_")),
+            names[:3],
+        )
         C("dialog: no Schwierigkeit field", page.locator("#gen-batch-difficulty").count() == 0)
-        C("zip: every .json reopens as an editor save file",
-          all(json.loads(z.read(n)).get("ego") for n in names if n.endswith(".json") and not n.startswith("manifest")))
-        C("zip: weather varies across the batch", len({r["weather"] for r in rows}) >= 4,
-          {r["weather"] for r in rows})
+        C(
+            "zip: every .json reopens as an editor save file",
+            all(
+                json.loads(z.read(n)).get("ego") for n in names if n.endswith(".json") and not n.startswith("manifest")
+            ),
+        )
+        C("zip: weather varies across the batch", len({r["weather"] for r in rows}) >= 4, {r["weather"] for r in rows})
 
         # ── Phase 3: all-maps batch ─────────────────────────────────────────
         many = page.evaluate("""async () => {
@@ -400,12 +484,16 @@ def main():
         page.locator(".gen-batch-item").click()
         C("dialog: opens from the menu", page.locator("#gen-batch-overlay").is_visible())
         page.fill("#gen-batch-count", "4")
-        C("dialog: Typ starts with every type selected",
-          page.inner_text("#gen-batch-type .multi-select-count") == f"{len(TYPES)}/{len(TYPES)}",
-          page.inner_text("#gen-batch-type .multi-select-count"))
-        C("dialog: Karten starts on the current map only",
-          page.inner_text("#gen-batch-maps .multi-select-summary") == "Town03",
-          page.inner_text("#gen-batch-maps .multi-select-summary"))
+        C(
+            "dialog: Typ starts with every type selected",
+            page.inner_text("#gen-batch-type .multi-select-count") == f"{len(TYPES)}/{len(TYPES)}",
+            page.inner_text("#gen-batch-type .multi-select-count"),
+        )
+        C(
+            "dialog: Karten starts on the current map only",
+            page.inner_text("#gen-batch-maps .multi-select-summary") == "Town03",
+            page.inner_text("#gen-batch-maps .multi-select-summary"),
+        )
         # Typ: Keine, then tick two types by clicking their rows.
         page.click("#gen-batch-type-btn")
         C("dialog: Typ opens a checkbox list", page.locator("#gen-batch-type .multi-select-panel").is_visible())
@@ -413,42 +501,58 @@ def main():
         C("dialog: Keine clears the types", page.inner_text("#gen-batch-type .multi-select-summary") == "Keine Auswahl")
         page.click("#gen-batch-type label:has(input[value='lead_brake'])")
         page.click("#gen-batch-type label:has(input[value='obstacle'])")
-        C("dialog: two ticked types read '2 Typen'",
-          page.inner_text("#gen-batch-type .multi-select-summary") == "2 Typen")
+        C(
+            "dialog: two ticked types read '2 Typen'",
+            page.inner_text("#gen-batch-type .multi-select-summary") == "2 Typen",
+        )
         page.keyboard.press("Escape")
-        C("dialog: Esc closes the dropdown, not the dialog",
-          page.locator("#gen-batch-type .multi-select-panel").is_hidden()
-          and page.locator("#gen-batch-overlay").is_visible())
+        C(
+            "dialog: Esc closes the dropdown, not the dialog",
+            page.locator("#gen-batch-type .multi-select-panel").is_hidden()
+            and page.locator("#gen-batch-overlay").is_visible(),
+        )
         # Karten: add Town05 to Town03.
         page.click("#gen-batch-maps-btn")
         page.click("#gen-batch-maps label:has(input[value='Town05'])")
-        page.click("#gen-batch-title")   # outside click closes it
-        C("dialog: an outside click closes the dropdown", page.locator("#gen-batch-maps .multi-select-panel").is_hidden())
+        page.click("#gen-batch-title")  # outside click closes it
+        C(
+            "dialog: an outside click closes the dropdown",
+            page.locator("#gen-batch-maps .multi-select-panel").is_hidden(),
+        )
         C("dialog: two maps read '2 Karten'", page.inner_text("#gen-batch-maps .multi-select-summary") == "2 Karten")
         with page.expect_download(timeout=120000) as dl:
             page.click("#gen-batch-start")
         C("dialog: downloads a zip", dl.value.suggested_filename.endswith(".zip"), dl.value.suggested_filename)
         z = zipfile.ZipFile(dl.value.path())
         rows = list(csv.DictReader(io.StringIO(z.read("manifest.csv").decode())))
-        C("dialog: batch uses only the selected types",
-          rows and {r["type"] for r in rows} <= {"lead_brake", "obstacle"}, {r["type"] for r in rows})
-        C("dialog: batch uses only the selected maps, both of them",
-          {r["town"] for r in rows} == {"Town03", "Town05"}, {r["town"] for r in rows})
+        C(
+            "dialog: batch uses only the selected types",
+            rows and {r["type"] for r in rows} <= {"lead_brake", "obstacle"},
+            {r["type"] for r in rows},
+        )
+        C(
+            "dialog: batch uses only the selected maps, both of them",
+            {r["town"] for r in rows} == {"Town03", "Town05"},
+            {r["town"] for r in rows},
+        )
         page.wait_for_timeout(300)
         C("dialog: closes when done", page.locator("#gen-batch-overlay").is_hidden())
         page.click("#gen-menu-btn")
         page.locator(".gen-batch-item").click()
-        C("dialog: selection is kept when reopened",
-          page.inner_text("#gen-batch-type .multi-select-summary") == "2 Typen"
-          and page.inner_text("#gen-batch-maps .multi-select-summary") == "2 Karten")
+        C(
+            "dialog: selection is kept when reopened",
+            page.inner_text("#gen-batch-type .multi-select-summary") == "2 Typen"
+            and page.inner_text("#gen-batch-maps .multi-select-summary") == "2 Karten",
+        )
         page.click("#gen-batch-type-btn")
         page.click("#gen-batch-type [data-ms-none]")
         page.keyboard.press("Escape")
         page.click("#gen-batch-start")
         page.wait_for_timeout(300)
-        C("dialog: no type selected refuses to start",
-          page.locator("#gen-batch-overlay").is_visible()
-          and page.locator("#gen-batch-progress").is_hidden())
+        C(
+            "dialog: no type selected refuses to start",
+            page.locator("#gen-batch-overlay").is_visible() and page.locator("#gen-batch-progress").is_hidden(),
+        )
         page.click("#gen-batch-type-btn")
         page.click("#gen-batch-type [data-ms-all]")
         page.keyboard.press("Escape")

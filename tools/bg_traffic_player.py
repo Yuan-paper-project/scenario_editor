@@ -44,6 +44,7 @@ The ego's and every NPC's obstacle sensor (`sensor.other.obstacle`,
 only_dynamics=True) sees these cars — measured with
 tests/probe_puppet_obstacle.py.
 """
+
 import argparse
 import json
 import math
@@ -54,15 +55,15 @@ import time
 import carla
 
 ROLE = "background"
-SPAWN_LIFT_M = 0.6      # spawned this high, put on the road one tick later
-SPAWN_RETRIES = 3       # failed spawns are retried on the next ticks, higher
-LAG_WARN_M = 2.0        # a car this far off its trajectory is reported (once)
+SPAWN_LIFT_M = 0.6  # spawned this high, put on the road one tick later
+SPAWN_RETRIES = 3  # failed spawns are retried on the next ticks, higher
+LAG_WARN_M = 2.0  # a car this far off its trajectory is reported (once)
 HERO_WAIT_S = 180.0
-HOLD_LOOKAHEAD_S = (0.5, 1.0, 1.5, 2.0)   # where the car will be, checked for a conflict
-HOLD_LONG_M = 3.5       # + the car's half-length: box ahead/behind a scenario actor
-HOLD_LAT_M = 1.6        # + the car's half-width: beside it (an adjacent lane is ~3.5 m)
-ACTOR_REFRESH_S = 1.0   # how often the list of scenario actors is re-read
-RESUME_CLEAR_S = 0.5    # a holding car resumes only after this long without a conflict
+HOLD_LOOKAHEAD_S = (0.5, 1.0, 1.5, 2.0)  # where the car will be, checked for a conflict
+HOLD_LONG_M = 3.5  # + the car's half-length: box ahead/behind a scenario actor
+HOLD_LAT_M = 1.6  # + the car's half-width: beside it (an adjacent lane is ~3.5 m)
+ACTOR_REFRESH_S = 1.0  # how often the list of scenario actors is re-read
+RESUME_CLEAR_S = 0.5  # a holding car resumes only after this long without a conflict
 
 
 def _lerp_frame(frames, t, dt):
@@ -76,8 +77,7 @@ def _lerp_frame(frames, t, dt):
     a, b = frames[i], frames[i + 1]
     w = f - i
     dyaw = ((b[3] - a[3] + 540.0) % 360.0) - 180.0
-    return [a[0] + (b[0] - a[0]) * w, a[1] + (b[1] - a[1]) * w,
-            a[2] + (b[2] - a[2]) * w, a[3] + dyaw * w]
+    return [a[0] + (b[0] - a[0]) * w, a[1] + (b[1] - a[1]) * w, a[2] + (b[2] - a[2]) * w, a[3] + dyaw * w]
 
 
 class Player:
@@ -98,21 +98,22 @@ class Player:
         self.t0 = [float(v.get("t0", 0.0)) for v in self.entries]
         self.t_end = [t + (len(v["frames"]) - 1) * self.dt for t, v in zip(self.t0, self.entries)]
         self.waiting = sorted(range(len(self.entries)), key=lambda i: self.t0[i])  # not yet spawned
-        self.attempts = {}   # entry -> failed spawn attempts so far
-        self.actors = {}     # entry -> actor id, while alive
-        self.delay = [0.0] * len(self.entries)   # seconds each car has held so far
-        self.holding = {}                        # entry -> seconds clear so far, while holding
-        self.holds = 0                           # hold episodes over the run
+        self.attempts = {}  # entry -> failed spawn attempts so far
+        self.actors = {}  # entry -> actor id, while alive
+        self.delay = [0.0] * len(self.entries)  # seconds each car has held so far
+        self.holding = {}  # entry -> seconds clear so far, while holding
+        self.holds = 0  # hold episodes over the run
         self.spawned = 0
         self.failed = 0
         self._warned = set()
-        self._others = []                        # scenario actor ids (hero + NPCs)
+        self._others = []  # scenario actor ids (hero + NPCs)
         self._others_at = -1e9
 
     def _transform(self, frame, lift=0.0):
         x, y, z_hint, yaw = frame
-        wp = self.cmap.get_waypoint(carla.Location(x, y, z_hint), project_to_road=True,
-                                    lane_type=carla.LaneType.Driving)
+        wp = self.cmap.get_waypoint(
+            carla.Location(x, y, z_hint), project_to_road=True, lane_type=carla.LaneType.Driving
+        )
         if wp is not None and abs(wp.transform.location.z - z_hint) < 6.0:
             z, pitch = wp.transform.location.z, wp.transform.rotation.pitch
         else:
@@ -127,7 +128,7 @@ class Player:
         due = [i for i in self.waiting if self.t0[i] <= t]
         due = [i for i in due if t <= self.t_end[i]]
         gone = [i for i in self.waiting if self.t0[i] <= t and t > self.t_end[i]]
-        for i in gone:                       # its whole life passed before it got in
+        for i in gone:  # its whole life passed before it got in
             self.waiting.remove(i)
             self.failed += 1
         if not due:
@@ -141,8 +142,11 @@ class Player:
                 bp.set_attribute("color", v["color"])
             bp.set_attribute("role_name", ROLE)
             lift = SPAWN_LIFT_M * (1 + 2 * self.attempts.get(i, 0))
-            cmds.append(carla.command.SpawnActor(
-                bp, self._transform(_lerp_frame(v["frames"], t - self.t0[i], self.dt), lift=lift)))
+            cmds.append(
+                carla.command.SpawnActor(
+                    bp, self._transform(_lerp_frame(v["frames"], t - self.t0[i], self.dt), lift=lift)
+                )
+            )
         for i, resp in zip(due, self.client.apply_batch_sync(cmds, False)):
             if not resp.error:
                 self.actors[i] = resp.actor_id
@@ -153,8 +157,11 @@ class Player:
             if self.attempts[i] > SPAWN_RETRIES:
                 self.waiting.remove(i)
                 self.failed += 1
-                print(f"[bg_traffic] car {self.entries[i]['id']} ({self.entries[i]['blueprint']}) "
-                      f"not spawned: {resp.error}", flush=True)
+                print(
+                    f"[bg_traffic] car {self.entries[i]['id']} ({self.entries[i]['blueprint']}) "
+                    f"not spawned: {resp.error}",
+                    flush=True,
+                )
 
     def _remove_ended(self, t):
         ended = [i for i in self.actors if t > self.t_end[i] + self.delay[i] + self.tick_dt]
@@ -178,9 +185,13 @@ class Player:
             found = self.world.get_actors()
         except RuntimeError:
             return
-        self._others = [a.id for a in found
-                        if (a.type_id.startswith("vehicle.") or a.type_id.startswith("walker."))
-                        and a.id not in ours and a.attributes.get("role_name") != ROLE]
+        self._others = [
+            a.id
+            for a in found
+            if (a.type_id.startswith("vehicle.") or a.type_id.startswith("walker."))
+            and a.id not in ours
+            and a.attributes.get("role_name") != ROLE
+        ]
 
     def _conflict(self, i, local, cur_xy, positions):
         """The scenario actor this car is about to run into, or None: one of its
@@ -197,8 +208,11 @@ class Player:
             c, s_ = math.cos(math.radians(fyaw)), math.sin(math.radians(fyaw))
             for aid, ax, ay in positions:
                 dx, dy = ax - fx, ay - fy
-                if abs(dx * c + dy * s_) < long_m and abs(-dx * s_ + dy * c) < lat_m \
-                        and math.hypot(dx, dy) < math.hypot(ax - cur_xy[0], ay - cur_xy[1]):
+                if (
+                    abs(dx * c + dy * s_) < long_m
+                    and abs(-dx * s_ + dy * c) < lat_m
+                    and math.hypot(dx, dy) < math.hypot(ax - cur_xy[0], ay - cur_xy[1])
+                ):
                     return aid
         return None
 
@@ -226,7 +240,7 @@ class Player:
             if who is None and i in self.holding:
                 self.holding[i] += h
                 if self.holding[i] < RESUME_CLEAR_S:
-                    who = "-"                    # clear, but not for long enough yet
+                    who = "-"  # clear, but not for long enough yet
             elif who is not None and i in self.holding:
                 self.holding[i] = 0.0
             if who is not None:
@@ -234,38 +248,46 @@ class Player:
                 if i not in self.holding:
                     self.holding[i] = 0.0
                     self.holds += 1
-                    print(f"[bg_traffic] car {self.entries[i]['id']} holds for actor {who} "
-                          f"at t={t:.2f}", flush=True)
+                    print(f"[bg_traffic] car {self.entries[i]['id']} holds for actor {who} at t={t:.2f}", flush=True)
                 self.delay[i] += h
-                cmds.append(carla.command.ApplyTargetVelocity(
-                    aid, carla.Vector3D(0.0, 0.0, cur.get_velocity().z)))
+                cmds.append(carla.command.ApplyTargetVelocity(aid, carla.Vector3D(0.0, 0.0, cur.get_velocity().z)))
                 cmds.append(carla.command.ApplyTargetAngularVelocity(aid, carla.Vector3D(0.0, 0.0, 0.0)))
                 continue
             if i in self.holding:
                 del self.holding[i]
-                print(f"[bg_traffic] car {self.entries[i]['id']} resumes at t={t:.2f} "
-                      f"({self.delay[i]:.1f} s behind the preview)", flush=True)
+                print(
+                    f"[bg_traffic] car {self.entries[i]['id']} resumes at t={t:.2f} "
+                    f"({self.delay[i]:.1f} s behind the preview)",
+                    flush=True,
+                )
                 local = t - self.t0[i] - self.delay[i]
             target = _lerp_frame(self.entries[i]["frames"], local, self.dt)
             ex, ey = target[0] - tf.location.x, target[1] - tf.location.y
             # not while settling after the spawn
             if local > 1.0 and math.hypot(ex, ey) > LAG_WARN_M and i not in self._warned:
                 self._warned.add(i)
-                print(f"[bg_traffic] car {self.entries[i]['id']} is "
-                      f"{math.hypot(ex, ey):.1f} m off its trajectory at t={t:.2f}", flush=True)
+                print(
+                    f"[bg_traffic] car {self.entries[i]['id']} is "
+                    f"{math.hypot(ex, ey):.1f} m off its trajectory at t={t:.2f}",
+                    flush=True,
+                )
             dyaw = ((target[3] - tf.rotation.yaw + 540.0) % 360.0) - 180.0
-            cmds.append(carla.command.ApplyTargetVelocity(
-                aid, carla.Vector3D(ex / h, ey / h, cur.get_velocity().z)))
+            cmds.append(carla.command.ApplyTargetVelocity(aid, carla.Vector3D(ex / h, ey / h, cur.get_velocity().z)))
             cmds.append(carla.command.ApplyTargetAngularVelocity(aid, carla.Vector3D(0.0, 0.0, dyaw / h)))
         if cmds:
             self.client.apply_batch(cmds)
 
     def destroy(self):
         held = [d for d in self.delay if d > 0]
-        print(f"[bg_traffic] {self.spawned}/{len(self.entries)} entries spawned over the run"
-              + (f", {self.failed} not" if self.failed else ""), flush=True)
-        print(f"[bg_traffic] emergency stops: {self.holds} holds by {len(held)} cars, "
-              f"{sum(held):.1f} s held in total", flush=True)
+        print(
+            f"[bg_traffic] {self.spawned}/{len(self.entries)} entries spawned over the run"
+            + (f", {self.failed} not" if self.failed else ""),
+            flush=True,
+        )
+        print(
+            f"[bg_traffic] emergency stops: {self.holds} holds by {len(held)} cars, {sum(held):.1f} s held in total",
+            flush=True,
+        )
         if not self.actors:
             return
         try:
@@ -302,6 +324,7 @@ def main():
 
     def _on_signal(*_):
         stop["flag"] = True
+
     signal.signal(signal.SIGTERM, _on_signal)
     signal.signal(signal.SIGINT, _on_signal)
 
@@ -323,23 +346,29 @@ def main():
             print("[bg_traffic] hero never appeared — giving up", flush=True)
             return
         if world.get_map().name.split("/")[-1] != data.get("town"):
-            print(f"[bg_traffic] WARNING: traffic is for {data.get('town')}, world is "
-                  f"{world.get_map().name} — not replaying", flush=True)
+            print(
+                f"[bg_traffic] WARNING: traffic is for {data.get('town')}, world is "
+                f"{world.get_map().name} — not replaying",
+                flush=True,
+            )
             return
 
         tick_dt = world.get_settings().fixed_delta_seconds or 0.05
         player = Player(client, data, tick_dt)
         player.step(tick_dt, world.get_snapshot())
-        print(f"[bg_traffic] replaying {len(player.entries)} entries over {data['duration']:.0f} s "
-              f"at dt {player.dt} (world tick {tick_dt}) from sim t0 {t0:.2f}; "
-              f"{len(player.actors)} spawned at the start", flush=True)
+        print(
+            f"[bg_traffic] replaying {len(player.entries)} entries over {data['duration']:.0f} s "
+            f"at dt {player.dt} (world tick {tick_dt}) from sim t0 {t0:.2f}; "
+            f"{len(player.actors)} spawned at the start",
+            flush=True,
+        )
         misses = 0
         while not stop["flag"]:
             try:
                 snap = player.world.wait_for_tick(2.0)
             except RuntimeError:
                 misses += 1
-                if misses >= 5:      # nothing ticks the world any more
+                if misses >= 5:  # nothing ticks the world any more
                     break
                 continue
             misses = 0
@@ -350,7 +379,7 @@ def main():
             except RuntimeError:
                 continue
             if snap.find(hero.id) is None:
-                break                # scenario over: ScenarioRunner destroyed the hero
+                break  # scenario over: ScenarioRunner destroyed the hero
             player.step(snap.timestamp.elapsed_seconds - t0 + tick_dt, snap)
     finally:
         if player is not None:

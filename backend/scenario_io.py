@@ -91,8 +91,7 @@ def _entity_ref(
         ref = actor_refs.get(str(raw), str(raw))
     if ref not in valid_refs:
         raise ValueError(
-            f"{where}: entity_ref '{raw}' names no entity in this scenario "
-            f"(expected one of {sorted(valid_refs)})"
+            f"{where}: entity_ref '{raw}' names no entity in this scenario (expected one of {sorted(valid_refs)})"
         )
     if forbid is not None and ref == forbid:
         raise ValueError(
@@ -113,9 +112,18 @@ def _entity_ref(
 # would reject payloads the emitter is perfectly happy with. 'cyclist' and
 # 'bicycle' alias to 'bike', which is not routable, so their absence is correct.
 _ROUTE_ACTOR_TYPES = {
-    "car", "van", "truck", "bus", "motorcycle", "scooter",
-    "police", "ambulance", "firetruck", "ego",
-    "lorry", "moped",
+    "car",
+    "van",
+    "truck",
+    "bus",
+    "motorcycle",
+    "scooter",
+    "police",
+    "ambulance",
+    "firetruck",
+    "ego",
+    "lorry",
+    "moped",
 }
 # ChangeActorLaneOffset writes through to the controller's `_offset`, which only
 # SimpleVehicleControl and NpcVehicleControl read — PedestrianControl stores it
@@ -162,8 +170,16 @@ def _never_completes(action: dict) -> bool:
         target = action.get("target") or {}
         return target.get("mode") == "relative" and target.get("continuous") is True
     return False
-_TRIGGER_KINDS = {"simulation_time", "distance_to_ego", "distance_to_point",
-                  "ego_speed", "relative_speed", *_EVENT_REF_TRIGGERS}
+
+
+_TRIGGER_KINDS = {
+    "simulation_time",
+    "distance_to_ego",
+    "distance_to_point",
+    "ego_speed",
+    "relative_speed",
+    *_EVENT_REF_TRIGGERS,
+}
 # SpeedCondition rules offered for ego_speed. equalTo is valid OpenSCENARIO but
 # a measured speed is almost never exactly equal to anything.
 _EGO_SPEED_RULES = {"greaterThan", "lessThan"}
@@ -194,7 +210,10 @@ def _normalize_structured_event(
         # name here (obj-N -> hero/adversaryN), like every other entity ref, so
         # the emitter's name table can be keyed on (entity, event_id).
         event["trigger"]["actor_ref"] = _entity_ref(
-            trigger.get("actor_ref"), actor_refs, valid_refs, where,
+            trigger.get("actor_ref"),
+            actor_refs,
+            valid_refs,
+            where,
             self_ref or default_entity_ref,
         )
     elif trigger_kind == "distance_to_point":
@@ -206,8 +225,7 @@ def _normalize_structured_event(
         # the same reason as a dangling entity_ref.
         if point is None or point.get("x") is None or point.get("y") is None:
             raise ValueError(
-                f"{where}: distance_to_point trigger has no point — set one on "
-                f"the map, or the condition can never fire"
+                f"{where}: distance_to_point trigger has no point — set one on the map, or the condition can never fire"
             )
         event["trigger"]["value"] = max(0.0, float(trigger.get("value", 20.0)))
         event["trigger"]["entity_ref"] = _entity_ref(
@@ -259,8 +277,14 @@ def _normalize_structured_event(
     if not isinstance(action, dict):
         action = {}
     action_kind = action.get("type", "follow_trajectory")
-    if action_kind not in {"follow_trajectory", "assign_route", "set_speed",
-                           "set_distance", "lane_change", "lane_offset"}:
+    if action_kind not in {
+        "follow_trajectory",
+        "assign_route",
+        "set_speed",
+        "set_distance",
+        "lane_change",
+        "lane_offset",
+    }:
         action_kind = "follow_trajectory"
 
     # A path action the emitter cannot build is not a smaller scenario, it is a
@@ -283,14 +307,12 @@ def _normalize_structured_event(
     elif action_kind == "assign_route":
         if actor_type not in _ROUTE_ACTOR_TYPES:
             raise ValueError(
-                f"{where}: assign_route is not available for actor type "
-                f"'{actor_type}' — only vehicles may be routed"
+                f"{where}: assign_route is not available for actor type '{actor_type}' — only vehicles may be routed"
             )
         route_strategy = action.get("route_strategy", "fastest")
         if route_strategy not in ROUTE_STRATEGIES:
             route_strategy = "fastest"
-        waypoints = _normalize_waypoints(
-            action.get("waypoints"), default_strategy=route_strategy)
+        waypoints = _normalize_waypoints(action.get("waypoints"), default_strategy=route_strategy)
         if len(waypoints) < 2:
             raise ValueError(
                 f"{where}: assign_route needs at least 2 waypoints, got "
@@ -334,9 +356,7 @@ def _normalize_structured_event(
         if dimension not in {"distance", "time", "rate"}:
             dimension = "time"
         if mode == "relative":
-            speed_target["entity_ref"] = _entity_ref(
-                target.get("entity_ref"), actor_refs, valid_refs, where
-            )
+            speed_target["entity_ref"] = _entity_ref(target.get("entity_ref"), actor_refs, valid_refs, where)
             value_type = "factor" if target.get("value_type") == "factor" else "delta"
             speed_target["value_type"] = value_type
             if value_type == "factor":
@@ -394,9 +414,7 @@ def _normalize_structured_event(
         event["action"] = {
             "type": "set_distance",
             "axis": axis,
-            "entity_ref": _entity_ref(
-                action.get("entity_ref"), actor_refs, valid_refs, where, forbid=self_ref
-            ),
+            "entity_ref": _entity_ref(action.get("entity_ref"), actor_refs, valid_refs, where, forbid=self_ref),
             "value": float(action.get("value", 10.0)),
         }
     elif action_kind == "lane_offset":
@@ -484,7 +502,10 @@ def _normalize_actor(
             actor["events"][idx] = event = {}
         event.setdefault("id", f"event_{idx + 1}")
         _normalize_structured_event(
-            event, actor_refs, valid_refs, f"{where}.events[{idx}]",
+            event,
+            actor_refs,
+            valid_refs,
+            f"{where}.events[{idx}]",
             self_ref=entity_name,
             actor_type=str(actor.get("type", "car")),
         )
@@ -524,10 +545,7 @@ def _normalize_after_event_chains(actors: list[tuple[dict, str, str]]) -> None:
     # the route" (or "when the route starts") names a start condition that is
     # discarded — the reference is rewritten to an ego-distance instead of
     # left pointing at it.
-    route_refs = {
-        ref for ref, event in events_by_ref.items()
-        if event.get("action", {}).get("type") == "assign_route"
-    }
+    route_refs = {ref for ref, event in events_by_ref.items() if event.get("action", {}).get("type") == "assign_route"}
     for ref, event in events_by_ref.items():
         if not is_ref(event):
             continue
@@ -558,10 +576,7 @@ def _normalize_after_event_chains(actors: list[tuple[dict, str, str]]) -> None:
     # condition the editor offers at all. Rejected outright rather than
     # rewritten: unlike a route there is no stand-in trigger that says the same
     # thing. Their START is well defined, so event_started may name one.
-    offset_refs = {
-        ref for ref, event in events_by_ref.items()
-        if _never_completes(event.get("action", {}))
-    }
+    offset_refs = {ref for ref, event in events_by_ref.items() if _never_completes(event.get("action", {}))}
     for ref, event in events_by_ref.items():
         trigger = event.get("trigger", {})
         if trigger.get("type") != "after_event":
@@ -594,12 +609,9 @@ def _normalize_after_event_chains(actors: list[tuple[dict, str, str]]) -> None:
             if target is None:
                 break
             if target_ref in chain:
-                loop = " -> ".join(
-                    f"{ent}.{eid}" for ent, eid in (*chain[chain.index(target_ref):], target_ref)
-                )
+                loop = " -> ".join(f"{ent}.{eid}" for ent, eid in (*chain[chain.index(target_ref) :], target_ref))
                 raise ValueError(
-                    f"event triggers form a cycle ({loop}) — every event on "
-                    f"it waits for one that never fires"
+                    f"event triggers form a cycle ({loop}) — every event on it waits for one that never fires"
                 )
             chain.append(target_ref)
             ref, event = target_ref, target
@@ -613,8 +625,7 @@ def _normalize_after_event_chains(actors: list[tuple[dict, str, str]]) -> None:
             continue
         for event in actor["events"]:
             trigger = event.get("trigger", {})
-            if (trigger.get("type") == "distance_to_ego"
-                    and trigger.get("entity_ref") in (None, "", "hero")):
+            if trigger.get("type") == "distance_to_ego" and trigger.get("entity_ref") in (None, "", "hero"):
                 event["trigger"] = {"type": "simulation_time", "value": 0.0}
 
 
@@ -646,10 +657,7 @@ def _normalize_actor_types(params: dict):
             continue
         npc_type = str(npc.get("type", "car")).strip()
         if npc_type not in known:
-            raise ValueError(
-                f"npcs[{idx}]: unknown actor type '{npc_type}' "
-                f"(not in config/vehicle_catalog.yaml)"
-            )
+            raise ValueError(f"npcs[{idx}]: unknown actor type '{npc_type}' (not in config/vehicle_catalog.yaml)")
         npc["type"] = npc_type
 
 
@@ -677,17 +685,16 @@ def _normalize_static_objects(params: dict):
             raise ValueError(f"staticObjects[{idx}] must be an object")
         blueprint = str(obj.get("prop", "")).strip()
         if not prop_spec(blueprint):
-            raise ValueError(
-                f"staticObjects[{idx}]: unknown prop '{blueprint}' "
-                f"(not in config/prop_catalog.yaml)"
-            )
-        params["staticObjects"].append({
-            "prop": blueprint,
-            "x": float(obj.get("x", 0.0)),
-            "y": float(obj.get("y", 0.0)),
-            "z": float(obj.get("z", 0.0)),
-            "yaw": float(obj.get("yaw", 0.0)),
-        })
+            raise ValueError(f"staticObjects[{idx}]: unknown prop '{blueprint}' (not in config/prop_catalog.yaml)")
+        params["staticObjects"].append(
+            {
+                "prop": blueprint,
+                "x": float(obj.get("x", 0.0)),
+                "y": float(obj.get("y", 0.0)),
+                "z": float(obj.get("z", 0.0)),
+                "yaw": float(obj.get("yaw", 0.0)),
+            }
+        )
 
 
 _MAPS_DIR = Path(__file__).resolve().parent.parent / "maps"
@@ -697,6 +704,7 @@ def _carla_light_positions(town: str):
     """CARLA's traffic-light actor positions for a bundled town, or None when
     the town was never probed (tests/probe_carla_traffic_lights.py)."""
     import json
+
     probe = _MAPS_DIR / str(town) / "carla_traffic_lights.json"
     if not probe.exists():
         return None
@@ -715,6 +723,7 @@ def _reject_phantom_signals(params: dict):
     than a run that dies at load. Skipped for an unprobed town and for a signal
     that names its actor explicitly (traffic_signal_ref)."""
     import math
+
     carla_lights = _carla_light_positions(params.get("map"))
     if carla_lights is None:
         return
@@ -792,10 +801,7 @@ def validate_scenario_params(params: dict) -> dict:
     # Every entity name _inject_npcs will actually emit, derived from the npc
     # count rather than from actor_refs — a payload may omit ids and name its
     # entities directly. Anything outside this set is a dangling reference.
-    valid_refs = {"hero"} | {
-        "adversary" if idx == 0 else f"adversary{idx}"
-        for idx in range(len(params["npcs"]))
-    }
+    valid_refs = {"hero"} | {"adversary" if idx == 0 else f"adversary{idx}" for idx in range(len(params["npcs"]))}
 
     _normalize_actor_types(params)
 
@@ -825,8 +831,7 @@ def validate_scenario_params(params: dict) -> dict:
         signal["events"] for signal in params["trafficSignals"]
     ):
         raise ValueError(
-            "No actor has any events — the scenario would end immediately. "
-            "Add at least one event before exporting."
+            "No actor has any events — the scenario would end immediately. Add at least one event before exporting."
         )
 
     # Static props
@@ -874,6 +879,7 @@ def _ego_route_waypoints(ego: dict) -> list[dict]:
         return []
 
     import math as _math
+
     ego_yaw = float(ego.get("yaw", 0.0))
     waypoints = []
     for i, wp in enumerate(points):
@@ -884,10 +890,14 @@ def _ego_route_waypoints(ego: dict) -> list[dict]:
             yaw = _math.degrees(_math.atan2(nxt["y"] - wp["y"], nxt["x"] - wp["x"]))
         elif prv:
             yaw = _math.degrees(_math.atan2(wp["y"] - prv["y"], wp["x"] - prv["x"]))
-        waypoints.append({
-            "x": wp["x"], "y": wp["y"], "z": wp.get("z", 0.2),
-            "yaw": round(yaw, 2),
-        })
+        waypoints.append(
+            {
+                "x": wp["x"],
+                "y": wp["y"],
+                "z": wp.get("z", 0.2),
+                "yaw": round(yaw, 2),
+            }
+        )
     return waypoints
 
 
@@ -900,7 +910,7 @@ def export_route_xml(params: dict) -> str:
     from generator.route_builder import build_route  # type: ignore
 
     params = validate_scenario_params(params)
-    uid      = str(uuid.uuid4())[:8]
+    uid = str(uuid.uuid4())[:8]
     map_name = params.get("map", "scenario")
     tmp_path = f"/tmp/route_{map_name}_{uid}.xml"
 
@@ -918,7 +928,7 @@ def export_to_xosc(params: dict) -> str:
     from generator.xml_builder import build_xosc  # type: ignore
 
     params = validate_scenario_params(params)
-    uid      = str(uuid.uuid4())[:8]
+    uid = str(uuid.uuid4())[:8]
     map_name = params.get("map", "scenario")
     tmp_path = f"/tmp/scenario_{map_name}_{uid}.xosc"
 
@@ -927,6 +937,7 @@ def export_to_xosc(params: dict) -> str:
 
 
 # ── Batch export (scenario generator, phase 2) ────────────────────────────────
+
 
 def _flatten(prefix: str, value, out: dict) -> None:
     """{"a": {"b": 1}} -> {"a.b": 1}, for one CSV column per leaf."""
@@ -1007,12 +1018,10 @@ def export_batch_zip(entries: list) -> tuple:
         writer = _csv.DictWriter(buf, fieldnames=columns, extrasaction="ignore")
         writer.writeheader()
         for row in manifest:
-            writer.writerow({k: _json.dumps(v) if isinstance(v, (list, dict)) else v
-                             for k, v in row.items()})
+            writer.writerow({k: _json.dumps(v) if isinstance(v, (list, dict)) else v for k, v in row.items()})
         zf.writestr("manifest.csv", buf.getvalue())
 
     if n_ok == 0:
         _os.remove(zip_path)
-        raise ValueError("no scenario in the batch could be exported: "
-                         + "; ".join(r["error"] for r in manifest[:3]))
+        raise ValueError("no scenario in the batch could be exported: " + "; ".join(r["error"] for r in manifest[:3]))
     return zip_path, n_ok, len(manifest) - n_ok

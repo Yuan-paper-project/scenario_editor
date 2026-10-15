@@ -17,6 +17,7 @@ in its lane, a target vehicle in three variants:
 Uses whatever town is loaded; switches the world to synchronous mode for the
 probe and restores the previous settings afterwards. Run it against an idle CARLA.
 """
+
 import argparse
 
 import carla
@@ -62,7 +63,8 @@ def _run_variant(world, bp_lib, wp, variant):
     sbp.set_attribute("hit_radius", "1")
     sbp.set_attribute("only_dynamics", "True")
     sensor = world.spawn_actor(
-        sbp, carla.Transform(carla.Location(x=observer.bounding_box.extent.x, z=1.0)), attach_to=observer)
+        sbp, carla.Transform(carla.Location(x=observer.bounding_box.extent.x, z=1.0)), attach_to=observer
+    )
     hits = []
     sensor.listen(lambda ev: hits.append((ev.frame, ev.other_actor.id if ev.other_actor else None, ev.distance)))
 
@@ -77,8 +79,11 @@ def _run_variant(world, bp_lib, wp, variant):
     on_target = [h for h in hits if h[1] == target.id]
     other = [h for h in hits if h[1] != target.id]
     dists = [round(h[2], 2) for h in on_target]
-    print(f"{variant:8s} hits on target: {len(on_target):2d}/{TICKS}  "
-          f"distances {dists[:3]}{' …' if len(dists) > 3 else ''}  other hits: {len(other)}", flush=True)
+    print(
+        f"{variant:8s} hits on target: {len(on_target):2d}/{TICKS}  "
+        f"distances {dists[:3]}{' …' if len(dists) > 3 else ''}  other hits: {len(other)}",
+        flush=True,
+    )
     for a in (sensor, target, observer):
         a.destroy()
     world.tick()
@@ -102,8 +107,7 @@ def main():
         print(f"map {cmap.name}", flush=True)
         wp = _straight_waypoint(cmap)
         print(f"lane road {wp.road_id} lane {wp.lane_id} at {wp.transform.location}", flush=True)
-        seen = {v: _run_variant(world, world.get_blueprint_library(), wp, v)
-                for v in ("physics", "static", "moving")}
+        seen = {v: _run_variant(world, world.get_blueprint_library(), wp, v) for v in ("physics", "static", "moving")}
         print("RESULT", seen, flush=True)
     finally:
         world.apply_settings(old)

@@ -17,6 +17,7 @@ Nothing is spawned, so it is safe against a live session.
     export PYTHONPATH="/home/dellpro2/CC/carla_0.9.15/PythonAPI/carla/dist/carla-0.9.15-cp310-cp310-linux_x86_64.egg:/home/dellpro2/CC/carla_0.9.15/PythonAPI/carla:/home/dellpro2/CC/carla_0.9.15/PythonAPI"
     python tests/probe_carla_actor_blueprints.py
 """
+
 import os
 import sys
 
@@ -26,7 +27,11 @@ import carla  # noqa: E402
 
 _CATALOG = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "..", "llm-scenario-gen", "config", "vehicle_catalog.yaml")
+    "..",
+    "llm-scenario-gen",
+    "config",
+    "vehicle_catalog.yaml",
+)
 
 with open(_CATALOG) as fh:
     catalog = yaml.safe_load(fh)
@@ -62,8 +67,7 @@ print()
 print("walker.pedestrian.* by age:")
 for bp in sorted(library.filter("walker.pedestrian.*"), key=lambda b: b.id):
     attrs = {a.id: a.as_str() for a in bp}
-    print(f"  {bp.id:<28} age={attrs.get('age', '?'):<10} "
-          f"gender={attrs.get('gender', '?')}")
+    print(f"  {bp.id:<28} age={attrs.get('age', '?'):<10} gender={attrs.get('gender', '?')}")
 
 if missing:
     print(f"\n{len(missing)} blueprint(s) missing from this CARLA build:")

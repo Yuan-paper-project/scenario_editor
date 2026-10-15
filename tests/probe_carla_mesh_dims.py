@@ -8,26 +8,27 @@ bounding_box.extent is in the mesh's LOCAL frame:
   long-box props  -> extent.x > extent.y  means the long axis is local +X
   panel props     -> the THIN horizontal axis is the facing normal
 """
+
 import math, sys, time
 
 PROPS = [
     # id                              kind      expectation
-    ("static.prop.trafficcone01",     "sym",    None),
-    ("static.prop.trafficcone02",     "sym",    None),
-    ("static.prop.constructioncone",  "sym",    None),
-    ("static.prop.streetbarrier",     "long",   +90),
-    ("static.prop.trafficwarning",    "long",   +90),
-    ("static.prop.warningconstruction","panel", -90),
-    ("static.prop.warningaccident",   "panel",  -90),
-    ("static.prop.barrel",            "sym",    None),
-    ("static.prop.ironplank",         "long",   None),
-    ("static.prop.dirtdebris01",      "sym",    None),
-    ("static.prop.container",         "long",   None),
-    ("static.prop.busstop",           "long",   None),
-    ("static.prop.advertisement",     "panel",  +90),
-    ("static.prop.vendingmachine",    "long",   None),
-    ("static.prop.bin",               "sym",    None),
-    ("static.prop.shoppingcart",      "long",   None),
+    ("static.prop.trafficcone01", "sym", None),
+    ("static.prop.trafficcone02", "sym", None),
+    ("static.prop.constructioncone", "sym", None),
+    ("static.prop.streetbarrier", "long", +90),
+    ("static.prop.trafficwarning", "long", +90),
+    ("static.prop.warningconstruction", "panel", -90),
+    ("static.prop.warningaccident", "panel", -90),
+    ("static.prop.barrel", "sym", None),
+    ("static.prop.ironplank", "long", None),
+    ("static.prop.dirtdebris01", "sym", None),
+    ("static.prop.container", "long", None),
+    ("static.prop.busstop", "long", None),
+    ("static.prop.advertisement", "panel", +90),
+    ("static.prop.vendingmachine", "long", None),
+    ("static.prop.bin", "sym", None),
+    ("static.prop.shoppingcart", "long", None),
 ]
 
 import carla  # noqa: E402

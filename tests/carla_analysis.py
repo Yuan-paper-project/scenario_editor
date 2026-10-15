@@ -16,6 +16,7 @@ cannot tell a mistimed trigger from a sluggish controller.
 
 Time bases differ and must be reconciled — see act_start().
 """
+
 import bisect
 import csv
 import math
@@ -24,8 +25,7 @@ import re
 
 # ── ScenarioRunner's OSC lifecycle log ───────────────────────────────────────
 
-_OSC_LINE = re.compile(
-    r"^\[OSC\]\[(?P<t>[0-9.]+)s\]\[(?P<kind>[A-Z]+)\]\[(?P<name>[^\]]+)\]\s+(?P<state>\S+)")
+_OSC_LINE = re.compile(r"^\[OSC\]\[(?P<t>[0-9.]+)s\]\[(?P<kind>[A-Z]+)\]\[(?P<name>[^\]]+)\]\s+(?P<state>\S+)")
 
 
 def parse_osc_log(path):
@@ -38,12 +38,14 @@ def parse_osc_log(path):
         for line in fh:
             m = _OSC_LINE.match(line.strip())
             if m:
-                out.append({
-                    "t": float(m.group("t")),
-                    "kind": m.group("kind"),
-                    "name": m.group("name"),
-                    "state": m.group("state"),
-                })
+                out.append(
+                    {
+                        "t": float(m.group("t")),
+                        "kind": m.group("kind"),
+                        "name": m.group("name"),
+                        "state": m.group("state"),
+                    }
+                )
     return out
 
 
@@ -62,6 +64,7 @@ def event_timeline(osc):
 
 
 # ── Telemetry ────────────────────────────────────────────────────────────────
+
 
 class Track:
     """One actor's per-tick samples, sorted by time."""
@@ -186,6 +189,7 @@ class Run:
 # All take a Run plus times measured from act_start, so they read the way the
 # event chain does ("5 s after the chain begins") rather than in CARLA's clock.
 
+
 def _abs_t(run, t_rel):
     base = run.act_start()
     return None if base is None else base + t_rel
@@ -208,9 +212,11 @@ def reaches_speed(run, role, target, t_from, t_to, tol=1.5):
         return False, f"no samples in [{t_from:.1f},{t_to:.1f}]s after act start"
     best = min(speeds, key=lambda s: abs(s - target))
     ok = abs(best - target) <= tol
-    return ok, (f"closest {best:.2f} m/s vs target {target:.2f} "
-                f"(range {min(speeds):.2f}-{max(speeds):.2f} m/s "
-                f"over [{t_from:.1f},{t_to:.1f}]s)")
+    return ok, (
+        f"closest {best:.2f} m/s vs target {target:.2f} "
+        f"(range {min(speeds):.2f}-{max(speeds):.2f} m/s "
+        f"over [{t_from:.1f},{t_to:.1f}]s)"
+    )
 
 
 def holds_speed(run, role, target, t_from, t_to, tol=1.5, min_fraction=0.6):
@@ -231,8 +237,9 @@ def holds_speed(run, role, target, t_from, t_to, tol=1.5, min_fraction=0.6):
     inside = sum(1 for s in speeds if abs(s - target) <= tol)
     frac = inside / len(speeds)
     return frac >= min_fraction, (
-        f"{frac*100:.0f}% of {len(speeds)} samples within {tol} m/s of {target} "
-        f"(mean {sum(speeds)/len(speeds):.2f} m/s)")
+        f"{frac * 100:.0f}% of {len(speeds)} samples within {tol} m/s of {target} "
+        f"(mean {sum(speeds) / len(speeds):.2f} m/s)"
+    )
 
 
 def lateral_offset(run, role, t_from, t_to, ref_t=0.0):
@@ -263,9 +270,11 @@ def lateral_offset(run, role, t_from, t_to, ref_t=0.0):
     # CARLA is left-handed with Y down, so the actor's left is (sin h, -cos h).
     lateral = dx * math.sin(h) - dy * math.cos(h)
     longitudinal = dx * math.cos(h) + dy * math.sin(h)
-    return lateral, (f"lateral {lateral:+.2f} m, longitudinal {longitudinal:+.2f} m "
-                     f"over [{t_from:.1f},{t_to:.1f}]s "
-                     f"(frame: heading {track.yaw[r]:.1f}deg at t={ref_t:.1f}s)")
+    return lateral, (
+        f"lateral {lateral:+.2f} m, longitudinal {longitudinal:+.2f} m "
+        f"over [{t_from:.1f},{t_to:.1f}]s "
+        f"(frame: heading {track.yaw[r]:.1f}deg at t={ref_t:.1f}s)"
+    )
 
 
 def closest_approach(run, role_a, role_b):
@@ -334,7 +343,8 @@ def slows_by(run, role, drop, t_from, t_to):
     shed = speeds[i_peak] - min(after)
     return shed >= drop, (
         f"peaked {speeds[i_peak]:.2f} m/s at t={ts[i_peak] - _abs_t(run, 0.0):+.1f}s "
-        f"then fell to {min(after):.2f} — shed {shed:.2f} m/s (wanted {drop:.1f})")
+        f"then fell to {min(after):.2f} — shed {shed:.2f} m/s (wanted {drop:.1f})"
+    )
 
 
 def heading_change(run, role, t_from, t_to):
@@ -363,8 +373,9 @@ def heading_change(run, role, t_from, t_to):
     total = 0.0
     for k in range(i + 1, j + 1):
         total += (track.yaw[k] - track.yaw[k - 1] + 180) % 360 - 180
-    return total, (f"yaw {track.yaw[i]:.1f} -> {track.yaw[j]:.1f} deg, "
-                   f"net {total:+.1f} deg over [{t_from:.1f},{t_to:.1f}]s")
+    return total, (
+        f"yaw {track.yaw[i]:.1f} -> {track.yaw[j]:.1f} deg, net {total:+.1f} deg over [{t_from:.1f},{t_to:.1f}]s"
+    )
 
 
 def stopped_within(run, role, t_from, t_to, threshold=0.5):
@@ -385,8 +396,8 @@ def stopped_within(run, role, t_from, t_to, threshold=0.5):
     if not speeds:
         return False, f"no samples in [{t_from:.1f},{t_to:.1f}]s after act start"
     return min(speeds) <= threshold, (
-        f"min {min(speeds):.2f} m/s (max {max(speeds):.2f}) "
-        f"over [{t_from:.1f},{t_to:.1f}]s")
+        f"min {min(speeds):.2f} m/s (max {max(speeds):.2f}) over [{t_from:.1f},{t_to:.1f}]s"
+    )
 
 
 def ramp_rate(run, role, t_from, t_to):
@@ -410,8 +421,7 @@ def ramp_rate(run, role, t_from, t_to):
     if dt <= 0:
         return None, "zero-length window"
     rate = abs(speeds[-1] - speeds[0]) / dt
-    return rate, (f"{speeds[0]:.2f} -> {speeds[-1]:.2f} m/s over {dt:.2f}s "
-                  f"= {rate:.2f} m/s2")
+    return rate, (f"{speeds[0]:.2f} -> {speeds[-1]:.2f} m/s over {dt:.2f}s = {rate:.2f} m/s2")
 
 
 def speed_profile(run, role, boundaries, tol=1.5):
@@ -422,11 +432,10 @@ def speed_profile(run, role, boundaries, tol=1.5):
     link. Returns (ok, [per-segment detail]).
     """
     details, ok = [], True
-    for (t_from, t_to, target) in boundaries:
+    for t_from, t_to, target in boundaries:
         held, detail = holds_speed(run, role, target, t_from, t_to, tol=tol)
         ok = ok and held
-        details.append(f"[{t_from:.0f}-{t_to:.0f}s]->{target} m/s: "
-                       f"{'ok' if held else 'MISS'} ({detail})")
+        details.append(f"[{t_from:.0f}-{t_to:.0f}s]->{target} m/s: {'ok' if held else 'MISS'} ({detail})")
     return ok, details
 
 
@@ -443,5 +452,6 @@ def summarise(run):
             f"{role:<12} {track.type_id:<30} {len(track):4d} samples "
             f"t=[{rel0:+.1f},{rel1:+.1f}]s "
             f"speed 0-{max(track.speed):.1f} m/s "
-            f"travelled {track.distance_travelled():.1f} m")
+            f"travelled {track.distance_travelled():.1f} m"
+        )
     return lines

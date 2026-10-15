@@ -47,6 +47,7 @@ hand-tracing real examples in maps/Town05/Town05.xodr before writing this:
 
     .venv/bin/python3 tests/compare_xodr_lane_graph.py
 """
+
 import heapq
 import itertools
 import json
@@ -157,14 +158,19 @@ def compare_routing(gt, built, n_routes=300):
 
     def lc(g):
         vert = {n['id']: (n['x'], n['y'], n['z']) for n in g['nodes']}
-        return {(vert[e['from']], e['type'], _lane_key(e['exit']))
-                for e in g['edges'] if e['type'].startswith('CHANGE')}
-    junction_roads = {e['entry']['roadId'] for e in built['edges']
-                      if e['type'] == 'LANEFOLLOW' and e['intersection']}
-    junction_lc = [e for e in built['edges'] if e['type'].startswith('CHANGE')
-                   and e['entry']['roadId'] in junction_roads
-                   and e['exit']['roadId'] in junction_roads
-                   and built['roadIdToEdge'][str(e['entry']['roadId'])]]
+        return {
+            (vert[e['from']], e['type'], _lane_key(e['exit'])) for e in g['edges'] if e['type'].startswith('CHANGE')
+        }
+
+    junction_roads = {e['entry']['roadId'] for e in built['edges'] if e['type'] == 'LANEFOLLOW' and e['intersection']}
+    junction_lc = [
+        e
+        for e in built['edges']
+        if e['type'].startswith('CHANGE')
+        and e['entry']['roadId'] in junction_roads
+        and e['exit']['roadId'] in junction_roads
+        and built['roadIdToEdge'][str(e['entry']['roadId'])]
+    ]
     gt_lc, b_lc = lc(gt), lc(built)
 
     common = sorted(set(gt_lf) & set(b_lf))
@@ -181,7 +187,9 @@ def compare_routing(gt, built, n_routes=300):
         'lf_equal': set(gt_lf) == set(b_lf),
         'len_off': sum(gt_lf[k]['length'] != b_lf[k]['length'] for k in common),
         'len_n': len(common),
-        'lc_missing': len(gt_lc - b_lc), 'lc_extra': len(b_lc - gt_lc), 'lc_n': len(gt_lc),
+        'lc_missing': len(gt_lc - b_lc),
+        'lc_extra': len(b_lc - gt_lc),
+        'lc_n': len(gt_lc),
         'route_pct': 100.0 * agree / (total or 1),
     }
 
@@ -232,40 +240,50 @@ def compare_town(town: str) -> dict:
     return {
         **routing,
         'town': town,
-        'gt_lanes': len(gt_by_key), 'built_lanes': len(built_by_key),
-        'common': len(common), 'missing': len(missing), 'extra': len(extra),
-        'left_pct': 100.0 * left_match / n, 'right_pct': 100.0 * right_match / n,
-        'succ_exact_pct': 100.0 * succ_exact / n, 'succ_reachable_pct': 100.0 * succ_reachable / n,
-        'gt_forks': gt_fork_count, 'built_forks': built_fork_count,
+        'gt_lanes': len(gt_by_key),
+        'built_lanes': len(built_by_key),
+        'common': len(common),
+        'missing': len(missing),
+        'extra': len(extra),
+        'left_pct': 100.0 * left_match / n,
+        'right_pct': 100.0 * right_match / n,
+        'succ_exact_pct': 100.0 * succ_exact / n,
+        'succ_reachable_pct': 100.0 * succ_reachable / n,
+        'gt_forks': gt_fork_count,
+        'built_forks': built_fork_count,
         'succ_unreachable': succ_unreachable,
-        'missing_keys': sorted(missing)[:5], 'extra_keys': sorted(extra)[:5],
+        'missing_keys': sorted(missing)[:5],
+        'extra_keys': sorted(extra)[:5],
     }
 
 
 def main():
-    towns = sorted(
-        t for t in os.listdir(_MAPS_DIR)
-        if os.path.isfile(os.path.join(_MAPS_DIR, t, "lane_graph.json"))
-    )
+    towns = sorted(t for t in os.listdir(_MAPS_DIR) if os.path.isfile(os.path.join(_MAPS_DIR, t, "lane_graph.json")))
     print(f"Comparing xodr-derived lane graphs against {len(towns)} CARLA-probed ground-truth files\n")
     overall_ok = True
     for town in towns:
         r = compare_town(town)
         print(f"── {town} ──")
-        print(f"  lanes: ground-truth={r['gt_lanes']}  built={r['built_lanes']}  "
-              f"common={r['common']}  missing={r['missing']}  extra={r['extra']}")
+        print(
+            f"  lanes: ground-truth={r['gt_lanes']}  built={r['built_lanes']}  "
+            f"common={r['common']}  missing={r['missing']}  extra={r['extra']}"
+        )
         print(f"  left match:  {r['left_pct']:5.1f}%")
         print(f"  right match: {r['right_pct']:5.1f}%")
         print(f"  successor-set exact match:       {r['succ_exact_pct']:5.1f}%")
-        print(f"  successor reachable-within-8hop: {r['succ_reachable_pct']:5.1f}%  "
-              f"(ground-truth forks: {r['gt_forks']}, built forks: {r['built_forks']})")
+        print(
+            f"  successor reachable-within-8hop: {r['succ_reachable_pct']:5.1f}%  "
+            f"(ground-truth forks: {r['gt_forks']}, built forks: {r['built_forks']})"
+        )
         if r['missing_keys']:
             print(f"  sample missing (in ground truth, not built): {r['missing_keys']}")
         if r['extra_keys']:
             print(f"  sample extra (built, not in ground truth): {r['extra_keys']}")
-        print(f"  routing: LANEFOLLOW edges {'identical' if r['lf_equal'] else 'DIFFER'}; "
-              f"lengths off {r['len_off']}/{r['len_n']}; lane-change edges missing {r['lc_missing']} "
-              f"extra {r['lc_extra']} of {r['lc_n']}; A* lane sequence agrees {r['route_pct']:5.1f}%")
+        print(
+            f"  routing: LANEFOLLOW edges {'identical' if r['lf_equal'] else 'DIFFER'}; "
+            f"lengths off {r['len_off']}/{r['len_n']}; lane-change edges missing {r['lc_missing']} "
+            f"extra {r['lc_extra']} of {r['lc_n']}; A* lane sequence agrees {r['route_pct']:5.1f}%"
+        )
         for key, unreached, bset in r['succ_unreachable']:
             print(f"  GENUINE mismatch {key}: unreachable ground-truth targets={unreached} (built 1-hop={bset})")
         print()
@@ -276,9 +294,12 @@ def main():
         # 72% and Town07 on 54%; Town03 stays lowest because its misses are the
         # fork-order cases the module docstring describes.
         route_floor = 70 if town == 'Town03' else 95
-        if (not r['lf_equal'] or r['len_off'] > 0.07 * r['len_n']
-                or r['lc_missing'] + r['lc_extra'] > max(4, 0.12 * r['lc_n'])
-                or r['route_pct'] < route_floor):
+        if (
+            not r['lf_equal']
+            or r['len_off'] > 0.07 * r['len_n']
+            or r['lc_missing'] + r['lc_extra'] > max(4, 0.12 * r['lc_n'])
+            or r['route_pct'] < route_floor
+        ):
             overall_ok = False
     print("OVERALL:", "look reasonable" if overall_ok else "below threshold — needs investigation")
     return 0 if overall_ok else 1

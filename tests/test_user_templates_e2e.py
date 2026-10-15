@@ -14,6 +14,7 @@ the actor (u along its heading, v to its right) and actor references as
   * a chain naming another NPC is refused, and nothing is stored;
   * rename, delete (with confirm), survive a reload, export + import a file.
 """
+
 import json
 import math
 import os
@@ -26,8 +27,8 @@ import _harness as H
 
 C = H.Checks()
 EGO = (300.631, -2.025)
-SRC = (265.364, 1.967)     # a kerb spot across Town01 road 1 (test_templates_e2e.py)
-DST = (200.0, 1.967)       # further along the same road
+SRC = (265.364, 1.967)  # a kerb spot across Town01 road 1 (test_templates_e2e.py)
+DST = (200.0, 1.967)  # further along the same road
 
 SEED_JS = """() => {
   localStorage.removeItem('scenarioEditor.userTemplates');
@@ -82,26 +83,41 @@ def main():
         C("tab: listed under Eigene Vorlagen", page.locator('[data-user-template="user:1"]').count() == 1)
         placed = H.place_template(page, "user:1", *DST)
         C("place: a cyclist", placed["type"] == "cyclist", placed["type"])
-        C("place: same number of events", len(placed["events"]) == len(src["events"]),
-          (len(placed["events"]), len(src["events"])))
+        C(
+            "place: same number of events",
+            len(placed["events"]) == len(src["events"]),
+            (len(placed["events"]), len(src["events"])),
+        )
         C("place: start speed from the template", placed.get("initial_speed") == 0, placed.get("initial_speed"))
         traj_src = next(e for e in src["events"] if e["action"]["type"] == "follow_trajectory")["action"]["trajectory"]
         traj = next(e for e in placed["events"] if e["action"]["type"] == "follow_trajectory")["action"]["trajectory"]
-        C("place: trajectory keeps its shape", vertex_dists(traj) == vertex_dists(traj_src),
-          (vertex_dists(traj), vertex_dists(traj_src)))
+        C(
+            "place: trajectory keeps its shape",
+            vertex_dists(traj) == vertex_dists(traj_src),
+            (vertex_dists(traj), vertex_dists(traj_src)),
+        )
         d0 = math.hypot(traj[0]["x"] - placed["x"], traj[0]["y"] - placed["y"])
         d0s = math.hypot(traj_src[0]["x"] - src["x"], traj_src[0]["y"] - src["y"])
         C("place: trajectory starts where it did relative to the actor", abs(d0 - d0s) < 0.3, (d0, d0s))
         ang = math.degrees(math.atan2(traj[-1]["y"] - traj[0]["y"], traj[-1]["x"] - traj[0]["x"])) - placed["yaw"]
-        ang_s = math.degrees(math.atan2(traj_src[-1]["y"] - traj_src[0]["y"], traj_src[-1]["x"] - traj_src[0]["x"])) - src["yaw"]
+        ang_s = (
+            math.degrees(math.atan2(traj_src[-1]["y"] - traj_src[0]["y"], traj_src[-1]["x"] - traj_src[0]["x"]))
+            - src["yaw"]
+        )
         C("place: trajectory turns with the actor", abs(((ang - ang_s) + 180) % 360 - 180) < 2, (ang, ang_s))
         gz = page.evaluate("([x, y]) => ObjectsManager.groundZAt(x, y)", [traj[0]["x"], traj[0]["y"]])
         C("place: heights from the surface", abs(traj[0]["z"] - (gz + 0.5)) < 0.05, (traj[0]["z"], gz))
         pt = next(e for e in placed["events"] if e["id"] == "evt-9")["trigger"]
         C("place: $self resolved to the new actor", pt["entity_ref"] == placed["id"], pt)
-        C("place: trigger point moved with the actor", abs(pt["point"]["x"] - (placed["x"] + (265.4 - src["x"]))) < 2.5, pt)
+        C(
+            "place: trigger point moved with the actor",
+            abs(pt["point"]["x"] - (placed["x"] + (265.4 - src["x"]))) < 2.5,
+            pt,
+        )
 
-        page.evaluate("id => { AppState.npcs = AppState.npcs.filter(n => n.id === id); AppState.set({}); }", placed["id"])
+        page.evaluate(
+            "id => { AppState.npcs = AppState.npcs.filter(n => n.id === id); AppState.set({}); }", placed["id"]
+        )
         status = H.export_status(page, page.evaluate("ScenarioIO.buildParamsForTesting()"))
         C("place: exports", status == 200, status)
 
@@ -112,14 +128,17 @@ def main():
         C("picker: offers the user template", "user:1" in opts, opts)
 
         # ── Foreign reference refused ───────────────────────────────────────
-        page.evaluate("""() => {
+        page.evaluate(
+            """() => {
           const a = { id: AppState.nextId(), type: 'car', x: 250, y: -2, z: 0.5, yaw: 180, initial_speed: 5,
                       events: [{ id: 'evt-1', trigger: { type: 'after_event', event_id: 'evt-1', actor_ref: '%s' },
                                  action: { type: 'set_speed', dynamics: { shape: 'step', dimension: 'time', value: 2 },
                                            target: { mode: 'absolute', value: 3 } } }] };
           AppState.npcs = [...AppState.npcs, a]; AppState.set({});
           return ScenarioTemplates.saveFromActor(a);
-        }""" % placed["id"])
+        }"""
+            % placed["id"]
+        )
         n = len(page.evaluate("JSON.parse(localStorage.getItem('scenarioEditor.userTemplates'))"))
         C("foreign ref: refused, nothing stored", n == 1, n)
         C("foreign ref: toast says why", page.locator(".toast", has_text="anderen Akteur").count() >= 1)
@@ -131,7 +150,10 @@ def main():
         name.fill("Radler quer")
         name.press("Enter")
         name.evaluate("el => el.blur()")
-        C("rename: stored", page.evaluate("JSON.parse(localStorage.getItem('scenarioEditor.userTemplates'))[0].label") == "Radler quer")
+        C(
+            "rename: stored",
+            page.evaluate("JSON.parse(localStorage.getItem('scenarioEditor.userTemplates'))[0].label") == "Radler quer",
+        )
         page.reload(wait_until="networkidle")
         page.evaluate("document.getElementById('welcome-overlay')?.classList.add('hidden')")
         H.select_map(page, "Town01")
@@ -155,8 +177,11 @@ def main():
         page.wait_for_selector("#confirm-overlay:not(.hidden)", timeout=5000)
         page.keyboard.press("Enter")
         page.wait_for_timeout(250)
-        C("delete: gone after confirm", page.locator("[data-user-template]").count() == 1
-          and len(page.evaluate("JSON.parse(localStorage.getItem('scenarioEditor.userTemplates'))")) == 1)
+        C(
+            "delete: gone after confirm",
+            page.locator("[data-user-template]").count() == 1
+            and len(page.evaluate("JSON.parse(localStorage.getItem('scenarioEditor.userTemplates'))")) == 1,
+        )
 
         page.evaluate("localStorage.removeItem('scenarioEditor.userTemplates')")
         C("no JS errors", not [e for e in errors if "404" not in e], errors[:5])

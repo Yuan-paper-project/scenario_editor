@@ -20,6 +20,7 @@ Two artefact classes it pins, both of which reached the map before:
 
     .venv/bin/python3 tests/check_render_geometry.py
 """
+
 import math
 import sys
 from pathlib import Path
@@ -27,14 +28,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from backend.map_renderer import XODR_PATHS, build_map_render_data  # noqa: E402
 
-TOWNS = ['Town01', 'Town02', 'Town03', 'Town04', 'Town05',
-         'Town06', 'Town07', 'Town10HD', 'Town10']
+TOWNS = ['Town01', 'Town02', 'Town03', 'Town04', 'Town05', 'Town06', 'Town07', 'Town10HD', 'Town10']
 
 # A defect in the .xodr itself, not in the renderer: road 598 carries a 0.39 m
 # laneOffset blip (+0.635 → −2.865 → +0.635) inside a single lane section.
 ALLOW = {('Town06', '598')}
 
-REVERSAL_COS = -0.5   # > 120° turn at a vertex
+REVERSAL_COS = -0.5  # > 120° turn at a vertex
 
 
 def _edges(poly):
@@ -51,12 +51,12 @@ def check_town(town):
         for lane in road['lanes']:
             for edge in _edges(lane['polygon']):
                 for i in range(1, len(edge) - 1):
-                    a = (edge[i][0] - edge[i-1][0], edge[i][1] - edge[i-1][1])
-                    b = (edge[i+1][0] - edge[i][0], edge[i+1][1] - edge[i][1])
+                    a = (edge[i][0] - edge[i - 1][0], edge[i][1] - edge[i - 1][1])
+                    b = (edge[i + 1][0] - edge[i][0], edge[i + 1][1] - edge[i][1])
                     la, lb = math.hypot(*a), math.hypot(*b)
                     if la < 1e-3 or lb < 1e-3:
                         continue
-                    if (a[0]*b[0] + a[1]*b[1]) / (la * lb) < REVERSAL_COS:
+                    if (a[0] * b[0] + a[1] * b[1]) / (la * lb) < REVERSAL_COS:
                         reversals.append((road['id'], lane['laneId'], lane['sectionId'], i))
             # Section-end jump: an end segment may not be much longer than the
             # section's own spacing next to it permits — at either end.
@@ -66,8 +66,9 @@ def check_town(town):
                     continue
                 # A 1 m road sampled at s 0, 0.98, 1.0 has a "jump" that is
                 # simply the road; a real one is a fraction of its edge.
-                total = sum(math.hypot(edge[i][0] - edge[i-1][0], edge[i][1] - edge[i-1][1])
-                            for i in range(1, len(edge)))
+                total = sum(
+                    math.hypot(edge[i][0] - edge[i - 1][0], edge[i][1] - edge[i - 1][1]) for i in range(1, len(edge))
+                )
                 for e in (edge, edge[::-1]):
                     last = math.hypot(e[-1][0] - e[-2][0], e[-1][1] - e[-2][1])
                     prev = math.hypot(e[-2][0] - e[-3][0], e[-2][1] - e[-3][1])
@@ -84,8 +85,9 @@ def main():
             continue
         reversals, end_jumps = check_town(town)
         ok = not reversals and not end_jumps
-        print(f"  {'PASS' if ok else 'FAIL'} {town}: {len(reversals)} folded vertices, "
-              f'{len(end_jumps)} section-end jumps')
+        print(
+            f"  {'PASS' if ok else 'FAIL'} {town}: {len(reversals)} folded vertices, {len(end_jumps)} section-end jumps"
+        )
         for r in (reversals + end_jumps)[:5]:
             print(f'       road/lane/section/…: {r}')
         failed += not ok

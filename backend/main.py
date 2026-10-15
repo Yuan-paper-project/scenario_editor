@@ -37,9 +37,9 @@ from backend import bg_traffic
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 
-_HERE        = Path(__file__).resolve().parent
-_FRONTEND    = _HERE.parent / "frontend"
-_UPLOADS_DIR = _HERE.parent / "maps" / "_uploaded"   # persisted user maps
+_HERE = Path(__file__).resolve().parent
+_FRONTEND = _HERE.parent / "frontend"
+_UPLOADS_DIR = _HERE.parent / "maps" / "_uploaded"  # persisted user maps
 _BUILDINGS_CSV = _HERE.parent / "maps" / "special_buildings.csv"
 
 # ── App ────────────────────────────────────────────────────────────────────────
@@ -104,8 +104,10 @@ async def preload_maps():
         if town_name not in MAP_CACHE:
             try:
                 MAP_CACHE[town_name] = build_map_render_data_from_path(xodr_file, town_name)
-                print(f"  ✓ (uploaded) {town_name}  "
-                      f"({len(MAP_CACHE[town_name]['roads'])} roads, {_elev_note(MAP_CACHE[town_name])})")
+                print(
+                    f"  ✓ (uploaded) {town_name}  "
+                    f"({len(MAP_CACHE[town_name]['roads'])} roads, {_elev_note(MAP_CACHE[town_name])})"
+                )
             except Exception as exc:
                 print(f"  ✗ (uploaded) {town_name}: {exc}")
 
@@ -130,8 +132,10 @@ async def preload_maps():
                 LANE_GRAPH_CACHE[town] = graph
     carla_count = sum(1 for g in LANE_GRAPH_CACHE.values() if g.get('source') != 'xodr')
     xodr_count = len(LANE_GRAPH_CACHE) - carla_count
-    print(f"[startup] Lane graph cache ready. {len(LANE_GRAPH_CACHE)}/{len(MAP_CACHE)} towns have one "
-          f"({carla_count} CARLA-probed, {xodr_count} xodr-derived).")
+    print(
+        f"[startup] Lane graph cache ready. {len(LANE_GRAPH_CACHE)}/{len(MAP_CACHE)} towns have one "
+        f"({carla_count} CARLA-probed, {xodr_count} xodr-derived)."
+    )
 
 
 # ── Static file serving ────────────────────────────────────────────────────────
@@ -145,6 +149,7 @@ async def index():
 
 
 # ── Map API ────────────────────────────────────────────────────────────────────
+
 
 @app.get("/api/maps")
 async def get_maps():
@@ -168,9 +173,11 @@ async def get_lane_graph(town: str):
         # file, or an xodr-derived one built at startup/upload) — reaching
         # this branch means that attempt itself failed (see the startup/
         # upload logs), not simply "never probed".
-        detail = (f"Town '{town}' not found" if town not in MAP_CACHE
-                  else f"No lane graph available for '{town}' — building one from "
-                       f"its .xodr failed (see server logs)")
+        detail = (
+            f"Town '{town}' not found"
+            if town not in MAP_CACHE
+            else f"No lane graph available for '{town}' — building one from its .xodr failed (see server logs)"
+        )
         raise HTTPException(status_code=404, detail=detail)
     return JSONResponse(content=LANE_GRAPH_CACHE[town])
 
@@ -211,8 +218,7 @@ async def get_aerial_tile(town: str, level: int, col: int, row: int):
     tile = _aerial_dir(town) / str(level) / f"{col}_{row}.jpg"
     if not tile.exists():
         raise HTTPException(status_code=404, detail="No such tile")
-    return FileResponse(str(tile), media_type="image/jpeg",
-                        headers={"Cache-Control": "public, max-age=3600"})
+    return FileResponse(str(tile), media_type="image/jpeg", headers={"Cache-Control": "public, max-age=3600"})
 
 
 @app.get("/api/special_buildings")
@@ -254,12 +260,16 @@ def _read_special_buildings() -> list[dict]:
                     z = float(row.get("z") or 0.0)
                 except ValueError:
                     z = 0.0
-                out.append({
-                    "town": town,
-                    "type": btype,
-                    "name": (row.get("carla_name") or "").strip(),
-                    "x": x, "y": y, "z": z,
-                })
+                out.append(
+                    {
+                        "town": town,
+                        "type": btype,
+                        "name": (row.get("carla_name") or "").strip(),
+                        "x": x,
+                        "y": y,
+                        "z": z,
+                    }
+                )
     except OSError as exc:
         print(f"[buildings] {_BUILDINGS_CSV}: {exc}")
         return []
@@ -303,12 +313,12 @@ async def upload_map(file: UploadFile = File(...)):
         LANE_GRAPH_CACHE[town_name] = graph
 
     road_count = len(MAP_CACHE[town_name]["roads"])
-    print(f"[upload] Imported '{town_name}' ({road_count} roads, "
-          f"lane graph: {'yes' if graph else 'no'})")
+    print(f"[upload] Imported '{town_name}' ({road_count} roads, lane graph: {'yes' if graph else 'no'})")
     return {"town": town_name, "roads": road_count}
 
 
 # ── Export API ─────────────────────────────────────────────────────────────────
+
 
 @app.post("/api/export")
 async def export_scenario(request: Request):
@@ -354,6 +364,7 @@ async def export_batch(request: Request):
 
 # ── Background traffic (SUMO trajectories replayed as CARLA puppets) ─────────
 
+
 def _xodr_for(town: str) -> Path:
     path = XODR_PATHS.get(town)
     if path is None:
@@ -386,6 +397,7 @@ def export_bundle(body: dict):
     traffic file up by that name, beside the .xosc. The traffic comes from the
     same cache the preview filled, so the export is the traffic it showed."""
     import zipfile
+
     params = body.get("params") or {}
     traffic_req = body.get("bg_traffic") or {}
     map_name = params.get("map", "scenario")
@@ -396,7 +408,7 @@ def export_bundle(body: dict):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Export failed: {e}")
-    zip_path = xosc_path[:-len(".xosc")] + ".zip"
+    zip_path = xosc_path[: -len(".xosc")] + ".zip"
     stem = f"{map_name}_scenario"
     try:
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -417,11 +429,15 @@ def export_bundle(body: dict):
 async def download_presentation():
     """Generate and serve the PowerPoint presentation."""
     import subprocess, sys
+
     script = _HERE.parent / "generate_pptx.py"
-    out    = _HERE.parent / "OpenSCENARIO_Editor_Praesentation.pptx"
+    out = _HERE.parent / "OpenSCENARIO_Editor_Praesentation.pptx"
     subprocess.run([sys.executable, str(script)], cwd=str(_HERE.parent), check=True)
-    return FileResponse(str(out), media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                        filename="OpenSCENARIO_Editor_Praesentation.pptx")
+    return FileResponse(
+        str(out),
+        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        filename="OpenSCENARIO_Editor_Praesentation.pptx",
+    )
 
 
 @app.post("/api/export/route")
