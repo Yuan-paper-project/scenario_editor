@@ -25,39 +25,42 @@
   const layerActors = document.getElementById('layer-actors');
   const overlayMsg = document.getElementById('map-overlay-msg');
 
-  // Extra map-detail layers (inserted into #world by renderMap)
-  let layerCrosswalks = null;
-  let layerTrafficLights = null;
-  let layerRoadDir = null; // road direction arrows
-  let layerOverpass = null; // roads that pass over another road, by level
+  // Extra map-detail layers, recreated by every renderMap and read by every
+  // file of the map view — hence one shared object, not reassigned lets.
+  const layers = {
+    crosswalks: null,
+    trafficLights: null,
+    roadDir: null, // road direction arrows
+    overpass: null, // roads that pass over another road, by level
+    triggerPoints: null,
+    // Landmark dots from maps/special_buildings.csv. A map-detail layer like the
+    // crosswalks, not a scenario layer: it sits below the actors, is never
+    // hit-tested, and holds nothing the user can select or move.
+    buildings: null,
+    // Stop/Yield signs and speed-limit roundels (map detail, never hit-tested).
+    signs: null,
+    speeds: null,
+    // The selected actor's own paths, above layer-actors: a path drawn under the
+    // other vehicles is both hard to read and, now that its waypoints are
+    // draggable, hard to reach.
+    pathsTop: null,
+    // ...and the selected actor itself, above its own path. The vehicle stays the
+    // top thing on the map — waypoint 1 is seeded on the actor's own pose, so
+    // without this the marker sits squarely on the vehicle and hides it, and a
+    // grab there would rotate a waypoint instead of moving the car. The waypoint
+    // under the vehicle is still reachable from its row in the event card.
+    actorsTop: null,
+  };
   let _overpassGroupsFor = () => null;
   let _overpassCount = 0;
-  let layerTriggerPoints = null;
-  // Landmark dots from maps/special_buildings.csv. A map-detail layer like the
-  // crosswalks, not a scenario layer: it sits below the actors, is never
-  // hit-tested, and holds nothing the user can select or move.
-  let layerBuildings = null;
-  // Stop/Yield signs and speed-limit roundels (map detail, never hit-tested).
-  let layerSigns = null;
-  let layerSpeeds = null;
-  // The selected actor's own paths, above layer-actors: a path drawn under the
-  // other vehicles is both hard to read and, now that its waypoints are
-  // draggable, hard to reach.
-  let layerPathsTop = null;
-  // ...and the selected actor itself, above its own path. The vehicle stays the
-  // top thing on the map — waypoint 1 is seeded on the actor's own pose, so
-  // without this the marker sits squarely on the vehicle and hides it, and a
-  // grab there would rotate a waypoint instead of moving the car. The waypoint
-  // under the vehicle is still reachable from its row in the event card.
-  let layerActorsTop = null;
 
   // ── Pan / zoom state ────────────────────────────────────────────────────────
   //
-  // `_zoom` is 1.0 when the whole town fills the viewBox (renderMap sets the
+  // `view.zoom` is 1.0 when the whole town fills the viewBox (renderMap sets the
   // viewBox to the CARLA bounds), so the limits below read as "a quarter of the
   // overview" and "well past lane detail".
   //
-  // Clamping is not tidiness: `_zoom *= factor` was unbounded, 200 wheel notches
+  // Clamping is not tidiness: `view.zoom *= factor` was unbounded, 200 wheel notches
   // outward reached scale(0.0000087) — map gone, actors gone — and nothing but
   // renderMap() ever reset the view, so the only way back was a reload, which
   // discards the scenario. resetView() below is the other half of that fix.
@@ -94,16 +97,14 @@
 
   const _clampZoom = (z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
 
-  let _pan = { x: 0, y: 0 };
-  let _zoom = 1.0;
-  let _dragging = false;
+  const view = { pan: { x: 0, y: 0 }, zoom: 1.0 };
+  // A map pan, or a trigger point / radius being dragged by its marker.
+  const drag = { panning: false, triggerPoint: null, triggerRadius: null };
   let _dragStart = null;
   let _panStart = null;
   let _panMoved = false;
   let _suppressNextClick = false;
   const _PAN_CLICK_THRESHOLD = 4;
-  let _triggerRadiusDrag = null;
-  let _triggerPointDrag = null;
 
   // ── Scale ruler ──────────────────────────────────────────────────────────────
   const _scaleBar = document.querySelector('.scale-bar');
@@ -145,8 +146,8 @@
 
   /**
    * Hide actor labels once they drop under the legibility floor. Driven off the
-   * live CTM rather than off `_zoom`, because `_zoom` is relative to a viewBox
-   * that is the town's own bounds — the same `_zoom` is a different number of
+   * live CTM rather than off `view.zoom`, because `view.zoom` is relative to a viewBox
+   * that is the town's own bounds — the same `view.zoom` is a different number of
    * pixels per metre on Town01 and Town04.
    */
   function _updateLabelVisibility() {
@@ -158,7 +159,7 @@
   }
 
   function _applyTransform() {
-    worldGroup.setAttribute('transform', `translate(${_pan.x},${_pan.y}) scale(${_zoom})`);
+    worldGroup.setAttribute('transform', `translate(${view.pan.x},${view.pan.y}) scale(${view.zoom})`);
     _updateScaleRuler();
     _updateLabelVisibility();
     AerialMap.update();
@@ -201,51 +202,51 @@
     });
 
     // Create/reset dynamic detail layers (inserted before trajectories)
-    if (layerCrosswalks) layerCrosswalks.remove();
-    if (layerTrafficLights) layerTrafficLights.remove();
-    if (layerRoadDir) layerRoadDir.remove();
-    if (layerOverpass) layerOverpass.remove();
-    if (layerTriggerPoints) layerTriggerPoints.remove();
-    if (layerBuildings) layerBuildings.remove();
-    if (layerSigns) layerSigns.remove();
-    if (layerSpeeds) layerSpeeds.remove();
-    if (layerPathsTop) layerPathsTop.remove();
-    if (layerActorsTop) layerActorsTop.remove();
+    if (layers.crosswalks) layers.crosswalks.remove();
+    if (layers.trafficLights) layers.trafficLights.remove();
+    if (layers.roadDir) layers.roadDir.remove();
+    if (layers.overpass) layers.overpass.remove();
+    if (layers.triggerPoints) layers.triggerPoints.remove();
+    if (layers.buildings) layers.buildings.remove();
+    if (layers.signs) layers.signs.remove();
+    if (layers.speeds) layers.speeds.remove();
+    if (layers.pathsTop) layers.pathsTop.remove();
+    if (layers.actorsTop) layers.actorsTop.remove();
     // Cached route geometry is lane geometry, i.e. specific to the town that
     // is being replaced. Ids restart at obj-1/evt-1 in every save file, so a
     // stale entry is a real collision rather than a theoretical one.
     _routeGeomCache.clear();
-    layerCrosswalks = _svgEl('g', { id: 'layer-crosswalks' });
-    layerTrafficLights = _svgEl('g', { id: 'layer-trafficlights' });
-    layerRoadDir = _svgEl('g', { id: 'layer-roaddir' });
-    layerOverpass = _svgEl('g', { id: 'layer-overpass' });
-    layerTriggerPoints = _svgEl('g', { id: 'layer-trigger-points' });
-    layerBuildings = _svgEl('g', { id: 'layer-buildings' });
-    layerSigns = _svgEl('g', { id: 'layer-signs' });
-    layerSpeeds = _svgEl('g', { id: 'layer-speeds' });
-    layerPathsTop = _svgEl('g', { id: 'layer-paths-top' });
-    layerActorsTop = _svgEl('g', { id: 'layer-actors-top' });
+    layers.crosswalks = UIUtils.svgEl('g', { id: 'layer-crosswalks' });
+    layers.trafficLights = UIUtils.svgEl('g', { id: 'layer-trafficlights' });
+    layers.roadDir = UIUtils.svgEl('g', { id: 'layer-roaddir' });
+    layers.overpass = UIUtils.svgEl('g', { id: 'layer-overpass' });
+    layers.triggerPoints = UIUtils.svgEl('g', { id: 'layer-trigger-points' });
+    layers.buildings = UIUtils.svgEl('g', { id: 'layer-buildings' });
+    layers.signs = UIUtils.svgEl('g', { id: 'layer-signs' });
+    layers.speeds = UIUtils.svgEl('g', { id: 'layer-speeds' });
+    layers.pathsTop = UIUtils.svgEl('g', { id: 'layer-paths-top' });
+    layers.actorsTop = UIUtils.svgEl('g', { id: 'layer-actors-top' });
     const layerTrajEl = document.getElementById('layer-trajectories');
-    worldGroup.insertBefore(layerRoadDir, layerTrajEl);
-    worldGroup.insertBefore(layerCrosswalks, layerTrajEl);
+    worldGroup.insertBefore(layers.roadDir, layerTrajEl);
+    worldGroup.insertBefore(layers.crosswalks, layerTrajEl);
     // Above the ground-level markings, arrows and crosswalks, so a bridge
     // hides what it passes over; below lights, signs and everything editable.
-    worldGroup.insertBefore(layerOverpass, layerTrajEl);
+    worldGroup.insertBefore(layers.overpass, layerTrajEl);
     // Spawn dots go back above the bridges: an elevated road's spawn points
     // would otherwise be painted over by its own deck.
     worldGroup.insertBefore(layerSpawns, layerTrajEl);
-    worldGroup.insertBefore(layerTrafficLights, layerTrajEl);
-    worldGroup.insertBefore(layerBuildings, layerTrajEl);
-    worldGroup.insertBefore(layerSpeeds, layerTrajEl);
-    worldGroup.insertBefore(layerSigns, layerTrajEl);
+    worldGroup.insertBefore(layers.trafficLights, layerTrajEl);
+    worldGroup.insertBefore(layers.buildings, layerTrajEl);
+    worldGroup.insertBefore(layers.speeds, layerTrajEl);
+    worldGroup.insertBefore(layers.signs, layerTrajEl);
     // These three go last, i.e. above layer-actors, and in this order: the
     // selected actor's path sits over the other vehicles, the actor itself sits
     // over its own path, and its trigger points sit over everything. Paint
     // order here is DOM order of the layers, not the order renderAllActors
     // happens to fill them in.
-    worldGroup.appendChild(layerPathsTop);
-    worldGroup.appendChild(layerActorsTop);
-    worldGroup.appendChild(layerTriggerPoints);
+    worldGroup.appendChild(layers.pathsTop);
+    worldGroup.appendChild(layers.actorsTop);
+    worldGroup.appendChild(layers.triggerPoints);
 
     const { bounds, roads, spawnPoints, intersections, trafficLights, crosswalks, grassColor } = mapData;
     const signs = mapData.signs || [];
@@ -266,8 +267,8 @@
     bgRect.setAttribute('fill', 'transparent');
 
     // Reset pan/zoom so new map fills the view
-    _pan = { x: 0, y: 0 };
-    _zoom = 1.0;
+    view.pan = { x: 0, y: 0 };
+    view.zoom = 1.0;
     _applyTransform();
 
     // Sort roads: junctions on top. A road that passes OVER another one
@@ -279,16 +280,16 @@
     const overpassGroups = []; // index = level − 1
     _overpassGroupsFor = (level) => {
       while (overpassGroups.length < level) {
-        const g = _svgEl('g', { class: 'ovp-level', 'data-level': String(overpassGroups.length + 1) });
+        const g = UIUtils.svgEl('g', { class: 'ovp-level', 'data-level': String(overpassGroups.length + 1) });
         const parts = {
           g,
-          shadow: _svgEl('g', { class: 'ovp-shadow' }),
-          roads: _svgEl('g', { class: 'ovp-roads' }),
-          marks: _svgEl('g', { class: 'ovp-marks' }),
-          dir: _svgEl('g', { class: 'ovp-dir' }),
+          shadow: UIUtils.svgEl('g', { class: 'ovp-shadow' }),
+          roads: UIUtils.svgEl('g', { class: 'ovp-roads' }),
+          marks: UIUtils.svgEl('g', { class: 'ovp-marks' }),
+          dir: UIUtils.svgEl('g', { class: 'ovp-dir' }),
         };
         g.append(parts.shadow, parts.roads, parts.marks, parts.dir);
-        layerOverpass.appendChild(g);
+        layers.overpass.appendChild(g);
         overpassGroups.push(parts);
       }
       return overpassGroups[level - 1];
@@ -299,16 +300,16 @@
       const grp = level ? _overpassGroupsFor(level) : null;
       const roadTarget = grp ? grp.roads : layerRoads;
       const markTarget = grp ? grp.marks : layerMarkings;
-      const dirTarget = grp ? grp.dir : layerRoadDir;
+      const dirTarget = grp ? grp.dir : layers.roadDir;
       for (const lane of road.lanes) {
         // Lane polygon with thin edge outline for visual definition
         const points = _polyToPoints(lane.polygon);
         if (grp) {
           // The bridge's drop shadow / parapet: a wide dark casing under the
           // deck, so it reads as passing OVER the road beneath, not crossing it.
-          grp.shadow.appendChild(_svgEl('polygon', { points, class: 'ovp-casing' }));
+          grp.shadow.appendChild(UIUtils.svgEl('polygon', { points, class: 'ovp-casing' }));
         }
-        const poly = _svgEl('polygon', {
+        const poly = UIUtils.svgEl('polygon', {
           points,
           fill: lane.color,
           stroke: _laneStrokeColor(lane.type),
@@ -321,7 +322,7 @@
         // blocked in Vektor, and (CSS) instead of a white lane outline in Beides.
         if (BLOCKED_LANE_TYPES.has(lane.type)) {
           roadTarget.appendChild(
-            _svgEl('polygon', {
+            UIUtils.svgEl('polygon', {
               points,
               fill: 'url(#hatch-blocked)',
               class: 'lane-hatch',
@@ -340,7 +341,7 @@
         } else if (hasDriving) {
           // No <roadMark> data (render JSON from an older backend, or a map
           // that states none): the old guessed yellow dashed centreline.
-          const cl = _svgEl('polyline', {
+          const cl = UIUtils.svgEl('polyline', {
             points: road.centerline.map((p) => `${p[0]},${p[1]}`).join(' '),
             fill: 'none',
             stroke: 'rgba(255,210,80,0.5)',
@@ -374,13 +375,13 @@
 
     // Spawn point dots
     for (const sp of spawnPoints) {
-      const c = _svgEl('circle', { cx: sp.x, cy: sp.y, r: '1.5', class: 'spawn-dot' });
+      const c = UIUtils.svgEl('circle', { cx: sp.x, cy: sp.y, r: '1.5', class: 'spawn-dot' });
       layerSpawns.appendChild(c);
     }
 
     // Junction zone circles (subtle highlight)
     for (const junc of intersections || []) {
-      const c = _svgEl('circle', { cx: junc.cx, cy: junc.cy, r: '14', class: 'junction-zone' });
+      const c = UIUtils.svgEl('circle', { cx: junc.cx, cy: junc.cy, r: '14', class: 'junction-zone' });
       layerJunctions.appendChild(c);
     }
 
@@ -389,14 +390,14 @@
     for (const cw of crosswalks || []) {
       _renderCrosswalk(cw);
     }
-    console.log(`[MapView] layer-crosswalks children: ${layerCrosswalks.children.length}`);
+    console.log(`[MapView] layer-crosswalks children: ${layers.crosswalks.children.length}`);
 
     // ── Traffic lights ─────────────────────────────────────────────────────
     console.log(`[MapView] Rendering ${(trafficLights || []).length} traffic lights`);
     for (const tl of trafficLights || []) {
       _renderTrafficLight(tl);
     }
-    console.log(`[MapView] layer-trafficlights children: ${layerTrafficLights.children.length}`);
+    console.log(`[MapView] layer-trafficlights children: ${layers.trafficLights.children.length}`);
 
     // Landmarks for whichever town this is. renderMap replaces the layer
     // wholesale, so this has to run here as well as on the fetch completing.
@@ -541,13 +542,13 @@
 
   /** Overpass markings/arrows follow the Markierungen / Fahrtrichtung boxes. */
   function _applyLayerToggleExtras() {
-    if (!layerOverpass) return;
+    if (!layers.overpass) return;
     const marks = document.getElementById('toggle-markings');
     const dir = document.getElementById('toggle-roaddir');
-    layerOverpass.querySelectorAll('.ovp-marks').forEach((g) => {
+    layers.overpass.querySelectorAll('.ovp-marks').forEach((g) => {
       g.style.display = marks && !marks.checked ? 'none' : '';
     });
-    layerOverpass.querySelectorAll('.ovp-dir').forEach((g) => {
+    layers.overpass.querySelectorAll('.ovp-dir').forEach((g) => {
       g.style.display = dir && !dir.checked ? 'none' : '';
     });
   }
@@ -569,7 +570,7 @@
       };
       // CARLA paints broken lines 3 m on, 6 m off.
       if (m.type === 'broken') attrs['stroke-dasharray'] = '3 6';
-      target.appendChild(_svgEl('polyline', attrs));
+      target.appendChild(UIUtils.svgEl('polyline', attrs));
     }
   }
 
@@ -582,7 +583,7 @@
       const seg = Math.hypot(x1 - x0, y1 - y0);
       while (acc <= seg && seg > 0) {
         const t = acc / seg;
-        const t2 = _svgEl('text', {
+        const t2 = UIUtils.svgEl('text', {
           x: (x0 + (x1 - x0) * t).toFixed(2),
           y: (y0 + (y1 - y0) * t).toFixed(2),
           class: 'parking-glyph',
@@ -601,7 +602,7 @@
   /** Stop = red octagon, Yield = inverted white/red triangle. ~1.6 m across:
    *  true-ish size like every other marker, so it is found by zooming in. */
   function _renderSign(sign) {
-    const g = _svgEl('g', {
+    const g = UIUtils.svgEl('g', {
       class: `map-sign map-sign-${sign.type}`,
       transform: `translate(${sign.x},${sign.y})`,
     });
@@ -612,8 +613,8 @@
         const a = Math.PI / 8 + (k * Math.PI) / 4;
         pts.push(`${(r * Math.cos(a)).toFixed(3)},${(r * Math.sin(a)).toFixed(3)}`);
       }
-      g.appendChild(_svgEl('polygon', { points: pts.join(' '), class: 'sign-stop-body' }));
-      const t = _svgEl('text', {
+      g.appendChild(UIUtils.svgEl('polygon', { points: pts.join(' '), class: 'sign-stop-body' }));
+      const t = UIUtils.svgEl('text', {
         class: 'sign-stop-text',
         'font-size': '0.42',
         'text-anchor': 'middle',
@@ -622,18 +623,18 @@
       t.textContent = 'STOP';
       g.appendChild(t);
     } else {
-      g.appendChild(_svgEl('polygon', { points: '-0.9,-0.6 0.9,-0.6 0,0.95', class: 'sign-yield-body' }));
+      g.appendChild(UIUtils.svgEl('polygon', { points: '-0.9,-0.6 0.9,-0.6 0,0.95', class: 'sign-yield-body' }));
     }
-    layerSigns.appendChild(g);
+    layers.signs.appendChild(g);
   }
 
   /** A speed-limit sign (backend _extract_speed_signs) as a km/h roundel at
    *  the sign's own position — the signs, not the .xodr's per-road speed
    *  records, are what sets a CARLA vehicle's limit. */
   function _renderSpeedSign(sp) {
-    const g = _svgEl('g', { class: 'speed-limit', transform: `translate(${sp.x},${sp.y})` });
-    g.appendChild(_svgEl('circle', { r: '1.6', class: 'speed-limit-ring' }));
-    const t = _svgEl('text', {
+    const g = UIUtils.svgEl('g', { class: 'speed-limit', transform: `translate(${sp.x},${sp.y})` });
+    g.appendChild(UIUtils.svgEl('circle', { r: '1.6', class: 'speed-limit-ring' }));
+    const t = UIUtils.svgEl('text', {
       class: 'speed-limit-text',
       'font-size': '1.3',
       'text-anchor': 'middle',
@@ -641,11 +642,11 @@
     });
     t.textContent = String(sp.kmh);
     g.appendChild(t);
-    layerSpeeds.appendChild(g);
+    layers.speeds.appendChild(g);
   }
 
   /** Render small direction-arrow chevrons along a road centerline. */
-  function _renderRoadDirArrows(centerline, target = layerRoadDir) {
+  function _renderRoadDirArrows(centerline, target = layers.roadDir) {
     // Place a small arrow every ~30m along the road
     const INTERVAL = 30;
     let accum = 0;
@@ -663,7 +664,7 @@
           my = (y0 + y1) / 2;
         const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
         // Small chevron triangle
-        const arrow = _svgEl('polygon', {
+        const arrow = UIUtils.svgEl('polygon', {
           points: '2,0 -2,-1.2 -2,1.2',
           fill: 'rgba(255,255,255,0.30)',
           transform: `translate(${mx.toFixed(1)},${my.toFixed(1)}) rotate(${angle.toFixed(1)})`,
@@ -702,8 +703,8 @@
 
   function _fitToView(_bounds, _pad) {
     // viewBox is already set to CARLA bounds — SVG handles fitting automatically.
-    _pan = { x: 0, y: 0 };
-    _zoom = 1.0;
+    view.pan = { x: 0, y: 0 };
+    view.zoom = 1.0;
     _applyTransform();
   }
 
@@ -717,30 +718,30 @@
   function _centreOn(wx, wy, zoom) {
     const vb = svg.viewBox.baseVal;
     if (!vb || !vb.width) return false;
-    _zoom = _clampZoom(zoom);
-    _pan.x = vb.x + vb.width / 2 - wx * _zoom;
-    _pan.y = vb.y + vb.height / 2 - wy * _zoom;
+    view.zoom = _clampZoom(zoom);
+    view.pan.x = vb.x + vb.width / 2 - wx * view.zoom;
+    view.pan.y = vb.y + vb.height / 2 - wy * view.zoom;
     _applyTransform();
     return true;
   }
 
   /**
    * Zoom about the centre of the view — what a zoom BUTTON means, as opposed to
-   * the wheel, which zooms about the cursor. Scaling `_zoom` on its own would
+   * the wheel, which zooms about the cursor. Scaling `view.zoom` on its own would
    * zoom about the viewBox origin and walk the map off screen.
    */
   function zoomBy(factor) {
     const vb = svg.viewBox.baseVal;
     if (!vb || !vb.width) {
-      _zoom = _clampZoom(_zoom * factor);
+      view.zoom = _clampZoom(view.zoom * factor);
       _applyTransform();
       return;
     }
     const cx = vb.x + vb.width / 2;
     const cy = vb.y + vb.height / 2;
-    const wx = (cx - _pan.x) / _zoom; // world point currently at the centre
-    const wy = (cy - _pan.y) / _zoom;
-    _centreOn(wx, wy, _zoom * factor);
+    const wx = (cx - view.pan.x) / view.zoom; // world point currently at the centre
+    const wy = (cy - view.pan.y) / view.zoom;
+    _centreOn(wx, wy, view.zoom * factor);
   }
 
   /** Reset pan/zoom so the whole map fills the view again. */
@@ -766,7 +767,7 @@
   function _frameActor(actor) {
     if (!actor || actor.x == null || actor.y == null) return false;
     const vb = svg.viewBox.baseVal;
-    return _centreOn(actor.x, actor.y, vb && vb.width ? vb.width / ZOOM_TO_SPAN : _zoom);
+    return _centreOn(actor.x, actor.y, vb && vb.width ? vb.width / ZOOM_TO_SPAN : view.zoom);
   }
 
   /** Fit a set of world points [{x, y}] into the view with `marginM` metres
@@ -843,7 +844,7 @@
   /** Centres the view on a world point with `span` metres across the view. */
   function centreOn(wx, wy, span = ZOOM_TO_SPAN) {
     const vb = svg.viewBox.baseVal;
-    return _centreOn(wx, wy, vb && vb.width ? vb.width / span : _zoom);
+    return _centreOn(wx, wy, vb && vb.width ? vb.width / span : view.zoom);
   }
 
   function focusWaypoint(sel) {
@@ -851,7 +852,7 @@
     const wp = path && path[sel.index];
     if (!wp) return false;
     const vb = svg.viewBox.baseVal;
-    _centreOn(wp.x, wp.y, vb && vb.width ? vb.width / ZOOM_TO_SPAN : _zoom);
+    _centreOn(wp.x, wp.y, vb && vb.width ? vb.width / ZOOM_TO_SPAN : view.zoom);
     glowWaypoint(sel);
     return true;
   }
@@ -897,7 +898,7 @@
     const usedLength = NUM_STRIPES * STRIPE_W + (NUM_STRIPES - 1) * STRIPE_GAP;
     const startOff = -usedLength / 2;
 
-    const g = _svgEl('g', { class: 'crosswalk-group' });
+    const g = UIUtils.svgEl('g', { class: 'crosswalk-group' });
 
     for (let i = 0; i < NUM_STRIPES; i++) {
       // Space stripes along the perpendicular (across-road) axis
@@ -917,7 +918,7 @@
         .join(' ');
 
       g.appendChild(
-        _svgEl('polygon', {
+        UIUtils.svgEl('polygon', {
           points: pts,
           fill: '#ffffff',
           'fill-opacity': '0.85',
@@ -925,7 +926,7 @@
       );
     }
 
-    layerCrosswalks.appendChild(g);
+    layers.crosswalks.appendChild(g);
   }
 
   // ── Traffic light rendering ────────────────────────────────────────────────
@@ -945,7 +946,7 @@
     // red whether or not anything was configured, and at lane zoom it was the
     // loudest thing on the map and sat over the crosswalk it belongs to.
     const lit = new Set((action?.events || []).map((ev) => ev.state || 'red'));
-    const g = _svgEl('g', {
+    const g = UIUtils.svgEl('g', {
       transform: `translate(${x},${y})`,
       // A light the .xodr has but CARLA does not (tl.inCarla === false, from
       // maps/<town>/carla_traffic_lights.json): still selectable, so the panel
@@ -964,12 +965,12 @@
 
     // Invisible hit target, larger than the housing so it stays clickable at
     // town zoom — the same trick props and trigger points use.
-    g.appendChild(_svgEl('circle', { cx: '0', cy: '0', r: '2.4', fill: 'transparent' }));
+    g.appendChild(UIUtils.svgEl('circle', { cx: '0', cy: '0', r: '2.4', fill: 'transparent' }));
 
     const W = 1.5,
       H = 3.7;
     g.appendChild(
-      _svgEl('rect', {
+      UIUtils.svgEl('rect', {
         x: String(-W / 2),
         y: String(-H / 2),
         width: String(W),
@@ -984,7 +985,7 @@
       ['green', 1.1],
     ].forEach(([state, cy]) => {
       g.appendChild(
-        _svgEl('circle', {
+        UIUtils.svgEl('circle', {
           cx: '0',
           cy: String(cy),
           r: '0.46',
@@ -997,7 +998,7 @@
     // selection language for everything on the map.
     g.appendChild(_buildSelectionMarks(W + 0.6, H + 0.6));
 
-    const title = _svgEl('title', {});
+    const title = UIUtils.svgEl('title', {});
     title.textContent =
       tl.inCarla === false
         ? `Ampel ${id} — existiert in CARLA nicht, nicht schaltbar`
@@ -1006,12 +1007,12 @@
           : `Ampel ${id} — klicken, um ihren Zustand im Szenario festzulegen`;
     g.appendChild(title);
 
-    layerTrafficLights.appendChild(g);
+    layers.trafficLights.appendChild(g);
   }
 
   function _renderTrafficLights() {
-    if (!layerTrafficLights || !AppState.mapData) return;
-    while (layerTrafficLights.firstChild) layerTrafficLights.removeChild(layerTrafficLights.firstChild);
+    if (!layers.trafficLights || !AppState.mapData) return;
+    while (layers.trafficLights.firstChild) layers.trafficLights.removeChild(layers.trafficLights.firstChild);
     for (const tl of AppState.mapData.trafficLights || []) {
       _renderTrafficLight(tl);
     }
@@ -1078,14 +1079,14 @@
     if (layerProps) {
       while (layerProps.firstChild) layerProps.removeChild(layerProps.firstChild);
     }
-    if (layerTriggerPoints) {
-      while (layerTriggerPoints.firstChild) layerTriggerPoints.removeChild(layerTriggerPoints.firstChild);
+    if (layers.triggerPoints) {
+      while (layers.triggerPoints.firstChild) layers.triggerPoints.removeChild(layers.triggerPoints.firstChild);
     }
-    if (layerPathsTop) {
-      while (layerPathsTop.firstChild) layerPathsTop.removeChild(layerPathsTop.firstChild);
+    if (layers.pathsTop) {
+      while (layers.pathsTop.firstChild) layers.pathsTop.removeChild(layers.pathsTop.firstChild);
     }
-    if (layerActorsTop) {
-      while (layerActorsTop.firstChild) layerActorsTop.removeChild(layerActorsTop.firstChild);
+    if (layers.actorsTop) {
+      while (layers.actorsTop.firstChild) layers.actorsTop.removeChild(layers.actorsTop.firstChild);
     }
 
     // Props sit in their own layer beneath the actors
@@ -1121,7 +1122,7 @@
   }
 
   function _renderTriggerPoints() {
-    if (!layerTriggerPoints) return;
+    if (!layers.triggerPoints) return;
     // findById also matches props, but a prop has no .events, so the forEach
     // below is a no-op for one — no extra guard needed.
     const actor = AppState.findById(AppState.selectedId);
@@ -1130,8 +1131,8 @@
       const point = ev.trigger?.point;
       if (!point) return;
       const radius = Math.max(0, Number(ev.trigger?.value ?? 20));
-      const g = _svgEl('g', { class: 'trigger-point', transform: `translate(${point.x},${point.y})` });
-      const ring = _svgEl('circle', {
+      const g = UIUtils.svgEl('g', { class: 'trigger-point', transform: `translate(${point.x},${point.y})` });
+      const ring = UIUtils.svgEl('circle', {
         cx: '0',
         cy: '0',
         r: _formatSvgNumber(radius),
@@ -1143,11 +1144,11 @@
       });
       _attachTriggerRadiusDrag(ring, actor.id, ev.id, point);
       g.appendChild(ring);
-      const marker = _svgEl('g', { class: 'trigger-point-control' });
+      const marker = UIUtils.svgEl('g', { class: 'trigger-point-control' });
       // Invisible hit target — the drawn marker is 0.7 m across, which is a
       // sub-pixel click target at whole-town zoom.
       marker.appendChild(
-        _svgEl('circle', {
+        UIUtils.svgEl('circle', {
           cx: '0',
           cy: '0',
           r: '2.2',
@@ -1155,7 +1156,7 @@
         }),
       );
       marker.appendChild(
-        _svgEl('circle', {
+        UIUtils.svgEl('circle', {
           cx: '0',
           cy: '0',
           r: '0.7',
@@ -1166,7 +1167,7 @@
       );
       _attachTriggerPointDrag(marker, actor.id, ev.id);
       g.appendChild(marker);
-      const label = _svgEl('text', {
+      const label = UIUtils.svgEl('text', {
         x: '0',
         y: '-4.5',
         'text-anchor': 'middle',
@@ -1177,7 +1178,7 @@
       });
       label.textContent = point.name || 'Point';
       g.appendChild(label);
-      const handle = _svgEl('rect', {
+      const handle = UIUtils.svgEl('rect', {
         x: _formatSvgNumber(radius - 0.7),
         y: '-0.7',
         width: '1.4',
@@ -1189,7 +1190,7 @@
       });
       _attachTriggerRadiusDrag(handle, actor.id, ev.id, point);
       g.appendChild(handle);
-      layerTriggerPoints.appendChild(g);
+      layers.triggerPoints.appendChild(g);
     });
   }
 
@@ -1209,19 +1210,19 @@
    * clicks aimed at the road under it.
    */
   function _renderSpecialBuildings() {
-    if (!layerBuildings) return;
-    while (layerBuildings.firstChild) layerBuildings.removeChild(layerBuildings.firstChild);
+    if (!layers.buildings) return;
+    while (layers.buildings.firstChild) layers.buildings.removeChild(layers.buildings.firstChild);
     const town = AppState.map;
     if (!town) return;
     for (const b of AppState.specialBuildings || []) {
       if (b.town !== town) continue;
-      const g = _svgEl('g', {
+      const g = UIUtils.svgEl('g', {
         class: 'special-building',
         transform: `translate(${_formatSvgNumber(b.x)},${_formatSvgNumber(b.y)})`,
       });
-      g.appendChild(_svgEl('circle', { cx: '0', cy: '0', r: '1.5', class: 'building-dot-casing' }));
-      g.appendChild(_svgEl('circle', { cx: '0', cy: '0', r: '1.0', class: 'building-dot' }));
-      const label = _svgEl('text', {
+      g.appendChild(UIUtils.svgEl('circle', { cx: '0', cy: '0', r: '1.5', class: 'building-dot-casing' }));
+      g.appendChild(UIUtils.svgEl('circle', { cx: '0', cy: '0', r: '1.0', class: 'building-dot' }));
+      const label = UIUtils.svgEl('text', {
         x: '0',
         y: '-2.8',
         'text-anchor': 'middle',
@@ -1232,10 +1233,10 @@
       g.appendChild(label);
       // Not a tooltip the user can hover for (the group is pointer-events:none)
       // — it is there for anyone reading the DOM, and costs nothing.
-      const title = _svgEl('title', {});
+      const title = UIUtils.svgEl('title', {});
       title.textContent = b.name ? `${_landmarkLabel(b.type)} — ${b.name}` : _landmarkLabel(b.type);
       g.appendChild(title);
-      layerBuildings.appendChild(g);
+      layers.buildings.appendChild(g);
     }
   }
 
@@ -1248,7 +1249,7 @@
   function _attachTriggerPointDrag(el, actorId, eventId) {
     el.addEventListener('mousedown', (e) => {
       if (e.button !== 0 || window.Simulate?.running) return;
-      _triggerPointDrag = { actorId, eventId };
+      drag.triggerPoint = { actorId, eventId };
       e.preventDefault();
       e.stopPropagation();
     });
@@ -1261,36 +1262,36 @@
    * invisible in a top-down view anyway).
    */
   function _updateTriggerPointDrag(e) {
-    const actor = AppState.findById(_triggerPointDrag.actorId);
+    const actor = AppState.findById(drag.triggerPoint.actorId);
     if (!actor) return;
     const world = svgToWorld(e);
     const x = Math.round(world.x * 10) / 10;
     const y = Math.round(world.y * 10) / 10;
     const events = (actor.events || []).map((ev) => {
-      if (ev.id !== _triggerPointDrag.eventId || !ev.trigger?.point) return ev;
+      if (ev.id !== drag.triggerPoint.eventId || !ev.trigger?.point) return ev;
       return { ...ev, trigger: { ...ev.trigger, point: { ...ev.trigger.point, x, y } } };
     });
-    _triggerPointDrag.moved = { x, y };
+    drag.triggerPoint.moved = { x, y };
     AppState.updateById(actor.id, { events });
   }
 
   function _attachTriggerRadiusDrag(el, actorId, eventId, point) {
     el.addEventListener('mousedown', (e) => {
       if (e.button !== 0 || window.Simulate?.running) return;
-      _triggerRadiusDrag = { actorId, eventId, point: { ...point } };
+      drag.triggerRadius = { actorId, eventId, point: { ...point } };
       e.preventDefault();
       e.stopPropagation();
     });
   }
 
   function _updateTriggerRadiusDrag(e) {
-    const actor = AppState.findById(_triggerRadiusDrag.actorId);
+    const actor = AppState.findById(drag.triggerRadius.actorId);
     if (!actor) return;
     const world = svgToWorld(e);
-    const p = _triggerRadiusDrag.point;
+    const p = drag.triggerRadius.point;
     const distance = Math.round(Math.hypot(world.x - p.x, world.y - p.y) * 10) / 10;
     const events = (actor.events || []).map((ev) => {
-      if (ev.id !== _triggerRadiusDrag.eventId) return ev;
+      if (ev.id !== drag.triggerRadius.eventId) return ev;
       return {
         ...ev,
         trigger: {
@@ -1356,7 +1357,7 @@
   /** The layer a path belongs in: over the vehicles when it is the selected
    *  actor's, under them otherwise. */
   function _pathLayerFor(actor) {
-    return actor.id === AppState.selectedId && layerPathsTop ? layerPathsTop : layerTraj;
+    return actor.id === AppState.selectedId && layers.pathsTop ? layers.pathsTop : layerTraj;
   }
 
   function _renderActor(actor) {
@@ -1373,11 +1374,11 @@
     if (WALKER_TYPES.has(actor.type)) {
       // Walker: filled circle. A rectangle plus windshield would read as a
       // very small car, which is exactly the wrong thing for a child.
-      const c = _svgEl('circle', { r: size.w / 2, fill: col.body, class: 'actor-body' });
+      const c = UIUtils.svgEl('circle', { r: size.w / 2, fill: col.body, class: 'actor-body' });
       g.appendChild(c);
     } else {
       // Vehicle: rectangle with windshield highlight
-      const rect = _svgEl('rect', {
+      const rect = UIUtils.svgEl('rect', {
         x: -size.w / 2,
         y: -size.h / 2,
         width: size.w,
@@ -1388,7 +1389,7 @@
       });
       g.appendChild(rect);
       // Windshield (front-right highlight)
-      const ws = _svgEl('rect', {
+      const ws = UIUtils.svgEl('rect', {
         x: size.w / 2 - 1.4,
         y: -size.h / 2 + 0.2,
         width: 1.2,
@@ -1415,7 +1416,7 @@
 
     // The selected actor goes in the top layer, above its own path — the
     // vehicle you are working on is never buried under anything.
-    (sel && layerActorsTop ? layerActorsTop : layerActors).appendChild(g);
+    (sel && layers.actorsTop ? layers.actorsTop : layerActors).appendChild(g);
   }
 
   /* Static props. Shares the .actor-group class so selection, body dragging and
@@ -1450,20 +1451,20 @@
     // stays on the pivot — that is the exported position and the point the
     // prop rotates about, which is why the yaw arrow is left outside.
     const off = cat.planOffset(prop.prop);
-    const meshG = off.x || off.y ? _svgEl('g', { transform: `translate(${off.x},${off.y})` }) : g;
+    const meshG = off.x || off.y ? UIUtils.svgEl('g', { transform: `translate(${off.x},${off.y})` }) : g;
 
     // Invisible grab target: a real cone is ~4 px wide at default zoom, too
     // small to click or drag reliably. Same trick as the yaw-arrow handle.
     // Named, because the yaw handle is placed clear of exactly this circle.
     const grabR = Math.max(size * 0.6, 1.2);
-    meshG.appendChild(_svgEl('circle', { r: grabR, fill: 'transparent' }));
+    meshG.appendChild(UIUtils.svgEl('circle', { r: grabR, fill: 'transparent' }));
 
     // planRotate is cosmetic: for props whose yaw means "the way the face
     // points", the body sits ACROSS that direction (a barrier blocks the lane
     // rather than lying along it). Applied to the body alone, so the selection
     // ring, hit target and yaw arrow all still track the true facing.
     const spin = cat.planRotate(prop.prop);
-    const body = _svgEl('g', {
+    const body = UIUtils.svgEl('g', {
       class: 'actor-body',
       ...(spin ? { transform: `rotate(${spin})` } : {}),
     });
@@ -1538,8 +1539,8 @@
   function _uprightLabel(text, yaw, gap, cls) {
     const deg = yaw || 0;
     const below = Math.sin((deg * Math.PI) / 180) < -0.2;
-    const wrap = _svgEl('g', { transform: `rotate(${-deg})`, style: 'pointer-events:none' });
-    const label = _svgEl('text', {
+    const wrap = UIUtils.svgEl('g', { transform: `rotate(${-deg})`, style: 'pointer-events:none' });
+    const label = UIUtils.svgEl('text', {
       x: 0,
       y: below ? gap : -gap,
       'text-anchor': 'middle',
@@ -1632,11 +1633,11 @@
       `M${x},${y - ay} L${x},${y} L${x - ax},${y}`,
       `M${-x + ax},${y} L${-x},${y} L${-x},${y - ay}`,
     ];
-    const g = _svgEl('g', { class: 'actor-select-marks' });
+    const g = UIUtils.svgEl('g', { class: 'actor-select-marks' });
     // Every casing first, then every line — one path drawn twice, so no corner
     // can end up with its casing painted over the neighbouring corner's line.
     for (const cls of ['sel-mark-casing', 'sel-mark-line']) {
-      for (const d of corners) g.appendChild(_svgEl('path', { d, class: cls }));
+      for (const d of corners) g.appendChild(UIUtils.svgEl('path', { d, class: cls }));
     }
     return g;
   }
@@ -1667,7 +1668,7 @@
     ag.setAttribute('data-actor-id', actor.id);
 
     // Shaft — decoration, never a hit target (see .yaw-shaft in style.css)
-    const line = _svgEl('line', {
+    const line = UIUtils.svgEl('line', {
       x1: bodyRadius,
       y1: 0,
       x2: arrowLen,
@@ -1681,7 +1682,7 @@
 
     // Arrowhead: the direction cue, and part of the handle. Scaled with the
     // handle so it stays clear of the body on a 0.6 m child too.
-    const head = _svgEl('polygon', {
+    const head = UIUtils.svgEl('polygon', {
       points: `${arrowLen},0 ${arrowLen - headLen},${-headLen / 2} ${arrowLen - headLen},${headLen / 2}`,
       fill: color,
       class: 'arrow-head yaw-handle',
@@ -1691,7 +1692,7 @@
 
     // Boundary of the grab zone, shown on hover only.
     ag.appendChild(
-      _svgEl('circle', {
+      UIUtils.svgEl('circle', {
         cx: arrowLen,
         cy: 0,
         r: handleR,
@@ -1704,7 +1705,7 @@
 
     // Invisible hit area, last so it sits on top of the drawn parts.
     ag.appendChild(
-      _svgEl('circle', {
+      UIUtils.svgEl('circle', {
         cx: arrowLen,
         cy: 0,
         r: handleR,
@@ -1847,7 +1848,7 @@
 
   function _appendWaypointHit(wg, wp) {
     wg.appendChild(
-      _svgEl('circle', {
+      UIUtils.svgEl('circle', {
         cx: wp.x,
         cy: wp.y,
         r: WAYPOINT_HIT_R,
@@ -1868,7 +1869,7 @@
    * own. `size` is the waypoint's DRAWN extent, which is what the marks frame.
    */
   function _appendWaypointMark(wg, wp, size) {
-    const holder = _svgEl('g', { transform: `translate(${wp.x},${wp.y})` });
+    const holder = UIUtils.svgEl('g', { transform: `translate(${wp.x},${wp.y})` });
     holder.appendChild(_buildSelectionMarks(size, size));
     wg.appendChild(holder);
   }
@@ -1891,7 +1892,7 @@
 
     // Dashed path line
     const pts = traj.map((wp) => `${wp.x},${wp.y}`).join(' ');
-    const line = _svgEl('polyline', {
+    const line = UIUtils.svgEl('polyline', {
       points: pts,
       class: 'traj-line',
       stroke: col.body,
@@ -1905,7 +1906,7 @@
       if (isSel) _appendWaypointHit(wg, wp);
 
       const dotR = isSel ? 1.2 : 0.8;
-      const c = _svgEl('circle', {
+      const c = UIUtils.svgEl('circle', {
         cx: wp.x,
         cy: wp.y,
         r: dotR,
@@ -1920,7 +1921,7 @@
 
       // Velocity label — only for selected actor, every 3rd wp or first/last
       if (isSel && (i === 0 || i === traj.length - 1 || i % 3 === 0)) {
-        const vel = _svgEl('text', {
+        const vel = UIUtils.svgEl('text', {
           x: wp.x + 1.8,
           y: wp.y - 1.2,
           'font-size': '1.8',
@@ -1933,7 +1934,7 @@
 
       // Number label inside circle — only for selected actor
       if (isSel) {
-        const num = _svgEl('text', {
+        const num = UIUtils.svgEl('text', {
           x: wp.x,
           y: wp.y + 0.5,
           'text-anchor': 'middle',
@@ -1977,13 +1978,13 @@
      */
     const driven = _laneFollowingRoute(item);
     const linePoints = driven || route;
-    const line = _svgEl('polyline', {
+    const line = UIUtils.svgEl('polyline', {
       points: linePoints.map((wp) => `${wp.x},${wp.y}`).join(' '),
       class: `route-line${driven ? '' : ' route-line-approx'}`,
       stroke: col.body,
       'stroke-width': isSel ? PATH_WIDTH_SEL : PATH_WIDTH,
     });
-    const title = _svgEl('title', {});
+    const title = UIUtils.svgEl('title', {});
     title.textContent = driven ? 'Route entlang der Fahrspuren' : 'Luftlinie — keine Fahrspurdaten für diese Route';
     line.appendChild(title);
     g.appendChild(line);
@@ -2000,7 +2001,7 @@
       // and the strategy must not cost that.
       const shortest = wp.strategy === 'shortest';
       const half = isSel ? 1.1 : 0.75;
-      const dot = _svgEl('rect', {
+      const dot = UIUtils.svgEl('rect', {
         x: wp.x - half,
         y: wp.y - half,
         width: half * 2,
@@ -2024,7 +2025,7 @@
       if (isSel && _isMarkedWaypoint(item, i)) _appendWaypointMark(wg, wp, isSel ? 2.2 : 1.5);
 
       if (isSel) {
-        const num = _svgEl('text', {
+        const num = UIUtils.svgEl('text', {
           x: wp.x,
           y: wp.y + 0.5,
           'text-anchor': 'middle',
@@ -2041,7 +2042,7 @@
     });
 
     if (isSel) {
-      const speed = _svgEl('text', {
+      const speed = UIUtils.svgEl('text', {
         x: route[0].x + 2,
         y: route[0].y - 2,
         'font-size': '1.8',
@@ -2053,14 +2054,6 @@
     }
 
     _pathLayerFor(actor).appendChild(g);
-  }
-
-  // ── SVG helper ───────────────────────────────────────────────────────────────
-
-  function _svgEl(tag, attrs) {
-    const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
-    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
-    return el;
   }
 
   // ── Mouse interaction ────────────────────────────────────────────────────────
@@ -2085,9 +2078,9 @@
       )
         return;
 
-      _dragging = true;
+      drag.panning = true;
       _dragStart = { x: e.clientX, y: e.clientY };
-      _panStart = { ..._pan };
+      _panStart = { ...view.pan };
       _panMoved = false;
       svg.style.cursor = 'grabbing';
       e.preventDefault();
@@ -2096,28 +2089,28 @@
   );
 
   window.addEventListener('mousemove', (e) => {
-    if (_triggerPointDrag) {
+    if (drag.triggerPoint) {
       _updateTriggerPointDrag(e);
       return;
     }
-    if (_triggerRadiusDrag) {
+    if (drag.triggerRadius) {
       _updateTriggerRadiusDrag(e);
       return;
     }
-    if (!_dragging) return;
+    if (!drag.panning) return;
     const dx = e.clientX - _dragStart.x;
     const dy = e.clientY - _dragStart.y;
     if (!_panMoved && Math.hypot(dx, dy) <= _PAN_CLICK_THRESHOLD) return;
     _panMoved = true;
-    _pan.x = _panStart.x + dx;
-    _pan.y = _panStart.y + dy;
+    view.pan.x = _panStart.x + dx;
+    view.pan.y = _panStart.y + dy;
     _applyTransform();
   });
 
   window.addEventListener('mouseup', () => {
-    if (_triggerPointDrag) {
-      const { actorId, eventId, moved } = _triggerPointDrag;
-      _triggerPointDrag = null;
+    if (drag.triggerPoint) {
+      const { actorId, eventId, moved } = drag.triggerPoint;
+      drag.triggerPoint = null;
       if (moved) {
         ObjectsManager.moveTriggerPoint(actorId, eventId, moved.x, moved.y);
         // The marker is re-rendered on every mousemove, so by mouseup the
@@ -2131,14 +2124,14 @@
       }
       return;
     }
-    if (_triggerRadiusDrag) {
-      _triggerRadiusDrag = null;
+    if (drag.triggerRadius) {
+      drag.triggerRadius = null;
       _suppressNextClick = true;
       return;
     }
-    if (_dragging) {
+    if (drag.panning) {
       if (_panMoved) _suppressNextClick = true;
-      _dragging = false;
+      drag.panning = false;
       _panMoved = false;
       svg.style.cursor = '';
     }
@@ -2170,9 +2163,9 @@
       // wheeling at either limit stops scaling but keeps translating the map,
       // which walks it off screen just as effectively as no clamp at all.
       const world = svgToWorld(e);
-      _zoom = _clampZoom(_zoom * factor);
-      _pan.x = cursor.x - world.x * _zoom;
-      _pan.y = cursor.y - world.y * _zoom;
+      view.zoom = _clampZoom(view.zoom * factor);
+      view.pan.x = cursor.x - world.x * view.zoom;
+      view.pan.y = cursor.y - world.y * view.zoom;
 
       _applyTransform();
     },
@@ -2325,13 +2318,13 @@
       {
         id: 'toggle-crosswalks',
         get layer() {
-          return layerCrosswalks;
+          return layers.crosswalks;
         },
       },
       {
         id: 'toggle-trafficlights',
         get layer() {
-          return layerTrafficLights;
+          return layers.trafficLights;
         },
       },
       { id: 'toggle-spawns', layer: layerSpawns },
@@ -2339,26 +2332,26 @@
       {
         id: 'toggle-roaddir',
         get layer() {
-          return layerRoadDir;
+          return layers.roadDir;
         },
       },
       { id: 'toggle-props', layer: layerProps },
       {
         id: 'toggle-buildings',
         get layer() {
-          return layerBuildings;
+          return layers.buildings;
         },
       },
       {
         id: 'toggle-signs',
         get layer() {
-          return layerSigns;
+          return layers.signs;
         },
       },
       {
         id: 'toggle-speeds',
         get layer() {
-          return layerSpeeds;
+          return layers.speeds;
         },
       },
     ];
@@ -2380,7 +2373,6 @@
 
   // ── Ruler (measure distance) ────────────────────────────────────────────────
 
-  const _rulerActive = false;
   let _rulerStart = null; // {x, y} world coords
   let _rulerEnd = null;
   let _rulerGroup = null; // SVG group for ruler graphics
@@ -2388,7 +2380,7 @@
 
   function _ensureRulerLayer() {
     if (!_rulerGroup) {
-      _rulerGroup = _svgEl('g', { id: 'layer-ruler' });
+      _rulerGroup = UIUtils.svgEl('g', { id: 'layer-ruler' });
       worldGroup.appendChild(_rulerGroup);
     }
   }
@@ -2400,11 +2392,11 @@
     const angle = (Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI;
     const color = pinned ? '#ffcc00' : '#ffee55';
 
-    const g = _svgEl('g', { class: 'ruler-measurement' });
+    const g = UIUtils.svgEl('g', { class: 'ruler-measurement' });
 
     // Main line
     g.appendChild(
-      _svgEl('line', {
+      UIUtils.svgEl('line', {
         x1,
         y1,
         x2,
@@ -2422,7 +2414,7 @@
       [x2, y2],
     ]) {
       g.appendChild(
-        _svgEl('circle', {
+        UIUtils.svgEl('circle', {
           cx: px,
           cy: py,
           r: '1.2',
@@ -2432,7 +2424,7 @@
         }),
       );
       g.appendChild(
-        _svgEl('circle', {
+        UIUtils.svgEl('circle', {
           cx: px,
           cy: py,
           r: '0.4',
@@ -2447,7 +2439,7 @@
     const bgW = textLen * labelFontSize * 0.65;
     const bgH = labelFontSize * 1.6;
     g.appendChild(
-      _svgEl('rect', {
+      UIUtils.svgEl('rect', {
         x: mx - bgW / 2,
         y: my - bgH / 2 - labelFontSize * 0.3,
         width: bgW,
@@ -2460,7 +2452,7 @@
     );
 
     // Distance label text
-    const label = _svgEl('text', {
+    const label = UIUtils.svgEl('text', {
       x: mx,
       y: my + labelFontSize * 0.3,
       'text-anchor': 'middle',
@@ -2474,7 +2466,7 @@
 
     // Remove button for pinned rulers
     if (pinned) {
-      const delBtn = _svgEl('circle', {
+      const delBtn = UIUtils.svgEl('circle', {
         cx: x2,
         cy: y2 - 2.5,
         r: '1.5',
@@ -2485,7 +2477,7 @@
         class: 'ruler-delete',
       });
       g.appendChild(delBtn);
-      const delX = _svgEl('text', {
+      const delX = UIUtils.svgEl('text', {
         x: x2,
         y: y2 - 2.0,
         'text-anchor': 'middle',
@@ -2571,7 +2563,7 @@
   ); // capture phase so it fires before the objects.js click handler
 
   svg.addEventListener('mousemove', (e) => {
-    if (AppState.activeTool !== 'ruler' || !_rulerStart || _dragging) return;
+    if (AppState.activeTool !== 'ruler' || !_rulerStart || drag.panning) return;
     const world = svgToWorld(e);
     _rulerEnd = { x: world.x, y: world.y };
     _redrawRuler();
@@ -2604,11 +2596,8 @@
     centreOn,
     glowWaypoint,
     showPath,
-    actorColor(type) {
-      return ACTOR_COLORS[type] || ACTOR_COLORS.car;
-    },
     get zoom() {
-      return _zoom;
+      return view.zoom;
     },
     get svg() {
       return svg;
