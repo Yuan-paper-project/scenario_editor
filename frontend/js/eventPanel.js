@@ -4,7 +4,7 @@
  * option (see EVENT_TRIGGERS) since a distance from hero to itself is always
  * 0, but is otherwise editable exactly like an NPC.
  */
-(function () {
+(() => {
   'use strict';
 
   const eventSection = document.getElementById('event-section');

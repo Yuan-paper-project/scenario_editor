@@ -5,7 +5,7 @@
  * The controls used to be a full-width bar under the map. The ids (w-time,
  * w-<key>, wv-<key>) are unchanged; dropdown.js does the open/close.
  */
-(function () {
+(() => {
   'use strict';
 
   const timeSelect = document.getElementById('w-time');

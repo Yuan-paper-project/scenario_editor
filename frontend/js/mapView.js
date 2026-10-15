@@ -10,7 +10,7 @@
  * Mouse → world coords:
  *   Use worldGroup.getScreenCTM().inverse() via SVGPoint.matrixTransform().
  */
-(function () {
+(() => {
   'use strict';
 
   const svg = document.getElementById('map-svg');
@@ -2380,7 +2380,7 @@
 
   // ── Ruler (measure distance) ────────────────────────────────────────────────
 
-  let _rulerActive = false;
+  const _rulerActive = false;
   let _rulerStart = null; // {x, y} world coords
   let _rulerEnd = null;
   let _rulerGroup = null; // SVG group for ruler graphics

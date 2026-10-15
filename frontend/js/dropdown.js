@@ -5,7 +5,7 @@
    close on outside click, close on Esc. Owning it here keeps the menus
    from drifting apart and means a new one is three lines.
    ══════════════════════════════════════════════════════════════════ */
-(function () {
+(() => {
   'use strict';
 
   /**

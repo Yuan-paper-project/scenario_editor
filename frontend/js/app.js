@@ -3,7 +3,7 @@
  * All modules read from and write to AppState.
  * Changes emit a 'change' event so dependent modules can re-render.
  */
-(function () {
+(() => {
   'use strict';
 
   let _nextId = 1;

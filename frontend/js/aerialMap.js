@@ -24,7 +24,7 @@
    mapView.js loads after this file and calls AerialMap.load(town) from
    renderMap and AerialMap.update() from _applyTransform.
    ══════════════════════════════════════════════════════════════════ */
-(function () {
+(() => {
   'use strict';
 
   const SVG_NS = 'http://www.w3.org/2000/svg';

@@ -1,7 +1,7 @@
 /**
  * api.js — Thin HTTP client over the FastAPI backend.
  */
-(function () {
+(() => {
   'use strict';
 
   const Api = {

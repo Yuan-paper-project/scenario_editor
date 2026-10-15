@@ -28,7 +28,7 @@
  * Settings live on AppState.bgTraffic ({enabled, count, seed, clearance, radius}),
  * saved with the scenario like weather/time and kept out of undo.
  */
-(function () {
+(() => {
   'use strict';
 
   const DEBOUNCE_MS = 900;

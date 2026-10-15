@@ -11,7 +11,7 @@
  *   - Drag yaw arrow head → rotate actor
  *   - In path drawing mode → click on map to add waypoint
  */
-(function () {
+(() => {
   'use strict';
 
   const svg = MapView.svg;
@@ -589,7 +589,7 @@
       const dx = world.x - _dragState.actorPos.x;
       const dy = world.y - _dragState.actorPos.y;
       // atan2 gives angle in radians; convert to degrees; SVG Y is flipped so Y is already correct
-      let yaw = Math.round((Math.atan2(dy, dx) * 180) / Math.PI);
+      const yaw = Math.round((Math.atan2(dy, dx) * 180) / Math.PI);
       AppState.updateById(_dragState.actorId, { yaw });
     }
   });

@@ -15,7 +15,7 @@
  * distance trigger, so a crossing pedestrian with a start speed is across the
  * road before the ego is anywhere near it.
  */
-(function () {
+(() => {
   'use strict';
 
   // Acceleration/deceleration magnitude (m/s²) shared by every template that

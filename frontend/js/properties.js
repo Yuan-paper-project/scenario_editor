@@ -9,7 +9,7 @@
  * (path drawing, action/trigger cards) is eventPanel.js's job, called
  * uniformly via EventPanel.render(actor).
  */
-(function () {
+(() => {
   'use strict';
 
   // Elements

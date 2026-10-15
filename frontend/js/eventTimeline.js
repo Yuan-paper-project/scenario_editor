@@ -18,7 +18,7 @@
  *
  * Global: EventTimeline — { refresh(), toggle(open?), get open, get data }.
  */
-(function () {
+(() => {
   'use strict';
 
   const DEBOUNCE_MS = 400;

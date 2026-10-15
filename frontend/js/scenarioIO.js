@@ -1,7 +1,7 @@
 /**
  * scenarioIO.js — Save scenario as JSON, load from JSON, export as .xosc.
  */
-(function () {
+(() => {
   'use strict';
 
   const btnSave = document.getElementById('btn-save');

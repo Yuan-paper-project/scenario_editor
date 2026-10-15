@@ -1,7 +1,7 @@
 /**
  * trafficSignals.js — Selection and event state helpers for map traffic lights.
  */
-(function () {
+(() => {
   'use strict';
 
   function mapSignalById(id) {

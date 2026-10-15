@@ -14,7 +14,7 @@
  * reconstruction, not topology extraction. See probe_carla_lane_graph.py's
  * docstring for the full mapping.
  */
-(function () {
+(() => {
   'use strict';
 
   // ── Graph indexing (built once per loaded lane graph object) ────────────────

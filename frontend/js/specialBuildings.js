@@ -15,7 +15,7 @@
    To change what is shown, edit the CSV — the backend reads it per request,
    so a browser reload is enough; no server restart.
    ══════════════════════════════════════════════════════════════════ */
-(function () {
+(() => {
   'use strict';
 
   const SpecialBuildings = {

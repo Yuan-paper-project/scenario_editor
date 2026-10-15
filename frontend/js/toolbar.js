@@ -2,7 +2,7 @@
  * toolbar.js — Tool palette buttons and map selector.
  * Sets AppState.activeTool when a tool is clicked.
  */
-(function () {
+(() => {
   'use strict';
 
   const mapSelect = document.getElementById('map-select');

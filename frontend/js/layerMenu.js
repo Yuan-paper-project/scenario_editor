@@ -7,7 +7,7 @@
    touches an SVG layer — it only makes sure a programmatic tick fires the
    'change' event that wiring listens for.
    ══════════════════════════════════════════════════════════════════ */
-(function () {
+(() => {
   'use strict';
 
   const wrap = document.getElementById('layer-toggles');

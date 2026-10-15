@@ -2,7 +2,7 @@
  * mapImport.js — CARLA .xodr Karten-Import.
  * Unterstützt: Datei-Button in der Kopfleiste und Drag-and-drop auf die Karte.
  */
-(function () {
+(() => {
   'use strict';
 
   const fileInput = document.getElementById('btn-import-map-input');

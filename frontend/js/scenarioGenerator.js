@@ -32,7 +32,7 @@
  * Needs AppState.laneGraph, which every town has (a probed one or the
  * from-.xodr build in backend/lane_graph_builder.py).
  */
-(function () {
+(() => {
   'use strict';
 
   // ── Physical constants the timing is solved against ──────────────────────────
@@ -286,7 +286,7 @@
   /** The random `drawn` value, unless the user pinned `key`. The draw is made
    * either way, so pinning one parameter does not shift every later draw. */
   function _p(key, drawn) {
-    return _overrides && Object.prototype.hasOwnProperty.call(_overrides, key) ? _overrides[key] : drawn;
+    return _overrides && Object.hasOwn(_overrides, key) ? _overrides[key] : drawn;
   }
   const FOCUS_RADIUS_M = 40;
   const FOCUS_LANE_REACH_M = [6, 12]; // driving lanes this close to the click; a wider retry from a kerb
@@ -1342,7 +1342,7 @@
       // walking or the stripe direction; the road direction is whichever of
       // the two axes is closer to the exit road's, signed like it.
       const roadYaw = _corridorAt(c, Math.max(d, sg.endD + 3)).yaw;
-      let yaw = [cw.heading, cw.heading + 90, cw.heading + 180, cw.heading + 270].reduce((b, y) =>
+      const yaw = [cw.heading, cw.heading + 90, cw.heading + 180, cw.heading + 270].reduce((b, y) =>
         Math.abs(_wrapDeg(y - roadYaw)) < Math.abs(_wrapDeg(b - roadYaw)) ? y : b,
       );
       if (Math.abs(_wrapDeg(yaw - roadYaw)) > 30) return null;
@@ -2463,7 +2463,7 @@
     if (!raw || !typeKey || !PARAMS[typeKey]) return null;
     const out = {};
     for (const spec of [EGO_SPEED, ...PARAMS[typeKey]]) {
-      if (!Object.prototype.hasOwnProperty.call(raw, spec.key)) continue;
+      if (!Object.hasOwn(raw, spec.key)) continue;
       const v = raw[spec.key];
       if (spec.kind === 'num') {
         const n = Number(v);
@@ -3676,7 +3676,7 @@
   }
 
   function _recipeMismatch(r, spec) {
-    if (!Object.prototype.hasOwnProperty.call(r.overrides || {}, spec.key)) return false;
+    if (!Object.hasOwn(r.overrides || {}, spec.key)) return false;
     const want = r.overrides[spec.key],
       got = _recipeValue(r, spec);
     if (spec.kind === 'num') return got === '' || Math.abs(Number(got) - want) > spec.step / 2 + 1e-6;
@@ -3692,12 +3692,11 @@
     // vehicle of a standing pedestrian) is left out unless it is pinned: a
     // select with no matching option would show its first one as if it had
     // been chosen.
-    const used = (spec) =>
-      spec === EGO_SPEED || r.params?.[spec.key] !== undefined || Object.prototype.hasOwnProperty.call(pins, spec.key);
+    const used = (spec) => spec === EGO_SPEED || r.params?.[spec.key] !== undefined || Object.hasOwn(pins, spec.key);
     const rows = [EGO_SPEED, ...PARAMS[r.type]]
       .filter(used)
       .map((spec) => {
-        const pinned = Object.prototype.hasOwnProperty.call(pins, spec.key);
+        const pinned = Object.hasOwn(pins, spec.key);
         const unpin = pinned
           ? `<button type="button" class="gen-recipe-unpin" data-recipe-unpin="${spec.key}" title="Festgelegten Wert lösen — wieder zufällig aus dem Seed">×</button>`
           : '<span></span>';

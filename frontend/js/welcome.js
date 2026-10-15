@@ -2,7 +2,7 @@
  * welcome.js — Willkommens-Modal und Hilfe-Schaltfläche.
  * Zeigt das Einführungs-Modal beim ersten Laden und auf Anfrage.
  */
-(function () {
+(() => {
   'use strict';
 
   const overlay = document.getElementById('welcome-overlay');

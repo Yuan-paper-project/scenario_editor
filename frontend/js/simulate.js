@@ -37,7 +37,7 @@
  * planned route length) need the same road graph `assign_route` does, and
  * the action may not see real use; simulating it is deferred until it does.
  */
-(function () {
+(() => {
   'use strict';
 
   const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -52,19 +52,19 @@
   let _speed = 1.0; // playback speed multiplier
 
   let _egoId = null;
-  let _originals = new Map(); // actorId → {x, y, z, yaw}, to restore on stop
-  let _simActors = new Map(); // actorId → sim actor record (see _makeSimActor)
-  let _tickSpeeds = new Map(); // actorId → speed, snapshotted once per tick
-  let _tickPoses = new Map(); // actorId → {x, y, z}, snapshotted with it
+  const _originals = new Map(); // actorId → {x, y, z, yaw}, to restore on stop
+  const _simActors = new Map(); // actorId → sim actor record (see _makeSimActor)
+  const _tickSpeeds = new Map(); // actorId → speed, snapshotted once per tick
+  const _tickPoses = new Map(); // actorId → {x, y, z}, snapshotted with it
   // `actorId::eventId` → completedAt, snapshotted once per tick. Same reasoning
   // as _tickSpeeds: a cross-actor after_event that read another actor's live
   // fired-map would resolve differently depending on which actor _stepActor
   // reached first, and CARLA's own blackboard reads are not ordered either.
   // A SAME-actor reference still reads sim.fired live — that is one behaviour
   // tree ticking its own events and has no ordering ambiguity to remove.
-  let _tickCompleted = new Map();
+  const _tickCompleted = new Map();
   // `actorId::eventId` → firedAt, the event_started counterpart of the above.
-  let _tickStarted = new Map();
+  const _tickStarted = new Map();
   let _layerSimBadges = null; // our own SVG layer, appended into #world
 
   // ── Tunables mirroring the real controllers ─────────────────────────────────

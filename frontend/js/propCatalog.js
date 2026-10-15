@@ -32,7 +32,7 @@
  *   none        — no rule; yaw 0, still rotatable by hand
  * Independent of `oriented`: a 'none' prop can still have a yaw handle.
  */
-(function () {
+(() => {
   'use strict';
 
   const GROUPS = [
