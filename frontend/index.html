@@ -774,7 +774,17 @@
 <script src="/static/js/properties.js"></script>
 <script src="/static/js/weather.js"></script>
 <script src="/static/js/scenarioIO.js"></script>
-<script src="/static/js/laneGraph.js"></script>  <!-- before simulate.js: its only consumer -->
+<script src="/static/js/laneGraph.js"></script>  <!-- before the preview: its only consumer -->
+<!-- The in-editor preview. Each sim file reads what the ones above it define
+     (SimCore), so their order is fixed; simulate.js goes last. -->
+<script src="/static/js/simCore.js"></script>
+<script src="/static/js/simEvents.js"></script>
+<script src="/static/js/simLanes.js"></script>
+<script src="/static/js/simRoute.js"></script>
+<script src="/static/js/simActions.js"></script>
+<script src="/static/js/simMotion.js"></script>
+<script src="/static/js/simTimeline.js"></script>
+<script src="/static/js/simPlayback.js"></script>
 <script src="/static/js/simulate.js"></script>
 <!-- The scenario generator, after simulate.js (routeGeometry, runHeadless), objects.js,
      propCatalog.js, dropdown.js. Each generator file reads what the ones above it
