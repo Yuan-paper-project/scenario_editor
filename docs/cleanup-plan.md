@@ -12,8 +12,8 @@ Line counts are `wc -l`. The sibling repo `../llm-scenario-gen` is out of scope 
 |---|---|
 | `frontend/js/app.js` | done (`cea3aab` undo hooks, `d2da5eb` split, docs after) |
 | `frontend/js/propCatalog.js` | done (`86158c7` probe fix, `d8c9f6c` `UIUtils.svgEl`, `3bffdcf` split, docs after) |
-| `frontend/js/scenarioGenerator.js` | next |
-| `frontend/js/mapView.js` | open |
+| `frontend/js/scenarioGenerator.js` | done (`f263fc8` shared `_ctx`, `ebf9889` split, docs after) |
+| `frontend/js/mapView.js` | next |
 | `frontend/js/simulate.js` | open |
 | `frontend/js/eventPanel.js` | open |
 | `frontend/css/style.css` | open (split per panel) |
@@ -28,7 +28,7 @@ How each split was done, and the checks to repeat: propose → approve → (1) a
 
 | File | Lines before (now) | Natural seams (from its own `// ──` section headers) |
 |---|---|---|
-| `frontend/js/scenarioGenerator.js` | 3286 (3955) | RNG + lane-network index + corridor (≈1–490) · the twelve scenario-type builders (492–1158) · green wave (1159–1300) · PARAMS/TYPES tables (1903–2045) · conflict check / `assess` (2045–2268) · `build`/`generate` (2268–2518) · parameter sweep (2518–2640) · batch + coverage (2640–2844) · batch dialog (2844–3012) · recipe panel (3012–3182) · header menu (3182–) |
+| ~~`frontend/js/scenarioGenerator.js`~~ | 3286 (3955) | **Done** — split into thirteen files over one internal global, `GeneratorCore`: `generatorCore.js` (358), `generatorCorridor.js` (358), five `generatorTypes*.js` (298–413), `generatorParams.js` (241), `generatorAssess.js` (267), `generatorBuild.js` (324), `generatorBatch.js` (407), `generatorBatchDialog.js` (216), `scenarioGenerator.js` (374, recipe panel, menu, public API). The two just over 400 are so only by their formatted import lists. Imports are detected by script and checked with Biome's `noUndeclaredVariables` (off in `biome.json`, which does not know the shared names): run `biome lint --only=correctness/noUndeclaredVariables frontend/js/generator*.js frontend/js/scenarioGenerator.js` after editing them — only `GeneratorCore` may be reported. |
 | `frontend/js/mapView.js` | 2406 (2681) | pan/zoom + ruler · road rendering + overpass + road furniture (196–950) · actor rendering (951–1398) · undo/redo key handling (1399–1578) · path/waypoint rendering (1579–1888) · mouse, view controls, layer toggles (1897–2162) · distance ruler tool (2163–2327) |
 | `frontend/js/simulate.js` | 2217 (2380) | controls DOM (103–172) · event normalisation mirror + trigger evaluation (238–426) · lane geometry + lane-graph routing (427–877) · per-actor stepping (878–1403) · reacting ego (1404–1540) · lifecycle/timeline/scrubbing (1541–) |
 | `frontend/js/eventPanel.js` | 1942 (2007) | card rendering (168–492) · action controls (493–780) · summaries/labels (781–886) · after_event references (887–975) · trigger controls (976–1199) · DOM helpers/toggles (1200–1455) · path controls (1456–1711) · event state/delete sweep (1712–) |
@@ -60,7 +60,7 @@ How each split was done, and the checks to repeat: propose → approve → (1) a
 
 Python: `scenario_io._normalize_structured_event` (259), `lane_graph_builder.build_lane_graph_from_xodr` (240), `bg_traffic.generate` (195), `map_renderer._process_root_to_render_data` (165), `scenario_io.validate_scenario_params` (124), `scenario_io._normalize_after_event_chains` (117).
 
-JS: `propSideShapes.sideShapes` (336, data), `eventPanel._appendEventTriggerControls` (219), `mapView.renderMap` (221), `propPlanShapes.planShapes` (166, data), `scenarioGenerator._oncomingDrift` (159), `ScenarioRules.eventProblem` (156), `scenarioGenerator._vruCrossingAt` (134), `eventPanel._renderEventList` (133), `eventPanel._appendSpeedActionControls` (116), `eventPanel._renderPathList` (116), `scenarioIO.buildScenarioParams` (116), `simulate._applyEventAction` (114), `scenarioGenerator._junctionConflict` (104), `propCatalog.renderPanel` (103), `scenarioGenerator._obstacle` (100), `simulate.runHeadless` (97), `eventPanel._renderEventActionGrid` (96), `mapView._renderRoute` (95).
+JS: `propSideShapes.sideShapes` (336, data), `eventPanel._appendEventTriggerControls` (219), `mapView.renderMap` (221), `propPlanShapes.planShapes` (166, data), `generatorTypesObstacle._oncomingDrift` (159), `ScenarioRules.eventProblem` (156), `generatorTypesVru._vruCrossingAt` (134), `eventPanel._renderEventList` (133), `eventPanel._appendSpeedActionControls` (116), `eventPanel._renderPathList` (116), `scenarioIO.buildScenarioParams` (116), `simulate._applyEventAction` (114), `generatorTypesJunction._junctionConflict` (104), `propCatalog.renderPanel` (103), `generatorTypesObstacle._obstacle` (100), `simulate.runHeadless` (97), `eventPanel._renderEventActionGrid` (96), `mapView._renderRoute` (95).
 
 ## 2. Duplicated logic
 
@@ -68,16 +68,16 @@ Ordered by how safe the merge is. Check each pair's bodies before merging; sever
 
 | What | Where | Notes |
 |---|---|---|
-| Point-in-polygon (ray casting) | `mapView.js:441`, `templates.js:822`, inline in `scenarioGenerator.js:~180` | Byte-identical. Move to `UIUtils` (or a small `geom.js`). |
-| `_wrapDeg` | `objects.js:163`, `scenarioGenerator.js:95` | Identical. |
+| Point-in-polygon (ray casting) | `mapView.js:441`, `templates.js:822`, `generatorCore.js` `_inPoly` | Byte-identical. Move to `UIUtils` (or a small `geom.js`). |
+| `_wrapDeg` | `objects.js:163`, `generatorCore.js` `_wrapDeg` | Identical. |
 | `_dist3` | `simulate.js:175`, `laneGraph.js:92` | Differ: `?? 0` vs `\|\| 0` (same result for numbers, differs for `NaN`). |
-| HTML escaping | `dialogs.js` `_escHtml`, `properties.js:69` `_esc` (DOM-based), `eventTimeline.js:46` `_esc`, `templates.js:832` `_attr`, `scenarioGenerator.js:3019` `_escHtml` (regex) | **Not equivalent**: the DOM-based two do not escape `"`, so they are unsafe in attributes. A shared helper must be the regex version. |
+| HTML escaping | `dialogs.js` `_escHtml`, `properties.js:69` `_esc` (DOM-based), `eventTimeline.js:46` `_esc`, `templates.js:832` `_attr`, `scenarioGenerator.js` `_escHtml` (regex) | **Not equivalent**: the DOM-based two do not escape `"`, so they are unsafe in attributes. A shared helper must be the regex version. |
 | `_el(tag, attrs)` SVG element builder | `aerialMap.js:238`, `mapView.js` `_svgEl`; the prop files' copy is now `UIUtils.svgEl` | Same behaviour (`for…in` vs `Object.entries` over plain objects). Point the other two at `UIUtils.svgEl`. |
 | Walker type sets | `mapView.js:1004` `WALKER_TYPES`, `scenarioRules.js` `WALKER_ACTION_TYPES`, `properties.js:172` `_isWalker` (includes `cyclist`!), `templates.js:818`, `objects.js:90` `ROAD_FACING_TYPES` (includes `cyclist`, `bicycle`) | Some differences are deliberate (CLAUDE.md, "Actor types"). Within the frontend, the pedestrian/child pair could come from one constant in `ScenarioRules`. The backend/emitter copies are cross-repo; leave them. |
-| Weather presets | `weather.js:19` `PRESETS`, `scenarioGenerator.js:2645` `WEATHER_PRESETS` | CLAUDE.md says "keep the two in step". Make one the source. |
+| Weather presets | `weather.js:19` `PRESETS`, `generatorBatch.js` `WEATHER_PRESETS` | CLAUDE.md says "keep the two in step". Make one the source. |
 | Road `<link>` parsing | `map_renderer._get_road_link` (393), `lane_graph_builder._parse_road_links` (133) | **Not identical**: the builder casts `elementId` to `int` and defaults `contactPoint` to `'start'`. It was copied on purpose to keep the module independent. Could share a parser and keep the differences in the callers. |
 | Road-mark parsing | `map_renderer._get_road_marks` / `_get_center_marks`, `lane_graph_builder._parse_lane_change_marks` / `_parse_mark_records` | Same XML read twice for different fields. Investigate before merging. |
-| Nearest-point-on-lane | `objects._nearestLaneProjection` (251), `scenarioGenerator._projectOnLane` (203), `simulate._nearestPointOnDirLine` (437) | Different inputs and outputs; probably a shared segment-projection kernel underneath. Investigate. |
+| Nearest-point-on-lane | `objects._nearestLaneProjection` (251), `generatorCore._projectOnLane`, `simulate._nearestPointOnDirLine` (437) | Different inputs and outputs; probably a shared segment-projection kernel underneath. Investigate. |
 | Test boilerplate | 4 e2e suites (`test_props`, `test_prop_yaw`, `test_elevation`, `test_undo`) don't import `_harness` and launch the browser themselves; `seed`/`place`/`load_map`/`speed_event` helpers are redefined in several suites | Move the shared ones into `_harness.py`. |
 
 Event/actor rules mirrored across frontend, backend and emitter (`ScenarioRules` ↔ `scenario_io.py` ↔ `event_builders.py`) are deliberate cross-layer copies, documented in CLAUDE.md. They are out of scope for this cleanup.
@@ -115,7 +115,7 @@ Also check:
 ## 5. Notes for the later phases
 
 - **Phase 2 is done.** `bash tests/run_tests.sh --quick` (~40 s: normalization, render geometry, `test_smoke_e2e.py`, events, undo) is the check to run after each split. `test_smoke_e2e.py` was shown to fail by name when a script throws at load.
-- **Lint baseline at the end of phase 2** (`bash tools/lint.sh`): ruff format would reformat 55 of 62 Python files; ruff check 124 findings (mostly fixable: import order, unused imports, `raise … from`); pylint 19 modules over 400 lines, 14 functions over 60 statements, 8 over 15 branches; Biome would reformat all 24 frontend files and reports 44 errors / 101 warnings (most of them formatting, gone after phase 3). Of the Biome findings worth a look in phase 6: the duplicate `actorColor` key (above), 15 `useIterableCallbackReturn`, 2 `noAssignInExpressions` (both deliberate, in the seeded RNG), a sparse array literal in `scenarioGenerator.js:3070`. The duplicate `stroke-width` in `style.css:1029` is a deliberate fallback.
+- **Lint baseline at the end of phase 2** (`bash tools/lint.sh`): ruff format would reformat 55 of 62 Python files; ruff check 124 findings (mostly fixable: import order, unused imports, `raise … from`); pylint 19 modules over 400 lines, 14 functions over 60 statements, 8 over 15 branches; Biome would reformat all 24 frontend files and reports 44 errors / 101 warnings (most of them formatting, gone after phase 3). Of the Biome findings worth a look in phase 6: the duplicate `actorColor` key (above), 15 `useIterableCallbackReturn`, 2 `noAssignInExpressions` (both deliberate, in the seeded RNG), a sparse array literal in `scenarioGenerator.js` (`recipeHtml`). The duplicate `stroke-width` in `style.css:1029` is a deliberate fallback.
 - **Run the e2e suites against a server without `--reload`** while editing files. See CLAUDE.md: `--reload` restarting under a running suite has wedged the server before.
 - **Phase 3 is done** in four commits: `ruff format`, ruff's safe fixes, Biome format, Biome's safe fixes. Each was checked with `--quick` plus a fingerprint script that hashes every town's render JSON and lane graph and the export payload and `.xosc` of the example file and 12 generated scenarios (17 distinct files): byte-identical after every step. Formatting `style.css` was checked by screenshotting four editor states with the old and new stylesheet: pixel-identical.
 - **Formatting made files longer.** Biome puts one property per line, so `style.css` went from 1677 to 3820 lines and the prop table in `propCatalog.js` from one line per prop to five. Neither can be configured away. Splitting will absorb most of it: CSS per panel, and the `PROPS` table into a data file of its own.

@@ -918,7 +918,7 @@
 
   /** (x, y) in the actor's frame: +u along its heading, +v to its right (the
    * map is y-down, so heading +x has its right at +y — the same convention
-   * scenarioGenerator.js's _lateral uses). */
+   * generatorCorridor.js's _lateral uses). */
   function _toFrame(a, x, y) {
     const r = ((a.yaw || 0) * Math.PI) / 180,
       dx = x - a.x,

@@ -177,7 +177,7 @@
       </div>
     </div>
     <!-- Random scenario generator. The type rows are filled in by
-         scenarioGenerator.js from its own TYPES table, so a new type needs no
+         scenarioGenerator.js from the TYPES table (generatorParams.js), so a new type needs no
          markup; the seed field reproduces a scenario exactly. -->
     <div class="menu" data-dropdown>
       <button type="button" id="gen-menu-btn" class="btn btn-secondary menu-btn"
@@ -682,7 +682,7 @@
   </div>
 </div>
 
-<!-- Batch generator (scenarioGenerator.js). Opened from Generieren → "Mehrere
+<!-- Batch generator (generatorBatchDialog.js). Opened from Generieren → "Mehrere
      generieren …"; builds N scenarios off-screen and downloads one zip. -->
 <div id="gen-batch-overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="gen-batch-title">
   <form id="gen-batch-form" class="gen-batch-card">

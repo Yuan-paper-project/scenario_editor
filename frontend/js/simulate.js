@@ -2208,7 +2208,7 @@
    *   { egoId, dt, times: [t…], tracks: {actorId: [{x, y, speed}…]},
    *     fired: {actorId: {eventId: firedAt}}, ended: 'teardown'|'time'|'stopped' }
    * or null while a live preview is running (the two share this module's
-   * tick state). scenarioGenerator.js measures conflicts off the tracks.
+   * tick state). generatorAssess.js measures conflicts off the tracks.
    */
   function runHeadless({
     dt = 0.05,

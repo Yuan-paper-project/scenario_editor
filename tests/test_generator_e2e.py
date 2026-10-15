@@ -1,4 +1,4 @@
-"""Random scenario generator suite (frontend/js/scenarioGenerator.js).
+"""Random scenario generator suite (frontend/js/generator*.js, scenarioGenerator.js).
 
 A generated scenario is only worth having if the other actor actually meets
 the ego. So beyond "it exports", this suite runs every generated scenario
@@ -201,7 +201,7 @@ def check_scenario(town, t, s, r, page):
             if trig == "after_event":
                 C(f"{tag}: {n['type']} {ev['id']} chains within its own actor", not ev["trigger"].get("actor_ref"))
 
-    # Forced greens for the ego (scenarioGenerator._greenWave): only on real
+    # Forced greens for the ego (generatorTypesJunction.js _greenWave): only on real
     # CARLA lights, only green, several per light, all with a real radius.
     for sig in r["signals"]:
         C(f"{tag}: forced light {sig['id']} is a map light CARLA has", sig["known"] and sig["inCarla"])
@@ -224,7 +224,7 @@ def check_scenario(town, t, s, r, page):
         C(f"{tag}: lead ignores obstacles (it would brake for the stopped car)", not lead["obeyObstacles"])
 
     # A conflict car must not defuse its own conflict: it runs reds and does
-    # not brake for the ego in front of it (scenarioGenerator._ignoresTraffic).
+    # not brake for the ego in front of it (generatorCorridor.js _ignoresTraffic).
     if t in ("junction_conflict", "oncoming_drift"):
         for n in r["npcs"]:
             if n["hasEvents"]:

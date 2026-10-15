@@ -300,7 +300,7 @@
   // hook as Simulate.routeForTesting; no UI code calls it.
   //
   // `buildParams` / `validate` / `downloadBlob` are the same functions for the
-  // scenario generator's batch export (scenarioGenerator.js), which builds one
+  // scenario generator's batch export (generatorBatch.js), which builds one
   // payload per generated scenario without going through the button.
   window.ScenarioIO = {
     buildParamsForTesting: buildScenarioParams,

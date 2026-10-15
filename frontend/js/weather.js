@@ -13,7 +13,7 @@
   const presetsBox = document.getElementById('env-presets');
   const WEATHER_KEYS = ['fog', 'rainy', 'cloudy', 'sunny', 'wet_road', 'snowy', 'dust_storm'];
 
-  // The same six the generator's batch varies over (scenarioGenerator.js
+  // The same six the generator's batch varies over (generatorBatch.js
   // WEATHER_PRESETS) — rain without a wet road is not a condition anyone drives
   // in. A preset sets ALL keys, the rest to 0, so "matches a preset" is exact.
   const PRESETS = [

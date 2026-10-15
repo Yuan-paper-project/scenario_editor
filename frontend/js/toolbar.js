@@ -128,7 +128,7 @@
   mapSelect.addEventListener('change', async () => {
     const town = mapSelect.value;
     // The batch generator swaps maps under a scenario it saved and puts back
-    // itself (scenarioGenerator.js _loadMap) — that switch must not park it.
+    // itself (generatorBatch.js _loadMap) — that switch must not park it.
     const keepScenario = mapSelect.dataset.keepScenario === '1';
     delete mapSelect.dataset.keepScenario;
     if (!town) {
