@@ -25,7 +25,7 @@ Keep the existing tone: terse, factual, and biased toward what is surprising rat
 
 These apply to all new and touched code. A cleanup is under way on the `cleanup` branch; `docs/cleanup-plan.md` lists what is still out of line with them.
 
-- **Files stay under ~400 lines.** A source file that grows past that gets split along a real seam (one concern per module), not cut at an arbitrary line. Docs (`CLAUDE.md`, `help.html`, `tests/README.md`) and data files are exempt.
+- **Files stay under ~400 lines — a soft target, not a hard limit.** A source file that grows well past it gets split along a real seam (one concern per module), not cut at an arbitrary line. A cohesive module somewhat over 400 is better than a split that needs new indirection to work; say why when keeping one. Docs (`CLAUDE.md`, `help.html`, `tests/README.md`) and data files are exempt.
 - **Comments explain *why*, never *what*.** If a comment restates the line under it, delete it. Keep the non-obvious reason, the trap, the CARLA/ScenarioRunner behaviour the code is mirroring.
 - **No change-log comments.** No "used to", "was changed to", "fixed on 2026-…", "previously" in code. History belongs in git and, if it is a trap worth knowing, in this file.
 - **Docstrings are short**: one line saying what the function is for, plus a second paragraph only when a caller needs a non-obvious contract (units, coordinate frame, what `None` means).
