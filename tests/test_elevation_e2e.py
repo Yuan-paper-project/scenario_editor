@@ -10,7 +10,6 @@ Town01 is genuinely flat (every elevation coefficient is 0), so it isolates the
 clearance constants; Town03 exercises the actual interpolation.
 """
 
-import math
 import os
 import sys
 
@@ -194,16 +193,16 @@ with sync_playwright() as p:
     # an NPC's — drive the same "Follow trajectory" button an NPC's would use.
     # Ego is still selected from the manual-Z edit above.
     page.click('#event-action-grid .event-action-button:has-text("Trajektorie folgen")')
-    page.evaluate(f"""() => {{
+    page.evaluate("""() => {
         const svg = document.getElementById('map-svg');
         const m = document.getElementById('world').getScreenCTM();
-        for (const [wx, wy] of [[120, 193.2], [60, 193.3]]) {{
+        for (const [wx, wy] of [[120, 193.2], [60, 193.3]]) {
             const pt = svg.createSVGPoint(); pt.x = wx; pt.y = wy;
             const s = pt.matrixTransform(m);
             svg.dispatchEvent(new MouseEvent('click',
-                {{clientX: s.x, clientY: s.y, bubbles: true}}));
-        }}
-    }}""")
+                {clientX: s.x, clientY: s.y, bubbles: true}));
+        }
+    }""")
     traj = page.evaluate("AppState.ego.events[0].action.trajectory")
     check("trajectory points were added", len(traj) == 3, str(len(traj)))
     check("every trajectory point carries a z", all(isinstance(w.get("z"), (int, float)) for w in traj), str(traj))

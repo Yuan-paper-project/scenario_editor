@@ -20,9 +20,8 @@ field per parameter. Pinned here:
 import json
 import sys
 
-from playwright.sync_api import sync_playwright
-
 import _harness as H
+from playwright.sync_api import sync_playwright
 
 C = H.Checks()
 TOWN = "Town05"

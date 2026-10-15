@@ -23,9 +23,8 @@ import json
 import sys
 import zipfile
 
-from playwright.sync_api import sync_playwright
-
 import _harness as H
+from playwright.sync_api import sync_playwright
 
 C = H.Checks()
 

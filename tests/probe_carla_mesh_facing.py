@@ -13,6 +13,7 @@ world direction the mesh faces when h=0:
 """
 
 import time
+
 import carla
 
 OUT = "/tmp/claude-1000/-home-dellpro2-Antonio-scenario-editor/e9ba6330-9053-45a3-9efd-f90893249b93/scratchpad"

@@ -15,9 +15,8 @@ through a lane at the click and keeps a candidate only when its conflict
 
 import sys
 
-from playwright.sync_api import sync_playwright
-
 import _harness as H
+from playwright.sync_api import sync_playwright
 
 C = H.Checks()
 TOWN = "Town03"

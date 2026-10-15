@@ -26,9 +26,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 
+import _harness as H  # noqa: E402
 import carla_analysis as A  # noqa: E402
 import carla_cases as C  # noqa: E402
-import _harness as H  # noqa: E402
 
 RUN_SH = "/home/dellpro2/Antonio/run.sh"
 SR_ROOT = "/home/dellpro2/Antonio/scenario_runner"
@@ -420,7 +420,7 @@ def judge(case, result):
     try:
         rows.extend(C.EXPECTATIONS[case["name"]](run, timeline))
     except Exception as exc:  # a broken predicate must not look like a pass
-        rows.append((f"expectations evaluated", False, f"{type(exc).__name__}: {exc}"))
+        rows.append(("expectations evaluated", False, f"{type(exc).__name__}: {exc}"))
 
     # A perfect speed trace that ended in a crash is not a pass. Many benchmark
     # descriptions ARE collisions; the cases below reproduce the conflict that

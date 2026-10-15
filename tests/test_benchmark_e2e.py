@@ -16,12 +16,10 @@ obstacle variant, curve site, drift cause), and the new generator types through
 the Generieren menu.
 """
 
-import json
 import sys
 
-from playwright.sync_api import sync_playwright
-
 import _harness as H
+from playwright.sync_api import sync_playwright
 
 C = H.Checks()
 

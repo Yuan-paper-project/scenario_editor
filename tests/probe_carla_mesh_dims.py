@@ -9,7 +9,7 @@ bounding_box.extent is in the mesh's LOCAL frame:
   panel props     -> the THIN horizontal axis is the facing normal
 """
 
-import math, sys, time
+import time
 
 PROPS = [
     # id                              kind      expectation

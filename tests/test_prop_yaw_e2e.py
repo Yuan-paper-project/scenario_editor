@@ -7,8 +7,9 @@ Exactly 180 apart, which is the property the whole feature depends on.
 """
 
 import os
+import sys
+
 from playwright.sync_api import sync_playwright
-import math, sys
 
 BASE = os.environ.get("EDITOR_URL", "http://localhost:9090")
 

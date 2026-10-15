@@ -22,7 +22,6 @@ Not part of run_tests.sh.
 
 import argparse
 import json
-import math
 import os
 import sys
 

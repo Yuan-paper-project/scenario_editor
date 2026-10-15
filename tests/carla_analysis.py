@@ -22,7 +22,6 @@ import csv
 import math
 import re
 
-
 # ── ScenarioRunner's OSC lifecycle log ───────────────────────────────────────
 
 _OSC_LINE = re.compile(r"^\[OSC\]\[(?P<t>[0-9.]+)s\]\[(?P<kind>[A-Z]+)\]\[(?P<name>[^\]]+)\]\s+(?P<state>\S+)")

@@ -35,7 +35,7 @@ import sys
 from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from _harness import Checks, open_editor, assert_on_screen  # noqa: E402
+from _harness import Checks, assert_on_screen, open_editor  # noqa: E402
 
 # Town03 road 7, the same pose test_route_fidelity_e2e.py uses.
 EGO = {

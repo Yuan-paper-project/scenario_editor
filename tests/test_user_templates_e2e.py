@@ -21,9 +21,8 @@ import os
 import sys
 import tempfile
 
-from playwright.sync_api import sync_playwright
-
 import _harness as H
+from playwright.sync_api import sync_playwright
 
 C = H.Checks()
 EGO = (300.631, -2.025)

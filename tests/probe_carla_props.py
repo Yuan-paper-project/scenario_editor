@@ -23,7 +23,11 @@ spawns is destroyed before the next one.
     /home/dellpro2/Antonio/carla-venv/bin/python tests/probe_carla_props.py --all      # every static.prop.* in the build
 """
 
-import math, os, re, sys, time
+import math
+import os
+import re
+import sys
+import time
 
 import carla
 

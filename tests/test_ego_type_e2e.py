@@ -17,7 +17,7 @@ from playwright.sync_api import sync_playwright
 
 sys.path.insert(0, os.path.dirname(__file__))
 import _harness as H  # noqa: E402
-from _harness import Checks, open_editor, zoom_at, assert_on_screen  # noqa: E402
+from _harness import Checks, assert_on_screen, open_editor, zoom_at  # noqa: E402
 
 check = Checks()
 

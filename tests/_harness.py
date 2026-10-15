@@ -12,7 +12,6 @@ them to import from here would be risk without payoff.
 
 import math
 import os
-import sys
 import xml.etree.ElementTree as ET
 
 BASE = os.environ.get("EDITOR_URL", "http://localhost:9090")

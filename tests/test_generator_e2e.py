@@ -30,13 +30,12 @@ The other properties pinned here:
 import base64
 import csv
 import io
-import zipfile
 import json
 import sys
-
-from playwright.sync_api import sync_playwright
+import zipfile
 
 import _harness as H
+from playwright.sync_api import sync_playwright
 
 TYPES = [
     "lead_brake",

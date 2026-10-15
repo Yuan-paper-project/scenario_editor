@@ -14,13 +14,14 @@ pin the intended behaviour down so a change to it has to be deliberate.
 """
 
 import os
-import sys
 import shutil
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from _harness import Checks  # noqa: E402
+
 from backend.scenario_io import validate_scenario_params  # noqa: E402
 
 check = Checks()

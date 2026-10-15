@@ -10,9 +10,8 @@ own card: add, switch state, change distance, delete, undo, export.
 
 import sys
 
-from playwright.sync_api import sync_playwright
-
 import _harness as H
+from playwright.sync_api import sync_playwright
 
 check = H.Checks()
 

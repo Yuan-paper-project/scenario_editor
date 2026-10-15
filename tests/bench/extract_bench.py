@@ -31,7 +31,11 @@ and the §4 total when weighting a coverage rollup, since that is the taxonomy's
 own statement of what the benchmark is made of.
 """
 
-import csv, html, json, re, sys
+import csv
+import html
+import json
+import re
+import sys
 from collections import Counter
 
 CARD = re.compile(r'<article class="gcard".*?</article>', re.S)

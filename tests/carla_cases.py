@@ -1363,6 +1363,7 @@ CASES_BY_NAME = {c["name"]: c for c in CASES}
 # roughly the right boundaries, not that CARLA is a stopwatch.
 
 import math  # noqa: E402
+
 import carla_analysis as A  # noqa: E402
 
 

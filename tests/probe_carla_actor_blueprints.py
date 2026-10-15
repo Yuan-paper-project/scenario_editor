@@ -21,9 +21,8 @@ Nothing is spawned, so it is safe against a live session.
 import os
 import sys
 
-import yaml
-
 import carla  # noqa: E402
+import yaml
 
 _CATALOG = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),

@@ -1,9 +1,10 @@
 """Static props regression suite: catalogue, placement, editing, save/load, export."""
 
 import os
-from playwright.sync_api import sync_playwright
 import re as _re
 import sys
+
+from playwright.sync_api import sync_playwright
 
 BASE = os.environ.get("EDITOR_URL", "http://localhost:9090")
 fails, checks = [], []

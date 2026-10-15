@@ -43,10 +43,9 @@ import sys
 import time
 from pathlib import Path
 
+import carla
 import numpy as np
 from PIL import Image
-
-import carla
 
 CARLA_HOST = os.environ.get("CARLA_HOST", "localhost")
 CARLA_PORT = int(os.environ.get("CARLA_PORT", "2050"))

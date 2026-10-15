@@ -30,7 +30,6 @@ import argparse
 import base64
 import io
 import json
-import math
 import os
 import subprocess
 import sys
@@ -132,8 +131,8 @@ def main():
 
 
 def _generate(args):
-    from playwright.sync_api import sync_playwright
     import _harness as H
+    from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
         browser, page, errors = H.open_editor(p, "Town03")

@@ -12,9 +12,8 @@ backend (scenario_io.py, via a real /api/export), the emitted .xosc
 import sys
 import xml.etree.ElementTree as ET
 
-from playwright.sync_api import sync_playwright
-
 import _harness as H
+from playwright.sync_api import sync_playwright
 
 check = H.Checks()
 

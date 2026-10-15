@@ -24,16 +24,16 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
+from backend import bg_traffic
+from backend.lane_graph_builder import build_lane_graph_from_xodr
 from backend.map_renderer import (
+    THUMBNAIL_PATHS,
+    XODR_PATHS,
     build_map_render_data,
     build_map_render_data_from_path,
     list_available_towns,
-    XODR_PATHS,
-    THUMBNAIL_PATHS,
 )
-from backend.lane_graph_builder import build_lane_graph_from_xodr
-from backend.scenario_io import export_batch_zip, export_to_xosc, export_route_xml
-from backend import bg_traffic
+from backend.scenario_io import export_batch_zip, export_route_xml, export_to_xosc
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 
@@ -428,7 +428,8 @@ def export_bundle(body: dict):
 @app.get("/api/presentation.pptx")
 async def download_presentation():
     """Generate and serve the PowerPoint presentation."""
-    import subprocess, sys
+    import subprocess
+    import sys
 
     script = _HERE.parent / "generate_pptx.py"
     out = _HERE.parent / "OpenSCENARIO_Editor_Praesentation.pptx"

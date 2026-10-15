@@ -57,7 +57,6 @@ import json
 import math
 import os
 import random
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -249,7 +248,7 @@ class _KeepOut:
                 for gy in range(int(math.floor(min(ay, by) / c)) - 1, int(math.floor(max(ay, by) / c)) + 2):
                     self.grid.setdefault((gx, gy), []).append(i)
 
-    def untimed(self) -> "_KeepOut":
+    def untimed(self) -> _KeepOut:
         """The same keep-out without its timed segments (what is in the way
         for the whole run, whatever the timing)."""
         k = _KeepOut([], self.clearance, self.window)
@@ -307,8 +306,8 @@ def _sumolib_net(net: Path):
 
 
 def _write_trip_weights(
-    net: Path, off, zone: "_KeepOut | None", keepout: "_KeepOut", prefix: Path
-) -> tuple[list[str], "_Blocked"]:
+    net: Path, off, zone: _KeepOut | None, keepout: _KeepOut, prefix: Path
+) -> tuple[list[str], _Blocked]:
     """Where trips may start, end and stop, and what routes must not use.
 
     * randomTrips weight files (<prefix>.src/.dst/.via.xml): 1 for a drivable
@@ -371,7 +370,7 @@ class _Blocked:
         return not (self.edges.intersection(edges) or any((a, b) in self.turns for a, b in zip(edges, edges[1:])))
 
 
-def _drop_routes_using(routes: Path, blocked: "_Blocked") -> int:
+def _drop_routes_using(routes: Path, blocked: _Blocked) -> int:
     """Remove every vehicle whose route uses a blocked edge or turn (see
     _write_trip_weights). Such a car would be dropped for the keep-out after
     a whole simulation, and its removal would cost another. Returns how many
@@ -741,7 +740,7 @@ def _resolve_types(routes: Path, seed: int) -> dict[str, str]:
     return _vehicle_types(routes)
 
 
-_CACHE: "OrderedDict[str, dict]" = OrderedDict()
+_CACHE: OrderedDict[str, dict] = OrderedDict()
 _CACHE_MAX = 12
 _cache_lock = threading.Lock()
 

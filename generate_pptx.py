@@ -4,14 +4,9 @@ Ausführen:  python generate_pptx.py
 """
 
 from pptx import Presentation
-from pptx.util import Inches, Pt, Emu
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 from pptx.util import Inches, Pt
-from pptx.oxml.ns import qn
-from pptx.dml.color import RGBColor
-import copy
-from lxml import etree
 
 # ── Palette ───────────────────────────────────────────────────────────────────
 
