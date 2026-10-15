@@ -21,6 +21,17 @@ Keep the existing tone: terse, factual, and biased toward what is surprising rat
 
 **Every new feature or fix is verified before it is called done** — run the suites it touches against a live editor (see Verification; use a server without `--reload` when editing tests, below), and add or extend a Playwright suite that exercises the new behaviour through the real UI (real clicks and drags, not only `page.evaluate`). Check that a new check can actually fail: a check that passes with the feature switched off proves nothing (the junction tie-break check in `test_vehicle_snap_e2e.py` first passed trivially for exactly that reason). Report what was run and the pass counts; a failure is reported with its output, never glossed.
 
+## Code conventions
+
+These apply to all new and touched code. A cleanup is under way on the `cleanup` branch; `docs/cleanup-plan.md` lists what is still out of line with them.
+
+- **Files stay under ~400 lines.** A source file that grows past that gets split along a real seam (one concern per module), not cut at an arbitrary line. Docs (`CLAUDE.md`, `help.html`, `tests/README.md`) and data files are exempt.
+- **Comments explain *why*, never *what*.** If a comment restates the line under it, delete it. Keep the non-obvious reason, the trap, the CARLA/ScenarioRunner behaviour the code is mirroring.
+- **No change-log comments.** No "used to", "was changed to", "fixed on 2026-…", "previously" in code. History belongs in git and, if it is a trap worth knowing, in this file.
+- **Docstrings are short**: one line saying what the function is for, plus a second paragraph only when a caller needs a non-obvious contract (units, coordinate frame, what `None` means).
+- **A refactor moves code or changes it, never both in one step.** While splitting or reorganising: move code only and update imports/script order. Logic changes are a separate commit. Never mix formatting, moving and behaviour changes in one commit.
+- **A frontend split must keep the IIFE-plus-one-global pattern** and be added to `index.html`'s script block in a working order (see Frontend conventions). A function moved between files that other modules call stays reachable through the same global.
+
 ## Running
 
 ```bash
