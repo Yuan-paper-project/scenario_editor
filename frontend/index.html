@@ -755,6 +755,18 @@
 <script src="/static/js/propPlanShapes.js"></script>
 <script src="/static/js/propCatalog.js"></script>  <!-- after the three above (reads them at load); before toolbar.js: renders the prop tiles -->
 <script src="/static/js/aerialMap.js"></script>  <!-- before mapView.js: renderMap/_applyTransform call into it -->
+<!-- mapCore.js … mapView.js share MapCore; their order is fixed (a wrong one throws at load).
+     mapInput.js before mapRuler.js: its capture-phase click swallow must run before the ruler's. -->
+<script src="/static/js/mapCore.js"></script>
+<script src="/static/js/mapRoadDetail.js"></script>
+<script src="/static/js/mapMarkers.js"></script>
+<script src="/static/js/mapFeatures.js"></script>
+<script src="/static/js/mapTriggerPoints.js"></script>
+<script src="/static/js/mapPaths.js"></script>
+<script src="/static/js/mapRender.js"></script>
+<script src="/static/js/mapInput.js"></script>
+<script src="/static/js/mapRuler.js"></script>
+<script src="/static/js/mapKeys.js"></script>
 <script src="/static/js/mapView.js"></script>
 <script src="/static/js/toolbar.js"></script>
 <script src="/static/js/dropdown.js"></script>  <!-- before layerMenu.js: auto-binds [data-dropdown] menus -->

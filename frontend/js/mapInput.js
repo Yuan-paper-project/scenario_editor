@@ -1,0 +1,190 @@
+/**
+ * mapInput.js — undo/redo buttons, mouse pan, wheel zoom and the zoom buttons.
+ *
+ * Part of the map view (MapView); see mapView.js.
+ */
+(() => {
+  'use strict';
+
+  const {
+    svg,
+    ZOOM_STEP,
+    ZOOM_STEP_COARSE,
+    _clampZoom,
+    view,
+    drag,
+    _applyTransform,
+    svgToWorld,
+    _clientToSvg,
+    zoomBy,
+    zoomToSelection,
+    _updateTriggerPointDrag,
+    _updateTriggerRadiusDrag,
+  } = MapCore.shared;
+
+  let _dragStart = null;
+  let _panStart = null;
+  let _panMoved = false;
+  let _suppressNextClick = false;
+  const _PAN_CLICK_THRESHOLD = 4;
+
+  // ── Undo / redo ──────────────────────────────────────────────────────────────
+  // One path for Strg+Z / Strg+Y and the header's two buttons.
+  const _btnUndo = document.getElementById('btn-undo');
+  const _btnRedo = document.getElementById('btn-redo');
+
+  function _stepHistory(wantRedo) {
+    const step = wantRedo ? UndoStack.redo() : UndoStack.undo();
+    _refreshHistoryButtons();
+    if (!step) {
+      Toast.info(wantRedo ? 'Nichts zu wiederholen' : 'Nichts r\u00fcckg\u00e4ngig zu machen');
+      return;
+    }
+    const verb = wantRedo ? 'Wiederholt' : 'R\u00fcckg\u00e4ngig';
+    Toast.info(step.label ? `${verb}: ${step.label}` : verb);
+  }
+
+  // UndoStack has no event of its own, but every push happens inside one of
+  // AppState's mutators, which emit — so re-read the depths after any of them,
+  // once per frame however many fire.
+  let _historyRaf = 0;
+  function _refreshHistoryButtons() {
+    if (_historyRaf) return;
+    _historyRaf = requestAnimationFrame(() => {
+      _historyRaf = 0;
+      if (_btnUndo) _btnUndo.disabled = !UndoStack.length;
+      if (_btnRedo) _btnRedo.disabled = !UndoStack.redoLength;
+    });
+  }
+  _btnUndo?.addEventListener('click', () => _stepHistory(false));
+  _btnRedo?.addEventListener('click', () => _stepHistory(true));
+  ['change', 'actorUpdated', 'actorRemoved', 'stateLoaded', 'selectionChanged', 'trafficSignalUpdated'].forEach((ev) =>
+    AppState.on(ev, _refreshHistoryButtons),
+  );
+
+  // ── Mouse interaction ────────────────────────────────────────────────────────
+
+  // Pan with left-drag on the background (not on actors)
+  svg.addEventListener(
+    'mousedown',
+    (e) => {
+      if (e.button !== 0) return;
+      // During a preview nothing on the map is draggable (objects.js stands
+      // down), so a grab on a marker pans like a grab anywhere else.
+      if (
+        !window.Simulate?.running &&
+        (e.target.closest('.actor-group') ||
+          e.target.closest('.yaw-arrow') ||
+          e.target.closest('.trigger-radius-control') ||
+          e.target.closest('.trigger-point-control') ||
+          // This handler is capture-phase on the same <svg> objects.js binds on
+          // the bubble phase, so it runs FIRST: without the waypoint here the pan
+          // is already under way by the time the drag handler sees the mousedown.
+          e.target.closest('.path-waypoint'))
+      )
+        return;
+
+      drag.panning = true;
+      _dragStart = { x: e.clientX, y: e.clientY };
+      _panStart = { ...view.pan };
+      _panMoved = false;
+      svg.style.cursor = 'grabbing';
+      e.preventDefault();
+    },
+    true,
+  );
+
+  window.addEventListener('mousemove', (e) => {
+    if (drag.triggerPoint) {
+      _updateTriggerPointDrag(e);
+      return;
+    }
+    if (drag.triggerRadius) {
+      _updateTriggerRadiusDrag(e);
+      return;
+    }
+    if (!drag.panning) return;
+    const dx = e.clientX - _dragStart.x;
+    const dy = e.clientY - _dragStart.y;
+    if (!_panMoved && Math.hypot(dx, dy) <= _PAN_CLICK_THRESHOLD) return;
+    _panMoved = true;
+    view.pan.x = _panStart.x + dx;
+    view.pan.y = _panStart.y + dy;
+    _applyTransform();
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (drag.triggerPoint) {
+      const { actorId, eventId, moved } = drag.triggerPoint;
+      drag.triggerPoint = null;
+      if (moved) {
+        ObjectsManager.moveTriggerPoint(actorId, eventId, moved.x, moved.y);
+        // The marker is re-rendered on every mousemove, so by mouseup the
+        // element the drag started on is detached and the browser may not
+        // dispatch a click at all — the flag has to expire on its own or it
+        // swallows an unrelated map click much later (a placement, a waypoint).
+        _suppressNextClick = true;
+        setTimeout(() => {
+          _suppressNextClick = false;
+        }, 50);
+      }
+      return;
+    }
+    if (drag.triggerRadius) {
+      drag.triggerRadius = null;
+      _suppressNextClick = true;
+      return;
+    }
+    if (drag.panning) {
+      if (_panMoved) _suppressNextClick = true;
+      drag.panning = false;
+      _panMoved = false;
+      svg.style.cursor = '';
+    }
+  });
+
+  svg.addEventListener(
+    'click',
+    (e) => {
+      if (!_suppressNextClick) return;
+      _suppressNextClick = false;
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    true,
+  );
+
+  // Zoom with mouse wheel
+  svg.addEventListener(
+    'wheel',
+    (e) => {
+      e.preventDefault();
+      const step = e.shiftKey ? ZOOM_STEP_COARSE : ZOOM_STEP;
+      const factor = e.deltaY < 0 ? step : 1 / step;
+      const cursor = _clientToSvg(e);
+      if (!cursor) return;
+
+      // Keep the world point under the cursor fixed while zooming. The pan has to
+      // be derived from the CLAMPED zoom and not the requested one — otherwise
+      // wheeling at either limit stops scaling but keeps translating the map,
+      // which walks it off screen just as effectively as no clamp at all.
+      const world = svgToWorld(e);
+      view.zoom = _clampZoom(view.zoom * factor);
+      view.pan.x = cursor.x - world.x * view.zoom;
+      view.pan.y = cursor.y - world.y * view.zoom;
+
+      _applyTransform();
+    },
+    { passive: false },
+  );
+
+  // ── Map view controls ──────────────────────────────────────────────────────
+  // Buttons zoom about the view centre; the wheel zooms about the cursor.
+  document.getElementById('btn-zoom-in')?.addEventListener('click', () => zoomBy(ZOOM_STEP_COARSE));
+  document.getElementById('btn-zoom-out')?.addEventListener('click', () => zoomBy(1 / ZOOM_STEP_COARSE));
+  document.getElementById('btn-zoom-fit')?.addEventListener('click', () => {
+    Toast.info(zoomToSelection() ? 'Auf Auswahl gezoomt' : 'Ansicht zur\u00fcckgesetzt');
+  });
+
+  MapCore.define({ _stepHistory });
+})();
