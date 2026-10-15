@@ -2,7 +2,7 @@
 an NPC waiting for an ego event, and the per-vehicle obey toggles.
 
 Covers every layer each feature crosses: the event card (eventPanel.js), the
-shared rules (ScenarioRules in app.js), the export payload (scenarioIO.js), the
+shared rules (ScenarioRules in scenarioRules.js), the export payload (scenarioIO.js), the
 backend (scenario_io.py, via a real /api/export), the emitted .xosc
 (event_builders.py / xml_builder.py) and the preview (simulate.js).
 

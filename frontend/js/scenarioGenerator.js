@@ -3426,7 +3426,7 @@
       if (saved.map && saved.map !== AppState.map) await _loadMap(saved.map);
       Object.assign(AppState, saved.state);
       UndoStack.resume();
-      // emit, not set(): no undo entry. NOT 'stateLoaded' — app.js clears the
+      // emit, not set(): no undo entry. NOT 'stateLoaded' — undo.js clears the
       // undo history on that. The weather sliders need no resync either: only
       // AppState.weather was swapped, never the DOM, and it is back as it was.
       AppState.emit('change', {});

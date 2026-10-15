@@ -104,7 +104,7 @@ def _entity_ref(
 
 # Actor types AssignRouteAction accepts — _ROUTE_ACTION_TYPES in
 # ../llm-scenario-gen/generator/event_builders.py, and ROUTE_ACTION_TYPES in
-# frontend/js/app.js; the three must stay in step. 'ego' is here because a saved
+# frontend/js/scenarioRules.js; the three must stay in step. 'ego' is here because a saved
 # scenario carries the literal type (the frontend exports it as 'car').
 #
 # The emitter runs the type through _TYPE_ALIASES first, so the aliases that
@@ -162,7 +162,7 @@ def _never_completes(action: dict) -> bool:
     """True for an action whose Event never reports completeState on its own:
     a held lane_offset (continuous) and a continuous relative set_speed. Both
     end only when superseded, so after_event may not name one. Mirrored by
-    ScenarioRules.neverCompletes (frontend/js/app.js)."""
+    ScenarioRules.neverCompletes (frontend/js/scenarioRules.js)."""
     kind = action.get("type")
     if kind == "lane_offset":
         return action.get("continuous") is not False
@@ -558,7 +558,7 @@ def _normalize_after_event_chains(actors: list[tuple[dict, str, str]]) -> None:
     # well formed. An NPC reacts to the ego through what the ego does
     # (distance_to_ego, distance_to_point, ego_speed). Runs after the route
     # rewrite: a reference to the ego's route is no longer a reference.
-    # Mirrored by ScenarioRules.mayWaitOnActor (frontend/js/app.js).
+    # Mirrored by ScenarioRules.mayWaitOnActor (frontend/js/scenarioRules.js).
     for ref, event in events_by_ref.items():
         if not is_ref(event) or ref[0] == "hero":
             continue
@@ -593,7 +593,7 @@ def _normalize_after_event_chains(actors: list[tuple[dict, str, str]]) -> None:
     # A cycle is not a smaller scenario, it is a dead one: every event on the
     # loop waits for a state change that can never arrive, with nothing in the
     # file or the run log to say why. The editor's own dropdown cannot build
-    # one (ScenarioRules.canWaitFor, frontend/js/app.js), so this catches a
+    # one (ScenarioRules.canWaitFor, frontend/js/scenarioRules.js), so this catches a
     # save file, a hand-written payload or an LLM one. Each event has exactly
     # one trigger, hence at most one outgoing edge — a plain walk finds the loop
     # without a full SCC pass. after_event and event_started edges are walked

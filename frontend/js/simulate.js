@@ -97,7 +97,7 @@
 
   // Which actor types AssignRouteAction accepts — mirrors _ROUTE_ACTION_TYPES in
   // ../llm-scenario-gen/generator/event_builders.py. Shared with eventPanel.js
-  // (which greys the action out) and the export gate via app.js.
+  // (which greys the action out) and the export gate via scenarioRules.js.
   const ROUTE_ACTION_TYPES = ScenarioRules.ROUTE_ACTION_TYPES;
 
   // ── Controls (created dynamically) ─────────────────────────────────────────
@@ -300,7 +300,7 @@
   ]);
 
   // The emitter's own "does this action produce XML" rule, shared with the
-  // panel's warning chips and the export gate (ScenarioRules, app.js).
+  // panel's warning chips and the export gate (ScenarioRules, scenarioRules.js).
   const _actionEmits = (action, actorType) => ScenarioRules.actionEmits(action, actorType);
 
   function _normalizeEventsForSim(actor) {
@@ -2047,7 +2047,7 @@
 
   /* Leertaste = Play/Pause, Esc = Stop.
    *
-   * Bubble phase, and no stopPropagation: app.js's confirm dialog and
+   * Bubble phase, and no stopPropagation: dialogs.js's confirm dialog and
    * dropdown.js's menus both handle Escape on the CAPTURE phase and stop it
    * there, so they preempt this for free. mapView.js is loaded first and runs
    * its own Escape branch before this one — harmless during a run, since

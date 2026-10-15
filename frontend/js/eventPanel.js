@@ -272,7 +272,7 @@
     if (eventCount) eventCount.textContent = String(events.length);
 
     // Events that will not survive the export, keyed by id. The rule lives in
-    // ScenarioRules (app.js) so the card, the export gate and the preview can
+    // ScenarioRules (scenarioRules.js) so the card, the export gate and the preview can
     // never disagree about what "incomplete" means.
     const problems = new Map(ScenarioRules.problemsOf(actor).map((entry) => [entry.ev.id, entry.problem]));
     if (eventWarn) {
@@ -951,7 +951,7 @@
 
   /** The trigger patch for "wait for `candidate` on `owner`".
    *  actor_ref is omitted for the actor's own event: absent means self
-   *  everywhere (app.js, scenario_io.py, event_builders.py), so a self-
+   *  everywhere (scenarioRules.js, scenario_io.py, event_builders.py), so a self-
    *  reference keeps saving exactly as it did before cross-actor refs. */
   function _afterEventTrigger(actor, ownerId, eventId, type = 'after_event') {
     const trigger = { type, event_id: eventId };

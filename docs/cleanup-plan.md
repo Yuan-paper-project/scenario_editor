@@ -6,6 +6,22 @@ Survey of the codebase as of branch `cleanup` (from `072fe3f`); the to-do list f
 
 Line counts are `wc -l`. The sibling repo `../llm-scenario-gen` is out of scope here.
 
+## Progress (phase 4: one file per session)
+
+| File | Status |
+|---|---|
+| `frontend/js/app.js` | done (`cea3aab` undo hooks, `d2da5eb` split, docs after) |
+| `frontend/js/propCatalog.js` | next: the `PROPS` data table into its own file, glyph shapes and the panel apart |
+| `frontend/js/scenarioGenerator.js` | open |
+| `frontend/js/mapView.js` | open |
+| `frontend/js/simulate.js` | open |
+| `frontend/js/eventPanel.js` | open |
+| `frontend/css/style.css` | open (split per panel) |
+| `frontend/js/objects.js`, `properties.js`, `templates.js` | open |
+| `backend/map_renderer.py`, `scenario_io.py`, `bg_traffic.py`, `lane_graph_builder.py` | open |
+
+How each split was done, and the checks to repeat: propose → approve → (1) any wiring change needed to make the move possible, alone, inside the old file; (2) the move itself, by script, asserting every original line lands in exactly one new file; (3) docs. After each: `bash tools/lint.sh` (no new findings), `bash tests/run_tests.sh --quick`, and the export/generator fingerprint must be byte-identical; a deliberately wrong load order must fail `test_smoke_e2e.py`. Test against a server without `--reload` (port 9091).
+
 ## 1. Files over 400 lines
 
 ### Frontend JS (the main problem: 9 of the 10 biggest source files)
@@ -16,7 +32,7 @@ Line counts are `wc -l`. The sibling repo `../llm-scenario-gen` is out of scope 
 | `frontend/js/mapView.js` | 2406 (2681) | pan/zoom + ruler · road rendering + overpass + road furniture (196–950) · actor rendering (951–1398) · undo/redo key handling (1399–1578) · path/waypoint rendering (1579–1888) · mouse, view controls, layer toggles (1897–2162) · distance ruler tool (2163–2327) |
 | `frontend/js/simulate.js` | 2217 (2380) | controls DOM (103–172) · event normalisation mirror + trigger evaluation (238–426) · lane geometry + lane-graph routing (427–877) · per-actor stepping (878–1403) · reacting ego (1404–1540) · lifecycle/timeline/scrubbing (1541–) |
 | `frontend/js/eventPanel.js` | 1942 (2007) | card rendering (168–492) · action controls (493–780) · summaries/labels (781–886) · after_event references (887–975) · trigger controls (976–1199) · DOM helpers/toggles (1200–1455) · path controls (1456–1711) · event state/delete sweep (1712–) |
-| `frontend/js/app.js` | 1649 (1767) | `AppState` (84–577) · Toast/Confirm (578–654) · per-town park/unpark (655–715) · `UndoStack` (716–1144) · `ScenarioRules` (1145–1542) · `UIUtils` (1543–) — five separate globals in one file; the easiest split in the repo |
+| ~~`frontend/js/app.js`~~ | 1649 (1767) | **Done** — split into `appState.js` (624), `dialogs.js` (99), `undo.js` (467), `scenarioRules.js` (419), `uiUtils.js` (189). `appState.js` kept over 400 on purpose: `AppState` is one object, and its only clean seam (the save-file code) would need the object assembled from two files and the private id counter exposed. |
 | `frontend/js/propCatalog.js` | 1225 (1856) | `PROPS` data table (56–473) · side-view shapes (474–821) · plan-view shapes (822–1008) · `PropCatalog` API + palette panel (1009–). Mostly data. |
 | `frontend/js/objects.js` | 1071 (1130) | placement + snapping/yaw rules (88–443) · drag (444–626) · path drawing mode (627–1040) |
 | `frontend/js/properties.js` | 964 (995) | actor panel · scene list (138–681) · input bindings / type pickers / delete · traffic-signal panel (486–681) |
@@ -55,9 +71,9 @@ Ordered by how safe the merge is. Check each pair's bodies before merging; sever
 | Point-in-polygon (ray casting) | `mapView.js:441`, `templates.js:822`, inline in `scenarioGenerator.js:~180` | Byte-identical. Move to `UIUtils` (or a small `geom.js`). |
 | `_wrapDeg` | `objects.js:163`, `scenarioGenerator.js:95` | Identical. |
 | `_dist3` | `simulate.js:175`, `laneGraph.js:92` | Differ: `?? 0` vs `\|\| 0` (same result for numbers, differs for `NaN`). |
-| HTML escaping | `app.js:602` `_escHtml`, `properties.js:69` `_esc` (DOM-based), `eventTimeline.js:46` `_esc`, `templates.js:832` `_attr`, `scenarioGenerator.js:3019` `_escHtml` (regex) | **Not equivalent**: the DOM-based two do not escape `"`, so they are unsafe in attributes. A shared helper must be the regex version. |
+| HTML escaping | `dialogs.js` `_escHtml`, `properties.js:69` `_esc` (DOM-based), `eventTimeline.js:46` `_esc`, `templates.js:832` `_attr`, `scenarioGenerator.js:3019` `_escHtml` (regex) | **Not equivalent**: the DOM-based two do not escape `"`, so they are unsafe in attributes. A shared helper must be the regex version. |
 | `_el(tag, attrs)` SVG element builder | `aerialMap.js:220`, `propCatalog.js:468`; `mapView.js` has its own "SVG helper" (1889) | Compare signatures first. |
-| Walker type sets | `mapView.js:1004` `WALKER_TYPES`, `app.js:1175` `WALKER_ACTION_TYPES`, `properties.js:172` `_isWalker` (includes `cyclist`!), `templates.js:818`, `objects.js:90` `ROAD_FACING_TYPES` (includes `cyclist`, `bicycle`) | Some differences are deliberate (CLAUDE.md, "Actor types"). Within the frontend, the pedestrian/child pair could come from one constant in `ScenarioRules`. The backend/emitter copies are cross-repo; leave them. |
+| Walker type sets | `mapView.js:1004` `WALKER_TYPES`, `scenarioRules.js` `WALKER_ACTION_TYPES`, `properties.js:172` `_isWalker` (includes `cyclist`!), `templates.js:818`, `objects.js:90` `ROAD_FACING_TYPES` (includes `cyclist`, `bicycle`) | Some differences are deliberate (CLAUDE.md, "Actor types"). Within the frontend, the pedestrian/child pair could come from one constant in `ScenarioRules`. The backend/emitter copies are cross-repo; leave them. |
 | Weather presets | `weather.js:19` `PRESETS`, `scenarioGenerator.js:2645` `WEATHER_PRESETS` | CLAUDE.md says "keep the two in step". Make one the source. |
 | Road `<link>` parsing | `map_renderer._get_road_link` (393), `lane_graph_builder._parse_road_links` (133) | **Not identical**: the builder casts `elementId` to `int` and defaults `contactPoint` to `'start'`. It was copied on purpose to keep the module independent. Could share a parser and keep the differences in the callers. |
 | Road-mark parsing | `map_renderer._get_road_marks` / `_get_center_marks`, `lane_graph_builder._parse_lane_change_marks` / `_parse_mark_records` | Same XML read twice for different fields. Investigate before merging. |
@@ -72,8 +88,8 @@ Found by searching each definition's name across the frontend, `index.html`, `he
 
 | Symbol | Where | Evidence |
 |---|---|---|
-| `AppState.nearestSpawn` | `app.js:275` | no caller anywhere (placement snaps to lanes now, not spawn points) |
-| `AppState.switchTypesFor` | `app.js:383` | no caller |
+| `AppState.nearestSpawn` | `appState.js` | no caller anywhere (placement snaps to lanes now, not spawn points) |
+| `AppState.switchTypesFor` | `appState.js` | no caller |
 | `_isXodrDrag` | `mapImport.js:84` | defined, never called |
 | `SpecialBuildings.forTown` | `specialBuildings.js:23` | no caller (`mapView` filters by town itself) |
 | `_rulerActive` | `mapView.js` ("Ruler" section) | declared, never read; Biome turned its `let` into `const false` because nothing assigns it either |
@@ -105,4 +121,4 @@ Also check:
 - **Formatting made files longer.** Biome puts one property per line, so `style.css` went from 1677 to 3820 lines and the prop table in `propCatalog.js` from one line per prop to five. Neither can be configured away. Splitting will absorb most of it: CSS per panel, and the `PROPS` table into a data file of its own.
 - **Lint after phase 3** (`bash tools/lint.sh`, formatting clean): ruff 32 findings needing judgement (17 `E702` semicolon statements, 11 `B904` `raise … from`, unused variables/loop variables, `E731` lambdas). Pylint: 20 modules over 400 lines, 14 functions over 60 statements, 8 over 15 branches, 3 too deeply nested, 4 duplicate-code blocks. Biome: 20 errors / 64 warnings — 59 `useOptionalChain` (an unsafe fix, so by hand), 15 `useIterableCallbackReturn`, 4 unused variables, plus the duplicate key, the sparse array and the two deliberate assignments in expressions noted above.
 - **`ruff format` will be a large diff** (hand-aligned lines; quotes are preserved by config). Commit it alone, as planned. `pylint max-module-lines=400` will fail on the five big backend files until phase 4.
-- **Phase 4 for JS** means: a new file per module, each an IIFE that attaches to the *existing* global (e.g. `ScenarioGenerator`), or a new global, plus an `index.html` script-order update. Suggested order, easiest and safest first: `app.js` (already five globals), `propCatalog.js` (data vs code), `scenarioGenerator.js` (UI vs generation), `mapView.js`, `simulate.js`, `eventPanel.js`.
+- **Phase 4 for JS** means: a new file per module, each an IIFE that attaches to the *existing* global (e.g. `ScenarioGenerator`), or a new global, plus an `index.html` script-order update. The order is the Progress table at the top.

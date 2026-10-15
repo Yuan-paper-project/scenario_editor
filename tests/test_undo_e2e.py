@@ -3,7 +3,7 @@
 The stack this replaced held one deleted actor per entry, so Strg+Z after any
 *other* kind of edit popped an unrelated delete and resurrected that actor while
 leaving the edit standing. Every scenario mutation is now captured automatically
-at AppState's three mutators (app.js), which is why the checks below sweep every
+at AppState's three mutators (appState.js), which is why the checks below sweep every
 kind of edit rather than only deletion.
 
 Three properties are easy to get wrong and are what most of this file is for:
@@ -17,7 +17,7 @@ Three properties are easy to get wrong and are what most of this file is for:
     declining to record;
   * the baseline — the placement paths mutate the array before announcing it
     (`AppState.npcs = [...]; AppState.set({})`), so a snapshot taken when set()
-    runs is already the post-edit state. app.js keeps a rolling baseline instead;
+    runs is already the post-edit state. undo.js keeps a rolling baseline instead;
   * aliasing — AppState.toJSON() shares an event's trajectory array with the
     live state, and updateById mutates actors in place with Object.assign, so
     both directions have to deep-copy or the history rewrites itself.
@@ -196,7 +196,7 @@ with sync_playwright() as p:
     check("redo brings the added event back", page.evaluate(f"AppState.findById('{nid}').events.length") == 1)
 
     # Every control in ONE card folds into a single step: the coalescing key is
-    # the changed event's own id, and app.js skips the seal inside .event-card.
+    # the changed event's own id, and undo.js skips the seal inside .event-card.
     d0 = depth(page)[0]
     for value in (12, 18, 22):
         set_field(page, ".event-speed-row input[type=number]", value)

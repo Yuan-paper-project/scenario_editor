@@ -29,7 +29,11 @@ scenario_editor/
 │   ├── presentation.html  Standalone project presentation (TUM-style slides)
 │   ├── css/style.css      Dark theme UI
 │   └── js/
-│       ├── app.js         Global state store + event bus
+│       ├── appState.js    Global state store + event bus
+│       ├── dialogs.js     Toast and confirm dialog
+│       ├── undo.js        Undo/redo history
+│       ├── scenarioRules.js  Shared event rules
+│       ├── uiUtils.js     Shared panel helpers
 │       ├── api.js         HTTP client
 │       ├── mapView.js     SVG map rendering, pan/zoom, layers
 │       ├── mapImport.js   Custom .xodr import (button + drag-and-drop)
