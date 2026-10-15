@@ -1408,6 +1408,7 @@ does exactly that for every town that has no CARLA probe (see below), which is m
   absent (frontend reads this as `"carla"`) on a probed file — `simulate.js`'s badges
   say "aus Kartendatei" vs "CARLA-Kartendaten" accordingly, and `_preferredSuccessor` (below)
   branches on it.
+  **This main checkout does have them** (Town01–07 and Town10HD, probed 2026-10-12), so a `git worktree` or fresh clone of the same commit runs on xodr-derived graphs instead, and the generator then builds *different scenarios from the same seed* (and different background traffic). Copy `maps/*/lane_graph.json` across before comparing two checkouts' output — that difference once looked exactly like a regression.
 - **The builder reproduces `GlobalRoutePlanner`'s graph, not just the topology**, because the
   preview's route *is* an A* over it and every difference became a different drawn route (the
   reported one: a Town03 car swerving into lane −1 and back before junction 730, which CARLA drives
