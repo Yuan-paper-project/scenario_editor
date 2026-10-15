@@ -1,6 +1,6 @@
 """Measure every catalogued CARLA static prop the way ScenarioRunner spawns it.
 
-Where the numbers in frontend/js/propCatalog.js (footprint, `z` lift, `off`)
+Where the numbers in frontend/js/propData.js (footprint, `z` lift, `off`)
 and ../llm-scenario-gen/config/prop_catalog.yaml (bbox) came from. Re-run it
 after a CARLA build upgrade. Not a test: it prints, it asserts nothing.
 
@@ -33,7 +33,7 @@ import carla
 
 PORT = int(os.environ.get("CARLA_PORT", "2050"))
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CATALOG_JS = os.path.join(REPO, "frontend", "js", "propCatalog.js")
+CATALOG_JS = os.path.join(REPO, "frontend", "js", "propData.js")
 SETTLE_TICKS = 80  # 4 s at 0.05 s
 
 

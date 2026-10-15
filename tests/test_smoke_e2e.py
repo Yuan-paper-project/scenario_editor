@@ -35,6 +35,8 @@ GLOBALS = [
     "TrafficSignals",
     "ScenarioTemplates",
     "PropCatalog",
+    "PropData",
+    "PropShapes",
     "LaneGraph",
     "Dropdown",
     "SpecialBuildings",
