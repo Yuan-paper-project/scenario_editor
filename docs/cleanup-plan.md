@@ -11,8 +11,8 @@ Line counts are `wc -l`. The sibling repo `../llm-scenario-gen` is out of scope 
 | File | Status |
 |---|---|
 | `frontend/js/app.js` | done (`cea3aab` undo hooks, `d2da5eb` split, docs after) |
-| `frontend/js/propCatalog.js` | next: the `PROPS` data table into its own file, glyph shapes and the panel apart |
-| `frontend/js/scenarioGenerator.js` | open |
+| `frontend/js/propCatalog.js` | done (`86158c7` probe fix, `d8c9f6c` `UIUtils.svgEl`, `3bffdcf` split, docs after) |
+| `frontend/js/scenarioGenerator.js` | next |
 | `frontend/js/mapView.js` | open |
 | `frontend/js/simulate.js` | open |
 | `frontend/js/eventPanel.js` | open |
@@ -33,7 +33,7 @@ How each split was done, and the checks to repeat: propose → approve → (1) a
 | `frontend/js/simulate.js` | 2217 (2380) | controls DOM (103–172) · event normalisation mirror + trigger evaluation (238–426) · lane geometry + lane-graph routing (427–877) · per-actor stepping (878–1403) · reacting ego (1404–1540) · lifecycle/timeline/scrubbing (1541–) |
 | `frontend/js/eventPanel.js` | 1942 (2007) | card rendering (168–492) · action controls (493–780) · summaries/labels (781–886) · after_event references (887–975) · trigger controls (976–1199) · DOM helpers/toggles (1200–1455) · path controls (1456–1711) · event state/delete sweep (1712–) |
 | ~~`frontend/js/app.js`~~ | 1649 (1767) | **Done** — split into `appState.js` (624), `dialogs.js` (99), `undo.js` (467), `scenarioRules.js` (419), `uiUtils.js` (189). `appState.js` kept over 400 on purpose: `AppState` is one object, and its only clean seam (the save-file code) would need the object assembled from two files and the private id counter exposed. |
-| `frontend/js/propCatalog.js` | 1225 (1856) | `PROPS` data table (56–473) · side-view shapes (474–821) · plan-view shapes (822–1008) · `PropCatalog` API + palette panel (1009–). Mostly data. |
+| ~~`frontend/js/propCatalog.js`~~ | 1225 (1856) | **Done** — split into `propData.js` (768, data, exempt), `propSideShapes.js` (528), `propPlanShapes.js` (314), `propCatalog.js` (266). `propSideShapes.js` kept over 400 on purpose: it is one `switch` with a `case` per silhouette, and any cut would be at an arbitrary `case`. |
 | `frontend/js/objects.js` | 1071 (1130) | placement + snapping/yaw rules (88–443) · drag (444–626) · path drawing mode (627–1040) |
 | `frontend/js/properties.js` | 964 (995) | actor panel · scene list (138–681) · input bindings / type pickers / delete · traffic-signal panel (486–681) |
 | `frontend/js/templates.js` | 916 (1018) | built-in template table (51–275) · user templates (276–583) · road geometry helpers (584–) |
@@ -60,7 +60,7 @@ How each split was done, and the checks to repeat: propose → approve → (1) a
 
 Python: `scenario_io._normalize_structured_event` (259), `lane_graph_builder.build_lane_graph_from_xodr` (240), `bg_traffic.generate` (195), `map_renderer._process_root_to_render_data` (165), `scenario_io.validate_scenario_params` (124), `scenario_io._normalize_after_event_chains` (117).
 
-JS: `propCatalog.sideShapes` (336, data), `eventPanel._appendEventTriggerControls` (219), `mapView.renderMap` (221), `propCatalog.planShapes` (166, data), `scenarioGenerator._oncomingDrift` (159), `ScenarioRules.eventProblem` (156), `scenarioGenerator._vruCrossingAt` (134), `eventPanel._renderEventList` (133), `eventPanel._appendSpeedActionControls` (116), `eventPanel._renderPathList` (116), `scenarioIO.buildScenarioParams` (116), `simulate._applyEventAction` (114), `scenarioGenerator._junctionConflict` (104), `propCatalog.renderPanel` (103), `scenarioGenerator._obstacle` (100), `simulate.runHeadless` (97), `eventPanel._renderEventActionGrid` (96), `mapView._renderRoute` (95).
+JS: `propSideShapes.sideShapes` (336, data), `eventPanel._appendEventTriggerControls` (219), `mapView.renderMap` (221), `propPlanShapes.planShapes` (166, data), `scenarioGenerator._oncomingDrift` (159), `ScenarioRules.eventProblem` (156), `scenarioGenerator._vruCrossingAt` (134), `eventPanel._renderEventList` (133), `eventPanel._appendSpeedActionControls` (116), `eventPanel._renderPathList` (116), `scenarioIO.buildScenarioParams` (116), `simulate._applyEventAction` (114), `scenarioGenerator._junctionConflict` (104), `propCatalog.renderPanel` (103), `scenarioGenerator._obstacle` (100), `simulate.runHeadless` (97), `eventPanel._renderEventActionGrid` (96), `mapView._renderRoute` (95).
 
 ## 2. Duplicated logic
 
@@ -72,7 +72,7 @@ Ordered by how safe the merge is. Check each pair's bodies before merging; sever
 | `_wrapDeg` | `objects.js:163`, `scenarioGenerator.js:95` | Identical. |
 | `_dist3` | `simulate.js:175`, `laneGraph.js:92` | Differ: `?? 0` vs `\|\| 0` (same result for numbers, differs for `NaN`). |
 | HTML escaping | `dialogs.js` `_escHtml`, `properties.js:69` `_esc` (DOM-based), `eventTimeline.js:46` `_esc`, `templates.js:832` `_attr`, `scenarioGenerator.js:3019` `_escHtml` (regex) | **Not equivalent**: the DOM-based two do not escape `"`, so they are unsafe in attributes. A shared helper must be the regex version. |
-| `_el(tag, attrs)` SVG element builder | `aerialMap.js:220`, `propCatalog.js:468`; `mapView.js` has its own "SVG helper" (1889) | Compare signatures first. |
+| `_el(tag, attrs)` SVG element builder | `aerialMap.js:238`, `mapView.js` `_svgEl`; the prop files' copy is now `UIUtils.svgEl` | Same behaviour (`for…in` vs `Object.entries` over plain objects). Point the other two at `UIUtils.svgEl`. |
 | Walker type sets | `mapView.js:1004` `WALKER_TYPES`, `scenarioRules.js` `WALKER_ACTION_TYPES`, `properties.js:172` `_isWalker` (includes `cyclist`!), `templates.js:818`, `objects.js:90` `ROAD_FACING_TYPES` (includes `cyclist`, `bicycle`) | Some differences are deliberate (CLAUDE.md, "Actor types"). Within the frontend, the pedestrian/child pair could come from one constant in `ScenarioRules`. The backend/emitter copies are cross-repo; leave them. |
 | Weather presets | `weather.js:19` `PRESETS`, `scenarioGenerator.js:2645` `WEATHER_PRESETS` | CLAUDE.md says "keep the two in step". Make one the source. |
 | Road `<link>` parsing | `map_renderer._get_road_link` (393), `lane_graph_builder._parse_road_links` (133) | **Not identical**: the builder casts `elementId` to `int` and defaults `contactPoint` to `'start'`. It was copied on purpose to keep the module independent. Could share a parser and keep the differences in the callers. |
