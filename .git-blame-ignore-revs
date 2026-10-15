@@ -1,0 +1,13 @@
+# Mechanical formatting and lint-fix commits from the cleanup (phase 3).
+# `git blame` skips these and shows the commit that actually wrote each line.
+# GitHub reads this file automatically; locally run once:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# Format Python with ruff format
+96827570ffb2a2b0b6343966f07bb0f6f8c107a4
+# Apply ruff's safe lint fixes
+27beb67fbdfdcbddcf0947f9c0ee51d7185429f9
+# Format frontend JS and CSS with Biome
+95cda0589bd70f06f7bb6b111b98ee88018556b0
+# Apply Biome's safe lint fixes
+681e3a4d399546e9b08f7d6fd57dd9a82d87089c
