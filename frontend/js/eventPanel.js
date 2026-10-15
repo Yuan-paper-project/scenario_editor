@@ -112,7 +112,14 @@
   const FIXED_ROUTE_START_HINT =
     'Eine Route startet immer sofort (Simulationszeit 0) — der Auslöser ist nicht einstellbar.';
 
-  let _refresh = () => {};
+  /* Panel state reassigned at runtime. `refresh` re-renders the properties
+   * panel (properties.js sets it). `highlight` is the card the „Ablauf"
+   * timeline last pointed at ({actorId, eventId, scroll}) — module state
+   * because the panel re-renders on every preview frame: the mark has to be
+   * re-applied by each render, and the scroll done only once. A collapsed card
+   * shows expanded while marked — view only, its stored `collapsed` is
+   * untouched. eventTimeline.js clears it on Stop. */
+  const panel = { refresh: () => {}, highlight: null };
 
   // ── Public API ──────────────────────────────────────────────────────────────
 
@@ -121,29 +128,22 @@
     _renderEventList(actor);
   }
 
-  /* The card the „Ablauf" timeline last pointed at ({actorId, eventId,
-   * scroll}). Module state because the panel re-renders on every preview
-   * frame: the mark has to be re-applied by each render, and the scroll done
-   * only once. A collapsed card shows expanded while marked — view only, its
-   * stored `collapsed` is untouched. eventTimeline.js clears it on Stop. */
-  let _highlight = null;
-
   function highlight(actorId, eventId) {
-    const had = !!_highlight;
-    _highlight = actorId && eventId ? { actorId, eventId, scroll: true } : null;
-    if (had && !_highlight) _refresh(); // clearing: take the mark off now
+    const had = !!panel.highlight;
+    panel.highlight = actorId && eventId ? { actorId, eventId, scroll: true } : null;
+    if (had && !panel.highlight) panel.refresh(); // clearing: take the mark off now
   }
 
   function _isHighlighted(actor, ev) {
-    return !!_highlight && _highlight.actorId === actor.id && _highlight.eventId === ev.id;
+    return !!panel.highlight && panel.highlight.actorId === actor.id && panel.highlight.eventId === ev.id;
   }
 
   /** After a render: bring the marked card into view, once. */
   function _scrollToHighlight() {
-    if (!_highlight?.scroll) return;
+    if (!panel.highlight?.scroll) return;
     const card = eventList.querySelector('.event-card.timeline-focus');
     if (!card) return;
-    _highlight.scroll = false;
+    panel.highlight.scroll = false;
     // The events section may be folded; the card would be invisible.
     const section = card.closest('.collapsible-section');
     if (section?.classList.contains('collapsed')) {
@@ -161,7 +161,7 @@
   }
 
   function setRefreshHandler(handler) {
-    _refresh = typeof handler === 'function' ? handler : () => {};
+    panel.refresh = typeof handler === 'function' ? handler : () => {};
   }
 
   // ── Event Rendering ─────────────────────────────────────────────────────────
@@ -1737,7 +1737,7 @@
     clearBtn.textContent = 'Löschen';
     clearBtn.addEventListener('click', () => {
       ObjectsManager.clearPath(actor.id, pathMode, ev.id);
-      _refresh();
+      panel.refresh();
     });
 
     const toggleBtn = document.createElement('button');
@@ -1752,7 +1752,7 @@
     toggleBtn.addEventListener('click', () => {
       if (isRouteAction) MapView.toggleRouteVisibility(actor.id, ev.id);
       else MapView.toggleTrajectoryVisibility(actor.id, ev.id);
-      _refresh();
+      panel.refresh();
     });
 
     controls.appendChild(drawBtn);
