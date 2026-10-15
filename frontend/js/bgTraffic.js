@@ -32,30 +32,30 @@
   'use strict';
 
   const DEBOUNCE_MS = 900;
-  const KEEPOUT_STEP_M = 1.0;     // keep-out polyline sample spacing
-  const FOCUS_STEP_M = 5.0;       // focus polylines: the zone is tens of metres wide
-  const KEEPOUT_SIM_S = 60;       // every Act's MaxSimTime
+  const KEEPOUT_STEP_M = 1.0; // keep-out polyline sample spacing
+  const FOCUS_STEP_M = 5.0; // focus polylines: the zone is tens of metres wide
+  const KEEPOUT_SIM_S = 60; // every Act's MaxSimTime
 
-  const panel     = document.getElementById('env-menu-panel');
+  const panel = document.getElementById('env-menu-panel');
   const cbEnabled = document.getElementById('bg-enabled');
-  const inCount   = document.getElementById('bg-count');
-  const inSeed    = document.getElementById('bg-seed');
+  const inCount = document.getElementById('bg-count');
+  const inSeed = document.getElementById('bg-seed');
   const btnReseed = document.getElementById('bg-reseed');
-  const inClear   = document.getElementById('bg-clearance');
-  const inRadius  = document.getElementById('bg-radius');
-  const statusEl  = document.getElementById('bg-status');
-  const layer     = document.getElementById('layer-bg-traffic');
-  const SVG_NS    = 'http://www.w3.org/2000/svg';
+  const inClear = document.getElementById('bg-clearance');
+  const inRadius = document.getElementById('bg-radius');
+  const statusEl = document.getElementById('bg-status');
+  const layer = document.getElementById('layer-bg-traffic');
+  const SVG_NS = 'http://www.w3.org/2000/svg';
 
-  let _data = null;        // last result from the backend
-  let _dataSig = null;     // the request signature _data answers
-  let _lastReq = null;     // the last request sent (its body)
-  let _pending = null;     // {sig, promise} of an in-flight request
+  let _data = null; // last result from the backend
+  let _dataSig = null; // the request signature _data answers
+  let _lastReq = null; // the last request sent (its body)
+  let _pending = null; // {sig, promise} of an in-flight request
   let _error = null;
   let _timer = null;
-  let _deferred = false;   // a regeneration is due once the preview stops
-  let _lastT = null;       // preview time last drawn, null when not previewing
-  let _drawnKey = null;    // which _data the layer's elements belong to
+  let _deferred = false; // a regeneration is due once the preview stops
+  let _lastT = null; // preview time last drawn, null when not previewing
+  let _drawnKey = null; // which _data the layer's elements belong to
   let _els = [];
 
   const settings = () => AppState.bgTraffic;
@@ -73,7 +73,7 @@
    *  it occupies its spot. Returns [[x, y, t], …]. */
   function _thinTimed(points) {
     const out = [];
-    const r1 = v => Math.round(v * 10) / 10;
+    const r1 = (v) => Math.round(v * 10) / 10;
     for (const p of points) {
       const last = out[out.length - 1];
       if (!last || Math.hypot(p.x - last[0], p.y - last[1]) >= KEEPOUT_STEP_M || p.t - last[2] >= 1) {
@@ -89,10 +89,14 @@
    *  the path point nearest the track's last point on. */
   function _remainder(pts, last) {
     if (!pts.length || !last) return pts;
-    let best = 0, bestD = Infinity;
+    let best = 0,
+      bestD = Infinity;
     pts.forEach((p, i) => {
       const d = Math.hypot(p.x - last.x, p.y - last.y);
-      if (d < bestD) { bestD = d; best = i; }
+      if (d < bestD) {
+        bestD = d;
+        best = i;
+      }
     });
     return pts.slice(best);
   }
@@ -108,8 +112,11 @@
       }
     }
     const end = points[points.length - 1];
-    if (end && out.length && (out[out.length - 1][0] !== Math.round(end.x * 10) / 10
-                           || out[out.length - 1][1] !== Math.round(end.y * 10) / 10)) {
+    if (
+      end &&
+      out.length &&
+      (out[out.length - 1][0] !== Math.round(end.x * 10) / 10 || out[out.length - 1][1] !== Math.round(end.y * 10) / 10)
+    ) {
       out.push([Math.round(end.x * 10) / 10, Math.round(end.y * 10) / 10]);
     }
     return out;
@@ -133,13 +140,17 @@
     const actors = [AppState.ego, ...AppState.npcs].filter(Boolean);
     const paths = [];
     const focus = [];
-    let egoTrack = null;         // the ego's [[t, x, y], …], every 0.5 s
+    let egoTrack = null; // the ego's [[t, x, y], …], every 0.5 s
     const run = actors.length
-      // The ego brakes for what is in its path when it obeys obstacles, as the
-      // scripted ego does in CARLA; the non-reacting preview ego drives through
-      // a braking lead and runs up to ~60 m ahead of the real one.
-      ? Simulate.runHeadless({ dt: 0.1, maxTime: KEEPOUT_SIM_S, props: AppState.staticObjects || [],
-                               reactiveEgo: egoReacts() })
+      ? // The ego brakes for what is in its path when it obeys obstacles, as the
+        // scripted ego does in CARLA; the non-reacting preview ego drives through
+        // a braking lead and runs up to ~60 m ahead of the real one.
+        Simulate.runHeadless({
+          dt: 0.1,
+          maxTime: KEEPOUT_SIM_S,
+          props: AppState.staticObjects || [],
+          reactiveEgo: egoReacts(),
+        })
       : null;
     for (const a of actors) {
       const w = _halfWidth(AppState.bodyType(a));
@@ -153,7 +164,7 @@
       if (track && track.length) {
         if (isEgo) {
           focus.push(_thin([{ x: a.x, y: a.y }, ...track], FOCUS_STEP_M));
-          const r1 = v => Math.round(v * 10) / 10;
+          const r1 = (v) => Math.round(v * 10) / 10;
           egoTrack = [[0, r1(a.x), r1(a.y)]];
           track.forEach((p, i) => {
             if (i % 5 === 4) egoTrack.push([Math.round(run.times[i] * 100) / 100, r1(p.x), r1(p.y)]);
@@ -172,7 +183,8 @@
         if (pts && pts.length) {
           // Past the preview's end, timed at that end: CARLA may get further.
           const rest = _remainder(pts, lastPos);
-          if (rest.length > 1) paths.push({ w, pts: _thin(rest).map(p => [p[0], p[1], Math.round(lastPos.t * 10) / 10]) });
+          if (rest.length > 1)
+            paths.push({ w, pts: _thin(rest).map((p) => [p[0], p[1], Math.round(lastPos.t * 10) / 10]) });
           if (isEgo) focus.push(_thin([{ x: a.x, y: a.y }, ...pts], FOCUS_STEP_M));
         }
       }
@@ -213,11 +225,17 @@
 
   async function _fetch(body) {
     const res = await fetch('/api/bg_traffic', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
       let msg = `${res.status}`;
-      try { msg = (await res.json()).detail || msg; } catch (_) { /* not JSON */ }
+      try {
+        msg = (await res.json()).detail || msg;
+      } catch (_) {
+        /* not JSON */
+      }
       throw new Error(msg);
     }
     return res.json();
@@ -237,19 +255,22 @@
     if (_pending && _pending.sig === sig) return _pending.promise;
     _lastReq = body;
     _error = null;
-    const promise = _fetch(body).then(data => {
-      if (_pending && _pending.sig === sig) _pending = null;
-      _data = data;
-      _dataSig = sig;
-      _renderStatus();
-      if (_lastT !== null) _draw(_lastT);
-      return data;
-    }, err => {
-      if (_pending && _pending.sig === sig) _pending = null;
-      _error = err.message;
-      _renderStatus();
-      throw err;
-    });
+    const promise = _fetch(body).then(
+      (data) => {
+        if (_pending && _pending.sig === sig) _pending = null;
+        _data = data;
+        _dataSig = sig;
+        _renderStatus();
+        if (_lastT !== null) _draw(_lastT);
+        return data;
+      },
+      (err) => {
+        if (_pending && _pending.sig === sig) _pending = null;
+        _error = err.message;
+        _renderStatus();
+        throw err;
+      },
+    );
     _pending = { sig, promise };
     _renderStatus();
     return promise;
@@ -258,11 +279,21 @@
   function _schedule() {
     if (!active()) return;
     clearTimeout(_timer);
-    if (Simulate.running) { _deferred = true; _renderStatus(); return; }
+    if (Simulate.running) {
+      _deferred = true;
+      _renderStatus();
+      return;
+    }
     _timer = setTimeout(() => {
       _timer = null;
-      if (Simulate.running) { _deferred = true; _renderStatus(); return; }
-      ensure().catch(() => { /* shown in the status line */ });
+      if (Simulate.running) {
+        _deferred = true;
+        _renderStatus();
+        return;
+      }
+      ensure().catch(() => {
+        /* shown in the status line */
+      });
     }, DEBOUNCE_MS);
     _renderStatus();
   }
@@ -271,7 +302,8 @@
 
   function _renderStatus() {
     panel.classList.toggle('bg-off', !settings().enabled);
-    let text = 'Aus', cls = '';
+    let text = 'Aus',
+      cls = '';
     if (!settings().enabled) {
       text = 'Aus';
     } else if (!AppState.map) {
@@ -288,16 +320,18 @@
       if (_data.focus_radius) {
         // Bubble: the count is the average number around the ego at a time.
         const avg = (_data.stats && _data.stats.visible_avg) || 0;
-        const cars = new Set(_data.vehicles.map(v => v.car || v.id)).size;
+        const cars = new Set(_data.vehicles.map((v) => v.car || v.id)).size;
         const fmt = String(Math.round(avg)).replace('.', ',');
-        text = avg < 0.85 * _data.requested
-          ? `Ø ${fmt} von ${_data.requested} Fahrzeugen im Umkreis von ${_data.focus_radius} m — mehr passen nicht neben das Szenario`
-          : `Ø ${fmt} Fahrzeuge im Umkreis von ${_data.focus_radius} m (${cars} insgesamt)`;
+        text =
+          avg < 0.85 * _data.requested
+            ? `Ø ${fmt} von ${_data.requested} Fahrzeugen im Umkreis von ${_data.focus_radius} m — mehr passen nicht neben das Szenario`
+            : `Ø ${fmt} Fahrzeuge im Umkreis von ${_data.focus_radius} m (${cars} insgesamt)`;
       } else {
         const n = _data.vehicles.length;
-        text = n < _data.requested
-          ? `${n} von ${_data.requested} Fahrzeugen — mehr passen nicht neben das Szenario`
-          : `${n} Fahrzeuge`;
+        text =
+          n < _data.requested
+            ? `${n} von ${_data.requested} Fahrzeugen — mehr passen nicht neben das Szenario`
+            : `${n} Fahrzeuge`;
       }
       if (_data.stats && _data.stats.seconds != null) text += ` · ${String(_data.stats.seconds).replace('.', ',')} s`;
     }
@@ -367,7 +401,8 @@
     for (const v of data.vehicles) {
       const g = document.createElementNS(SVG_NS, 'g');
       g.setAttribute('class', 'bg-car-group');
-      const L = v.length, W = v.width;
+      const L = v.length,
+        W = v.width;
       const body = document.createElementNS(SVG_NS, 'rect');
       body.setAttribute('class', 'bg-car');
       body.setAttribute('x', String(-L / 2));
@@ -400,8 +435,13 @@
     if (f < -1e-6 || f > fr.length - 1 + 1e-6) return null;
     const i = Math.floor(f);
     if (i <= 0) return [fr[0][0], fr[0][1], fr[0][3]];
-    if (i >= fr.length - 1) { const l = fr[fr.length - 1]; return [l[0], l[1], l[3]]; }
-    const a = fr[i], b = fr[i + 1], w = f - i;
+    if (i >= fr.length - 1) {
+      const l = fr[fr.length - 1];
+      return [l[0], l[1], l[3]];
+    }
+    const a = fr[i],
+      b = fr[i + 1],
+      w = f - i;
     const dyaw = ((b[3] - a[3] + 540) % 360) - 180;
     return [a[0] + (b[0] - a[0]) * w, a[1] + (b[1] - a[1]) * w, a[3] + dyaw * w];
   }
@@ -425,11 +465,14 @@
     });
   }
 
-  Simulate.onTime(t => {
+  Simulate.onTime((t) => {
     _lastT = t;
     if (t === null) {
       _clear();
-      if (_deferred) { _deferred = false; _schedule(); }
+      if (_deferred) {
+        _deferred = false;
+        _schedule();
+      }
       return;
     }
     _draw(t);
@@ -438,21 +481,37 @@
   // ── Re-generation triggers ──────────────────────────────────────────────
 
   // Editor-only keys never change the keep-out; weather/time are not traffic.
-  const IGNORED_KEYS = new Set(['selectedId', 'selectedTrafficLightId', 'selectedWaypoint', 'activeTool',
-    'pendingTemplate', 'pendingProp', 'pendingGenerate', 'trajectoryMode', 'activeTrajectoryId',
-    'routeMode', 'activeRouteId', 'activePathEventId', 'weather', 'time', 'userTemplates',
-    'specialBuildings']);
-  AppState.on('change', patch => {
+  const IGNORED_KEYS = new Set([
+    'selectedId',
+    'selectedTrafficLightId',
+    'selectedWaypoint',
+    'activeTool',
+    'pendingTemplate',
+    'pendingProp',
+    'pendingGenerate',
+    'trajectoryMode',
+    'activeTrajectoryId',
+    'routeMode',
+    'activeRouteId',
+    'activePathEventId',
+    'weather',
+    'time',
+    'userTemplates',
+    'specialBuildings',
+  ]);
+  AppState.on('change', (patch) => {
     const keys = Object.keys(patch || {});
     if (keys.includes('map') || keys.includes('mapData') || keys.includes('laneGraph')) {
       _clear();
       _renderStatus();
     }
-    if (keys.length && keys.every(k => IGNORED_KEYS.has(k))) return;
+    if (keys.length && keys.every((k) => IGNORED_KEYS.has(k))) return;
     if (!Simulate.running) _schedule();
   });
   for (const evt of ['actorUpdated', 'actorRemoved']) {
-    AppState.on(evt, () => { if (!Simulate.running) _schedule(); });
+    AppState.on(evt, () => {
+      if (!Simulate.running) _schedule();
+    });
   }
   AppState.on('stateLoaded', () => {
     _syncInputs();
@@ -469,22 +528,32 @@
     const data = await ensure();
     if (!data) throw new Error('Hintergrundverkehr ist aus');
     const res = await fetch('/api/export/bundle', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ params, bg_traffic: _lastReq }),
     });
     if (!res.ok) {
       const msg = await res.text();
       throw new Error(`Export failed (${res.status}): ${msg}`);
     }
-    return { blob: await res.blob(), vehicles: Number(res.headers.get('X-Bg-Traffic-Vehicles') || data.vehicles.length) };
+    return {
+      blob: await res.blob(),
+      vehicles: Number(res.headers.get('X-Bg-Traffic-Vehicles') || data.vehicles.length),
+    };
   }
 
   _syncInputs();
 
   window.BgTraffic = {
-    get active() { return active(); },
-    get data() { return _data; },
-    get busy() { return !!(_pending || _timer); },
+    get active() {
+      return active();
+    },
+    get data() {
+      return _data;
+    },
+    get busy() {
+      return !!(_pending || _timer);
+    },
     ensure,
     exportBundle,
     poseAt,

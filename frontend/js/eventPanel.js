@@ -95,19 +95,19 @@
   const DEFAULT_SPEED_FACTOR = 0.8;
 
   const RETURN_LANE_OFFSET_HINT =
-    'Endet, sobald der Versatz erreicht ist (auf 0,1 m), und kehrt dann zur Spurmitte '
-    + 'zurück — ein Schlenker in einem Event, an den „Nach anderem Event" anschließen kann. '
-    + 'Braucht den lokalen ScenarioRunner-Patch (ChangeActorLaneOffset); '
-    + 'ein unveränderter ScenarioRunner 0.9.15 setzt den Versatz sofort zurück.';
+    'Endet, sobald der Versatz erreicht ist (auf 0,1 m), und kehrt dann zur Spurmitte ' +
+    'zurück — ein Schlenker in einem Event, an den „Nach anderem Event" anschließen kann. ' +
+    'Braucht den lokalen ScenarioRunner-Patch (ChangeActorLaneOffset); ' +
+    'ein unveränderter ScenarioRunner 0.9.15 setzt den Versatz sofort zurück.';
 
   const CONTINUOUS_SPEED_HINT =
-    'Folgt der Geschwindigkeit des Bezugsakteurs dauerhaft (continuous="true") — '
-    + 'endet erst, wenn ein anderes Geschwindigkeits- oder Trajektorien-Event übernimmt.';
+    'Folgt der Geschwindigkeit des Bezugsakteurs dauerhaft (continuous="true") — ' +
+    'endet erst, wenn ein anderes Geschwindigkeits- oder Trajektorien-Event übernimmt.';
 
   const FIXED_LANE_OFFSET_HINT =
-    'Ein Spurversatz gilt dauerhaft (continuous="true") — er endet erst, wenn '
-    + 'ein weiterer Spurversatz oder ein Pfad-Event den Akteur übernimmt. '
-    + 'Zurück zur Spurmitte: ein zweites Spurversatz-Event mit 0 m.';
+    'Ein Spurversatz gilt dauerhaft (continuous="true") — er endet erst, wenn ' +
+    'ein weiterer Spurversatz oder ein Pfad-Event den Akteur übernimmt. ' +
+    'Zurück zur Spurmitte: ein zweites Spurversatz-Event mit 0 m.';
 
   const FIXED_ROUTE_START_HINT =
     'Eine Route startet immer sofort (Simulationszeit 0) — der Auslöser ist nicht einstellbar.';
@@ -131,7 +131,7 @@
   function highlight(actorId, eventId) {
     const had = !!_highlight;
     _highlight = actorId && eventId ? { actorId, eventId, scroll: true } : null;
-    if (had && !_highlight) _refresh();   // clearing: take the mark off now
+    if (had && !_highlight) _refresh(); // clearing: take the mark off now
   }
 
   function _isHighlighted(actor, ev) {
@@ -160,7 +160,6 @@
     });
   }
 
-
   function setRefreshHandler(handler) {
     _refresh = typeof handler === 'function' ? handler : () => {};
   }
@@ -172,7 +171,7 @@
     eventActionGrid.innerHTML = '';
     if (!actor) return;
 
-    const hasPathEvent = (actor.events || []).some(ev => {
+    const hasPathEvent = (actor.events || []).some((ev) => {
       const type = _eventAction(ev).type;
       return type === 'follow_trajectory' || type === 'assign_route';
     });
@@ -183,14 +182,12 @@
       // AssignRouteAction is vehicle-only downstream (_ROUTE_ACTION_TYPES in
       // event_builders.py). Offering it to a Fußgänger produced an event that
       // was silently dropped at export — along with anything chained onto it.
-      const routeUnavailable = actionType === 'assign_route' &&
-        !ScenarioRules.ROUTE_ACTION_TYPES.has(actor.type);
+      const routeUnavailable = actionType === 'assign_route' && !ScenarioRules.ROUTE_ACTION_TYPES.has(actor.type);
       // ChangeActorLaneOffset writes the controller's _offset, which
       // PedestrianControl stores and never reads — offering it to a Fußgänger
       // would produce a valid file in which the actor simply never moves
       // sideways.
-      const offsetUnavailable = actionType === 'lane_offset' &&
-        !ScenarioRules.honoursLaneOffset(actor.type);
+      const offsetUnavailable = actionType === 'lane_offset' && !ScenarioRules.honoursLaneOffset(actor.type);
 
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -238,11 +235,14 @@
     if (options.length) {
       const select = document.createElement('select');
       select.className = 'event-template-select';
-      select.title = 'Ersetzt die Events dieses Akteurs durch den Ablauf eines Templates, '
-        + 'berechnet für seine jetzige Position';
+      select.title =
+        'Ersetzt die Events dieses Akteurs durch den Ablauf eines Templates, ' + 'berechnet für seine jetzige Position';
       select.setAttribute('aria-label', 'Ablauf aus Template');
-      select.innerHTML = '<option value="">Ablauf aus Template …</option>'
-        + options.map(o => `<option value="${o.id}" title="${o.hint.replace(/"/g, '&quot;')}">${o.label}</option>`).join('');
+      select.innerHTML =
+        '<option value="">Ablauf aus Template …</option>' +
+        options
+          .map((o) => `<option value="${o.id}" title="${o.hint.replace(/"/g, '&quot;')}">${o.label}</option>`)
+          .join('');
       select.addEventListener('change', async () => {
         const id = select.value;
         select.value = '';
@@ -257,8 +257,9 @@
       save.type = 'button';
       save.className = 'btn btn-small btn-secondary event-template-save';
       save.textContent = 'Als Vorlage speichern';
-      save.title = 'Diese Events als eigene Vorlage speichern — Positionen relativ zum Akteur, '
-        + 'wiederverwendbar auf jeder Karte (Tab Templates → Eigene Vorlagen)';
+      save.title =
+        'Diese Events als eigene Vorlage speichern — Positionen relativ zum Akteur, ' +
+        'wiederverwendbar auf jeder Karte (Tab Templates → Eigene Vorlagen)';
       save.addEventListener('click', () => ScenarioTemplates.saveFromActor(AppState.findById(actor.id) || actor));
       eventActionGrid.appendChild(save);
     }
@@ -273,15 +274,14 @@
     // Events that will not survive the export, keyed by id. The rule lives in
     // ScenarioRules (app.js) so the card, the export gate and the preview can
     // never disagree about what "incomplete" means.
-    const problems = new Map(
-      ScenarioRules.problemsOf(actor).map(entry => [entry.ev.id, entry.problem])
-    );
+    const problems = new Map(ScenarioRules.problemsOf(actor).map((entry) => [entry.ev.id, entry.problem]));
     if (eventWarn) {
       eventWarn.textContent = String(problems.size);
       eventWarn.classList.toggle('hidden', problems.size === 0);
-      eventWarn.title = problems.size === 1
-        ? '1 Event wird beim Export verworfen'
-        : `${problems.size} Events werden beim Export verworfen`;
+      eventWarn.title =
+        problems.size === 1
+          ? '1 Event wird beim Export verworfen'
+          : `${problems.size} Events werden beim Export verworfen`;
     }
 
     if (events.length === 0) {
@@ -312,7 +312,8 @@
       const problem = problems.get(ev.id) || null;
       // Exports fine but cannot do anything in CARLA — never blocks the export.
       const warning = problem ? null : ScenarioRules.eventWarning(actor, ev, events);
-      card.className = `event-card${isCollapsed ? ' collapsed' : ''}` +
+      card.className =
+        `event-card${isCollapsed ? ' collapsed' : ''}` +
         `${isDrawing ? ' active-draw' : ''}${problem ? ' has-problem' : ''}` +
         `${isHighlighted ? ' timeline-focus' : ''}`;
       card.dataset.eventId = ev.id;
@@ -370,9 +371,7 @@
       // forced to simulation_time 0 at export — but it still gets the block, as
       // a stated fact. Dropping it entirely would leave the only card in the
       // panel whose start condition is stated nowhere.
-      card.appendChild(actionType === 'assign_route'
-        ? _fixedTriggerBlock()
-        : _triggerBlock(actor, ev, events));
+      card.appendChild(actionType === 'assign_route' ? _fixedTriggerBlock() : _triggerBlock(actor, ev, events));
 
       if (actionType === 'set_speed') {
         _appendSpeedActionControls(card, actor, ev, action);
@@ -475,7 +474,7 @@
   function _bulkCollapseBar(actor, events) {
     const bar = document.createElement('div');
     bar.className = 'event-list-toolbar';
-    const allCollapsed = events.every(ev => !!ev.collapsed);
+    const allCollapsed = events.every((ev) => !!ev.collapsed);
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'event-bulk-toggle';
@@ -483,7 +482,7 @@
     btn.addEventListener('click', () => {
       const current = AppState.findById(actor.id) || actor;
       AppState.updateById(actor.id, {
-        events: (current.events || []).map(ev => ({ ...ev, collapsed: !allCollapsed })),
+        events: (current.events || []).map((ev) => ({ ...ev, collapsed: !allCollapsed })),
       });
     });
     bar.appendChild(btn);
@@ -516,9 +515,10 @@
       const targetSelect = _select(targetOptions, selectedTarget);
       targetSelect.className = 'event-speed-ref';
       targetSelect.setAttribute('aria-label', 'Relativ zu');
-      targetSelect.title = 'Relativ zu — „Eigene Geschw.": Ziel ist die eigene Geschwindigkeit '
-        + 'beim Start, z. B. Faktor 0,5 = auf die Hälfte abbremsen (nur mit Rate)';
-      targetSelect.addEventListener('change', e => {
+      targetSelect.title =
+        'Relativ zu — „Eigene Geschw.": Ziel ist die eigene Geschwindigkeit ' +
+        'beim Start, z. B. Faktor 0,5 = auf die Hälfte abbremsen (nur mit Rate)';
+      targetSelect.addEventListener('change', (e) => {
         const self = e.target.value === actor.id;
         const patch = { target: { ...speedTarget, mode: 'relative', entity_ref: e.target.value } };
         if (self) {
@@ -531,12 +531,19 @@
       });
       modeControls.push(targetSelect);
     } else if (ScenarioRules.canReverse(actor.type)) {
-      const dir = _toggle(actor, ev,
-        [['forward', 'Vor'], ['reverse', 'Rück']],
+      const dir = _toggle(
+        actor,
+        ev,
+        [
+          ['forward', 'Vor'],
+          ['reverse', 'Rück'],
+        ],
         speedTarget.reverse === true ? 'reverse' : 'forward',
-        value => ({ target: { ...speedTarget, mode: 'absolute', reverse: value === 'reverse' } }));
-      dir.title = 'Richtung — Rück: das Fahrzeug fährt rückwärts, ohne sich zu drehen '
-        + '(SimpleVehicleControl kehrt nur die Geschwindigkeit um)';
+        (value) => ({ target: { ...speedTarget, mode: 'absolute', reverse: value === 'reverse' } }),
+      );
+      dir.title =
+        'Richtung — Rück: das Fahrzeug fährt rückwärts, ohne sich zu drehen ' +
+        '(SimpleVehicleControl kehrt nur die Geschwindigkeit um)';
       dir.querySelector('[data-value="forward"]').title = 'Vorwärts';
       dir.querySelector('[data-value="reverse"]').title = 'Rückwärts';
       modeControls.push(dir);
@@ -544,21 +551,34 @@
     card.appendChild(_multiRow('Modus', modeControls));
 
     if (isRelativeSpeed) {
-      const art = _toggle(actor, ev,
-        [['delta', 'Δ'], ['factor', '×']],
+      const art = _toggle(
+        actor,
+        ev,
+        [
+          ['delta', 'Δ'],
+          ['factor', '×'],
+        ],
         isFactor ? 'factor' : 'delta',
-        value => ({ target: { ...speedTarget, value_type: value } }));
+        (value) => ({ target: { ...speedTarget, value_type: value } }),
+      );
       art.title = 'Art — Δ: Bezugsgeschw. plus Differenz; ×: Bezugsgeschw. mal Faktor';
       art.querySelector('[data-value="delta"]').title = 'Differenz (m/s)';
       art.querySelector('[data-value="factor"]').title = 'Faktor';
       const controls = [art];
       if (!isSelf) {
-        const follow = _toggle(actor, ev,
-          [['once', 'Einmal'], ['continuous', 'Dauer']],
+        const follow = _toggle(
+          actor,
+          ev,
+          [
+            ['once', 'Einmal'],
+            ['continuous', 'Dauer'],
+          ],
           isContinuous ? 'continuous' : 'once',
-          value => ({ target: { ...speedTarget, continuous: value === 'continuous' } }));
-        follow.title = 'Folgen — Einmal: Ziel beim Start bzw. für die Dauer nachgeführt. '
-          + 'Dauer: folgt dem Bezugsakteur, bis ein anderes Event übernimmt.';
+          (value) => ({ target: { ...speedTarget, continuous: value === 'continuous' } }),
+        );
+        follow.title =
+          'Folgen — Einmal: Ziel beim Start bzw. für die Dauer nachgeführt. ' +
+          'Dauer: folgt dem Bezugsakteur, bis ein anderes Event übernimmt.';
         controls.push(follow);
       }
       card.appendChild(_multiRow('Art', controls));
@@ -571,7 +591,7 @@
     speedInput.value = isFactor
       ? UIUtils.fmt(speedTarget.factor ?? DEFAULT_SPEED_FACTOR, 2)
       : UIUtils.fmt(isRelativeSpeed ? (speedTarget.delta ?? 10.0) : (speedTarget.value ?? 10.0));
-    speedInput.addEventListener('change', e => {
+    speedInput.addEventListener('change', (e) => {
       const parsed = parseFloat(e.target.value);
       const value = Number.isFinite(parsed) ? parsed : 0;
       _patchEventAction(actor, ev, {
@@ -601,18 +621,25 @@
     timeInput.min = String(dynFloor);
     timeInput.step = '0.1';
     timeInput.value = UIUtils.fmt(speedDynamics.value ?? (isRate ? DEFAULT_SPEED_RATE : DEFAULT_SPEED_TIME));
-    timeInput.addEventListener('change', e => {
+    timeInput.addEventListener('change', (e) => {
       _patchEventAction(actor, ev, {
         dynamics: {
           ...speedDynamics,
-          shape: isRate ? 'linear' : (speedDynamics.shape || 'step'),
+          shape: isRate ? 'linear' : speedDynamics.shape || 'step',
           dimension: isRate ? 'rate' : 'time',
           value: Math.max(dynFloor, parseFloat(e.target.value) || 0),
         },
       });
     });
-    card.appendChild(_speedTimingRow(speedInput, timeInput,
-      _speedDimensionSelect(actor, ev, { rateOnly: isSelf }), valueLabel, isFactor));
+    card.appendChild(
+      _speedTimingRow(
+        speedInput,
+        timeInput,
+        _speedDimensionSelect(actor, ev, { rateOnly: isSelf }),
+        valueLabel,
+        isFactor,
+      ),
+    );
   }
 
   /** A segmented toggle whose click patches the action with `patchFor(value)`. */
@@ -641,7 +668,7 @@
     const selectedTarget = action.entity_ref || _defaultRelativeActorId(actor);
     const targetSelect = _select(targetOptions.length ? targetOptions : [['', 'Kein Akteur']], selectedTarget);
     targetSelect.disabled = targetOptions.length === 0;
-    targetSelect.addEventListener('change', e => {
+    targetSelect.addEventListener('change', (e) => {
       _patchEventAction(actor, ev, { entity_ref: e.target.value });
     });
     card.appendChild(_row('Relativ zu', targetSelect));
@@ -650,7 +677,7 @@
     distanceInput.type = 'number';
     distanceInput.step = '0.1';
     distanceInput.value = UIUtils.fmt(action.value ?? 10.0);
-    distanceInput.addEventListener('change', e => {
+    distanceInput.addEventListener('change', (e) => {
       const parsed = parseFloat(e.target.value);
       _patchEventAction(actor, ev, { value: Number.isFinite(parsed) ? parsed : 0 });
     });
@@ -661,11 +688,14 @@
 
   function _appendLaneChangeControls(card, actor, ev, action) {
     const laneDynamics = action.dynamics || { shape: 'linear', value: 12.0 };
-    const directionSelect = _select([
-      ['left', 'Links'],
-      ['right', 'Rechts'],
-    ], action.direction === 'right' ? 'right' : 'left');
-    directionSelect.addEventListener('change', e => {
+    const directionSelect = _select(
+      [
+        ['left', 'Links'],
+        ['right', 'Rechts'],
+      ],
+      action.direction === 'right' ? 'right' : 'left',
+    );
+    directionSelect.addEventListener('change', (e) => {
       _patchEventAction(actor, ev, { direction: e.target.value === 'right' ? 'right' : 'left' });
     });
     const durationInput = document.createElement('input');
@@ -673,7 +703,7 @@
     durationInput.min = '0';
     durationInput.step = '0.1';
     durationInput.value = UIUtils.fmt(laneDynamics.value ?? 12.0);
-    durationInput.addEventListener('change', e => {
+    durationInput.addEventListener('change', (e) => {
       _patchEventAction(actor, ev, {
         dynamics: {
           ...laneDynamics,
@@ -687,8 +717,11 @@
     // the long form.
     durationInput.title = 'Strecke, über die der Spurwechsel ausgeführt wird';
     directionSelect.setAttribute('aria-label', 'Richtung');
-    card.appendChild(_multiRow('Richtung', [directionSelect, _unit('über'), durationInput, _unit('m')],
-      { className: 'event-lane-change-row' }));
+    card.appendChild(
+      _multiRow('Richtung', [directionSelect, _unit('über'), durationInput, _unit('m')], {
+        className: 'event-lane-change-row',
+      }),
+    );
   }
 
   /**
@@ -706,7 +739,7 @@
     offsetInput.max = String(MAX_LANE_OFFSET_M);
     offsetInput.step = '0.1';
     offsetInput.value = UIUtils.fmt(action.offset ?? DEFAULT_LANE_OFFSET_M);
-    offsetInput.addEventListener('change', e => {
+    offsetInput.addEventListener('change', (e) => {
       const parsed = parseFloat(e.target.value);
       _patchEventAction(actor, ev, {
         offset: Math.min(MAX_LANE_OFFSET_M, Math.max(0, Number.isFinite(parsed) ? parsed : 0)),
@@ -722,27 +755,39 @@
     const width = _laneWidthAt(actor);
     const presets = document.createElement('div');
     presets.className = 'event-toggle event-offset-presets';
-    [['half', '½', width / 2], ['full', '1', width]].forEach(([key, label, metres]) => {
+    [
+      ['half', '½', width / 2],
+      ['full', '1', width],
+    ].forEach(([key, label, metres]) => {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.dataset.preset = key;
       btn.textContent = label;
-      btn.title = `${key === 'half' ? 'Halbe Spur' : 'Ganze Spur'}: ${UIUtils.fmt(metres, 2)} m `
-        + `— Spurbreite hier ${UIUtils.fmt(width, 2)} m`;
+      btn.title =
+        `${key === 'half' ? 'Halbe Spur' : 'Ganze Spur'}: ${UIUtils.fmt(metres, 2)} m ` +
+        `— Spurbreite hier ${UIUtils.fmt(width, 2)} m`;
       btn.addEventListener('click', () => {
         _patchEventAction(actor, ev, { offset: Math.round(metres * 100) / 100 });
       });
       presets.appendChild(btn);
     });
-    card.appendChild(_multiRow('Seite',
-      [_lateralDirectionToggle(actor, ev), offsetInput, _unit('m'), presets],
-      { className: 'event-offset-row' }));
+    card.appendChild(
+      _multiRow('Seite', [_lateralDirectionToggle(actor, ev), offsetInput, _unit('m'), presets], {
+        className: 'event-offset-row',
+      }),
+    );
 
     const held = action.continuous !== false;
-    const mode = _toggle(actor, ev,
-      [['held', 'Dauerhaft'], ['return', 'Hin & zurück']],
+    const mode = _toggle(
+      actor,
+      ev,
+      [
+        ['held', 'Dauerhaft'],
+        ['return', 'Hin & zurück'],
+      ],
       held ? 'held' : 'return',
-      value => ({ continuous: value === 'held' }));
+      (value) => ({ continuous: value === 'held' }),
+    );
     mode.title = held ? FIXED_LANE_OFFSET_HINT : RETURN_LANE_OFFSET_HINT;
     card.appendChild(_row('Dauer', mode));
   }
@@ -814,8 +859,7 @@
       const sign = trigger.rule === 'lessThan' ? '<' : '>';
       return `v(${_eventActorLabel(trigger.entity_ref)}) − eigene ${sign} ${UIUtils.fmt(trigger.value ?? 0)} m/s`;
     }
-    if (trigger.type === 'distance_to_ego' && trigger.entity_ref &&
-        trigger.entity_ref !== AppState.ego?.id) {
+    if (trigger.type === 'distance_to_ego' && trigger.entity_ref && trigger.entity_ref !== AppState.ego?.id) {
       return `Abstand zu ${_eventActorLabel(trigger.entity_ref)} ${UIUtils.fmt(trigger.value ?? 0, 0)}m`;
     }
     const pointTarget = trigger.entity_ref || _defaultPointTriggerActorId(actor);
@@ -832,8 +876,7 @@
     // dropdown, so 'EGO' matches their case and width where 'Ego-Fahrzeug'
     // would not. AppState.actorLabel owns both spellings.
     const actor = AppState.findById(actorId);
-    return actor ? AppState.actorLabel(actor, { short: true })
-                 : AppState.actorLabel(AppState.ego, { short: true });
+    return actor ? AppState.actorLabel(actor, { short: true }) : AppState.actorLabel(AppState.ego, { short: true });
   }
 
   function _eventActionSummary(ev, actor) {
@@ -844,9 +887,10 @@
     // 'für Ns' is a hold; 'mit N m/s²' is a ramp that ends on arrival, not on a
     // clock — the wording has to distinguish them or the card lies about when
     // an after_event chained onto it will fire.
-    const speedDynamicsSummary = _speedDimension(ev) === 'rate'
-      ? `mit ${UIUtils.fmt(dynamics.value ?? DEFAULT_SPEED_RATE)} m/s²`
-      : `für ${UIUtils.fmt(dynamics.value ?? DEFAULT_SPEED_TIME)}s`;
+    const speedDynamicsSummary =
+      _speedDimension(ev) === 'rate'
+        ? `mit ${UIUtils.fmt(dynamics.value ?? DEFAULT_SPEED_RATE)} m/s²`
+        : `für ${UIUtils.fmt(dynamics.value ?? DEFAULT_SPEED_TIME)}s`;
     const relativeSpeedTarget = target.entity_ref || _defaultRelativeActorId(actor);
     const distanceTarget = action.entity_ref || _defaultRelativeActorId(actor);
     // Counted against the 2 the emitter needs, not against 0: a single waypoint
@@ -856,30 +900,41 @@
     const routePoints = (action.waypoints || []).length;
     const trajectoryVisible = MapView.isTrajectoryVisible(actor.id, ev.id);
     const routeVisible = MapView.isRouteVisible(actor.id, ev.id);
-    const partial = n => `unvollständig (${n} Wegpunkt${n === 1 ? '' : 'e'})`;
+    const partial = (n) => `unvollständig (${n} Wegpunkt${n === 1 ? '' : 'e'})`;
     const actionLabels = {
-      follow_trajectory: trajectoryPoints >= 2
-        ? `Pfad gezeichnet, ${UIUtils.fmt(_trajectorySpeed(action.trajectory))} m/s${trajectoryVisible ? '' : ', ausgeblendet'}`
-        : trajectoryPoints > 0 ? `Pfad ${partial(trajectoryPoints)}` : 'Pfad nicht gezeichnet',
-      assign_route: routePoints >= 2
-        ? `Route gezeichnet${routeVisible ? '' : ', ausgeblendet'}`
-        : routePoints > 0 ? `Route ${partial(routePoints)}` : 'Route nicht gezeichnet',
-      set_speed: speedMode === 'relative'
-        ? `${target.value_type === 'factor'
-            ? `${UIUtils.fmt(target.factor ?? DEFAULT_SPEED_FACTOR, 2)}×`
-            : `${UIUtils.fmt(target.delta ?? 10)} m/s`} relativ zu ${
-            relativeSpeedTarget === actor.id ? 'eigener Geschw.' : _eventActorLabel(relativeSpeedTarget)} ${
-            target.continuous === true && relativeSpeedTarget !== actor.id ? 'dauerhaft' : speedDynamicsSummary}`
-        : `${UIUtils.fmt(target.value ?? 10)} m/s${target.reverse === true ? ' rückwärts' : ''} ${speedDynamicsSummary}`,
+      follow_trajectory:
+        trajectoryPoints >= 2
+          ? `Pfad gezeichnet, ${UIUtils.fmt(_trajectorySpeed(action.trajectory))} m/s${trajectoryVisible ? '' : ', ausgeblendet'}`
+          : trajectoryPoints > 0
+            ? `Pfad ${partial(trajectoryPoints)}`
+            : 'Pfad nicht gezeichnet',
+      assign_route:
+        routePoints >= 2
+          ? `Route gezeichnet${routeVisible ? '' : ', ausgeblendet'}`
+          : routePoints > 0
+            ? `Route ${partial(routePoints)}`
+            : 'Route nicht gezeichnet',
+      set_speed:
+        speedMode === 'relative'
+          ? `${
+              target.value_type === 'factor'
+                ? `${UIUtils.fmt(target.factor ?? DEFAULT_SPEED_FACTOR, 2)}×`
+                : `${UIUtils.fmt(target.delta ?? 10)} m/s`
+            } relativ zu ${
+              relativeSpeedTarget === actor.id ? 'eigener Geschw.' : _eventActorLabel(relativeSpeedTarget)
+            } ${target.continuous === true && relativeSpeedTarget !== actor.id ? 'dauerhaft' : speedDynamicsSummary}`
+          : `${UIUtils.fmt(target.value ?? 10)} m/s${target.reverse === true ? ' rückwärts' : ''} ${speedDynamicsSummary}`,
       set_distance: `${action.axis === 'lateral' ? 'Lateral' : 'Longitudinal'} ${UIUtils.fmt(action.value ?? 10)} m relativ zu ${_eventActorLabel(distanceTarget)}`,
       lane_change: `${action.direction === 'right' ? 'Rechts' : 'Links'} innerhalb ${UIUtils.fmt(dynamics.value ?? 12)} m`,
       // 'dauerhaft' is half the meaning of the action, so it belongs in the one
       // line a collapsed card gets — an offset of 0 reads 'zurück zur Spurmitte'
       // because naming a side there would say nothing.
-      lane_offset: (action.offset ?? DEFAULT_LANE_OFFSET_M) > 0
-        ? `${action.direction === 'right' ? 'Rechts' : 'Links'} ${UIUtils.fmt(action.offset ?? DEFAULT_LANE_OFFSET_M)} m, ${
-          action.continuous === false ? 'hin & zurück' : 'dauerhaft'}`
-        : 'Zurück zur Spurmitte, dauerhaft',
+      lane_offset:
+        (action.offset ?? DEFAULT_LANE_OFFSET_M) > 0
+          ? `${action.direction === 'right' ? 'Rechts' : 'Links'} ${UIUtils.fmt(action.offset ?? DEFAULT_LANE_OFFSET_M)} m, ${
+              action.continuous === false ? 'hin & zurück' : 'dauerhaft'
+            }`
+          : 'Zurück zur Spurmitte, dauerhaft',
     };
     return actionLabels[action.type];
   }
@@ -889,8 +944,9 @@
   /** Split `${actorId}::${eventId}`, the value the ref dropdown carries. */
   function _splitAfterEventValue(value) {
     const at = String(value || '').indexOf('::');
-    return at < 0 ? { actorId: null, eventId: String(value || '') }
-                  : { actorId: value.slice(0, at), eventId: value.slice(at + 2) };
+    return at < 0
+      ? { actorId: null, eventId: String(value || '') }
+      : { actorId: value.slice(0, at), eventId: value.slice(at + 2) };
   }
 
   /** The trigger patch for "wait for `candidate` on `owner`".
@@ -943,9 +999,8 @@
     };
     addGroup(actor, events, 'Dieser Akteur', true);
     [AppState.ego, ...(AppState.npcs || [])]
-      .filter(other => other && other.id !== actor.id)
-      .forEach(other => addGroup(other, other.events || [],
-                                 AppState.actorLabel(other, { short: true }), false));
+      .filter((other) => other && other.id !== actor.id)
+      .forEach((other) => addGroup(other, other.events || [], AppState.actorLabel(other, { short: true }), false));
     return groups;
   }
 
@@ -982,19 +1037,19 @@
     // The two actor-relative triggers need another actor to measure against;
     // for the ego that means an NPC, for an NPC there is always the ego.
     const others = _relativeActorOptions(actor);
-    const triggerOptions = EVENT_TRIGGERS.filter(([value]) =>
-      !((value === 'distance_to_ego' || value === 'relative_speed') && others.length === 0) ||
-      value === trigger.type);
+    const triggerOptions = EVENT_TRIGGERS.filter(
+      ([value]) =>
+        !((value === 'distance_to_ego' || value === 'relative_speed') && others.length === 0) || value === trigger.type,
+    );
     const triggerSelect = _select(triggerOptions, trigger.type || 'simulation_time');
-    triggerSelect.addEventListener('change', e => {
+    triggerSelect.addEventListener('change', (e) => {
       const kind = e.target.value;
       if (kind === 'after_event' || kind === 'event_started') {
         // The first offered option, own actor first — _afterEventGroups has
         // already dropped the assign_routes and anything that would loop.
         const ref = _firstAfterEventOption(_afterEventGroups(actor, ev, events, kind));
         _updateEvent(actor, ev.id, {
-          trigger: ref ? _afterEventTrigger(actor, ref.actorId, ref.eventId, kind)
-                       : { type: kind, event_id: '' },
+          trigger: ref ? _afterEventTrigger(actor, ref.actorId, ref.eventId, kind) : { type: kind, event_id: '' },
         });
       } else if (kind === 'ego_speed') {
         _updateEvent(actor, ev.id, {
@@ -1002,13 +1057,20 @@
         });
       } else if (kind === 'relative_speed') {
         _updateEvent(actor, ev.id, {
-          trigger: { type: 'relative_speed', entity_ref: _defaultRelativeActorId(actor),
-                     rule: 'greaterThan', value: DEFAULT_RELATIVE_SPEED },
+          trigger: {
+            type: 'relative_speed',
+            entity_ref: _defaultRelativeActorId(actor),
+            rule: 'greaterThan',
+            value: DEFAULT_RELATIVE_SPEED,
+          },
         });
       } else if (kind === 'distance_to_ego') {
         // Absent entity_ref = the ego, which is what every older payload means
         // and what an NPC gets by default; the ego itself has to name an NPC.
-        const next = { type: 'distance_to_ego', value: trigger.type === 'distance_to_ego' ? (trigger.value ?? 400) : 400 };
+        const next = {
+          type: 'distance_to_ego',
+          value: trigger.type === 'distance_to_ego' ? (trigger.value ?? 400) : 400,
+        };
         if (actor.type === 'ego') next.entity_ref = _defaultRelativeActorId(actor);
         _updateEvent(actor, ev.id, { trigger: next });
       } else if (e.target.value === 'distance_to_point') {
@@ -1046,34 +1108,38 @@
       // that closes a loop. Neither is silently repointed: the option is added
       // so the select shows what the trigger actually says, and the card's
       // warning chip says why it will not export.
-      const known = groups.some(g => g.options.some(([value]) => value === selected));
+      const known = groups.some((g) => g.options.some(([value]) => value === selected));
       if (!known) {
         const target = ScenarioRules.afterEventTarget(actor, trigger, events);
         groups.unshift({
           label: 'Aktuell',
-          options: [[selected, target
-            ? _afterEventOptionLabel(target.actor, target.event, target.index,
-                                     target.actor.id === actor.id)
-            : 'Unbekanntes Event']],
+          options: [
+            [
+              selected,
+              target
+                ? _afterEventOptionLabel(target.actor, target.event, target.index, target.actor.id === actor.id)
+                : 'Unbekanntes Event',
+            ],
+          ],
         });
       }
-      const refSelect = groups.length
-        ? _groupedSelect(groups, selected)
-        : _select([['', 'Kein Event']], '');
+      const refSelect = groups.length ? _groupedSelect(groups, selected) : _select([['', 'Kein Event']], '');
       refSelect.disabled = groups.length === 0;
-      refSelect.title = 'Events anderer Akteure sind nach Akteur gruppiert; '
-        + 'Events, die bereits auf dieses warten, fehlen absichtlich (sonst Endlosschleife)'
-        + (actor.type === 'ego' ? '' : '; Ego-Events fehlen, weil ein vom AV gefahrenes Ego keine hat');
-      refSelect.addEventListener('change', e => {
+      refSelect.title =
+        'Events anderer Akteure sind nach Akteur gruppiert; ' +
+        'Events, die bereits auf dieses warten, fehlen absichtlich (sonst Endlosschleife)' +
+        (actor.type === 'ego' ? '' : '; Ego-Events fehlen, weil ein vom AV gefahrenes Ego keine hat');
+      refSelect.addEventListener('change', (e) => {
         const { actorId, eventId } = _splitAfterEventValue(e.target.value);
         _updateEvent(actor, ev.id, { trigger: _afterEventTrigger(actor, actorId, eventId, kind) });
       });
       block.appendChild(_row(kind === 'event_started' ? 'Mit Event' : 'Nach Event', refSelect));
     } else if (trigger.type === 'ego_speed') {
       const ruleSelect = _select(EGO_SPEED_RULES, trigger.rule === 'lessThan' ? 'lessThan' : 'greaterThan');
-      ruleSelect.title = 'Feuert, sobald die gemessene Geschwindigkeit des Ego die Schwelle '
-        + 'über- bzw. unterschreitet. „langsamer als" ist bei stehendem Ego sofort wahr.';
-      ruleSelect.addEventListener('change', e => {
+      ruleSelect.title =
+        'Feuert, sobald die gemessene Geschwindigkeit des Ego die Schwelle ' +
+        'über- bzw. unterschreitet. „langsamer als" ist bei stehendem Ego sofort wahr.';
+      ruleSelect.addEventListener('change', (e) => {
         _patchEventTrigger(actor, ev, { type: 'ego_speed', rule: e.target.value });
       });
       const speedInput = document.createElement('input');
@@ -1081,27 +1147,29 @@
       speedInput.min = '0';
       speedInput.step = '0.5';
       speedInput.value = UIUtils.fmt(trigger.value ?? DEFAULT_EGO_SPEED);
-      speedInput.addEventListener('change', e => {
+      speedInput.addEventListener('change', (e) => {
         _patchEventTrigger(actor, ev, {
           type: 'ego_speed',
           value: Math.max(0, parseFloat(e.target.value) || 0),
         });
       });
       speedInput.setAttribute('aria-label', 'Schwelle');
-      block.appendChild(_multiRow('Ego ist', [ruleSelect, speedInput, _unit('m/s')],
-        { className: 'event-rule-row' }));
+      block.appendChild(_multiRow('Ego ist', [ruleSelect, speedInput, _unit('m/s')], { className: 'event-rule-row' }));
     } else if (trigger.type === 'relative_speed') {
-      const refSelect = _select(others.length ? others : [['', 'Kein Akteur']],
-        trigger.entity_ref || _defaultRelativeActorId(actor));
+      const refSelect = _select(
+        others.length ? others : [['', 'Kein Akteur']],
+        trigger.entity_ref || _defaultRelativeActorId(actor),
+      );
       refSelect.disabled = others.length === 0;
-      refSelect.addEventListener('change', e => {
+      refSelect.addEventListener('change', (e) => {
         _patchEventTrigger(actor, ev, { type: 'relative_speed', entity_ref: e.target.value });
       });
       block.appendChild(_row('Akteur', refSelect));
       const ruleSelect = _select(RELATIVE_SPEED_RULES, trigger.rule === 'lessThan' ? 'lessThan' : 'greaterThan');
-      ruleSelect.title = 'Geschwindigkeit des gewählten Akteurs minus die eigene. '
-        + 'Positiv: der andere ist schneller. Beide als Betrag gemessen.';
-      ruleSelect.addEventListener('change', e => {
+      ruleSelect.title =
+        'Geschwindigkeit des gewählten Akteurs minus die eigene. ' +
+        'Positiv: der andere ist schneller. Beide als Betrag gemessen.';
+      ruleSelect.addEventListener('change', (e) => {
         _patchEventTrigger(actor, ev, { type: 'relative_speed', rule: e.target.value });
       });
       const diffInput = document.createElement('input');
@@ -1111,7 +1179,7 @@
       diffInput.step = '0.5';
       diffInput.value = UIUtils.fmt(trigger.value ?? DEFAULT_RELATIVE_SPEED);
       diffInput.title = ruleSelect.title;
-      diffInput.addEventListener('change', e => {
+      diffInput.addEventListener('change', (e) => {
         const parsed = parseFloat(e.target.value);
         _patchEventTrigger(actor, ev, {
           type: 'relative_speed',
@@ -1119,15 +1187,14 @@
         });
       });
       diffInput.setAttribute('aria-label', 'Schwelle');
-      block.appendChild(_multiRow('Differenz', [ruleSelect, diffInput, _unit('m/s')],
-        { className: 'event-rule-row' }));
+      block.appendChild(_multiRow('Differenz', [ruleSelect, diffInput, _unit('m/s')], { className: 'event-rule-row' }));
     } else if (trigger.type === 'distance_to_ego') {
       const distanceInput = document.createElement('input');
       distanceInput.type = 'number';
       distanceInput.min = '0';
       distanceInput.step = '1';
       distanceInput.value = UIUtils.fmt(trigger.value ?? 0, 0);
-      distanceInput.addEventListener('change', e => {
+      distanceInput.addEventListener('change', (e) => {
         _patchEventTrigger(actor, ev, {
           type: 'distance_to_ego',
           value: Math.max(0, parseFloat(e.target.value) || 0),
@@ -1136,7 +1203,7 @@
       const selected = trigger.entity_ref || AppState.ego?.id || '';
       const refSelect = _select(others.length ? others : [['', 'Kein Akteur']], selected);
       refSelect.disabled = others.length === 0;
-      refSelect.addEventListener('change', e => {
+      refSelect.addEventListener('change', (e) => {
         const current = _eventTrigger(_currentEvent(actor.id, ev.id) || ev);
         const { entity_ref, ...rest } = current;
         _updateEvent(actor, ev.id, {
@@ -1162,7 +1229,7 @@
       distanceInput.min = '0';
       distanceInput.step = '1';
       distanceInput.value = UIUtils.fmt(trigger.value ?? 20, 0);
-      distanceInput.addEventListener('change', e => {
+      distanceInput.addEventListener('change', (e) => {
         _patchEventTrigger(actor, ev, {
           type: 'distance_to_point',
           value: Math.max(0, parseFloat(e.target.value) || 0),
@@ -1172,7 +1239,7 @@
       });
 
       const targetSelect = _select(_triggerActorOptions(actor), selectedTarget);
-      targetSelect.addEventListener('change', e => {
+      targetSelect.addEventListener('change', (e) => {
         _patchEventTrigger(actor, ev, {
           type: 'distance_to_point',
           value: trigger.value ?? 20,
@@ -1187,7 +1254,7 @@
       valueInput.min = '0';
       valueInput.step = '0.1';
       valueInput.value = UIUtils.fmt(trigger.value ?? 0, 1);
-      valueInput.addEventListener('change', e => {
+      valueInput.addEventListener('change', (e) => {
         _patchEventTrigger(actor, ev, {
           type: trigger.type || 'simulation_time',
           value: Math.max(0, parseFloat(e.target.value) || 0),
@@ -1214,7 +1281,7 @@
 
   function _defaultRelativeActorId(actor) {
     if (AppState.ego && AppState.ego.id !== actor?.id) return AppState.ego.id;
-    const fallback = AppState.npcs.find(n => n.id !== actor?.id);
+    const fallback = AppState.npcs.find((n) => n.id !== actor?.id);
     return fallback ? fallback.id : '';
   }
 
@@ -1223,9 +1290,7 @@
     if (AppState.ego && AppState.ego.id !== actor?.id) {
       options.push([AppState.ego.id, 'Ego']);
     }
-    AppState.npcs
-      .filter(n => n.id !== actor?.id)
-      .forEach(n => options.push([n.id, AppState.actorLabel(n)]));
+    AppState.npcs.filter((n) => n.id !== actor?.id).forEach((n) => options.push([n.id, AppState.actorLabel(n)]));
     return options;
   }
 
@@ -1241,9 +1306,7 @@
     if (actor?.id && actor.id !== AppState.ego?.id) {
       options.push([actor.id, AppState.actorLabel(actor)]);
     }
-    AppState.npcs
-      .filter(n => n.id !== actor?.id)
-      .forEach(n => options.push([n.id, AppState.actorLabel(n)]));
+    AppState.npcs.filter((n) => n.id !== actor?.id).forEach((n) => options.push([n.id, AppState.actorLabel(n)]));
     return options;
   }
 
@@ -1317,16 +1380,17 @@
       btn.addEventListener('click', () => {
         _patchEventAction(actor, ev, {
           type: 'set_speed',
-          target: value === 'relative'
-            ? {
-              mode: 'relative',
-              entity_ref: target.entity_ref || _defaultRelativeActorId(actor),
-              delta: target.delta ?? target.value ?? 10.0,
-            }
-            : {
-              mode: 'absolute',
-              value: target.value ?? target.delta ?? 10.0,
-            },
+          target:
+            value === 'relative'
+              ? {
+                  mode: 'relative',
+                  entity_ref: target.entity_ref || _defaultRelativeActorId(actor),
+                  delta: target.delta ?? target.value ?? 10.0,
+                }
+              : {
+                  mode: 'absolute',
+                  value: target.value ?? target.delta ?? 10.0,
+                },
         });
       });
       wrap.appendChild(btn);
@@ -1343,13 +1407,13 @@
     const select = _select(SPEED_DIMENSIONS, current);
     select.className = 'event-speed-dim';
     select.setAttribute('aria-label', 'Dynamik');
-    select.title = 'Dynamik — für: Zielgeschwindigkeit sofort, gehalten für N s; '
-      + 'Rate: Rampe mit N m/s², endet beim Erreichen';
+    select.title =
+      'Dynamik — für: Zielgeschwindigkeit sofort, gehalten für N s; ' + 'Rate: Rampe mit N m/s², endet beim Erreichen';
     if (rateOnly) {
       select.querySelector('option[value="time"]').disabled = true;
       select.title += ' (relativ zur eigenen Geschwindigkeit nur mit Rate)';
     }
-    select.addEventListener('change', e => {
+    select.addEventListener('change', (e) => {
       const value = e.target.value;
       if (value === current) return;
       _patchEventAction(actor, ev, {
@@ -1379,7 +1443,7 @@
     UIUtils.bindLabel(label, controls[0]);
     const wrap = document.createElement('div');
     wrap.className = 'event-multi';
-    controls.forEach(c => wrap.appendChild(c));
+    controls.forEach((c) => wrap.appendChild(c));
     row.appendChild(label);
     row.appendChild(wrap);
     return row;
@@ -1457,15 +1521,13 @@
 
   function _eventPathPoints(ev) {
     const action = _eventAction(ev);
-    return action.type === 'assign_route'
-      ? (action.waypoints || [])
-      : (action.trajectory || []);
+    return action.type === 'assign_route' ? action.waypoints || [] : action.trajectory || [];
   }
 
   /** Render one path event's waypoint list into `target`. */
   function _renderPathList(actor, type, target, ev) {
     target.innerHTML = '';
-    const points  = _eventPathPoints(ev);
+    const points = _eventPathPoints(ev);
     const eventId = ev.id;
     const isRoute = type === 'route';
 
@@ -1483,17 +1545,18 @@
       // The same four attributes the map's waypoint groups carry — they are the
       // whole contract between the two halves, so a row and a marker can always
       // be matched up without either side knowing how the other is built.
-      item.dataset.actorId  = actor.id;
-      item.dataset.eventId  = eventId;
+      item.dataset.actorId = actor.id;
+      item.dataset.eventId = eventId;
       item.dataset.pathType = type;
-      item.dataset.wpIdx    = i;
+      item.dataset.wpIdx = i;
       // Focusable so Entf/Backspace reaches mapView's handler straight after a
       // click on the row: the guard there is "not inside a field", and a row is
       // not a field. Enter re-locates, matching the click.
       item.tabIndex = 0;
-      item.title = i === 0
-        ? 'Startpunkt — liegt auf dem Fahrzeug und folgt ihm'
-        : 'Klicken, um auf der Karte zu zeigen · Entf löscht';
+      item.title =
+        i === 0
+          ? 'Startpunkt — liegt auf dem Fahrzeug und folgt ihm'
+          : 'Klicken, um auf der Karte zu zeigen · Entf löscht';
 
       const locate = () => {
         const sel = { actorId: actor.id, eventId, pathType: type, index: i };
@@ -1504,13 +1567,13 @@
         if (i > 0) AppState.selectWaypoint(sel);
         MapView.focusWaypoint(sel);
       };
-      item.addEventListener('click', e => {
+      item.addEventListener('click', (e) => {
         // The row's own controls keep their clicks: the delete and strategy
         // buttons sit inside it.
         if (e.target.closest('button, input')) return;
         locate();
       });
-      item.addEventListener('keydown', e => {
+      item.addEventListener('keydown', (e) => {
         if (e.key !== 'Enter') return;
         if (e.target.closest('input')) return;
         e.preventDefault();
@@ -1536,20 +1599,18 @@
       delBtn.textContent = '×';
       delBtn.title = i === 0 ? '' : 'Wegpunkt entfernen';
       if (i > 0) delBtn.setAttribute('aria-label', `Wegpunkt ${i + 1} entfernen`);
-      if (i > 0) delBtn.addEventListener('click', () => {
-        ObjectsManager.deletePathPoint(actor.id, type, i, eventId);
-        // Indices past the deleted one all shift down, so a mark left as it is
-        // would silently start naming the next point along — and Entf would
-        // then delete something the user never marked.
-        const sel = AppState.selectedWaypoint;
-        if (sel && sel.actorId === actor.id && sel.eventId === eventId
-            && sel.pathType === type && sel.index >= i) {
-          const left = (AppState.waypointPathOf(sel) || []).length;
-          AppState.selectWaypoint(left && sel.index > i
-            ? { ...sel, index: sel.index - 1 }
-            : null);
-        }
-      });
+      if (i > 0)
+        delBtn.addEventListener('click', () => {
+          ObjectsManager.deletePathPoint(actor.id, type, i, eventId);
+          // Indices past the deleted one all shift down, so a mark left as it is
+          // would silently start naming the next point along — and Entf would
+          // then delete something the user never marked.
+          const sel = AppState.selectedWaypoint;
+          if (sel && sel.actorId === actor.id && sel.eventId === eventId && sel.pathType === type && sel.index >= i) {
+            const left = (AppState.waypointPathOf(sel) || []).length;
+            AppState.selectWaypoint(left && sel.index > i ? { ...sel, index: sel.index - 1 } : null);
+          }
+        });
 
       item.appendChild(num);
       item.appendChild(coords);
@@ -1567,11 +1628,9 @@
         stratBtn.title = shortest
           ? 'Gerade Linie vom vorherigen Wegpunkt — klicken, um der Fahrspur zu folgen'
           : 'Folgt der Fahrspur ab dem vorherigen Wegpunkt — klicken für eine gerade Linie';
-        stratBtn.setAttribute('aria-label',
-          `Wegpunkt ${i + 1}: ${shortest ? 'gerade Linie' : 'Fahrspur'}`);
+        stratBtn.setAttribute('aria-label', `Wegpunkt ${i + 1}: ${shortest ? 'gerade Linie' : 'Fahrspur'}`);
         stratBtn.addEventListener('click', () => {
-          ObjectsManager.setPathPointStrategy(
-            actor.id, i, shortest ? 'fastest' : 'shortest', eventId);
+          ObjectsManager.setPathPointStrategy(actor.id, i, shortest ? 'fastest' : 'shortest', eventId);
         });
         item.appendChild(stratBtn);
       }
@@ -1592,14 +1651,16 @@
 
   function syncWaypointSelection() {
     const sel = AppState.selectedWaypoint;
-    const key = sel
-      ? `${sel.actorId}:${sel.eventId}:${sel.pathType}:${sel.index}`
-      : null;
+    const key = sel ? `${sel.actorId}:${sel.eventId}:${sel.pathType}:${sel.index}` : null;
     let marked = null;
-    eventList.querySelectorAll('.waypoint-item').forEach(row => {
+    eventList.querySelectorAll('.waypoint-item').forEach((row) => {
       const d = row.dataset;
-      const hit = !!sel && d.actorId === sel.actorId && d.eventId === sel.eventId
-               && d.pathType === sel.pathType && Number(d.wpIdx) === sel.index;
+      const hit =
+        !!sel &&
+        d.actorId === sel.actorId &&
+        d.eventId === sel.eventId &&
+        d.pathType === sel.pathType &&
+        Number(d.wpIdx) === sel.index;
       row.classList.toggle('waypoint-selected', hit);
       if (hit) marked = row;
     });
@@ -1617,7 +1678,8 @@
    * effective average, the same number Simulate._avgTrajectorySpeed drives.
    */
   function _trajectorySpeed(points) {
-    let dist = 0, time = 0;
+    let dist = 0,
+      time = 0;
     for (let i = 1; i < points.length; i++) {
       const d = Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
       const v = ((points[i - 1].velocity ?? 10) + (points[i].velocity ?? 10)) / 2 || 1;
@@ -1641,7 +1703,7 @@
     input.title = points.length
       ? 'Geschwindigkeit entlang des ganzen Pfads (CARLA fährt eine Trajektorie mit einer einzigen Geschwindigkeit)'
       : 'Erst einen Pfad zeichnen';
-    input.addEventListener('change', e => {
+    input.addEventListener('change', (e) => {
       ObjectsManager.setPathVelocity(actor.id, e.target.value, ev.id);
     });
     card.appendChild(UIUtils.paramRow('Geschw.', input, 'm/s'));
@@ -1686,8 +1748,7 @@
     // of its waypoints below, both un-hide it (MapView.showPath).
     toggleBtn.title = visible
       ? 'Pfad auf der Karte ausblenden'
-      : 'Pfad wieder einblenden — Zeichnen oder das Anklicken eines '
-        + 'Wegpunkts blendet ihn ebenfalls wieder ein.';
+      : 'Pfad wieder einblenden — Zeichnen oder das Anklicken eines ' + 'Wegpunkts blendet ihn ebenfalls wieder ein.';
     toggleBtn.addEventListener('click', () => {
       if (isRouteAction) MapView.toggleRouteVisibility(actor.id, ev.id);
       else MapView.toggleTrajectoryVisibility(actor.id, ev.id);
@@ -1705,7 +1766,7 @@
   // A mark set on the map has to light up the matching row without rebuilding
   // the panel: the rebuild would happen anyway on the next actorUpdated, but a
   // click on a marker is not an edit and must not cost a full re-render.
-  AppState.on('change', patch => {
+  AppState.on('change', (patch) => {
     if ('selectedWaypoint' in patch) syncWaypointSelection();
   });
 
@@ -1728,11 +1789,12 @@
     const events = actor.events || [];
     const idx = UIUtils.nextIndexedId(events, 'evt');
     const previous = events[events.length - 1];
-    const trigger = actionType === 'assign_route'
-      ? { type: 'simulation_time', value: 0 }
-      : events.length > 0 && !forceFirst && _isChainTarget(previous)
-        ? { type: 'after_event', event_id: previous.id }
-        : _defaultFirstTrigger(actor);
+    const trigger =
+      actionType === 'assign_route'
+        ? { type: 'simulation_time', value: 0 }
+        : events.length > 0 && !forceFirst && _isChainTarget(previous)
+          ? { type: 'after_event', event_id: previous.id }
+          : _defaultFirstTrigger(actor);
     return {
       id: `evt-${idx}`,
       trigger,
@@ -1806,29 +1868,27 @@
 
   function _updateEvent(actor, eventId, patch) {
     const currentActor = AppState.findById(actor.id) || actor;
-    const events = (currentActor.events || []).map(ev => (
-      ev.id === eventId ? { ...ev, ...patch } : ev
-    ));
+    const events = (currentActor.events || []).map((ev) => (ev.id === eventId ? { ...ev, ...patch } : ev));
     AppState.updateById(currentActor.id, { events });
   }
 
   function _currentEvent(actorId, eventId) {
     const actor = AppState.findById(actorId);
-    return (actor?.events || []).find(ev => ev.id === eventId) || null;
+    return (actor?.events || []).find((ev) => ev.id === eventId) || null;
   }
 
   function _deleteEvent(actor, eventId) {
     const currentActor = AppState.findById(actor.id) || actor;
     const currentEvents = currentActor.events || [];
-    const deletedIndex = currentEvents.findIndex(ev => ev.id === eventId);
+    const deletedIndex = currentEvents.findIndex((ev) => ev.id === eventId);
     if (deletedIndex < 0) return;
 
     const previousEvent = currentEvents[deletedIndex - 1] || null;
-    const firstEventTriggerPatch = ev => ({
+    const firstEventTriggerPatch = (ev) => ({
       ...ev,
       trigger: _defaultFirstTrigger(
         currentActor,
-        _eventTrigger(ev).type === 'distance_to_ego' ? _eventTrigger(ev).value : null
+        _eventTrigger(ev).type === 'distance_to_ego' ? _eventTrigger(ev).value : null,
       ),
     });
     // `!trigger.actor_ref` is load-bearing: event ids are only unique within an
@@ -1836,8 +1896,8 @@
     // this actor's evt-2 would re-point a trigger that names ANOTHER actor's
     // evt-2 — at an event on the wrong vehicle.
     const events = currentEvents
-      .filter(ev => ev.id !== eventId)
-      .map(ev => {
+      .filter((ev) => ev.id !== eventId)
+      .map((ev) => {
         const trigger = _eventTrigger(ev);
         if (ScenarioRules.isEventRef(trigger) && !trigger.actor_ref && trigger.event_id === eventId) {
           return _canChainOnto(currentActor, ev, currentActor, previousEvent, trigger.type)
@@ -1895,21 +1955,26 @@
   }
 
   function _canChainOnto(actor, ev, owner, candidate, triggerType = 'after_event') {
-    return !!candidate
-      && _isChainTarget(candidate, triggerType)
-      && ScenarioRules.mayWaitOnActor(actor, owner)
-      && ScenarioRules.canWaitFor(actor, ev, owner, candidate);
+    return (
+      !!candidate &&
+      _isChainTarget(candidate, triggerType) &&
+      ScenarioRules.mayWaitOnActor(actor, owner) &&
+      ScenarioRules.canWaitFor(actor, ev, owner, candidate)
+    );
   }
 
   function _repointForeignReferences(owner, deletedEventId, previousEvent) {
     for (const other of [AppState.ego, ...(AppState.npcs || [])]) {
       if (!other || other.id === owner.id || !(other.events || []).length) continue;
       let touched = false;
-      const events = other.events.map(ev => {
+      const events = other.events.map((ev) => {
         const trigger = _eventTrigger(ev);
-        if (!ScenarioRules.isEventRef(trigger) ||
-            trigger.actor_ref !== owner.id ||
-            String(trigger.event_id) !== String(deletedEventId)) return ev;
+        if (
+          !ScenarioRules.isEventRef(trigger) ||
+          trigger.actor_ref !== owner.id ||
+          String(trigger.event_id) !== String(deletedEventId)
+        )
+          return ev;
         touched = true;
         return {
           ...ev,

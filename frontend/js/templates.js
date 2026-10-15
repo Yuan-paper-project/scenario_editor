@@ -22,21 +22,21 @@
   // ramps. Comfortable-but-brisk; well clear of the 0.1 floor _normalize_actor
   // applies to keep a rate event from never terminating.
   const RAMP_RATE = 5.0;
-  const EMERGENCY_DECEL = 8.0;      // m/s², a hard but tyre-limited stop
-  const CUT_IN_SPEED = 8.0;         // m/s, slower than a typical ego so it is caught up
-  const CUT_IN_TRIGGER_M = 15;      // ego distance (centre to centre) at which it pulls over
-  const CUT_IN_LENGTH_M = 12;       // lane-change distance; ScenarioRunner's practical minimum is ~12 m
-  const WALK_SPEED = 1.4;           // m/s, normal adult walking pace
-  const CHILD_RUN_SPEED = 3.0;      // m/s, a child running out
-  const CYCLE_SPEED = 4.0;          // m/s, ~14 km/h
-  const KERB_STEP_M = 1.5;          // how far past the last carriageway lane a crossing ends
-  const CROSSING_SEARCH_M = 60;     // how far ahead to look for the road at all
-  const PULL_OUT_AHEAD_M = 10;      // the merge point, ahead of the parked car (NOTES 1.1 #3)
+  const EMERGENCY_DECEL = 8.0; // m/s², a hard but tyre-limited stop
+  const CUT_IN_SPEED = 8.0; // m/s, slower than a typical ego so it is caught up
+  const CUT_IN_TRIGGER_M = 15; // ego distance (centre to centre) at which it pulls over
+  const CUT_IN_LENGTH_M = 12; // lane-change distance; ScenarioRunner's practical minimum is ~12 m
+  const WALK_SPEED = 1.4; // m/s, normal adult walking pace
+  const CHILD_RUN_SPEED = 3.0; // m/s, a child running out
+  const CYCLE_SPEED = 4.0; // m/s, ~14 km/h
+  const KERB_STEP_M = 1.5; // how far past the last carriageway lane a crossing ends
+  const CROSSING_SEARCH_M = 60; // how far ahead to look for the road at all
+  const PULL_OUT_AHEAD_M = 10; // the merge point, ahead of the parked car (NOTES 1.1 #3)
   // Then on along the driving lane, as far as the probe reaches. The route's
   // end is where SimpleVehicleControl stops dead: at 40 m (measured in CARLA,
   // Town03 road 6) the car parked in the ego's lane and the ego closed to 3.5 m.
   const PULL_OUT_RUN_M = 80;
-  const WAYPOINT_CLEARANCE = 0.5;   // objects.js SPAWN_CLEARANCE.waypoint
+  const WAYPOINT_CLEARANCE = 0.5; // objects.js SPAWN_CLEARANCE.waypoint
   // SimpleVehicleControl counts a waypoint as reached within 4 m and stops dead
   // on the last one, so a trajectory ending AT the far kerb leaves a cyclist
   // standing 4 m short of it — measured in CARLA (Town01 road 1): stopped in
@@ -144,9 +144,14 @@
           actorType: 'car',
           events: [
             this._setSpeedEvent('evt-1', { type: 'distance_to_ego', value: 400 }, CUT_IN_SPEED, 5.0),
-            this._laneChangeEvent('evt-2', { type: 'distance_to_ego', value: CUT_IN_TRIGGER_M }, 'right', CUT_IN_LENGTH_M),
+            this._laneChangeEvent(
+              'evt-2',
+              { type: 'distance_to_ego', value: CUT_IN_TRIGGER_M },
+              'right',
+              CUT_IN_LENGTH_M,
+            ),
           ],
-          build: actor => this._buildCutIn(actor),
+          build: (actor) => this._buildCutIn(actor),
         },
         // A lane_offset never ends on its own and nothing may chain onto it
         // with after_event, so the return is a second offset of 0 on its own,
@@ -177,10 +182,8 @@
             laneTypes: ['driving', 'parking', 'shoulder'],
             maxDistance: 12,
           },
-          events: [
-            this._setSpeedEvent('evt-1', { type: 'distance_to_ego', value: 30 }, 10.0, 5.0),
-          ],
-          build: actor => this._buildPullOut(actor),
+          events: [this._setSpeedEvent('evt-1', { type: 'distance_to_ego', value: 30 }, 10.0, 5.0)],
+          build: (actor) => this._buildPullOut(actor),
         },
         // Stationary obstacle: no events at all, so it gets no Act and holds
         // its start speed of 0 for the whole run (CLAUDE.md "events: []").
@@ -214,7 +217,7 @@
           // ~3.5 s before the ego arrived, so the crossing never conflicted.
           // At 1.4 m/s a 30 m trigger puts it in the nearside lane as the ego
           // gets there (≈3–4 s at 8–10 m/s).
-          build: actor => this._buildWalkerCrossing(actor, WALK_SPEED, 30),
+          build: (actor) => this._buildWalkerCrossing(actor, WALK_SPEED, 30),
         },
         'pedestrian-stop-in-lane': {
           label: 'Bleibt auf Fahrbahn stehen',
@@ -224,16 +227,14 @@
             this._setSpeedEvent('evt-1', { type: 'distance_to_ego', value: 40 }, WALK_SPEED, 10.0),
             this._setSpeedEvent('evt-2', { type: 'after_event', event_id: 'evt-1' }, 0.0, 5.0),
           ],
-          build: actor => this._buildWalkerCrossing(actor, WALK_SPEED, 40, { pauseS: 3.0 }),
+          build: (actor) => this._buildWalkerCrossing(actor, WALK_SPEED, 40, { pauseS: 3.0 }),
         },
         'pedestrian-along-lane': {
           label: 'Fußgänger am Rand entlang',
           hint: 'Geht mit 1,4 m/s am Fahrbahnrand entlang, in Fahrtrichtung der nächsten Spur',
           actorType: 'pedestrian',
           placement: { orientation: 'along-lane' },
-          events: [
-            this._setSpeedEvent('evt-1', { type: 'distance_to_ego', value: 400 }, WALK_SPEED, 10.0),
-          ],
+          events: [this._setSpeedEvent('evt-1', { type: 'distance_to_ego', value: 400 }, WALK_SPEED, 10.0)],
         },
         'child-runs-out': {
           label: 'Kind läuft auf die Straße',
@@ -243,7 +244,7 @@
             this._setSpeedEvent('evt-1', { type: 'distance_to_ego', value: 25 }, CHILD_RUN_SPEED, 10.0),
             this._setSpeedEvent('evt-2', { type: 'after_event', event_id: 'evt-1' }, 0.0, 5.0),
           ],
-          build: actor => this._buildWalkerCrossing(actor, CHILD_RUN_SPEED, 25),
+          build: (actor) => this._buildWalkerCrossing(actor, CHILD_RUN_SPEED, 25),
         },
         // A cyclist is a <Vehicle> (it aliases to 'bike'), and
         // SimpleVehicleControl ignores heading and follows the lane — so a
@@ -259,16 +260,14 @@
             this._setSpeedEvent('evt-1', { type: 'distance_to_ego', value: 30 }, CYCLE_SPEED, 5.0),
             this._setSpeedEvent('evt-2', { type: 'after_event', event_id: 'evt-1' }, 0.0, 5.0),
           ],
-          build: actor => this._buildCyclistCrossing(actor),
+          build: (actor) => this._buildCyclistCrossing(actor),
         },
         'cyclist-along-lane': {
           label: 'Radfahrer am Rand entlang',
           hint: 'Fährt mit 4 m/s am Fahrbahnrand entlang, in Fahrtrichtung der nächsten Spur',
           actorType: 'cyclist',
           placement: { orientation: 'along-lane' },
-          events: [
-            this._setSpeedEvent('evt-1', { type: 'distance_to_ego', value: 400 }, CYCLE_SPEED, 10.0),
-          ],
+          events: [this._setSpeedEvent('evt-1', { type: 'distance_to_ego', value: 400 }, CYCLE_SPEED, 10.0)],
         },
       };
     }
@@ -285,7 +284,11 @@
 
     _loadUserTemplates() {
       let list = [];
-      try { list = JSON.parse(localStorage.getItem(USER_KEY) || '[]'); } catch (_) { list = []; }
+      try {
+        list = JSON.parse(localStorage.getItem(USER_KEY) || '[]');
+      } catch (_) {
+        list = [];
+      }
       if (!Array.isArray(list)) list = [];
       for (const id of Object.keys(this.templates)) if (id.startsWith('user:')) delete this.templates[id];
       for (const t of list) this._registerUser(t);
@@ -301,17 +304,21 @@
         initialSpeed: t.initialSpeed ?? null,
         stored: t,
         events: [],
-        build: actor => _fromRelative(t.events, actor),
+        build: (actor) => _fromRelative(t.events, actor),
       };
     }
 
     userTemplates() {
-      return Object.entries(this.templates).filter(([, t]) => t.user).map(([id, t]) => ({ id, ...t.stored }));
+      return Object.entries(this.templates)
+        .filter(([, t]) => t.user)
+        .map(([id, t]) => ({ id, ...t.stored }));
     }
 
     _saveUserTemplates() {
       const list = this.userTemplates();
-      try { localStorage.setItem(USER_KEY, JSON.stringify(list)); } catch (_) {
+      try {
+        localStorage.setItem(USER_KEY, JSON.stringify(list));
+      } catch (_) {
         Toast.warn('Vorlagen konnten im Browser nicht gespeichert werden — als Datei exportieren');
       }
     }
@@ -329,7 +336,10 @@
      */
     saveFromActor(actor, label = null) {
       if (!actor || actor.type === 'ego' || actor.type === 'prop') return null;
-      if (!(actor.events || []).length) { Toast.warn('Keine Events zum Speichern'); return null; }
+      if (!(actor.events || []).length) {
+        Toast.warn('Keine Events zum Speichern');
+        return null;
+      }
       const egoId = AppState.ego?.id;
       const rel = _toRelative(actor, egoId);
       if (rel.foreign.length) {
@@ -340,8 +350,12 @@
       const kindLabel = AppState.typeLabel(actor.type);
       const n = this.userTemplates().length + 1;
       this._registerUser({
-        id, label: label || `Eigene Vorlage ${n} (${kindLabel})`, actorType: actor.type,
-        initialSpeed: actor.initial_speed ?? 0, events: rel.events, created: new Date().toISOString(),
+        id,
+        label: label || `Eigene Vorlage ${n} (${kindLabel})`,
+        actorType: actor.type,
+        initialSpeed: actor.initial_speed ?? 0,
+        events: rel.events,
+        created: new Date().toISOString(),
       });
       this._saveUserTemplates();
       Toast.success(`„${this.templates[id].label}" gespeichert — im Tab Templates unter „Eigene Vorlagen"`);
@@ -364,16 +378,24 @@
 
     exportUserTemplates() {
       const list = this.userTemplates().map(({ id, ...t }) => t);
-      if (!list.length) { Toast.info('Keine eigenen Vorlagen zum Exportieren'); return; }
-      const blob = new Blob([JSON.stringify({ kind: 'scenario-editor-templates', version: 1, templates: list }, null, 2)],
-                            { type: 'application/json' });
+      if (!list.length) {
+        Toast.info('Keine eigenen Vorlagen zum Exportieren');
+        return;
+      }
+      const blob = new Blob(
+        [JSON.stringify({ kind: 'scenario-editor-templates', version: 1, templates: list }, null, 2)],
+        { type: 'application/json' },
+      );
       ScenarioIO.downloadBlob(blob, 'eigene_vorlagen.json');
     }
 
     /** Add every template in an exported file (new ids; nothing replaced). */
     importUserTemplates(data) {
       const list = Array.isArray(data) ? data : data?.templates;
-      if (!Array.isArray(list)) { Toast.error('Keine Vorlagen in dieser Datei'); return 0; }
+      if (!Array.isArray(list)) {
+        Toast.error('Keine Vorlagen in dieser Datei');
+        return 0;
+      }
       let n = 0;
       for (const t of list) {
         if (!t || !t.actorType || !Array.isArray(t.events)) continue;
@@ -386,15 +408,21 @@
     }
 
     _userSectionHtml() {
-      const rows = this.userTemplates().map(t => `
+      const rows = this.userTemplates()
+        .map(
+          (t) => `
         <div class="user-template-row" data-user-template="${t.id}">
           <input type="text" class="user-template-name" value="${_attr(t.label)}" aria-label="Name der Vorlage"
                  title="Umbenennen">
           <button class="template-action-button event-action-button user-template-place" type="button"
                   data-template-action="${t.id}" title="${_attr(this.templates[t.id].hint)} — Akteur auf der Karte platzieren">Platzieren</button>
           <button class="user-template-del" type="button" data-user-template-del="${t.id}" title="Vorlage löschen">✕</button>
-        </div>`).join('');
-      const empty = rows ? '' : '<p class="templates-hint">Noch keine. Einen Akteur mit Events auswählen und im Events-Bereich „Als Vorlage speichern".</p>';
+        </div>`,
+        )
+        .join('');
+      const empty = rows
+        ? ''
+        : '<p class="templates-hint">Noch keine. Einen Akteur mit Events auswählen und im Events-Bereich „Als Vorlage speichern".</p>';
       return `
         <div class="collapsible-section">
           <button class="collapsible-header" type="button" data-collapse-target="template-user-body">
@@ -447,17 +475,17 @@
     }
 
     bindPanel(root) {
-      root.querySelectorAll('[data-template-action]').forEach(btn => {
+      root.querySelectorAll('[data-template-action]').forEach((btn) => {
         btn.addEventListener('click', () => this.startPlacement(btn.dataset.templateAction));
       });
-      root.querySelectorAll('[data-generate-here]').forEach(btn => {
+      root.querySelectorAll('[data-generate-here]').forEach((btn) => {
         btn.addEventListener('click', () => ScenarioGenerator.armAt(btn.dataset.generateHere || null));
       });
       const rerender = () => AppState.emit('change', { userTemplates: true });
-      root.querySelectorAll('[data-user-template]').forEach(row => {
+      root.querySelectorAll('[data-user-template]').forEach((row) => {
         const id = row.dataset.userTemplate;
-        row.querySelector('.user-template-name').addEventListener('change', e => this.renameUser(id, e.target.value));
-        row.querySelector('[data-user-template-del]').addEventListener('click', async e => {
+        row.querySelector('.user-template-name').addEventListener('change', (e) => this.renameUser(id, e.target.value));
+        row.querySelector('[data-user-template-del]').addEventListener('click', async (e) => {
           const label = this.templates[id]?.label || '';
           if (!(e.ctrlKey || e.metaKey) && !(await Confirm.show(`Vorlage „${label}" löschen?`))) return;
           this.deleteUser(id);
@@ -465,10 +493,14 @@
         });
       });
       root.querySelector('[data-user-template-export]')?.addEventListener('click', () => this.exportUserTemplates());
-      root.querySelector('[data-user-template-import]')?.addEventListener('change', async e => {
+      root.querySelector('[data-user-template-import]')?.addEventListener('change', async (e) => {
         const file = e.target.files && e.target.files[0];
         if (!file) return;
-        try { this.importUserTemplates(JSON.parse(await file.text())); } catch (_) { Toast.error('Datei ist kein gültiges JSON'); }
+        try {
+          this.importUserTemplates(JSON.parse(await file.text()));
+        } catch (_) {
+          Toast.error('Datei ist kein gültiges JSON');
+        }
         rerender();
       });
     }
@@ -487,7 +519,12 @@
       const buttons = [
         btn('Beliebig', '', 'Zufälliger Konflikttyp an der angeklickten Stelle — ersetzt das Szenario'),
         ...Object.entries(types).map(([key, label]) =>
-          btn(label, key, `${label}: ganzes Szenario (Ego, Route, Gegenspieler) um die angeklickte Stelle erzeugen — ersetzt das Szenario`)),
+          btn(
+            label,
+            key,
+            `${label}: ganzes Szenario (Ego, Route, Gegenspieler) um die angeklickte Stelle erzeugen — ersetzt das Szenario`,
+          ),
+        ),
       ];
       return this._sectionHtml('template-generate-body', 'Konflikt hier erzeugen', buttons);
     }
@@ -513,11 +550,15 @@
       if (!template || actor?.type !== template.actorType) return [];
       if (template.build) {
         let built = null;
-        try { built = template.build(actor); } catch (err) { console.warn('[templates]', err); }
+        try {
+          built = template.build(actor);
+        } catch (err) {
+          console.warn('[templates]', err);
+        }
         if (built) return built;
         Toast.warn(`${template.label}: keine passende Straße am Klickpunkt — Standardablauf eingesetzt`);
       }
-      return template.events.map(ev => JSON.parse(JSON.stringify(ev)));
+      return template.events.map((ev) => JSON.parse(JSON.stringify(ev)));
     }
 
     /** The template's Start (m/s), or null when the editor default applies. */
@@ -528,7 +569,7 @@
       // Vehicles start at the speed their first event sets anyway, so the
       // chain does not open with a jump; walkers and cyclists wait.
       if (MapView.isWalkerType(template.actorType) || template.actorType === 'cyclist') return 0;
-      const first = template.events.find(ev => ev.action.type === 'set_speed');
+      const first = template.events.find((ev) => ev.action.type === 'set_speed');
       return first ? first.action.target.value : 0;
     }
 
@@ -557,8 +598,12 @@
       const template = this.templates[templateId];
       if (!actor || !template) return false;
       const n = (actor.events || []).length;
-      if (n && !(await Confirm.show(
-        `${n} Event${n === 1 ? '' : 's'} von ${AppState.actorLabel(actor, { short: true })} durch „${template.label}" ersetzen?`))) {
+      if (
+        n &&
+        !(await Confirm.show(
+          `${n} Event${n === 1 ? '' : 's'} von ${AppState.actorLabel(actor, { short: true })} durch „${template.label}" ersetzen?`,
+        ))
+      ) {
         return false;
       }
       const current = AppState.findById(actor.id) || actor;
@@ -591,18 +636,27 @@
      */
     _crossingProfile(x, y, yawDeg) {
       const roads = AppState.mapData?.roads || [];
-      const ux = Math.cos(yawDeg * Math.PI / 180), uy = Math.sin(yawDeg * Math.PI / 180);
-      const ex = x + ux * CROSSING_SEARCH_M, ey = y + uy * CROSSING_SEARCH_M;
-      const bx0 = Math.min(x, ex) - 1, bx1 = Math.max(x, ex) + 1;
-      const by0 = Math.min(y, ey) - 1, by1 = Math.max(y, ey) + 1;
+      const ux = Math.cos((yawDeg * Math.PI) / 180),
+        uy = Math.sin((yawDeg * Math.PI) / 180);
+      const ex = x + ux * CROSSING_SEARCH_M,
+        ey = y + uy * CROSSING_SEARCH_M;
+      const bx0 = Math.min(x, ex) - 1,
+        bx1 = Math.max(x, ex) + 1;
+      const by0 = Math.min(y, ey) - 1,
+        by1 = Math.max(y, ey) + 1;
       const polys = [];
       for (const road of roads) {
         for (const lane of road.lanes || []) {
           if (NON_CARRIAGEWAY.has(lane.type) || !lane.polygon || lane.polygon.length < 3) continue;
-          let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+          let x0 = Infinity,
+            x1 = -Infinity,
+            y0 = Infinity,
+            y1 = -Infinity;
           for (const p of lane.polygon) {
-            if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0];
-            if (p[1] < y0) y0 = p[1]; if (p[1] > y1) y1 = p[1];
+            if (p[0] < x0) x0 = p[0];
+            if (p[0] > x1) x1 = p[0];
+            if (p[1] < y0) y0 = p[1];
+            if (p[1] > y1) y1 = p[1];
           }
           if (x1 < bx0 || x0 > bx1 || y1 < by0 || y0 > by1) continue;
           polys.push({ poly: lane.polygon, type: lane.type, x0, x1, y0, y1 });
@@ -616,7 +670,11 @@
         return null;
       };
       const STEP = 0.25;
-      let entry = null, lastInside = null, drivingFrom = null, drivingTo = null, firstDriving = null;
+      let entry = null,
+        lastInside = null,
+        drivingFrom = null,
+        drivingTo = null,
+        firstDriving = null;
       for (let s = 0; s <= CROSSING_SEARCH_M; s += STEP) {
         const lane = laneAt(x + ux * s, y + uy * s);
         if (lane) {
@@ -625,22 +683,26 @@
           // The first driving LANE, by identity: two adjacent driving lanes
           // are one span by type, and its middle is the line between them.
           if (drivingTo == null) {
-            if (lane.type === 'driving' && drivingFrom == null) { drivingFrom = s; firstDriving = lane; }
-            else if (drivingFrom != null && lane !== firstDriving) drivingTo = s;
+            if (lane.type === 'driving' && drivingFrom == null) {
+              drivingFrom = s;
+              firstDriving = lane;
+            } else if (drivingFrom != null && lane !== firstDriving) drivingTo = s;
           }
         } else {
           if (drivingFrom != null && drivingTo == null) drivingTo = s;
-          if (entry != null && s - lastInside > KERB_STEP_M) break;   // across and onto the kerb
+          if (entry != null && s - lastInside > KERB_STEP_M) break; // across and onto the kerb
         }
       }
       // No road, or still on it at the end of the search — heading along the
       // carriageway rather than across it. Neither is a crossing.
       if (entry == null || lastInside >= CROSSING_SEARCH_M - STEP) return null;
       return {
-        entry, exit: lastInside,
+        entry,
+        exit: lastInside,
         end: lastInside + KERB_STEP_M,
         drivingMid: drivingFrom != null ? (drivingFrom + (drivingTo ?? lastInside)) / 2 : null,
-        ux, uy,
+        ux,
+        uy,
       };
     }
 
@@ -648,13 +710,18 @@
     _buildWalkerCrossing(actor, speed, triggerM, { pauseS = 0 } = {}) {
       const prof = this._crossingProfile(actor.x, actor.y, actor.yaw || 0);
       if (!prof) return null;
-      const hold = d => Math.max(0.5, Math.round((d / speed) * 10) / 10);
+      const hold = (d) => Math.max(0.5, Math.round((d / speed) * 10) / 10);
       const first = { type: 'distance_to_ego', value: triggerM };
       if (pauseS > 0 && prof.drivingMid != null) {
         return [
           this._setSpeedEvent('evt-1', first, speed, hold(prof.drivingMid)),
           this._setSpeedEvent('evt-2', { type: 'after_event', event_id: 'evt-1' }, 0.0, pauseS),
-          this._setSpeedEvent('evt-3', { type: 'after_event', event_id: 'evt-2' }, speed, hold(prof.end - prof.drivingMid)),
+          this._setSpeedEvent(
+            'evt-3',
+            { type: 'after_event', event_id: 'evt-2' },
+            speed,
+            hold(prof.end - prof.drivingMid),
+          ),
           this._setSpeedEvent('evt-4', { type: 'after_event', event_id: 'evt-3' }, 0.0, 5.0),
         ];
       }
@@ -668,7 +735,7 @@
     _buildCyclistCrossing(actor) {
       const prof = this._crossingProfile(actor.x, actor.y, actor.yaw || 0);
       if (!prof) return null;
-      const at = s => {
+      const at = (s) => {
         const x = Math.round((actor.x + prof.ux * s) * 10) / 10;
         const y = Math.round((actor.y + prof.uy * s) * 10) / 10;
         const z = Math.round((ObjectsManager.groundZAt(x, y) + WAYPOINT_CLEARANCE) * 100) / 100;
@@ -679,23 +746,25 @@
       const mid = (prof.entry + prof.end) / 2;
       if (mid > 2) trajectory.push(at(mid));
       trajectory.push(at(prof.end + VEHICLE_GOAL_ACCEPT_M));
-      return [{
-        id: 'evt-1',
-        trigger: { type: 'distance_to_ego', value: 30 },
-        action: { type: 'follow_trajectory', trajectory },
-      }];
+      return [
+        {
+          id: 'evt-1',
+          trigger: { type: 'distance_to_ego', value: 30 },
+          action: { type: 'follow_trajectory', trajectory },
+        },
+      ];
     }
 
     /** Cut-in chain, changing lanes toward the side the ego is on. */
     _buildCutIn(actor) {
-      const events = this.templates['vehicle-cut-in'].events.map(ev => JSON.parse(JSON.stringify(ev)));
+      const events = this.templates['vehicle-cut-in'].events.map((ev) => JSON.parse(JSON.stringify(ev)));
       const ego = AppState.ego;
       if (!ego) {
         Toast.info('Einscheren: noch kein Ego platziert — Spurwechsel nach rechts angenommen');
         return events;
       }
       // CARLA's frame is left-handed with y down: facing +x, +y is to the RIGHT.
-      const yaw = (actor.yaw || 0) * Math.PI / 180;
+      const yaw = ((actor.yaw || 0) * Math.PI) / 180;
       const cross = Math.cos(yaw) * (ego.y - actor.y) - Math.sin(yaw) * (ego.x - actor.x);
       events[1].action.direction = cross >= 0 ? 'right' : 'left';
       return events;
@@ -706,43 +775,53 @@
       const driving = new Set(['driving']);
       // Travel direction from the lane the car stands on, not from its yaw: a
       // hand-placed car need not face the right way, and the lane does.
-      const here = ObjectsManager.nearestLaneProjection(actor.x, actor.y,
-        new Set(['driving', 'parking', 'shoulder']), 12);
+      const here = ObjectsManager.nearestLaneProjection(
+        actor.x,
+        actor.y,
+        new Set(['driving', 'parking', 'shoulder']),
+        12,
+      );
       if (!here) return null;
-      const yaw = here.laneYaw * Math.PI / 180;
+      const yaw = (here.laneYaw * Math.PI) / 180;
       const ax = here.x + Math.cos(yaw) * PULL_OUT_AHEAD_M;
       const ay = here.y + Math.sin(yaw) * PULL_OUT_AHEAD_M;
       const merge = ObjectsManager.nearestLaneProjection(ax, ay, driving, 8);
       if (!merge) return null;
       // Same direction of travel, or the "lane beside it" is the oncoming one.
-      const dYaw = Math.abs(((merge.laneYaw - here.laneYaw) + 540) % 360 - 180);
+      const dYaw = Math.abs(((merge.laneYaw - here.laneYaw + 540) % 360) - 180);
       if (dYaw > 60) return null;
       const seed = ObjectsManager.routeWaypointAt(actor.x, actor.y);
       const wp = (x, y, z) => ({
-        x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10,
-        z: Math.round((z + WAYPOINT_CLEARANCE) * 100) / 100, strategy: 'fastest',
+        x: Math.round(x * 10) / 10,
+        y: Math.round(y * 10) / 10,
+        z: Math.round((z + WAYPOINT_CLEARANCE) * 100) / 100,
+        strategy: 'fastest',
       });
-      const waypoints = [
-        { x: seed.x, y: seed.y, z: seed.z, strategy: 'fastest' },
-        wp(merge.x, merge.y, merge.z),
-      ];
+      const waypoints = [{ x: seed.x, y: seed.y, z: seed.z, strategy: 'fastest' }, wp(merge.x, merge.y, merge.z)];
       // On along the road, so the route's end — where the controller stops
       // dead — is not in the middle of the merge. Probed straight ahead and
       // projected back onto a same-direction driving lane, farthest first:
       // a lane's own directionLine ends at its section boundary, often only a
       // few metres on, while the 'fastest' leg in between is routed anyway.
-      const mYaw = merge.laneYaw * Math.PI / 180;
+      const mYaw = (merge.laneYaw * Math.PI) / 180;
       for (const ahead of [PULL_OUT_RUN_M, 60, 40, 30, 20]) {
-        const c = ObjectsManager.nearestLaneProjection(merge.x + Math.cos(mYaw) * ahead,
-          merge.y + Math.sin(mYaw) * ahead, driving, 4);
-        if (c && Math.abs(((c.laneYaw - merge.laneYaw) + 540) % 360 - 180) < 30) {
+        const c = ObjectsManager.nearestLaneProjection(
+          merge.x + Math.cos(mYaw) * ahead,
+          merge.y + Math.sin(mYaw) * ahead,
+          driving,
+          4,
+        );
+        if (c && Math.abs(((c.laneYaw - merge.laneYaw + 540) % 360) - 180) < 30) {
           waypoints.push(wp(c.x, c.y, c.z));
           break;
         }
       }
       return [
-        { id: 'evt-1', trigger: { type: 'simulation_time', value: 0 },
-          action: { type: 'assign_route', route_strategy: 'fastest', waypoints } },
+        {
+          id: 'evt-1',
+          trigger: { type: 'simulation_time', value: 0 },
+          action: { type: 'assign_route', route_strategy: 'fastest', waypoints },
+        },
         this._setSpeedEvent('evt-2', { type: 'distance_to_ego', value: 30 }, 10.0, 5.0),
       ];
     }
@@ -822,26 +901,32 @@
   function _pointInPoly(x, y, poly) {
     let inside = false;
     for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-      const xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
-      if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+      const xi = poly[i][0],
+        yi = poly[i][1],
+        xj = poly[j][0],
+        yj = poly[j][1];
+      if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
     }
     return inside;
   }
 
   const USER_KEY = 'scenarioEditor.userTemplates';
-  const _attr = v => String(v ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  const _r1 = v => Math.round(v * 10) / 10;
-  const _r2 = v => Math.round(v * 100) / 100;
+  const _attr = (v) =>
+    String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  const _r1 = (v) => Math.round(v * 10) / 10;
+  const _r2 = (v) => Math.round(v * 100) / 100;
 
   /** (x, y) in the actor's frame: +u along its heading, +v to its right (the
    * map is y-down, so heading +x has its right at +y — the same convention
    * scenarioGenerator.js's _lateral uses). */
   function _toFrame(a, x, y) {
-    const r = (a.yaw || 0) * Math.PI / 180, dx = x - a.x, dy = y - a.y;
+    const r = ((a.yaw || 0) * Math.PI) / 180,
+      dx = x - a.x,
+      dy = y - a.y;
     return { u: _r2(dx * Math.cos(r) + dy * Math.sin(r)), v: _r2(-dx * Math.sin(r) + dy * Math.cos(r)) };
   }
   function _fromFrame(a, u, v) {
-    const r = (a.yaw || 0) * Math.PI / 180;
+    const r = ((a.yaw || 0) * Math.PI) / 180;
     return { x: _r1(a.x + u * Math.cos(r) - v * Math.sin(r)), y: _r1(a.y + u * Math.sin(r) + v * Math.cos(r)) };
   }
 
@@ -858,15 +943,29 @@
       foreign.push(ev.name || ev.id);
       return id;
     };
-    const events = (actor.events || []).map(ev0 => {
+    const events = (actor.events || []).map((ev0) => {
       const { collapsed, ...ev } = JSON.parse(JSON.stringify(ev0));
       const t = ev.trigger || {};
-      if (t.point) { const f = _toFrame(actor, t.point.x, t.point.y); t.point = { ...t.point, u: f.u, v: f.v }; delete t.point.x; delete t.point.y; delete t.point.z; }
+      if (t.point) {
+        const f = _toFrame(actor, t.point.x, t.point.y);
+        t.point = { ...t.point, u: f.u, v: f.v };
+        delete t.point.x;
+        delete t.point.y;
+        delete t.point.z;
+      }
       if (t.entity_ref) t.entity_ref = ref(t.entity_ref, ev);
-      if (t.actor_ref) { if (t.actor_ref === actor.id) delete t.actor_ref; else ref(t.actor_ref, ev); }
+      if (t.actor_ref) {
+        if (t.actor_ref === actor.id) delete t.actor_ref;
+        else ref(t.actor_ref, ev);
+      }
       const a = ev.action || {};
       for (const k of ['trajectory', 'waypoints']) {
-        if (Array.isArray(a[k])) a[k] = a[k].map(p => { const f = _toFrame(actor, p.x, p.y); const { x, y, z, ...rest } = p; return { ...rest, u: f.u, v: f.v }; });
+        if (Array.isArray(a[k]))
+          a[k] = a[k].map((p) => {
+            const f = _toFrame(actor, p.x, p.y);
+            const { x, y, z, ...rest } = p;
+            return { ...rest, u: f.u, v: f.v };
+          });
       }
       if (a.target?.entity_ref) a.target.entity_ref = ref(a.target.entity_ref, ev);
       if (a.entity_ref && a.type === 'set_distance') a.entity_ref = ref(a.entity_ref, ev);
@@ -881,9 +980,9 @@
    * '$ego' back to ids. */
   function _fromRelative(events, actor) {
     const egoId = AppState.ego?.id || null;
-    const deref = id => (id === '$self' ? actor.id : id === '$ego' ? egoId : id);
+    const deref = (id) => (id === '$self' ? actor.id : id === '$ego' ? egoId : id);
     const wpZ = (x, y) => _r2(ObjectsManager.groundZAt(x, y) + WAYPOINT_CLEARANCE);
-    return JSON.parse(JSON.stringify(events)).map(ev => {
+    return JSON.parse(JSON.stringify(events)).map((ev) => {
       const t = ev.trigger || {};
       if (t.point && t.point.u !== undefined) {
         const w = _fromFrame(actor, t.point.u, t.point.v);
@@ -893,7 +992,10 @@
       if (t.entity_ref) t.entity_ref = deref(t.entity_ref);
       const a = ev.action || {};
       if (Array.isArray(a.trajectory)) {
-        a.trajectory = a.trajectory.map(({ u, v, ...rest }) => { const w = _fromFrame(actor, u, v); return { ...rest, x: w.x, y: w.y, z: wpZ(w.x, w.y) }; });
+        a.trajectory = a.trajectory.map(({ u, v, ...rest }) => {
+          const w = _fromFrame(actor, u, v);
+          return { ...rest, x: w.x, y: w.y, z: wpZ(w.x, w.y) };
+        });
       }
       if (Array.isArray(a.waypoints)) {
         a.waypoints = a.waypoints.map(({ u, v, ...rest }, i) => {

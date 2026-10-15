@@ -7,7 +7,7 @@
 
   const mapSelect = document.getElementById('map-select');
   const mapStatus = document.getElementById('map-status');
-  const toolbar   = document.getElementById('toolbar');
+  const toolbar = document.getElementById('toolbar');
 
   // Almost every town has a lane graph now — a probed one, or (Town10, any
   // uploaded map) one backend/lane_graph_builder.py derives from the .xodr
@@ -27,10 +27,10 @@
   if (propsPanel && window.PropCatalog) PropCatalog.renderPanel(propsPanel);
 
   function setTab(name) {
-    toolbar.querySelectorAll('[data-toolbar-tab]').forEach(btn => {
+    toolbar.querySelectorAll('[data-toolbar-tab]').forEach((btn) => {
       btn.classList.toggle('active', btn.dataset.toolbarTab === name);
     });
-    toolbar.querySelectorAll('[data-toolbar-panel]').forEach(panel => {
+    toolbar.querySelectorAll('[data-toolbar-panel]').forEach((panel) => {
       panel.classList.toggle('hidden', panel.dataset.toolbarPanel !== name);
     });
   }
@@ -39,37 +39,43 @@
   // Delegated: prop tiles are rendered at load by PropCatalog, so a snapshot of
   // .tool-btn taken here would miss them.
 
-  toolbar.addEventListener('click', e => {
+  toolbar.addEventListener('click', (e) => {
     const tab = e.target.closest('[data-toolbar-tab]');
-    if (tab) { setTab(tab.dataset.toolbarTab); return; }
+    if (tab) {
+      setTab(tab.dataset.toolbarTab);
+      return;
+    }
 
     const btn = e.target.closest('.tool-btn');
     if (!btn) return;
 
     const tool = btn.dataset.tool;
     const prop = btn.dataset.prop || null;
-    const isSame = AppState.activeTool === tool
-      && (AppState.pendingProp || null) === prop;
+    const isSame = AppState.activeTool === tool && (AppState.pendingProp || null) === prop;
 
     if (isSame) {
       AppState.set({ activeTool: null, pendingTemplate: null, pendingProp: null });
     } else {
       // Cancel trajectory mode if starting a new tool
       AppState.set({
-        activeTool: tool, pendingTemplate: null, pendingProp: prop,
-        trajectoryMode: false, activeTrajectoryId: null,
-        routeMode: false, activeRouteId: null,
+        activeTool: tool,
+        pendingTemplate: null,
+        pendingProp: prop,
+        trajectoryMode: false,
+        activeTrajectoryId: null,
+        routeMode: false,
+        activeRouteId: null,
         activePathEventId: null,
       });
     }
   });
 
   // Update button active state when tool changes
-  AppState.on('change', patch => {
+  AppState.on('change', (patch) => {
     if (!('activeTool' in patch) && !('pendingProp' in patch) && !('pendingGenerate' in patch)) return;
-    toolbar.querySelectorAll('.tool-btn').forEach(btn => {
-      const match = btn.dataset.tool === AppState.activeTool
-        && (btn.dataset.prop || null) === (AppState.pendingProp || null);
+    toolbar.querySelectorAll('.tool-btn').forEach((btn) => {
+      const match =
+        btn.dataset.tool === AppState.activeTool && (btn.dataset.prop || null) === (AppState.pendingProp || null);
       btn.classList.toggle('active', match);
     });
     // Update cursor
@@ -87,7 +93,7 @@
     try {
       const { maps } = await Api.getMaps();
       mapSelect.innerHTML = '<option value="">— Karte wählen —</option>';
-      maps.forEach(name => {
+      maps.forEach((name) => {
         const opt = document.createElement('option');
         opt.value = name;
         opt.textContent = name;
@@ -106,7 +112,7 @@
     const pick = document.getElementById('map-quick-pick');
     if (!pick) return;
     pick.innerHTML = '';
-    maps.forEach(name => {
+    maps.forEach((name) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'map-quick-btn';
@@ -125,7 +131,10 @@
     // itself (scenarioGenerator.js _loadMap) — that switch must not park it.
     const keepScenario = mapSelect.dataset.keepScenario === '1';
     delete mapSelect.dataset.keepScenario;
-    if (!town) { mapSelect.value = AppState.map || ''; return; }
+    if (!town) {
+      mapSelect.value = AppState.map || '';
+      return;
+    }
     const switching = !keepScenario && town !== AppState.map;
 
     mapStatus.textContent = `Lade ${town}…`;
@@ -165,7 +174,7 @@
   // the file is for another town than the one on screen — it used to be
   // fetched only when none was loaded, so a Town05 file opened over Town03
   // drew its actors on Town03's roads.
-  AppState.on('stateLoaded', async data => {
+  AppState.on('stateLoaded', async (data) => {
     if (data.map) {
       mapSelect.value = data.map;
       if (!AppState.mapData || AppState.mapData.town !== data.map) {
@@ -186,12 +195,21 @@
 
   // ── Datei → Neues Szenario ─────────────────────────────────────────────────
   // Strg/Cmd skips the confirm, as on every other delete in the app. Undoable.
-  document.getElementById('btn-new-scenario')?.addEventListener('click', async e => {
-    if (!AppState.hasScenarioContent) { Toast.info('Das Szenario ist bereits leer'); return; }
+  document.getElementById('btn-new-scenario')?.addEventListener('click', async (e) => {
+    if (!AppState.hasScenarioContent) {
+      Toast.info('Das Szenario ist bereits leer');
+      return;
+    }
     const skip = e.ctrlKey || e.metaKey;
-    if (!skip && !(await Confirm.show(
-      `Alles auf ${AppState.map || 'dieser Karte'} entfernen? Ego, NPCs, Requisiten und `
-      + 'Ampelschaltungen werden gelöscht (Strg+Z holt sie zurück).', 'Alles entfernen'))) return;
+    if (
+      !skip &&
+      !(await Confirm.show(
+        `Alles auf ${AppState.map || 'dieser Karte'} entfernen? Ego, NPCs, Requisiten und ` +
+          'Ampelschaltungen werden gelöscht (Strg+Z holt sie zurück).',
+        'Alles entfernen',
+      ))
+    )
+      return;
     window.Simulate?.stop();
     AppState.clearScenario();
     Toast.success('Szenario geleert');

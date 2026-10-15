@@ -5,13 +5,11 @@
   'use strict';
 
   function mapSignalById(id) {
-    return (AppState.mapData?.trafficLights || [])
-      .find(signal => String(signal.id) === String(id)) || null;
+    return (AppState.mapData?.trafficLights || []).find((signal) => String(signal.id) === String(id)) || null;
   }
 
   function actionById(id) {
-    return AppState.trafficSignals
-      .find(signal => String(signal.id) === String(id)) || null;
+    return AppState.trafficSignals.find((signal) => String(signal.id) === String(id)) || null;
   }
 
   function select(id) {
@@ -54,12 +52,10 @@
     // undo step.
     const next = (patch.events || []).length;
     const prev = (current.events || []).length;
-    UndoStack.record(next > prev ? 'Event hinzugefügt'
-                   : next < prev ? 'Event gelöscht'
-                                 : 'Event bearbeitet');
-    AppState.trafficSignals = AppState.trafficSignals.map(signal => (
-      String(signal.id) === String(id) ? { ...signal, ...patch } : signal
-    ));
+    UndoStack.record(next > prev ? 'Event hinzugefügt' : next < prev ? 'Event gelöscht' : 'Event bearbeitet');
+    AppState.trafficSignals = AppState.trafficSignals.map((signal) =>
+      String(signal.id) === String(id) ? { ...signal, ...patch } : signal,
+    );
     AppState.emit('trafficSignalUpdated', id);
   }
 

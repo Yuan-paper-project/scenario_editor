@@ -59,8 +59,19 @@
   // Lane types a pedestrian is "off the road" from. Sidewalks are not in here,
   // so the crossing start lands on the kerb rather than in a parking lane.
   const CARRIAGEWAY_TYPES = new Set([
-    'driving', 'parking', 'shoulder', 'bidirectional', 'median', 'border',
-    'restricted', 'biking', 'stop', 'entry', 'exit', 'onRamp', 'offRamp',
+    'driving',
+    'parking',
+    'shoulder',
+    'bidirectional',
+    'median',
+    'border',
+    'restricted',
+    'biking',
+    'stop',
+    'entry',
+    'exit',
+    'onRamp',
+    'offRamp',
   ]);
 
   // ── Seeded RNG ───────────────────────────────────────────────────────────────
@@ -68,37 +79,49 @@
   /** mulberry32 — tiny, fast, and identical in every browser, which is all a
    * reproducible seed needs. */
   class Rng {
-    constructor(seed) { this._s = (seed >>> 0) || 1; }
+    constructor(seed) {
+      this._s = seed >>> 0 || 1;
+    }
     next() {
-      let t = (this._s = (this._s + 0x6D2B79F5) >>> 0);
+      let t = (this._s = (this._s + 0x6d2b79f5) >>> 0);
       t = Math.imul(t ^ (t >>> 15), t | 1);
       t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     }
-    range(a, b) { return a + (b - a) * this.next(); }
-    int(a, b) { return Math.floor(this.range(a, b + 1)); }
-    pick(arr) { return arr[Math.floor(this.next() * arr.length)]; }
-    chance(p) { return this.next() < p; }
+    range(a, b) {
+      return a + (b - a) * this.next();
+    }
+    int(a, b) {
+      return Math.floor(this.range(a, b + 1));
+    }
+    pick(arr) {
+      return arr[Math.floor(this.next() * arr.length)];
+    }
+    chance(p) {
+      return this.next() < p;
+    }
     /** Pick from [[value, weight], ...]. */
     weighted(pairs) {
       const total = pairs.reduce((s, [, w]) => s + w, 0);
       let r = this.next() * total;
-      for (const [v, w] of pairs) { if ((r -= w) < 0) return v; }
+      for (const [v, w] of pairs) {
+        if ((r -= w) < 0) return v;
+      }
       return pairs[pairs.length - 1][0];
     }
   }
 
-  const r1 = v => Math.round(v * 10) / 10;
-  const r2 = v => Math.round(v * 100) / 100;
+  const r1 = (v) => Math.round(v * 10) / 10;
+  const r2 = (v) => Math.round(v * 100) / 100;
   const DEG = 180 / Math.PI;
 
   function _wrapDeg(deg) {
-    return ((deg + 180) % 360 + 360) % 360 - 180;
+    return ((((deg + 180) % 360) + 360) % 360) - 180;
   }
 
   // ── Lane network index ───────────────────────────────────────────────────────
 
-  const _netCache = new WeakMap();   // mapData -> {graph, net}
+  const _netCache = new WeakMap(); // mapData -> {graph, net}
 
   /**
    * Every driving lane with geometry, keyed by CARLA's (road, section, lane)
@@ -113,7 +136,7 @@
     if (cached && cached.graph === graph) return cached.net;
 
     const lanes = new Map();
-    const polys = [];   // every lane polygon, for the carriageway-edge search
+    const polys = []; // every lane polygon, for the carriageway-edge search
     for (const road of md.roads || []) {
       for (const lane of road.lanes || []) {
         if (Array.isArray(lane.polygon) && lane.polygon.length >= 3) {
@@ -131,7 +154,12 @@
         if (length < 0.5) continue;
         const key = `${road.id}:${lane.sectionId}:${lane.laneId}`;
         lanes.set(key, {
-          key, road, lane, pts, cum, length,
+          key,
+          road,
+          lane,
+          pts,
+          cum,
+          length,
           junction: String(road.junction) !== '-1',
           junctionId: String(road.junction),
           record: LaneGraph.laneRecord(graph, Number(road.id), lane.sectionId, lane.laneId),
@@ -139,11 +167,13 @@
       }
     }
 
-    const refKey = ref => `${ref.roadId}:${ref.sectionId}:${ref.laneId}`;
+    const refKey = (ref) => `${ref.roadId}:${ref.sectionId}:${ref.laneId}`;
     const succ = new Map();
     const pred = new Map();
     for (const L of lanes.values()) {
-      const next = LaneGraph.realSuccessors(L.record).map(refKey).filter(k => lanes.has(k));
+      const next = LaneGraph.realSuccessors(L.record)
+        .map(refKey)
+        .filter((k) => lanes.has(k));
       succ.set(L.key, next);
       for (const k of next) {
         if (!pred.has(k)) pred.set(k, []);
@@ -159,19 +189,29 @@
     }
 
     const net = {
-      lanes, polys, succ, pred, byJunction, refKey,
+      lanes,
+      polys,
+      succ,
+      pred,
+      byJunction,
+      refKey,
       // Ordinary road lanes long enough to start a corridor on.
-      startable: [...lanes.values()].filter(L => !L.junction && L.length >= 25),
+      startable: [...lanes.values()].filter((L) => !L.junction && L.length >= 25),
     };
     _netCache.set(md, { graph, net });
     return net;
   }
 
   function _bbox(poly) {
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
     for (const [x, y] of poly) {
-      if (x < minX) minX = x; if (x > maxX) maxX = x;
-      if (y < minY) minY = y; if (y > maxY) maxY = y;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
     }
     return { minX, minY, maxX, maxY };
   }
@@ -179,8 +219,9 @@
   function _inPoly(poly, x, y) {
     let inside = false;
     for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-      const [xi, yi] = poly[i], [xj, yj] = poly[j];
-      if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+      const [xi, yi] = poly[i],
+        [xj, yj] = poly[j];
+      if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
     }
     return inside;
   }
@@ -190,11 +231,14 @@
     s = Math.max(0, Math.min(L.length, s));
     let i = 1;
     while (i < L.cum.length - 1 && L.cum[i] < s) i++;
-    const a = L.pts[i - 1], b = L.pts[i];
+    const a = L.pts[i - 1],
+      b = L.pts[i];
     const seg = L.cum[i] - L.cum[i - 1] || 1;
     const t = Math.max(0, Math.min(1, (s - L.cum[i - 1]) / seg));
     return {
-      x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y), z: a.z + t * (b.z - a.z),
+      x: a.x + t * (b.x - a.x),
+      y: a.y + t * (b.y - a.y),
+      z: a.z + t * (b.z - a.z),
       yaw: Math.atan2(b.y - a.y, b.x - a.x) * DEG,
     };
   }
@@ -203,16 +247,22 @@
   function _projectOnLane(L, x, y) {
     let best = null;
     for (let i = 1; i < L.pts.length; i++) {
-      const a = L.pts[i - 1], b = L.pts[i];
-      const dx = b.x - a.x, dy = b.y - a.y;
+      const a = L.pts[i - 1],
+        b = L.pts[i];
+      const dx = b.x - a.x,
+        dy = b.y - a.y;
       const len2 = dx * dx + dy * dy;
       if (len2 <= 0) continue;
       const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / len2));
-      const px = a.x + t * dx, py = a.y + t * dy;
+      const px = a.x + t * dx,
+        py = a.y + t * dy;
       const d = Math.hypot(x - px, y - py);
       if (!best || d < best.d) {
         best = {
-          d, x: px, y: py, z: a.z + t * (b.z - a.z),
+          d,
+          x: px,
+          y: py,
+          z: a.z + t * (b.z - a.z),
           s: L.cum[i - 1] + t * Math.sqrt(len2),
           yaw: Math.atan2(dy, dx) * DEG,
         };
@@ -239,7 +289,7 @@
     return _overrides && Object.prototype.hasOwnProperty.call(_overrides, key) ? _overrides[key] : drawn;
   }
   const FOCUS_RADIUS_M = 40;
-  const FOCUS_LANE_REACH_M = [6, 12];   // driving lanes this close to the click; a wider retry from a kerb
+  const FOCUS_LANE_REACH_M = [6, 12]; // driving lanes this close to the click; a wider retry from a kerb
 
   /** Driving lanes (either direction, junction connectors included) passing
    * near (x, y), each with the arc length of its nearest point. */
@@ -268,7 +318,8 @@
     let cur = F;
     for (let hop = 0; hop < 15; hop++) {
       const preds = (net.pred.get(cur.key) || [])
-        .map(k => net.lanes.get(k)).filter(P => P && !path.includes(P.key));
+        .map((k) => net.lanes.get(k))
+        .filter((P) => P && !path.includes(P.key));
       if (!preds.length) {
         // A dead end upstream: start at the top of what was walked, if that is
         // an ordinary lane and leaves some run-up.
@@ -326,14 +377,14 @@
       for (const p of lanePts) {
         const last = pts[pts.length - 1];
         const step = last ? Math.hypot(p.x - last.x, p.y - last.y) : 0;
-        if (last && step < 0.3) continue;   // lane joins repeat their boundary vertex
+        if (last && step < 0.3) continue; // lane joins repeat their boundary vertex
         total += step;
         pts.push({ x: p.x, y: p.y, z: p.z, d: total, key: L.key, junction: L.junction });
         if (total >= targetLen) break;
       }
       segs.push({ key: L.key, L, startD, endD: total, s0: s });
       if (total >= targetLen) break;
-      const next = (net.succ.get(L.key) || []).filter(k => !visited.has(k));
+      const next = (net.succ.get(L.key) || []).filter((k) => !visited.has(k));
       if (!next.length) break;
       const fi = forced ? forced.indexOf(L.key) : -1;
       const nextKey = fi >= 0 && fi + 1 < forced.length ? forced[fi + 1] : rng.pick(next);
@@ -349,19 +400,24 @@
     d = Math.max(0, Math.min(c.length, d));
     let i = 1;
     while (i < c.pts.length - 1 && c.pts[i].d < d) i++;
-    const a = c.pts[i - 1], b = c.pts[i];
+    const a = c.pts[i - 1],
+      b = c.pts[i];
     const seg = b.d - a.d || 1;
     const t = Math.max(0, Math.min(1, (d - a.d) / seg));
     return {
-      x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y), z: a.z + t * (b.z - a.z),
+      x: a.x + t * (b.x - a.x),
+      y: a.y + t * (b.y - a.y),
+      z: a.z + t * (b.z - a.z),
       yaw: Math.atan2(b.y - a.y, b.x - a.x) * DEG,
-      key: b.key, junction: a.junction || b.junction, d,
+      key: b.key,
+      junction: a.junction || b.junction,
+      d,
     };
   }
 
   /** True when no corridor point between d0 and d1 is inside a junction. */
   function _junctionFree(c, d0, d1) {
-    return !c.pts.some(p => p.d >= d0 && p.d <= d1 && p.junction);
+    return !c.pts.some((p) => p.d >= d0 && p.d <= d1 && p.junction);
   }
 
   /** A point `off` metres to the right of travel (negative = left). The map is
@@ -391,9 +447,13 @@
   }
 
   function _vehicle(type, pose, initialSpeed, events = []) {
-    const x = r1(pose.x), y = r1(pose.y);
+    const x = r1(pose.x),
+      y = r1(pose.y);
     return {
-      id: AppState.nextId(), type, x, y,
+      id: AppState.nextId(),
+      type,
+      x,
+      y,
       z: ObjectsManager.surfaceZFor(type, x, y),
       yaw: Math.round(_wrapDeg(pose.yaw)),
       initial_speed: r1(initialSpeed),
@@ -422,17 +482,15 @@
       action: {
         type: 'assign_route',
         route_strategy: 'fastest',
-        waypoints: [
-          { x: seed.x, y: seed.y, z: seed.snapped ? seed.z : actor.z, strategy: 'fastest' },
-          ...waypoints,
-        ],
+        waypoints: [{ x: seed.x, y: seed.y, z: seed.snapped ? seed.z : actor.z, strategy: 'fastest' }, ...waypoints],
       },
     };
   }
 
   function _speedEvent(id, trigger, speed, dimension, value) {
     return {
-      id, trigger,
+      id,
+      trigger,
       action: {
         type: 'set_speed',
         // 'step' + 'rate' is self-contradictory; the backend forces 'linear'
@@ -443,7 +501,7 @@
     };
   }
 
-  const nearEgo = value => ({ type: 'distance_to_ego', value: r1(Math.max(4, value)) });
+  const nearEgo = (value) => ({ type: 'distance_to_ego', value: r1(Math.max(4, value)) });
 
   /** Centre-to-centre distance for a bumper-to-bumper `gap` between the ego
    * and an actor of `type` straight ahead of it. distance_to_ego is measured
@@ -455,12 +513,12 @@
   function _centreDistance(gap, type) {
     return gap + (MapView.actorSize('ego').w + MapView.actorSize(type).w) / 2;
   }
-  const after = eventId => ({ type: 'after_event', event_id: eventId });
+  const after = (eventId) => ({ type: 'after_event', event_id: eventId });
 
   /** Seconds to cover `dist` from standstill, ramping at `accel` to `v`. */
   function _timeFromRest(dist, v, accel = VEHICLE_ACCEL) {
-    const rampDist = v * v / (2 * accel);
-    if (dist <= rampDist) return Math.sqrt(2 * dist / accel);
+    const rampDist = (v * v) / (2 * accel);
+    if (dist <= rampDist) return Math.sqrt((2 * dist) / accel);
     return v / accel + (dist - rampDist) / v;
   }
 
@@ -468,7 +526,7 @@
    * margin. A conflict placed earlier than this is solved against a speed the
    * ego has not reached yet. */
   function _egoRunUp(vEgo) {
-    return vEgo * vEgo / (2 * VEHICLE_ACCEL) + 15;
+    return (vEgo * vEgo) / (2 * VEHICLE_ACCEL) + 15;
   }
 
   /**
@@ -491,7 +549,13 @@
 
   // ── Scenario types ───────────────────────────────────────────────────────────
 
-  const VEHICLE_MIX = [['car', 6], ['van', 2], ['truck', 1], ['bus', 0.5], ['motorcycle', 1]];
+  const VEHICLE_MIX = [
+    ['car', 6],
+    ['van', 2],
+    ['truck', 1],
+    ['bus', 0.5],
+    ['motorcycle', 1],
+  ];
 
   /* Lead vehicle brakes. A slower car ahead in the ego's own lane, following
    * the same route, brakes hard when the ego has closed to a time headway. */
@@ -504,7 +568,7 @@
     const thw = _p('brake_headway_s', rng.range(1.0, 3.0));
     const type = _p('lead_type', rng.weighted(VEHICLE_MIX));
     const trigger = _centreDistance(Math.max(6, thw * vEgo), type);
-    const gap0 = trigger + rng.range(15, 35);   // initial gap, ego closes from behind
+    const gap0 = trigger + rng.range(15, 35); // initial gap, ego closes from behind
     if (!_junctionFree(c, gap0 - 6, gap0 + 6)) return null;
     const pose = _corridorAt(c, gap0);
     // A lead at or above the ego's speed is never caught: cap an override.
@@ -535,15 +599,23 @@
     if (resume) events.push(_speedEvent('evt-4', after('evt-3'), vLead, 'rate', 2.5));
     lead.events = events;
     // Where the ego catches up: it closes at vEgo - vLead from gap0 to the trigger.
-    const dCatch = gap0 + vLead * (gap0 - trigger) / (vEgo - vLead);
+    const dCatch = gap0 + (vLead * (gap0 - trigger)) / (vEgo - vLead);
     return {
-      corridor: c, npcs: [lead], props: [],
+      corridor: c,
+      npcs: [lead],
+      props: [],
       conflictD: dCatch + 30,
       egoEndD: c.length - 60,
       params: {
-        lead_type: type, initial_gap_m: r1(gap0), lead_speed: r1(vLead),
-        brake_headway_s: r2(thw), trigger_m: r1(trigger), decel: r1(decel),
-        end_speed: r1(vEnd), hold_s: r1(hold), resumes: resume,
+        lead_type: type,
+        initial_gap_m: r1(gap0),
+        lead_speed: r1(vLead),
+        brake_headway_s: r2(thw),
+        trigger_m: r1(trigger),
+        decel: r1(decel),
+        end_speed: r1(vEnd),
+        hold_s: r1(hold),
+        resumes: resume,
       },
       routedNpcs: [{ actor: lead, corridorFrom: gap0 }],
     };
@@ -558,11 +630,19 @@
   function _slowLead(rng, net, vEgo) {
     const c = _buildCorridor(rng, net, rng.range(260, 360));
     if (!c) return null;
-    const type = _p('lead_type', rng.weighted([['car', 4], ['van', 1], ['truck', 2], ['motorcycle', 2]]));
+    const type = _p(
+      'lead_type',
+      rng.weighted([
+        ['car', 4],
+        ['van', 1],
+        ['truck', 2],
+        ['motorcycle', 2],
+      ]),
+    );
     // A lead at or near the ego's speed is never caught: cap an override.
     const vLead = Math.min(_p('lead_speed', vEgo * rng.range(0.2, 0.55)), vEgo * 0.8);
-    const gap0 = _p('initial_gap_m', rng.range(40, 80));   // centre to centre
-    const dCatch = gap0 + vLead * gap0 / (vEgo - vLead);
+    const gap0 = _p('initial_gap_m', rng.range(40, 80)); // centre to centre
+    const dCatch = gap0 + (vLead * gap0) / (vEgo - vLead);
     if (dCatch > c.length - 70) return null;
     // Where the ego closes in, the lane is not a junction: a turn there makes
     // it a different scenario, and an offset lead cuts the corner.
@@ -579,18 +659,25 @@
       // As soon as the ego has started closing in, never off the clock. A
       // held offset, so the lead stays there for the rest of the run.
       events.push({
-        id: 'evt-2', trigger: nearEgo(gap0 - 3),
+        id: 'evt-2',
+        trigger: nearEgo(gap0 - 3),
         action: { type: 'lane_offset', direction: side, offset: r1(off) },
       });
     }
     lead.events = events;
     return {
-      corridor: c, npcs: [lead], props: [],
+      corridor: c,
+      npcs: [lead],
+      props: [],
       conflictD: dCatch + 20,
       egoEndD: c.length - 60,
       params: {
-        lead_type: type, lead_speed: r1(vLead), speed_diff_kmh: Math.round((vEgo - vLead) * 3.6),
-        initial_gap_m: r1(gap0), lateral_m: r1(off), side,
+        lead_type: type,
+        lead_speed: r1(vLead),
+        speed_diff_kmh: Math.round((vEgo - vLead) * 3.6),
+        initial_gap_m: r1(gap0),
+        lateral_m: r1(off),
+        side,
       },
       routedNpcs: [{ actor: lead, corridorFrom: gap0 }],
       // Nothing releases it: it is a threat from the start.
@@ -603,12 +690,13 @@
     if (!net.parking) {
       net.parking = [];
       for (const road of AppState.mapData.roads || []) {
-        if (String(road.junction) !== '-1') continue;   // the connectors' 'parking' strips
+        if (String(road.junction) !== '-1') continue; // the connectors' 'parking' strips
         for (const lane of road.lanes || []) {
           if (lane.type !== 'parking' || (lane.directionLine || []).length < 2) continue;
           const pts = lane.directionLine.map(([x, y, z = 0]) => ({ x, y, z }));
           const cum = [0];
-          for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y));
+          for (let i = 1; i < pts.length; i++)
+            cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y));
           net.parking.push({ pts, cum, length: cum[cum.length - 1], bbox: _bbox(lane.directionLine) });
         }
       }
@@ -637,7 +725,13 @@
       for (const side of ['right', 'left']) {
         const probe = _lateral(pose, (side === 'right' ? 1 : -1) * 3.3);
         for (const P of parking) {
-          if (probe.x < P.bbox.minX - 2 || probe.x > P.bbox.maxX + 2 || probe.y < P.bbox.minY - 2 || probe.y > P.bbox.maxY + 2) continue;
+          if (
+            probe.x < P.bbox.minX - 2 ||
+            probe.x > P.bbox.maxX + 2 ||
+            probe.y < P.bbox.minY - 2 ||
+            probe.y > P.bbox.maxY + 2
+          )
+            continue;
           const q = _projectOnLane(P, probe.x, probe.y);
           // Beside the ego's lane, facing its way, not at a bay's very end.
           if (!q || q.d > 1.3 || q.s < 4 || q.s > P.length - 4) continue;
@@ -648,7 +742,14 @@
     }
     if (!sites.length) return null;
     const { d, q, side } = rng.pick(sites);
-    const type = _p('npc_type', rng.weighted([['car', 6], ['van', 2], ['truck', 0.5]]));
+    const type = _p(
+      'npc_type',
+      rng.weighted([
+        ['car', 6],
+        ['van', 2],
+        ['truck', 0.5],
+      ]),
+    );
     const vNpc = _p('npc_speed', vEgo * rng.range(0.45, 0.75));
     const mergeAhead = rng.range(9, 14);
     const dMerge = d + mergeAhead;
@@ -668,12 +769,18 @@
       _speedEvent('evt-2', nearEgo(sol.radius), vNpc, 'rate', VEHICLE_ACCEL),
     ];
     return {
-      corridor: c, npcs: [npc], props: [],
+      corridor: c,
+      npcs: [npc],
+      props: [],
       conflictD: dMerge + 40,
       egoEndD: c.length - 60,
       params: {
-        npc_type: type, side, npc_speed: r1(vNpc), merge_m: r1(mergeAhead),
-        arrival_offset_s: r2(dt), trigger_m: r1(sol.radius),
+        npc_type: type,
+        side,
+        npc_speed: r1(vNpc),
+        merge_m: r1(mergeAhead),
+        arrival_offset_s: r2(dt),
+        trigger_m: r1(sol.radius),
       },
       routedNpcs: [{ actor: npc, corridorFrom: dMerge + 6 }],
     };
@@ -686,16 +793,26 @@
     // beginning that the NPC fits ahead of the ego on the same stretch. A
     // uniformly random start finds one only on multi-lane towns, and rarely.
     if (!net.multiLane) {
-      net.multiLane = net.startable.filter(L => L.length >= 90 && ['left', 'right'].some(side => {
-        const ref = L.record && L.record[side];
-        const N = ref && net.lanes.get(net.refKey(ref));
-        return N && !N.junction;
-      }));
+      net.multiLane = net.startable.filter(
+        (L) =>
+          L.length >= 90 &&
+          ['left', 'right'].some((side) => {
+            const ref = L.record && L.record[side];
+            const N = ref && net.lanes.get(net.refKey(ref));
+            return N && !N.junction;
+          }),
+      );
     }
     if (!net.multiLane.length) return null;
     const start = rng.pick(net.multiLane);
-    const c = _buildCorridor(rng, net, rng.range(220, 320), undefined,
-                             start, rng.range(0, Math.max(0.5, start.length - 90)));
+    const c = _buildCorridor(
+      rng,
+      net,
+      rng.range(220, 320),
+      undefined,
+      start,
+      rng.range(0, Math.max(0.5, start.length - 90)),
+    );
     if (!c) return null;
     // A lane on the corridor that has a same-direction driving neighbour —
     // the lane graph's left/right are exactly that (get_left_lane() /
@@ -716,8 +833,8 @@
     // A clear speed difference and a short initial gap, so the ego closes in
     // within one multi-lane stretch (Town10HD's are ~90-130 m long).
     const vNpc = Math.min(_p('npc_speed', vEgo * rng.range(0.45, 0.7)), vEgo * 0.9);
-    const lcDist = _p('lane_change_m', rng.range(10, 22));   // lateral move spread over this many metres
-    const trigger = _p('trigger_m', rng.range(8, 26));       // cut in when the ego is this close
+    const lcDist = _p('lane_change_m', rng.range(10, 22)); // lateral move spread over this many metres
+    const trigger = _p('trigger_m', rng.range(8, 26)); // cut in when the ego is this close
     // The NPC spawns beside corridor distance dNpc, i.e. dNpc ahead of the ego,
     // somewhere in this lane visit and far enough ahead that the ego has to
     // close in before the trigger fires.
@@ -745,20 +862,30 @@
 
     const type = _p('npc_type', rng.weighted(VEHICLE_MIX.filter(([t]) => t !== 'bus')));
     const npc = _vehicle(type, onN, vNpc);
-    const events = [{
-      id: 'evt-1',
-      trigger: nearEgo(trigger),
-      action: { type: 'lane_change', direction: npcDir, dynamics: { shape: 'linear', value: r1(lcDist) } },
-    }];
+    const events = [
+      {
+        id: 'evt-1',
+        trigger: nearEgo(trigger),
+        action: { type: 'lane_change', direction: npcDir, dynamics: { shape: 'linear', value: r1(lcDist) } },
+      },
+    ];
     const brakesAfter = _p('brakes_after', rng.chance(0.4));
-    if (brakesAfter) events.push(_speedEvent('evt-2', after('evt-1'), vNpc * rng.range(0.3, 0.7), 'rate', rng.range(2, 5)));
+    if (brakesAfter)
+      events.push(_speedEvent('evt-2', after('evt-1'), vNpc * rng.range(0.3, 0.7), 'rate', rng.range(2, 5)));
     npc.events = events;
     return {
-      corridor: c, npcs: [npc], props: [],
+      corridor: c,
+      npcs: [npc],
+      props: [],
       conflictD: dNpc + npcTravel + 20,
       params: {
-        npc_type: type, from_side: egoSide, npc_speed: r1(vNpc), initial_gap_m: r1(gap0),
-        trigger_m: r1(trigger), lane_change_m: r1(lcDist), brakes_after: brakesAfter,
+        npc_type: type,
+        from_side: egoSide,
+        npc_speed: r1(vNpc),
+        initial_gap_m: r1(gap0),
+        trigger_m: r1(trigger),
+        lane_change_m: r1(lcDist),
+        brakes_after: brakesAfter,
       },
       routedNpcs: [],
     };
@@ -768,7 +895,7 @@
    * ramps at `a` from the ego's speed to `dv` faster. */
   function _closing(t, dv, a = VEHICLE_ACCEL) {
     const tr = dv / a;
-    return t <= tr ? a * t * t / 2 : dv * dv / (2 * a) + dv * (t - tr);
+    return t <= tr ? (a * t * t) / 2 : (dv * dv) / (2 * a) + dv * (t - tr);
   }
 
   /* Lane change into a car approaching from behind (UN R171: "must detect and
@@ -787,19 +914,29 @@
    * the car beside the corridor's start, on the same lane pair. */
   function _rearApproach(rng, net, vEgo) {
     if (!net.multiLane) {
-      net.multiLane = net.startable.filter(L => L.length >= 90 && ['left', 'right'].some(side => {
-        const ref = L.record && L.record[side];
-        const N = ref && net.lanes.get(net.refKey(ref));
-        return N && !N.junction;
-      }));
+      net.multiLane = net.startable.filter(
+        (L) =>
+          L.length >= 90 &&
+          ['left', 'right'].some((side) => {
+            const ref = L.record && L.record[side];
+            const N = ref && net.lanes.get(net.refKey(ref));
+            return N && !N.junction;
+          }),
+      );
     }
     if (!net.multiLane.length) return null;
     const start = rng.pick(net.multiLane);
-    const c = _buildCorridor(rng, net, rng.range(220, 320), undefined,
-                             start, rng.range(0, Math.max(0.5, start.length - 140)));
+    const c = _buildCorridor(
+      rng,
+      net,
+      rng.range(220, 320),
+      undefined,
+      start,
+      rng.range(0, Math.max(0.5, start.length - 140)),
+    );
     if (!c) return null;
     const sg = c.segs[0];
-    const sides = ['left', 'right'].filter(side => {
+    const sides = ['left', 'right'].filter((side) => {
       const ref = sg.L.record && sg.L.record[side];
       const N = ref && net.lanes.get(net.refKey(ref));
       const back = N && N.record && N.record[side === 'left' ? 'right' : 'left'];
@@ -810,16 +947,24 @@
     if (!sides.includes(side)) return null;
     const N = net.lanes.get(net.refKey(sg.L.record[side]));
 
-    const type = _p('npc_type', rng.weighted([['car', 5], ['van', 1], ['motorcycle', 2], ['truck', 0.5]]));
-    const dv = _p('speed_diff', rng.range(3, 8));            // m/s faster than the ego
-    const tRel = rng.range(1.5, 3.0);                          // surge this long before the change
-    const gap = _p('gap_at_change_m', rng.range(2, 12));       // centre behind the ego's then
+    const type = _p(
+      'npc_type',
+      rng.weighted([
+        ['car', 5],
+        ['van', 1],
+        ['motorcycle', 2],
+        ['truck', 0.5],
+      ]),
+    );
+    const dv = _p('speed_diff', rng.range(3, 8)); // m/s faster than the ego
+    const tRel = rng.range(1.5, 3.0); // surge this long before the change
+    const gap = _p('gap_at_change_m', rng.range(2, 12)); // centre behind the ego's then
     const lcDist = _p('lane_change_m', rng.range(12, 20));
     const g0 = gap + _closing(tRel, dv);
     // The surge needs the ego at cruise speed, and the change room on both
     // lanes: 6 m same-lane run-in, the move, 10 m driven in the target lane
     // (ChangeActorLateralMotion hangs without it), and a margin.
-    const dRel = g0 + vEgo * vEgo / (2 * VEHICLE_ACCEL) + rng.range(5, 20);
+    const dRel = g0 + (vEgo * vEgo) / (2 * VEHICLE_ACCEL) + rng.range(5, 20);
     const dLc = dRel + vEgo * tRel;
     if (dLc + 6 + lcDist + 25 > sg.endD) return null;
     const onN0 = _projectOnLane(N, c.pts[0].x, c.pts[0].y);
@@ -830,27 +975,48 @@
     const npc = _vehicle(type, onN0, vEgo);
     _ignoresTraffic(npc);
     const relPose = _corridorAt(c, dRel);
-    npc.events = [{
-      id: 'evt-1',
-      trigger: { type: 'distance_to_point', value: 2.0, entity_ref: '$ego',
-                 point: { name: 'Point 1', x: r1(relPose.x), y: r1(relPose.y), z: r2(relPose.z + WAYPOINT_CLEARANCE) } },
-      action: { type: 'set_speed', dynamics: { shape: 'linear', dimension: 'rate', value: VEHICLE_ACCEL },
-                target: { mode: 'absolute', value: r1(vEgo + dv) } },
-    }];
-    const egoEvents = [{
-      id: 'evt-2',
-      trigger: { type: 'distance_to_point', value: 2.0, entity_ref: '$ego',
-                 point: { name: 'Point 1', x: r1(lcPose.x), y: r1(lcPose.y), z: r2(lcPose.z + WAYPOINT_CLEARANCE) } },
-      action: { type: 'lane_change', direction: side, dynamics: { shape: 'linear', value: r1(lcDist) } },
-    }];
+    npc.events = [
+      {
+        id: 'evt-1',
+        trigger: {
+          type: 'distance_to_point',
+          value: 2.0,
+          entity_ref: '$ego',
+          point: { name: 'Point 1', x: r1(relPose.x), y: r1(relPose.y), z: r2(relPose.z + WAYPOINT_CLEARANCE) },
+        },
+        action: {
+          type: 'set_speed',
+          dynamics: { shape: 'linear', dimension: 'rate', value: VEHICLE_ACCEL },
+          target: { mode: 'absolute', value: r1(vEgo + dv) },
+        },
+      },
+    ];
+    const egoEvents = [
+      {
+        id: 'evt-2',
+        trigger: {
+          type: 'distance_to_point',
+          value: 2.0,
+          entity_ref: '$ego',
+          point: { name: 'Point 1', x: r1(lcPose.x), y: r1(lcPose.y), z: r2(lcPose.z + WAYPOINT_CLEARANCE) },
+        },
+        action: { type: 'lane_change', direction: side, dynamics: { shape: 'linear', value: r1(lcDist) } },
+      },
+    ];
     return {
-      corridor: c, npcs: [npc], props: [],
+      corridor: c,
+      npcs: [npc],
+      props: [],
       egoStartD: g0,
       egoEndD: Math.min(c.length, dLc + 40),
       egoEvents,
       conflictD: dLc + lcDist + 10,
       params: {
-        npc_type: type, side, speed_diff: r1(dv), gap_at_change_m: r1(gap), lane_change_m: r1(lcDist),
+        npc_type: type,
+        side,
+        speed_diff: r1(dv),
+        gap_at_change_m: r1(gap),
+        lane_change_m: r1(lcDist),
         surge_before_s: r2(tRel),
       },
       routedNpcs: [],
@@ -862,15 +1028,26 @@
    * `pose` leaves the carriageway on each side — or null where it does not
    * within `maxM`. */
   function _carriagewayEdges(net, pose, maxM = 25) {
-    const near = net.polys.filter(p => CARRIAGEWAY_TYPES.has(p.type)
-      && p.bbox.minX - maxM <= pose.x && p.bbox.maxX + maxM >= pose.x
-      && p.bbox.minY - maxM <= pose.y && p.bbox.maxY + maxM >= pose.y);
-    const onRoad = off => {
+    const near = net.polys.filter(
+      (p) =>
+        CARRIAGEWAY_TYPES.has(p.type) &&
+        p.bbox.minX - maxM <= pose.x &&
+        p.bbox.maxX + maxM >= pose.x &&
+        p.bbox.minY - maxM <= pose.y &&
+        p.bbox.maxY + maxM >= pose.y,
+    );
+    const onRoad = (off) => {
       const q = _lateral(pose, off);
-      return near.some(p => q.x >= p.bbox.minX && q.x <= p.bbox.maxX
-        && q.y >= p.bbox.minY && q.y <= p.bbox.maxY && _inPoly(p.poly, q.x, q.y));
+      return near.some(
+        (p) =>
+          q.x >= p.bbox.minX &&
+          q.x <= p.bbox.maxX &&
+          q.y >= p.bbox.minY &&
+          q.y <= p.bbox.maxY &&
+          _inPoly(p.poly, q.x, q.y),
+      );
     };
-    const edge = sign => {
+    const edge = (sign) => {
       for (let t = 0.25; t <= maxM; t += 0.25) if (!onRoad(sign * t)) return sign * t;
       return null;
     };
@@ -881,17 +1058,23 @@
   // highways the shoulder ends at a guardrail, and CARLA refused a pedestrian
   // spawned against it; nobody crosses a road from there anyway.
   const WALKABLE_TYPES = new Set(['sidewalk']);
-  const KERB_ALLOWANCE = 0.4;   // extra spawn height for an actor starting off the carriageway
+  const KERB_ALLOWANCE = 0.4; // extra spawn height for an actor starting off the carriageway
   function _onWalkable(net, q) {
-    return net.polys.some(p => WALKABLE_TYPES.has(p.type)
-      && q.x >= p.bbox.minX && q.x <= p.bbox.maxX && q.y >= p.bbox.minY && q.y <= p.bbox.maxY
-      && _inPoly(p.poly, q.x, q.y));
+    return net.polys.some(
+      (p) =>
+        WALKABLE_TYPES.has(p.type) &&
+        q.x >= p.bbox.minX &&
+        q.x <= p.bbox.maxX &&
+        q.y >= p.bbox.minY &&
+        q.y <= p.bbox.maxY &&
+        _inPoly(p.poly, q.x, q.y),
+    );
   }
 
   const VRU_PROFILES = {
-    pedestrian: { speed: [1.2, 2.6], maxCross: 22 },   // strolling to hurrying
-    child:      { speed: [1.6, 4.0], maxCross: 22 },   // up to a sprint
-    cyclist:    { speed: [3.0, 5.5], maxCross: 30 },
+    pedestrian: { speed: [1.2, 2.6], maxCross: 22 }, // strolling to hurrying
+    child: { speed: [1.6, 4.0], maxCross: 22 }, // up to a sprint
+    cyclist: { speed: [3.0, 5.5], maxCross: 30 },
   };
 
   /* Crossing VRU. A pedestrian, child or cyclist crosses the ego's lane,
@@ -901,21 +1084,30 @@
   function _vruCrossing(rng, net, vEgo) {
     const c = _buildCorridor(rng, net, rng.range(160, 260));
     if (!c) return null;
-    const type = _p('vru_type', rng.weighted([['pedestrian', 5], ['child', 2.5], ['cyclist', 2.5]]));
+    const type = _p(
+      'vru_type',
+      rng.weighted([
+        ['pedestrian', 5],
+        ['child', 2.5],
+        ['cyclist', 2.5],
+      ]),
+    );
     const prof = VRU_PROFILES[type];
     const v = _p('speed', rng.range(...prof.speed));
     const dMin = _egoRunUp(vEgo) + vEgo * 4;
 
     // Prefer a painted crosswalk on the corridor; otherwise anywhere straight.
     let dConflict = null;
-    const crosswalks = (AppState.mapData.crosswalks || []).map(cw => {
-      let best = null;
-      for (const p of c.pts) {
-        const dd = Math.hypot(p.x - cw.x, p.y - cw.y);
-        if (dd < 6 && (!best || dd < best.dd)) best = { dd, d: p.d };
-      }
-      return best;
-    }).filter(b => b && b.d > dMin && b.d < c.length - 20);
+    const crosswalks = (AppState.mapData.crosswalks || [])
+      .map((cw) => {
+        let best = null;
+        for (const p of c.pts) {
+          const dd = Math.hypot(p.x - cw.x, p.y - cw.y);
+          if (dd < 6 && (!best || dd < best.dd)) best = { dd, d: p.d };
+        }
+        return best;
+      })
+      .filter((b) => b && b.d > dMin && b.d < c.length - 20);
     const onCrosswalk = crosswalks.length > 0 && rng.chance(0.6);
     if (onCrosswalk) dConflict = rng.pick(crosswalks).d;
     else dConflict = rng.range(dMin, c.length - 20);
@@ -947,7 +1139,7 @@
     // "Past the edge" alone is not enough: on Town10HD it was a building
     // wall, CARLA refused to spawn the cyclist there, and the whole run
     // failed with "Unable to add actors".
-    const kerbOff = edgeOff => {
+    const kerbOff = (edgeOff) => {
       const sign = Math.sign(edgeOff);
       for (const k of [1.2, 0.8, 1.6, 0.5, 2.0]) {
         if (!_onWalkable(net, _lateral(pose, edgeOff + sign * k))) continue;
@@ -979,10 +1171,16 @@
     const sol = _solveTrigger(c, dConflict, tVru + dt, vEgo, start);
     if (!sol) return null;
 
-    const sx = r1(start.x), sy = r1(start.y), ex = r1(end.x), ey = r1(end.y);
+    const sx = r1(start.x),
+      sy = r1(start.y),
+      ex = r1(end.x),
+      ey = r1(end.y);
     const heading = Math.atan2(ey - sy, ex - sx) * DEG;
     const vru = {
-      id: AppState.nextId(), type, x: sx, y: sy,
+      id: AppState.nextId(),
+      type,
+      x: sx,
+      y: sy,
       // The start is on the sidewalk, which the elevation profile does not
       // model: Town02's is 0.32 m above the road there, the walker's capsule
       // reached into it at the editor's usual 0.6 m and CARLA refused the
@@ -1001,7 +1199,8 @@
     const vertex = (x, y) => ({ x, y, z: r2(pose.z + WAYPOINT_CLEARANCE), velocity: r1(v) });
     vru.events = [
       {
-        id: 'evt-1', trigger: nearEgo(sol.radius),
+        id: 'evt-1',
+        trigger: nearEgo(sol.radius),
         action: { type: 'follow_trajectory', trajectory: [vertex(sx, sy), vertex(ex, ey)] },
       },
     ];
@@ -1022,10 +1221,17 @@
       vru.events.push(
         {
           id: 'evt-2',
-          trigger: { type: 'distance_to_point', value: 1.5, entity_ref: vru.id,
-                     point: { name: 'Point 1', x: r1(pose.x), y: r1(pose.y), z: r2(pose.z + WAYPOINT_CLEARANCE) } },
-          action: { type: 'set_speed', dynamics: { shape: 'step', dimension: 'time', value: r1(hold) },
-                    target: { mode: 'absolute', value: 0 } },
+          trigger: {
+            type: 'distance_to_point',
+            value: 1.5,
+            entity_ref: vru.id,
+            point: { name: 'Point 1', x: r1(pose.x), y: r1(pose.y), z: r2(pose.z + WAYPOINT_CLEARANCE) },
+          },
+          action: {
+            type: 'set_speed',
+            dynamics: { shape: 'step', dimension: 'time', value: r1(hold) },
+            target: { mode: 'absolute', value: 0 },
+          },
         },
         _speedEvent('evt-3', after('evt-2'), v, 'time', 20),
       );
@@ -1047,7 +1253,11 @@
       const probe = _lateral(upstream, edgeOff - Math.sign(edgeOff) * 1.5);
       const lane = ObjectsManager.nearestLaneProjection(probe.x, probe.y, new Set(['parking']), 2.5);
       if (lane) {
-        const occType = rng.weighted([['van', 3], ['truck', 1], ['car', 1]]);
+        const occType = rng.weighted([
+          ['van', 3],
+          ['truck', 1],
+          ['car', 1],
+        ]);
         const occ = _vehicle(occType, { x: lane.x, y: lane.y, yaw: upstream.yaw }, 0);
         npcs.push(occ);
         sceneryIds.add(occ.id);
@@ -1055,11 +1265,19 @@
       }
     }
     return {
-      corridor: c, npcs, props: [],
+      corridor: c,
+      npcs,
+      props: [],
       conflictD: dConflict,
       params: {
-        vru_type: type, speed: r1(v), from: fromRight ? 'right' : 'left', crossing_m: r1(crossLen),
-        on_crosswalk: onCrosswalk, arrival_offset_s: r2(dt), trigger_m: r1(sol.radius), occluded,
+        vru_type: type,
+        speed: r1(v),
+        from: fromRight ? 'right' : 'left',
+        crossing_m: r1(crossLen),
+        on_crosswalk: onCrosswalk,
+        arrival_offset_s: r2(dt),
+        trigger_m: r1(sol.radius),
+        occluded,
         stops_in_lane_s: hold && r1(hold),
       },
       routedNpcs: [],
@@ -1077,12 +1295,25 @@
   function _turnVru(rng, net, vEgo) {
     const c = _buildCorridor(rng, net, rng.range(200, 300));
     if (!c) return null;
-    const type = _p('vru_type', rng.weighted([['pedestrian', 5], ['child', 2], ['cyclist', 3]]));
+    const type = _p(
+      'vru_type',
+      rng.weighted([
+        ['pedestrian', 5],
+        ['child', 2],
+        ['cyclist', 3],
+      ]),
+    );
     const v = _p('speed', rng.range(...VRU_PROFILES[type].speed));
     const turnWant = _p('turn', null);
     const dMin = _egoRunUp(vEgo) + vEgo * 3;
-    const turns = c.segs.filter(sg => sg.L.junction && sg.startD > dMin && sg.endD < c.length - 30
-      && _turnKind(sg.L) !== 'straight' && (!turnWant || _turnKind(sg.L) === turnWant));
+    const turns = c.segs.filter(
+      (sg) =>
+        sg.L.junction &&
+        sg.startD > dMin &&
+        sg.endD < c.length - 30 &&
+        _turnKind(sg.L) !== 'straight' &&
+        (!turnWant || _turnKind(sg.L) === turnWant),
+    );
     if (!turns.length) return null;
     const sg = rng.pick(turns);
     // The crosswalk across the exit road, when the map paints one: that is
@@ -1090,17 +1321,20 @@
     // crossing moved a few metres off it (onto the exit road proper) put a
     // walker against a Town05 corner barrier the .xodr does not have, and in
     // CARLA it never moved.
-    const crosswalks = (AppState.mapData.crosswalks || []).map(cw => {
-      let best = null;
-      for (const p of c.pts) {
-        if (p.d < sg.endD - 6 || p.d > sg.endD + 15) continue;
-        const dd = Math.hypot(p.x - cw.x, p.y - cw.y);
-        if (dd < 6 && (!best || dd < best.dd)) best = { dd, d: p.d, cw };
-      }
-      return best;
-    }).filter(Boolean);
+    const crosswalks = (AppState.mapData.crosswalks || [])
+      .map((cw) => {
+        let best = null;
+        for (const p of c.pts) {
+          if (p.d < sg.endD - 6 || p.d > sg.endD + 15) continue;
+          const dd = Math.hypot(p.x - cw.x, p.y - cw.y);
+          if (dd < 6 && (!best || dd < best.dd)) best = { dd, d: p.d, cw };
+        }
+        return best;
+      })
+      .filter(Boolean);
     const onCrosswalk = crosswalks.length > 0;
-    let dConflict, pose = null;
+    let dConflict,
+      pose = null;
     if (onCrosswalk) {
       const { d, cw } = rng.pick(crosswalks);
       dConflict = d;
@@ -1108,13 +1342,15 @@
       // walking or the stripe direction; the road direction is whichever of
       // the two axes is closer to the exit road's, signed like it.
       const roadYaw = _corridorAt(c, Math.max(d, sg.endD + 3)).yaw;
-      let yaw = [cw.heading, cw.heading + 90, cw.heading + 180, cw.heading + 270]
-        .reduce((b, y) => (Math.abs(_wrapDeg(y - roadYaw)) < Math.abs(_wrapDeg(b - roadYaw)) ? y : b));
+      let yaw = [cw.heading, cw.heading + 90, cw.heading + 180, cw.heading + 270].reduce((b, y) =>
+        Math.abs(_wrapDeg(y - roadYaw)) < Math.abs(_wrapDeg(b - roadYaw)) ? y : b,
+      );
       if (Math.abs(_wrapDeg(yaw - roadYaw)) > 30) return null;
       // Where the crosswalk's axis meets the ego's lane: nearest point on it
       // to the corridor at d.
       const at = _corridorAt(c, d);
-      const ux = -Math.sin(yaw / DEG), uy = Math.cos(yaw / DEG);   // across the road
+      const ux = -Math.sin(yaw / DEG),
+        uy = Math.cos(yaw / DEG); // across the road
       const t = (at.x - cw.x) * ux + (at.y - cw.y) * uy;
       pose = { x: cw.x + t * ux, y: cw.y + t * uy, z: at.z, yaw: _wrapDeg(yaw) };
     } else {
@@ -1122,7 +1358,8 @@
       // be out of the junction and straight across the crossing.
       dConflict = sg.endD + rng.range(3, 9);
       if (!_junctionFree(c, dConflict - 2, dConflict + 8)) return null;
-      const a = _corridorAt(c, dConflict - 2), b = _corridorAt(c, dConflict + 6);
+      const a = _corridorAt(c, dConflict - 2),
+        b = _corridorAt(c, dConflict + 6);
       if (Math.abs(_wrapDeg(b.yaw - a.yaw)) > 15) return null;
     }
 
@@ -1136,18 +1373,23 @@
   /** Proper intersection of two polylines: [{x, y, sA, sB}] (first only). */
   function _polylineCrossing(A, B) {
     for (let i = 1; i < A.pts.length; i++) {
-      const p = A.pts[i - 1], p2 = A.pts[i];
-      const rx = p2.x - p.x, ry = p2.y - p.y;
+      const p = A.pts[i - 1],
+        p2 = A.pts[i];
+      const rx = p2.x - p.x,
+        ry = p2.y - p.y;
       for (let j = 1; j < B.pts.length; j++) {
-        const q = B.pts[j - 1], q2 = B.pts[j];
-        const sx = q2.x - q.x, sy = q2.y - q.y;
+        const q = B.pts[j - 1],
+          q2 = B.pts[j];
+        const sx = q2.x - q.x,
+          sy = q2.y - q.y;
         const den = rx * sy - ry * sx;
         if (Math.abs(den) < 1e-9) continue;
         const t = ((q.x - p.x) * sy - (q.y - p.y) * sx) / den;
         const u = ((q.x - p.x) * ry - (q.y - p.y) * rx) / den;
         if (t < 0 || t > 1 || u < 0 || u > 1) continue;
         return {
-          x: p.x + t * rx, y: p.y + t * ry,
+          x: p.x + t * rx,
+          y: p.y + t * ry,
           sA: A.cum[i - 1] + t * Math.hypot(rx, ry),
           sB: B.cum[j - 1] + u * Math.hypot(sx, sy),
         };
@@ -1209,7 +1451,7 @@
   /** Does any light govern junction `junctionId` at all? */
   function _junctionSignalized(net, junctionId) {
     const idx = _lightIndex(net);
-    return (net.byJunction.get(junctionId) || []).some(C => idx.has(String(C.road.id)));
+    return (net.byJunction.get(junctionId) || []).some((C) => idx.has(String(C.road.id)));
   }
 
   /** trafficSignals entries forcing every light on the corridor before
@@ -1222,8 +1464,7 @@
     for (const sg of c.segs) {
       if (!sg.L.junction || sg.startD >= dLimit) continue;
       for (const tl of _lightsFor(net, sg.L)) {
-        const sig = signals.get(tl.id)
-          || { id: tl.id, x: tl.x, y: tl.y, z: tl.z ?? 0, events: [] };
+        const sig = signals.get(tl.id) || { id: tl.id, x: tl.x, y: tl.y, z: tl.z ?? 0, events: [] };
         for (const back of GREEN_WAVE_BEFORE_M) {
           const d = sg.startD - back;
           if (d < 0) continue;
@@ -1252,7 +1493,7 @@
     let walked = 0;
     let cur = key;
     for (let hop = 0; hop < 4; hop++) {
-      const preds = (net.pred.get(cur) || []).map(k => net.lanes.get(k)).filter(Boolean);
+      const preds = (net.pred.get(cur) || []).map((k) => net.lanes.get(k)).filter(Boolean);
       if (!preds.length) return null;
       const P = rng.pick(preds);
       const need = dist - walked;
@@ -1281,8 +1522,13 @@
   // crossing cases). `ego`/`npc` are the turn each one makes; `approach` is
   // where the NPC comes from relative to the ego.
   const JUNCTION_LAYOUTS = {
-    crossing:          { label: 'Querverkehr, beide geradeaus', ego: 'straight', npc: 'straight', approach: 'side' },
-    ego_left_oncoming: { label: 'Ego biegt links ab, Gegenverkehr', ego: 'left', npc: 'straight', approach: 'oncoming' },
+    crossing: { label: 'Querverkehr, beide geradeaus', ego: 'straight', npc: 'straight', approach: 'side' },
+    ego_left_oncoming: {
+      label: 'Ego biegt links ab, Gegenverkehr',
+      ego: 'left',
+      npc: 'straight',
+      approach: 'oncoming',
+    },
     npc_left_oncoming: { label: 'Gegenverkehr biegt links ab', ego: 'straight', npc: 'left', approach: 'oncoming' },
     ego_left_crossing: { label: 'Ego biegt links ab, Querverkehr', ego: 'left', npc: 'straight', approach: 'side' },
     ego_right_crossing: { label: 'Ego biegt rechts ab, Querverkehr', ego: 'right', npc: 'straight', approach: 'side' },
@@ -1301,7 +1547,8 @@
   /** Which JUNCTION_LAYOUTS entry an ego connector J and an NPC connector C
    * make, or 'other'. */
   function _junctionLayout(J, C, approachDiff) {
-    const e = _turnKind(J), n = _turnKind(C);
+    const e = _turnKind(J),
+      n = _turnKind(C);
     const app = approachDiff >= 150 ? 'oncoming' : approachDiff >= 50 && approachDiff <= 130 ? 'side' : null;
     if (app === 'side' && n === 'straight') return e === 'straight' ? 'crossing' : `ego_${e}_crossing`;
     if (app === 'oncoming' && e === 'left' && n === 'straight') return 'ego_left_oncoming';
@@ -1326,8 +1573,10 @@
     const wantLayout = _p('layout', null);
     const egoNeeds = JUNCTION_LAYOUTS[wantLayout]?.ego;
     const wantFrom = _p('npc_from', null);
-    const juncSegs = c.segs.filter(sg => sg.L.junction && sg.startD > dMin && sg.endD < c.length - 15
-      && (!egoNeeds || _turnKind(sg.L) === egoNeeds));
+    const juncSegs = c.segs.filter(
+      (sg) =>
+        sg.L.junction && sg.startD > dMin && sg.endD < c.length - 15 && (!egoNeeds || _turnKind(sg.L) === egoNeeds),
+    );
     if (!juncSegs.length) return null;
     const sg = rng.pick(juncSegs);
     const J = sg.L;
@@ -1339,7 +1588,7 @@
       const X = _polylineCrossing(J, C);
       if (!X || X.sA < 1 || X.sA > J.length - 1 || X.sB < 1 || X.sB > C.length - 1) continue;
       const cStart = _laneAt(C, 0);
-      if (Math.hypot(cStart.x - jStart.x, cStart.y - jStart.y) < 3) continue;   // same approach
+      if (Math.hypot(cStart.x - jStart.x, cStart.y - jStart.y) < 3) continue; // same approach
       const approachDiff = Math.abs(_wrapDeg(cStart.yaw - jStart.yaw));
       if (approachDiff < 30) continue;
       const layout = _junctionLayout(J, C, approachDiff);
@@ -1363,7 +1612,7 @@
     const vNpc = _p('npc_speed', rng.range(7, 13));
     const npcToX = back.walked + X.sB;
     const tNpc = _timeFromRest(npcToX, vNpc);
-    const dt = _p('arrival_offset_s', rng.range(-0.6, 0.8));   // ego arrives this much after the NPC
+    const dt = _p('arrival_offset_s', rng.range(-0.6, 0.8)); // ego arrives this much after the NPC
     const dX = sg.startD + X.sA;
     const sol = _solveTrigger(c, dX, tNpc + dt, vEgo, npcPose);
     if (!sol) return null;
@@ -1389,16 +1638,26 @@
     // the lead car; a run-on that merges into the ego's path later is refused.
     let npcWps = runOnPose ? [_routeWp(exitPose), _routeWp(runOnPose)] : [_routeWp(exitPose)];
     let egoEndD;
-    const endPose = runOnPose || exitPose;   // the walk can dead-end: then the route stops at the exit
-    const pastJ = c.pts.filter(p => p.d > sg.endD);
+    const endPose = runOnPose || exitPose; // the walk can dead-end: then the route stops at the exit
+    const pastJ = c.pts.filter((p) => p.d > sg.endD);
     if (pastJ.length > 1 && _distToPolyline(pastJ, endPose.x, endPose.y) < 2.5) {
-      const joinSeg = c.segs.find(s2 => s2.L.key === exitL.key && s2.startD >= sg.endD - 1);
+      const joinSeg = c.segs.find((s2) => s2.L.key === exitL.key && s2.startD >= sg.endD - 1);
       if (!joinSeg || c.length - 60 < dX + 30) return null;
       npcWps = [_routeWp(exitPose), ..._corridorWaypoints(c, joinSeg.startD + exitS)];
       egoEndD = c.length - 60;
     }
 
-    const type = _p('npc_type', rng.weighted([['car', 6], ['van', 2], ['truck', 1], ['motorcycle', 1], ['police', 0.5], ['ambulance', 0.5]]));
+    const type = _p(
+      'npc_type',
+      rng.weighted([
+        ['car', 6],
+        ['van', 2],
+        ['truck', 1],
+        ['motorcycle', 1],
+        ['police', 0.5],
+        ['ambulance', 0.5],
+      ]),
+    );
     const npc = _vehicle(type, npcPose, 0);
     _ignoresTraffic(npc);
     npc.events = [
@@ -1409,28 +1668,51 @@
       _speedEvent('evt-2', nearEgo(sol.radius), vNpc, 'rate', VEHICLE_ACCEL),
     ];
     return {
-      corridor: c, npcs: [npc], props: [],
+      corridor: c,
+      npcs: [npc],
+      props: [],
       conflictD: dX,
       egoEndD,
       params: {
-        layout, npc_from: from, npc_type: type, junction: J.junctionId, signalized, oncoming,
-        npc_speed: r1(vNpc), npc_run_up_m: r1(npcToX), arrival_offset_s: r2(dt), trigger_m: r1(sol.radius),
+        layout,
+        npc_from: from,
+        npc_type: type,
+        junction: J.junctionId,
+        signalized,
+        oncoming,
+        npc_speed: r1(vNpc),
+        npc_run_up_m: r1(npcToX),
+        arrival_offset_s: r2(dt),
+        trigger_m: r1(sol.radius),
       },
       routedNpcs: [{ actor: npc, passes: X }],
       onsets: new Map([[npc.id, _laneAt(C, 0)]]),
     };
   }
 
-  const CARGO_PROPS = ['static.prop.box01', 'static.prop.box02', 'static.prop.box03',
-    'static.prop.travelcase', 'static.prop.briefcase', 'static.prop.guitarcase',
-    'static.prop.creasedbox01', 'static.prop.creasedbox02', 'static.prop.haybalelb'];
+  const CARGO_PROPS = [
+    'static.prop.box01',
+    'static.prop.box02',
+    'static.prop.box03',
+    'static.prop.travelcase',
+    'static.prop.briefcase',
+    'static.prop.guitarcase',
+    'static.prop.creasedbox01',
+    'static.prop.creasedbox02',
+    'static.prop.haybalelb',
+  ];
   const CONE_PROPS = ['static.prop.trafficcone01', 'static.prop.constructioncone'];
 
   function _prop(blueprint, x, y, yaw) {
     if (!PropCatalog.get(blueprint)) return null;
-    const px = r1(x), py = r1(y);
+    const px = r1(x),
+      py = r1(y);
     return {
-      id: AppState.nextId(), type: 'prop', prop: blueprint, x: px, y: py,
+      id: AppState.nextId(),
+      type: 'prop',
+      prop: blueprint,
+      x: px,
+      y: py,
       z: ObjectsManager.surfaceZFor('prop', px, py, blueprint),
       yaw: Math.round(_wrapDeg(yaw)),
     };
@@ -1439,7 +1721,8 @@
   /** 'curve' where the corridor turns by more than 12° over the 30 m around
    * `d`, else 'straight'. */
   function _siteKind(c, d) {
-    const a = _corridorAt(c, d - 15), b = _corridorAt(c, d + 15);
+    const a = _corridorAt(c, d - 15),
+      b = _corridorAt(c, d + 15);
     return Math.abs(_wrapDeg(b.yaw - a.yaw)) > 12 ? 'curve' : 'straight';
   }
 
@@ -1466,8 +1749,16 @@
     const pose = _corridorAt(c, dObs);
     // The last three weights add up to the old 'breakdown' weight, so a seed
     // that drew cargo or a work zone before still does.
-    const variant = _p('variant', rng.weighted([['cargo', 1], ['workzone', 1], ['breakdown', 0.6],
-                                                ['stationary_vru', 0.2], ['queue', 0.2]]));
+    const variant = _p(
+      'variant',
+      rng.weighted([
+        ['cargo', 1],
+        ['workzone', 1],
+        ['breakdown', 0.6],
+        ['stationary_vru', 0.2],
+        ['queue', 0.2],
+      ]),
+    );
     // which edge of the lane it sits toward
     const side = _p('side', rng.chance(0.7) ? 'right' : 'left') === 'right' ? 1 : -1;
     const props = [];
@@ -1504,7 +1795,14 @@
     } else if (variant === 'breakdown') {
       const off = side * _p('lateral_m', rng.range(0, 1.0));
       const at = _lateral(pose, off);
-      const type = _p('vehicle_type', rng.weighted([['car', 3], ['van', 2], ['truck', 1]]));
+      const type = _p(
+        'vehicle_type',
+        rng.weighted([
+          ['car', 3],
+          ['van', 2],
+          ['truck', 1],
+        ]),
+      );
       const skew = rng.range(-8, 8);
       const triAt = _lateral(_corridorAt(c, dObs - rng.range(15, 30)), side * 1.2);
       // Last draw of the attempt, so every draw above is what it always was.
@@ -1519,7 +1817,14 @@
       // A pedestrian standing in the lane with its back to the ego, or a bike
       // stopped in it (UN R171 stationary-target cases). No events: no Act,
       // start speed 0, so it stands for the whole run.
-      const type = _p('vru_type', rng.weighted([['pedestrian', 3], ['child', 1], ['cyclist', 2]]));
+      const type = _p(
+        'vru_type',
+        rng.weighted([
+          ['pedestrian', 3],
+          ['child', 1],
+          ['cyclist', 2],
+        ]),
+      );
       const off = side * _p('lateral_m', rng.range(0, 0.8));
       const at = _lateral(pose, off);
       const vru = _vehicle(type, { x: at.x, y: at.y, yaw: pose.yaw }, 0);
@@ -1566,7 +1871,7 @@
     for (let hop = 0; L && hop < 6; hop++) {
       if (s + left <= L.length - 0.5 && !L.junction) return { L, s: s + left };
       left = Math.max(L.junction ? POST_JUNCTION_WP_M : 0, left - (L.length - s));
-      const next = (net.succ.get(L.key) || []).map(k => net.lanes.get(k)).filter(Boolean);
+      const next = (net.succ.get(L.key) || []).map((k) => net.lanes.get(k)).filter(Boolean);
       if (!next.length) return null;
       L = rng.pick(next);
       s = 0;
@@ -1598,20 +1903,27 @@
     // Start on an innermost lane of a two-way road, as cut-in starts on a
     // multi-lane one: a random corridor rarely puts the ego there.
     if (!net.twoWay) {
-      net.twoWay = net.startable.filter(L => L.length >= 60
-        && Math.abs(L.lane.laneId) === 1 && _oncomingLane(net, { L }));
+      net.twoWay = net.startable.filter(
+        (L) => L.length >= 60 && Math.abs(L.lane.laneId) === 1 && _oncomingLane(net, { L }),
+      );
     }
     if (!net.twoWay.length) return null;
     const start = rng.pick(net.twoWay);
-    const c = _buildCorridor(rng, net, rng.range(220, 320), undefined,
-                             start, rng.range(0, Math.max(0.5, start.length - 60)));
+    const c = _buildCorridor(
+      rng,
+      net,
+      rng.range(220, 320),
+      undefined,
+      start,
+      rng.range(0, Math.max(0.5, start.length - 60)),
+    );
     if (!c) return null;
     // The oncoming lane beside corridor distance d: the segment's own
     // opposite lane, projected. The swing may run across several lane
     // sections — Town10HD splits its two-way roads into short ones, and
     // requiring the whole swing on one lane found no site there at all.
-    const oncAt = d => {
-      const sg = c.segs.find(g => d >= g.startD && d <= g.endD);
+    const oncAt = (d) => {
+      const sg = c.segs.find((g) => d >= g.startD && d <= g.endD);
       if (!sg || sg.L.junction) return null;
       const O = _oncomingLane(net, sg);
       if (!O || O.junction) return null;
@@ -1623,9 +1935,9 @@
 
     const vNpc = _p('npc_speed', rng.range(8, 14));
     // The swing, in metres of travel.
-    const lenIn = vNpc * rng.range(1.0, 2.2);         // centre line -> peak
-    const lenHold = _p('hold_m', rng.range(0, 6));    // at the peak
-    const lenOut = vNpc * rng.range(0.8, 1.8);        // back to its own lane
+    const lenIn = vNpc * rng.range(1.0, 2.2); // centre line -> peak
+    const lenHold = _p('hold_m', rng.range(0, 6)); // at the peak
+    const lenOut = vNpc * rng.range(0.8, 1.8); // back to its own lane
     // Metres toward the ego's lane. Under ~1.4 m (lane 3.5 m minus a 2.1 m
     // car) the two only brush past; most draws cross that.
     const offset = _p('offset_m', rng.range(1.2, 2.8));
@@ -1645,10 +1957,10 @@
     }
     const dMinX = _egoRunUp(vEgo) + vEgo * 3;
     const fits = stretches
-      .map(st => ({ lo: Math.max(st.a + lenHold + lenOut + 5, dMinX), hi: Math.min(st.b, c.length) - lenIn - 5 }))
-      .filter(f => f.hi > f.lo);
+      .map((st) => ({ lo: Math.max(st.a + lenHold + lenOut + 5, dMinX), hi: Math.min(st.b, c.length) - lenIn - 5 }))
+      .filter((f) => f.hi > f.lo);
     if (!fits.length) return null;
-    const fit = rng.weighted(fits.map(f => [f, f.hi - f.lo]));
+    const fit = rng.weighted(fits.map((f) => [f, f.hi - f.lo]));
     const dX = rng.range(fit.lo, fit.hi);
     const dEnd = dX - lenHold - lenOut;
     if (!_junctionFree(c, dEnd - 5, dX + lenIn + 5)) return null;
@@ -1658,23 +1970,30 @@
     const nOut = Math.max(2, Math.round(lenOut / 3));
     samples.push({ d: dX + lenIn, off: 0, strategy: 'fastest' });
     for (let i = 1; i <= nIn; i++) {
-      samples.push({ d: dX + lenIn * (1 - i / nIn),
-                     off: offset * (1 - Math.cos(Math.PI * i / nIn)) / 2, strategy: 'shortest' });
+      samples.push({
+        d: dX + lenIn * (1 - i / nIn),
+        off: (offset * (1 - Math.cos((Math.PI * i) / nIn))) / 2,
+        strategy: 'shortest',
+      });
     }
     if (lenHold > 1) samples.push({ d: dX - lenHold, off: offset, strategy: 'shortest' });
     for (let i = 1; i <= nOut; i++) {
       // Ends at exactly 0: the next leg is routed from this point.
-      samples.push({ d: dX - lenHold - lenOut * i / nOut,
-                     off: offset * (1 + Math.cos(Math.PI * i / nOut)) / 2, strategy: 'shortest' });
+      samples.push({
+        d: dX - lenHold - (lenOut * i) / nOut,
+        off: (offset * (1 + Math.cos((Math.PI * i) / nOut))) / 2,
+        strategy: 'shortest',
+      });
     }
-    const onc = samples.map(sm => oncAt(sm.d));
-    if (onc.some(o => !o)) return null;
-    const swingStart = onc[0], swingEnd = onc[onc.length - 1];
+    const onc = samples.map((sm) => oncAt(sm.d));
+    if (onc.some((o) => !o)) return null;
+    const swingStart = onc[0],
+      swingEnd = onc[onc.length - 1];
 
     // Spawn far enough back to reach cruise speed before the swing starts —
     // and no further: the car waits at rest, so every metre here pushes the
     // conflict further down the corridor.
-    const runUp = vNpc * vNpc / (2 * VEHICLE_ACCEL) + rng.range(5, 25);
+    const runUp = (vNpc * vNpc) / (2 * VEHICLE_ACCEL) + rng.range(5, 25);
     let spawn;
     if (swingStart.s - runUp >= 1) {
       spawn = _laneAt(swingStart.O, swingStart.s - runUp);
@@ -1705,7 +2024,15 @@
     });
     const exitPose = _laneAt(exit.L, exit.s);
 
-    const type = _p('npc_type', rng.weighted([['car', 6], ['van', 2], ['truck', 1], ['motorcycle', 1]]));
+    const type = _p(
+      'npc_type',
+      rng.weighted([
+        ['car', 6],
+        ['van', 2],
+        ['truck', 1],
+        ['motorcycle', 1],
+      ]),
+    );
     const npc = _vehicle(type, spawn, 0);
     _ignoresTraffic(npc);
     npc.events = [
@@ -1723,13 +2050,17 @@
     const npcs = [npc];
     const sceneryIds = new Set();
     const causeDraw = rng.chance(0.4);
-    const parkType = rng.weighted([['car', 3], ['van', 2], ['truck', 1]]);
+    const parkType = rng.weighted([
+      ['car', 3],
+      ['van', 2],
+      ['truck', 1],
+    ]);
     let cause = _p('cause', causeDraw ? 'parked' : 'none');
     if (cause === 'parked') {
       const kerb = (MapView.actorSize(type).h + MapView.actorSize(parkType).h) / 2 + 0.4 - 0.8 * offset;
       const at = oncAt(dX - lenHold / 2);
       if (at && kerb <= 1.0) {
-        const q = _lateral(at.pose, Math.max(0.3, kerb));   // right of the oncoming lane's travel = its kerb
+        const q = _lateral(at.pose, Math.max(0.3, kerb)); // right of the oncoming lane's travel = its kerb
         const parked = _vehicle(parkType, { x: q.x, y: q.y, yaw: at.pose.yaw }, 0);
         npcs.push(parked);
         sceneryIds.add(parked.id);
@@ -1738,13 +2069,22 @@
       }
     }
     return {
-      corridor: c, npcs, props: [], sceneryIds,
+      corridor: c,
+      npcs,
+      props: [],
+      sceneryIds,
       conflictD: dX + 10,
       params: {
         cause,
-        npc_type: type, npc_speed: r1(vNpc), offset_m: r1(offset),
-        swing_in_m: r1(lenIn), hold_m: r1(lenHold), swing_out_m: r1(lenOut),
-        npc_run_up_m: r1(toPeak), arrival_offset_s: r2(dt), trigger_m: r1(sol.radius),
+        npc_type: type,
+        npc_speed: r1(vNpc),
+        offset_m: r1(offset),
+        swing_in_m: r1(lenIn),
+        hold_m: r1(lenHold),
+        swing_out_m: r1(lenOut),
+        npc_run_up_m: r1(toPeak),
+        arrival_offset_s: r2(dt),
+        trigger_m: r1(sol.radius),
       },
       // The routed leg up to the swing must actually reach it.
       routedNpcs: [{ actor: npc, passes: swingStart.pose }],
@@ -1768,16 +2108,26 @@
    * forced-green light before the ego switches it). */
   function _cutOut(rng, net, vEgo) {
     if (!net.multiLane) {
-      net.multiLane = net.startable.filter(L => L.length >= 90 && ['left', 'right'].some(side => {
-        const ref = L.record && L.record[side];
-        const N = ref && net.lanes.get(net.refKey(ref));
-        return N && !N.junction;
-      }));
+      net.multiLane = net.startable.filter(
+        (L) =>
+          L.length >= 90 &&
+          ['left', 'right'].some((side) => {
+            const ref = L.record && L.record[side];
+            const N = ref && net.lanes.get(net.refKey(ref));
+            return N && !N.junction;
+          }),
+      );
     }
     if (!net.multiLane.length) return null;
     const start = rng.pick(net.multiLane);
-    const c = _buildCorridor(rng, net, rng.range(220, 320), undefined,
-                             start, rng.range(0, Math.max(0.5, start.length - 120)));
+    const c = _buildCorridor(
+      rng,
+      net,
+      rng.range(220, 320),
+      undefined,
+      start,
+      rng.range(0, Math.max(0.5, start.length - 120)),
+    );
     if (!c) return null;
     const candidates = [];
     for (const sg of c.segs) {
@@ -1794,16 +2144,23 @@
     const { sg, N, side } = rng.pick(candidates);
 
     const type = _p('lead_type', rng.weighted(VEHICLE_MIX.filter(([t]) => t !== 'bus' && t !== 'motorcycle')));
-    const stoppedType = _p('stopped_type', rng.weighted([['car', 4], ['van', 2], ['truck', 1]]));
-    const thw = _p('headway_s', rng.range(0.9, 2.0));       // following headway, s
-    const gap0 = _centreDistance(thw * vEgo, type);           // lead ahead of the ego
-    const lcDist = _p('lane_change_m', rng.range(8, 14));     // lateral move spread
+    const stoppedType = _p(
+      'stopped_type',
+      rng.weighted([
+        ['car', 4],
+        ['van', 2],
+        ['truck', 1],
+      ]),
+    );
+    const thw = _p('headway_s', rng.range(0.9, 2.0)); // following headway, s
+    const gap0 = _centreDistance(thw * vEgo, type); // lead ahead of the ego
+    const lcDist = _p('lane_change_m', rng.range(8, 14)); // lateral move spread
     // From the start of the swerve to the stopped car, as late as the lead can
     // make it: the lane change runs 6 m in its own lane, then moves across
     // over lcDist, and the two bodies stop overlapping about 60% of the way
     // over (a 2.1 m car in a 3.5 m lane). Plus both half-lengths and a margin.
     // Drawn generously the ego saw the obstacle 4-7 s out — far too easy.
-    const len = t => MapView.actorSize(t).w;
+    const len = (t) => MapView.actorSize(t).w;
     const cutMargin = _p('cut_margin_m', rng.range(1.5, 10));
     const cutDist = 6 + 0.6 * lcDist + (len(type) + len(stoppedType)) / 2 + cutMargin;
     const dCut = rng.range(Math.max(sg.startD + 2, gap0 + 25), sg.endD - cutDist - 4);
@@ -1820,14 +2177,18 @@
     const lead = _vehicle(type, _corridorAt(c, gap0), vLead);
     lead.obey_traffic_lights = false;
     lead.obey_obstacles = false;
-    lead.events = [{
-      id: 'evt-1',
-      trigger: { type: 'distance_to_point', value: 2.0, entity_ref: lead.id,
-                 point: { name: 'Point 1', x: r1(cutPose.x), y: r1(cutPose.y),
-                          z: r2(cutPose.z + WAYPOINT_CLEARANCE) } },
-      action: { type: 'lane_change', direction: side,
-                dynamics: { shape: 'linear', value: r1(lcDist) } },
-    }];
+    lead.events = [
+      {
+        id: 'evt-1',
+        trigger: {
+          type: 'distance_to_point',
+          value: 2.0,
+          entity_ref: lead.id,
+          point: { name: 'Point 1', x: r1(cutPose.x), y: r1(cutPose.y), z: r2(cutPose.z + WAYPOINT_CLEARANCE) },
+        },
+        action: { type: 'lane_change', direction: side, dynamics: { shape: 'linear', value: r1(lcDist) } },
+      },
+    ];
 
     const stopped = _vehicle(stoppedType, _corridorAt(c, dObs), 0);
     // Most stopped cars move off once the ego is right behind them: one that
@@ -1840,11 +2201,18 @@
       ? [_speedEvent('evt-1', nearEgo(_centreDistance(9, stoppedType)), r1(rng.range(6, 10)), 'rate', 2.0)]
       : [];
     return {
-      corridor: c, npcs: [lead, stopped], props: [],
+      corridor: c,
+      npcs: [lead, stopped],
+      props: [],
       conflictD: dObs + 10,
       params: {
-        lead_type: type, stopped_type: stoppedType, side, headway_s: r2(thw),
-        lead_speed: r1(vLead), lane_change_m: r1(lcDist), cut_to_obstacle_m: r1(cutDist),
+        lead_type: type,
+        stopped_type: stoppedType,
+        side,
+        headway_s: r2(thw),
+        lead_speed: r1(vLead),
+        lane_change_m: r1(lcDist),
+        cut_to_obstacle_m: r1(cutDist),
         cut_margin_m: r1(cutMargin),
         stopped_drives_off: drivesOff,
       },
@@ -1872,10 +2240,13 @@
     const pose = _corridorAt(c, gap0);
     const edgeOffset = _p('edge_offset_m', rng.range(0.8, 1.2));
     const bike = _vehicle('cyclist', pose, vBike);
-    const events = [{
-      id: 'evt-1', trigger: nearEgo(400),   // at once: rides at the edge from the start
-      action: { type: 'lane_offset', direction: 'right', offset: r1(edgeOffset) },
-    }];
+    const events = [
+      {
+        id: 'evt-1',
+        trigger: nearEgo(400), // at once: rides at the edge from the start
+        action: { type: 'lane_offset', direction: 'right', offset: r1(edgeOffset) },
+      },
+    ];
     const swerves = _p('swerves', rng.chance(0.5));
     let swerveTtc = null;
     if (swerves) {
@@ -1883,17 +2254,23 @@
       // A second offset supersedes the first (its _overwritten flag), so this
       // is a move from the edge out to `out` metres left of the lane centre.
       events.push({
-        id: 'evt-2', trigger: nearEgo(_centreDistance(Math.max(6, (vEgo - vBike) * swerveTtc), 'cyclist')),
+        id: 'evt-2',
+        trigger: nearEgo(_centreDistance(Math.max(6, (vEgo - vBike) * swerveTtc), 'cyclist')),
         action: { type: 'lane_offset', direction: 'left', offset: r1(rng.range(0.0, 0.8)) },
       });
     }
     bike.events = events;
     return {
-      corridor: c, npcs: [bike], props: [],
+      corridor: c,
+      npcs: [bike],
+      props: [],
       conflictD: gap0 + vBike * tCatch + 10,
       params: {
-        speed: r1(vBike), initial_gap_m: r1(gap0), edge_offset_m: r1(edgeOffset),
-        swerves, swerve_ttc_s: swerveTtc && r2(swerveTtc),
+        speed: r1(vBike),
+        initial_gap_m: r1(gap0),
+        edge_offset_m: r1(edgeOffset),
+        swerves,
+        swerve_ttc_s: swerveTtc && r2(swerveTtc),
       },
       routedNpcs: [],
       threats: swerves ? new Map([[bike.id, 'evt-2']]) : null,
@@ -1909,8 +2286,17 @@
   const num = (key, label, unit, min, max, step) => ({ key, label, unit, kind: 'num', min, max, step });
   const bool = (key, label) => ({ key, label, kind: 'bool' });
   const choice = (key, label, options) => ({ key, label, kind: 'choice', options });
-  const VEHICLE_OPTS = [['car', 'Auto'], ['van', 'Transporter'], ['truck', 'Lkw'], ['bus', 'Bus'], ['motorcycle', 'Motorrad']];
-  const SIDE_OPTS = [['right', 'rechts'], ['left', 'links']];
+  const VEHICLE_OPTS = [
+    ['car', 'Auto'],
+    ['van', 'Transporter'],
+    ['truck', 'Lkw'],
+    ['bus', 'Bus'],
+    ['motorcycle', 'Motorrad'],
+  ];
+  const SIDE_OPTS = [
+    ['right', 'rechts'],
+    ['left', 'links'],
+  ];
   const EGO_SPEED = num('ego_speed', 'Ego-Tempo', 'm/s', 5, 20, 0.5);
   const PARAMS = {
     lead_brake: [
@@ -1930,14 +2316,22 @@
       choice('side', 'Seite', SIDE_OPTS),
     ],
     cut_in: [
-      choice('npc_type', 'Fahrzeug', VEHICLE_OPTS.filter(([k]) => k !== 'bus')),
+      choice(
+        'npc_type',
+        'Fahrzeug',
+        VEHICLE_OPTS.filter(([k]) => k !== 'bus'),
+      ),
       num('npc_speed', 'Tempo', 'm/s', 3, 10, 0.5),
       num('trigger_m', 'Schert ein bei', 'm', 8, 26, 1),
       num('lane_change_m', 'Spurwechsel über', 'm', 10, 22, 1),
       bool('brakes_after', 'Bremst danach'),
     ],
     vru_crossing: [
-      choice('vru_type', 'Person', [['pedestrian', 'Fußgänger'], ['child', 'Kind'], ['cyclist', 'Radfahrer']]),
+      choice('vru_type', 'Person', [
+        ['pedestrian', 'Fußgänger'],
+        ['child', 'Kind'],
+        ['cyclist', 'Radfahrer'],
+      ]),
       num('speed', 'Tempo', 'm/s', 0.8, 6, 0.1),
       choice('from', 'Kommt von', SIDE_OPTS),
       num('arrival_offset_s', 'Zeitversatz', 's', -0.5, 0.8, 0.05),
@@ -1945,54 +2339,110 @@
       num('stops_in_lane_s', 'Bleibt stehen', 's (0 = nein)', 0, 4, 0.5),
     ],
     turn_vru: [
-      choice('turn', 'Ego biegt ab', [['left', 'links'], ['right', 'rechts']]),
-      choice('vru_type', 'Person', [['pedestrian', 'Fußgänger'], ['child', 'Kind'], ['cyclist', 'Radfahrer']]),
+      choice('turn', 'Ego biegt ab', [
+        ['left', 'links'],
+        ['right', 'rechts'],
+      ]),
+      choice('vru_type', 'Person', [
+        ['pedestrian', 'Fußgänger'],
+        ['child', 'Kind'],
+        ['cyclist', 'Radfahrer'],
+      ]),
       num('speed', 'Tempo', 'm/s', 0.8, 6, 0.1),
       choice('from', 'Kommt von', SIDE_OPTS),
       num('arrival_offset_s', 'Zeitversatz', 's', -0.5, 0.8, 0.05),
       num('stops_in_lane_s', 'Bleibt stehen', 's (0 = nein)', 0, 4, 0.5),
     ],
     pull_out: [
-      choice('npc_type', 'Fahrzeug', [['car', 'Auto'], ['van', 'Transporter'], ['truck', 'Lkw']]),
+      choice('npc_type', 'Fahrzeug', [
+        ['car', 'Auto'],
+        ['van', 'Transporter'],
+        ['truck', 'Lkw'],
+      ]),
       num('npc_speed', 'Tempo', 'm/s', 3, 12, 0.5),
       num('arrival_offset_s', 'Vorsprung', 's', 0.3, 2, 0.1),
     ],
     junction_conflict: [
-      choice('layout', 'Konstellation', [...Object.entries(JUNCTION_LAYOUTS).map(([k, v]) => [k, v.label]),
-                                          ['other', 'Andere']]),
-      choice('npc_from', 'Kommt von', [['left', 'links'], ['right', 'rechts'], ['oncoming', 'vorn (Gegenverkehr)']]),
-      choice('npc_type', 'Fahrzeug', [...VEHICLE_OPTS.filter(([k]) => k !== 'bus'), ['police', 'Polizei'], ['ambulance', 'Rettungswagen']]),
+      choice('layout', 'Konstellation', [
+        ...Object.entries(JUNCTION_LAYOUTS).map(([k, v]) => [k, v.label]),
+        ['other', 'Andere'],
+      ]),
+      choice('npc_from', 'Kommt von', [
+        ['left', 'links'],
+        ['right', 'rechts'],
+        ['oncoming', 'vorn (Gegenverkehr)'],
+      ]),
+      choice('npc_type', 'Fahrzeug', [
+        ...VEHICLE_OPTS.filter(([k]) => k !== 'bus'),
+        ['police', 'Polizei'],
+        ['ambulance', 'Rettungswagen'],
+      ]),
       num('npc_speed', 'Tempo', 'm/s', 7, 13, 0.5),
       num('arrival_offset_s', 'Zeitversatz', 's', -0.6, 0.8, 0.05),
     ],
     obstacle: [
-      choice('variant', 'Art', [['cargo', 'Ladung'], ['workzone', 'Baustelle'], ['breakdown', 'Pannenfahrzeug'],
-                                ['stationary_vru', 'Stehende Person / Rad'], ['queue', 'Stehende Kolonne']]),
-      choice('site', 'Ort', [['straight', 'Gerade'], ['curve', 'Kurve']]),
+      choice('variant', 'Art', [
+        ['cargo', 'Ladung'],
+        ['workzone', 'Baustelle'],
+        ['breakdown', 'Pannenfahrzeug'],
+        ['stationary_vru', 'Stehende Person / Rad'],
+        ['queue', 'Stehende Kolonne'],
+      ]),
+      choice('site', 'Ort', [
+        ['straight', 'Gerade'],
+        ['curve', 'Kurve'],
+      ]),
       choice('side', 'Seite', SIDE_OPTS),
       choice('vehicle_type', 'Fahrzeug', [...VEHICLE_OPTS.filter(([k]) => k !== 'bus')]),
-      choice('vru_type', 'Person', [['pedestrian', 'Fußgänger'], ['child', 'Kind'], ['cyclist', 'Radfahrer']]),
+      choice('vru_type', 'Person', [
+        ['pedestrian', 'Fußgänger'],
+        ['child', 'Kind'],
+        ['cyclist', 'Radfahrer'],
+      ]),
       num('lateral_m', 'Seitlich versetzt', 'm', 0, 1.5, 0.1),
-      choice('facing', 'Ausrichtung', [['same', 'Fahrtrichtung'], ['oncoming', 'entgegen']]),
+      choice('facing', 'Ausrichtung', [
+        ['same', 'Fahrtrichtung'],
+        ['oncoming', 'entgegen'],
+      ]),
     ],
     oncoming_drift: [
-      choice('npc_type', 'Fahrzeug', VEHICLE_OPTS.filter(([k]) => k !== 'bus')),
+      choice(
+        'npc_type',
+        'Fahrzeug',
+        VEHICLE_OPTS.filter(([k]) => k !== 'bus'),
+      ),
       num('npc_speed', 'Tempo', 'm/s', 8, 14, 0.5),
       num('offset_m', 'Ausschwenken', 'm', 1.2, 2.8, 0.1),
       num('hold_m', 'Bleibt drüben', 'm', 0, 6, 0.5),
       num('arrival_offset_s', 'Zeitversatz', 's', -0.4, 0.6, 0.05),
-      choice('cause', 'Grund', [['none', 'keiner'], ['parked', 'parkendes Fahrzeug']]),
+      choice('cause', 'Grund', [
+        ['none', 'keiner'],
+        ['parked', 'parkendes Fahrzeug'],
+      ]),
     ],
     rear_approach: [
-      choice('npc_type', 'Fahrzeug', [['car', 'Auto'], ['van', 'Transporter'], ['motorcycle', 'Motorrad'], ['truck', 'Lkw']]),
+      choice('npc_type', 'Fahrzeug', [
+        ['car', 'Auto'],
+        ['van', 'Transporter'],
+        ['motorcycle', 'Motorrad'],
+        ['truck', 'Lkw'],
+      ]),
       choice('side', 'Ego wechselt nach', SIDE_OPTS),
       num('speed_diff', 'Schneller als Ego', 'm/s', 3, 8, 0.5),
       num('gap_at_change_m', 'Abstand beim Wechsel', 'm', 2, 12, 0.5),
       num('lane_change_m', 'Spurwechsel über', 'm', 12, 20, 1),
     ],
     cut_out: [
-      choice('lead_type', 'Vorausfahrzeug', [['car', 'Auto'], ['van', 'Transporter'], ['truck', 'Lkw']]),
-      choice('stopped_type', 'Stehendes Fahrzeug', [['car', 'Auto'], ['van', 'Transporter'], ['truck', 'Lkw']]),
+      choice('lead_type', 'Vorausfahrzeug', [
+        ['car', 'Auto'],
+        ['van', 'Transporter'],
+        ['truck', 'Lkw'],
+      ]),
+      choice('stopped_type', 'Stehendes Fahrzeug', [
+        ['car', 'Auto'],
+        ['van', 'Transporter'],
+        ['truck', 'Lkw'],
+      ]),
       num('headway_s', 'Folgeabstand', 's', 0.9, 2, 0.1),
       num('lane_change_m', 'Spurwechsel über', 'm', 8, 14, 1),
       num('cut_margin_m', 'Reserve', 'm', 1.5, 10, 0.5),
@@ -2028,18 +2478,18 @@
   }
 
   const TYPES = {
-    lead_brake:        { label: 'Vorausfahrzeug bremst', build: _leadBrake },
-    slow_lead:         { label: 'Langsames Fahrzeug voraus', build: _slowLead },
-    cut_in:            { label: 'Einscheren',            build: _cutIn },
-    vru_crossing:      { label: 'Querende Person',       build: _vruCrossing },
-    turn_vru:          { label: 'Abbiegen, Fußgänger/Rad quert', build: _turnVru },
-    junction_conflict: { label: 'Querverkehr Kreuzung',  build: _junctionConflict },
-    obstacle:          { label: 'Hindernis auf Spur',    build: _obstacle },
-    oncoming_drift:    { label: 'Gegenverkehr driftet',  build: _oncomingDrift },
-    cyclist_ahead:     { label: 'Radfahrer voraus',      build: _cyclistAhead },
-    cut_out:           { label: 'Ausscheren vor Stauende', build: _cutOut },
-    pull_out:          { label: 'Ausparken vor Ego',     build: _pullOut },
-    rear_approach:     { label: 'Spurwechsel, Fahrzeug von hinten', build: _rearApproach },
+    lead_brake: { label: 'Vorausfahrzeug bremst', build: _leadBrake },
+    slow_lead: { label: 'Langsames Fahrzeug voraus', build: _slowLead },
+    cut_in: { label: 'Einscheren', build: _cutIn },
+    vru_crossing: { label: 'Querende Person', build: _vruCrossing },
+    turn_vru: { label: 'Abbiegen, Fußgänger/Rad quert', build: _turnVru },
+    junction_conflict: { label: 'Querverkehr Kreuzung', build: _junctionConflict },
+    obstacle: { label: 'Hindernis auf Spur', build: _obstacle },
+    oncoming_drift: { label: 'Gegenverkehr driftet', build: _oncomingDrift },
+    cyclist_ahead: { label: 'Radfahrer voraus', build: _cyclistAhead },
+    cut_out: { label: 'Ausscheren vor Stauende', build: _cutOut },
+    pull_out: { label: 'Ausparken vor Ego', build: _pullOut },
+    rear_approach: { label: 'Spurwechsel, Fahrzeug von hinten', build: _rearApproach },
   };
 
   // ── Checks ───────────────────────────────────────────────────────────────────
@@ -2047,8 +2497,10 @@
   function _distToPolyline(route, x, y) {
     let best = Infinity;
     for (let i = 1; i < route.length; i++) {
-      const a = route[i - 1], b = route[i];
-      const dx = b.x - a.x, dy = b.y - a.y;
+      const a = route[i - 1],
+        b = route[i];
+      const dx = b.x - a.x,
+        dy = b.y - a.y;
       const len2 = dx * dx + dy * dy;
       const t = len2 > 0 ? Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / len2)) : 0;
       best = Math.min(best, Math.hypot(x - (a.x + t * dx), y - (a.y + t * dy)));
@@ -2057,7 +2509,7 @@
   }
 
   function _routeOf(actor) {
-    const ev = actor.events.find(e => e.action?.type === 'assign_route');
+    const ev = actor.events.find((e) => e.action?.type === 'assign_route');
     return ev ? Simulate.routeGeometry(actor, ev) : null;
   }
 
@@ -2073,7 +2525,7 @@
     // that loop then runs past other actors' route ends.
     let len = 0;
     for (let i = 1; i < route.length; i++) len += Math.hypot(route[i].x - route[i - 1].x, route[i].y - route[i - 1].y);
-    if (len > (dTo - dFrom) + 40) return false;
+    if (len > dTo - dFrom + 40) return false;
     for (let d = dFrom + 4; d < dTo - 4; d += 4) {
       const p = _corridorAt(c, d);
       if (_distToPolyline(route, p.x, p.y) > ROUTE_TOLERANCE_M) return false;
@@ -2087,12 +2539,13 @@
    * radius per actor kind, which is conservative for a 4.5 m car. */
   const SPAWN_RADIUS = { walker: 0.8, vehicle: 2.6, prop: 1.0 };
   function _spawnsClear(ego, npcs, props) {
-    const r = a => (a.type === 'prop' ? SPAWN_RADIUS.prop
-      : MapView.isWalkerType(a.type) ? SPAWN_RADIUS.walker : SPAWN_RADIUS.vehicle);
+    const r = (a) =>
+      a.type === 'prop' ? SPAWN_RADIUS.prop : MapView.isWalkerType(a.type) ? SPAWN_RADIUS.walker : SPAWN_RADIUS.vehicle;
     const actors = [ego, ...npcs];
     for (let i = 0; i < actors.length; i++) {
       for (let j = i + 1; j < actors.length; j++) {
-        const a = actors[i], b = actors[j];
+        const a = actors[i],
+          b = actors[j];
         if (Math.hypot(a.x - b.x, a.y - b.y) < r(a) + r(b) + 0.5) return false;
       }
       for (const p of props) {
@@ -2142,9 +2595,16 @@
 
   /** Corners of a footprint centred at (x, y), heading `yaw` radians. */
   function _corners(x, y, yaw, fp) {
-    const c = Math.cos(yaw), s = Math.sin(yaw), hl = fp.l / 2, hw = fp.w / 2;
-    return [[hl, hw], [hl, -hw], [-hl, -hw], [-hl, hw]]
-      .map(([u, v]) => [x + u * c - v * s, y + u * s + v * c]);
+    const c = Math.cos(yaw),
+      s = Math.sin(yaw),
+      hl = fp.l / 2,
+      hw = fp.w / 2;
+    return [
+      [hl, hw],
+      [hl, -hw],
+      [-hl, -hw],
+      [-hl, hw],
+    ].map(([u, v]) => [x + u * c - v * s, y + u * s + v * c]);
   }
 
   /** Separating-axis gap between two convex quads: < 0 means overlap. */
@@ -2152,11 +2612,25 @@
     let gap = -Infinity;
     for (const P of [A, B]) {
       for (let i = 0; i < 4; i++) {
-        const [x1, y1] = P[i], [x2, y2] = P[(i + 1) % 4];
-        const nx = y2 - y1, ny = x1 - x2, n = Math.hypot(nx, ny) || 1;
-        let aMin = Infinity, aMax = -Infinity, bMin = Infinity, bMax = -Infinity;
-        for (const [x, y] of A) { const d = (x * nx + y * ny) / n; aMin = Math.min(aMin, d); aMax = Math.max(aMax, d); }
-        for (const [x, y] of B) { const d = (x * nx + y * ny) / n; bMin = Math.min(bMin, d); bMax = Math.max(bMax, d); }
+        const [x1, y1] = P[i],
+          [x2, y2] = P[(i + 1) % 4];
+        const nx = y2 - y1,
+          ny = x1 - x2,
+          n = Math.hypot(nx, ny) || 1;
+        let aMin = Infinity,
+          aMax = -Infinity,
+          bMin = Infinity,
+          bMax = -Infinity;
+        for (const [x, y] of A) {
+          const d = (x * nx + y * ny) / n;
+          aMin = Math.min(aMin, d);
+          aMax = Math.max(aMax, d);
+        }
+        for (const [x, y] of B) {
+          const d = (x * nx + y * ny) / n;
+          bMin = Math.min(bMin, d);
+          bMax = Math.max(bMax, d);
+        }
         gap = Math.max(gap, bMin - aMax, aMin - bMax);
       }
     }
@@ -2168,7 +2642,8 @@
     const out = [];
     let h = yaw0Deg / DEG;
     for (let i = 0; i < track.length; i++) {
-      const a = track[Math.max(0, i - 1)], b = track[i];
+      const a = track[Math.max(0, i - 1)],
+        b = track[i];
       if (Math.hypot(b.x - a.x, b.y - a.y) > 0.005) h = Math.atan2(b.y - a.y, b.x - a.x);
       out.push(h);
     }
@@ -2194,8 +2669,8 @@
     // otherwise score as a near miss.
     const scenery = cand.sceneryIds || new Set();
     const others = [
-      ...cand.npcs.filter(n => !scenery.has(n.id)).map(n => ({ a: n, tr: run.tracks[n.id] })),
-      ...cand.props.map(p => ({ a: p, tr: null })),
+      ...cand.npcs.filter((n) => !scenery.has(n.id)).map((n) => ({ a: n, tr: run.tracks[n.id] })),
+      ...cand.props.map((p) => ({ a: p, tr: null })),
     ];
     let worst = null;
     for (const o of others) {
@@ -2211,12 +2686,13 @@
       // and not from its own (much later) drive-off.
       const rev = cand.revealedBy && cand.revealedBy.get(o.a.id);
       const trig = rev
-        ? [run.fired[rev.actorId]?.[rev.eventId]].filter(t => t != null)
+        ? [run.fired[rev.actorId]?.[rev.eventId]].filter((t) => t != null)
         : (o.a.events || [])
-          .filter(e => (threatId ? e.id === threatId : e.trigger?.type === 'distance_to_ego'))
-          .map(e => run.fired[o.a.id]?.[e.id]).filter(t => t != null);
+            .filter((e) => (threatId ? e.id === threatId : e.trigger?.type === 'distance_to_ego'))
+            .map((e) => run.fired[o.a.id]?.[e.id])
+            .filter((t) => t != null);
       const hasEvents = !!rev || (o.a.events || []).length > 0;
-      if (hasEvents && !trig.length) continue;   // never released: not this actor's conflict
+      if (hasEvents && !trig.length) continue; // never released: not this actor's conflict
       let t0 = trig.length ? Math.min(...trig) : 0;
       // Threat onset, where the type knows a better moment than the release:
       // the crossing car passing the line into the junction, the pedestrian
@@ -2226,15 +2702,29 @@
         const k = o.tr.findIndex((p, i) => run.times[i] >= t0 && Math.hypot(p.x - onset.x, p.y - onset.y) < 1.5);
         if (k >= 0) t0 = run.times[k];
       }
-      const i0 = Math.max(0, run.times.findIndex(t => t >= t0));
-      let contact = null, minGap = Infinity, minAt = null;
+      const i0 = Math.max(
+        0,
+        run.times.findIndex((t) => t >= t0),
+      );
+      let contact = null,
+        minGap = Infinity,
+        minAt = null;
       for (let i = i0; i < run.times.length; i++) {
-        const ox = o.tr ? o.tr[i].x : o.a.x, oy = o.tr ? o.tr[i].y : o.a.y;
-        if (Math.hypot(ox - egoTr[i].x, oy - egoTr[i].y) > 25) continue;   // cheap reject
-        const g = _quadGap(_corners(egoTr[i].x, egoTr[i].y, egoH[i], egoFp),
-                           _corners(ox, oy, h ? h[i] : o.a.yaw / DEG, fp));
-        if (g < minGap) { minGap = g; minAt = i; }
-        if (g < 0) { contact = i; break; }
+        const ox = o.tr ? o.tr[i].x : o.a.x,
+          oy = o.tr ? o.tr[i].y : o.a.y;
+        if (Math.hypot(ox - egoTr[i].x, oy - egoTr[i].y) > 25) continue; // cheap reject
+        const g = _quadGap(
+          _corners(egoTr[i].x, egoTr[i].y, egoH[i], egoFp),
+          _corners(ox, oy, h ? h[i] : o.a.yaw / DEG, fp),
+        );
+        if (g < minGap) {
+          minGap = g;
+          minAt = i;
+        }
+        if (g < 0) {
+          contact = i;
+          break;
+        }
       }
       // Where it happens: the ego at contact, or at its closest approach.
       const atI = contact ?? minAt;
@@ -2243,25 +2733,31 @@
       if (contact != null) {
         const ttc = run.times[contact] - (i0 ? run.times[i0] : 0);
         let travel = 0;
-        for (let i = i0 + 1; i <= contact; i++) travel += Math.hypot(egoTr[i].x - egoTr[i - 1].x, egoTr[i].y - egoTr[i - 1].y);
+        for (let i = i0 + 1; i <= contact; i++)
+          travel += Math.hypot(egoTr[i].x - egoTr[i - 1].x, egoTr[i].y - egoTr[i - 1].y);
         const v = egoTr[i0].speed;
-        const decel = v > 0.1 ? v * v / (2 * Math.max(travel - 0.5, 0.25)) : 0;
+        const decel = v > 0.1 ? (v * v) / (2 * Math.max(travel - 0.5, 0.25)) : 0;
         entry = { contact: true, ttc_s: r2(ttc), decel_mps2: r1(decel), min_gap_m: 0, with: o.a.type, at };
       } else {
         entry = { contact: false, ttc_s: null, decel_mps2: 0, min_gap_m: r1(Math.max(0, minGap)), with: o.a.type, at };
       }
       // The worst conflict is the one that leaves the least time.
-      const key = e => (e.contact ? e.ttc_s : 1000 + e.min_gap_m);
+      const key = (e) => (e.contact ? e.ttc_s : 1000 + e.min_gap_m);
       if (!worst || key(entry) < key(worst)) worst = entry;
     }
     if (!worst) return { verdict: 'trivial' };
 
     let verdict = 'ok';
     if (!worst.contact && worst.min_gap_m > TRIVIAL_GAP_M) verdict = 'trivial';
-    if (worst.contact && (worst.ttc_s < UNAVOIDABLE_TTC_S || worst.decel_mps2 > UNAVOIDABLE_DECEL)) verdict = 'unavoidable';
+    if (worst.contact && (worst.ttc_s < UNAVOIDABLE_TTC_S || worst.decel_mps2 > UNAVOIDABLE_DECEL))
+      verdict = 'unavoidable';
     return {
-      verdict, ttc_s: worst.ttc_s, decel_mps2: worst.decel_mps2,
-      min_gap_m: worst.min_gap_m, conflict_with: worst.with, at: worst.at,
+      verdict,
+      ttc_s: worst.ttc_s,
+      decel_mps2: worst.decel_mps2,
+      min_gap_m: worst.min_gap_m,
+      conflict_with: worst.with,
+      at: worst.at,
     };
   }
 
@@ -2269,9 +2765,9 @@
 
   /** A well-mixed 32-bit seed for attempt `attempt` of seed `seed`. */
   function _attemptSeed(seed, attempt) {
-    let h = (Math.imul(seed >>> 0, 0x9E3779B1) ^ Math.imul(attempt + 1, 0x85EBCA6B)) >>> 0;
-    h = Math.imul(h ^ (h >>> 16), 0x7FEB352D) >>> 0;
-    h = Math.imul(h ^ (h >>> 15), 0x846CA68B) >>> 0;
+    let h = (Math.imul(seed >>> 0, 0x9e3779b1) ^ Math.imul(attempt + 1, 0x85ebca6b)) >>> 0;
+    h = Math.imul(h ^ (h >>> 16), 0x7feb352d) >>> 0;
+    h = Math.imul(h ^ (h >>> 15), 0x846ca68b) >>> 0;
     return (h ^ (h >>> 16)) >>> 0 || 1;
   }
 
@@ -2366,19 +2862,36 @@
       }
       if (!ok) continue;
 
-      const criticality = assess({ ego, npcs: res.npcs, props: res.props,
-                                   sceneryIds: res.sceneryIds, onsets: res.onsets,
-                                   threats: res.threats, revealedBy: res.revealedBy });
+      const criticality = assess({
+        ego,
+        npcs: res.npcs,
+        props: res.props,
+        sceneryIds: res.sceneryIds,
+        onsets: res.onsets,
+        threats: res.threats,
+        revealedBy: res.revealedBy,
+      });
       // Pinned values are the user's call: build what they give rather than
       // moving on to another site.
       if (criticality.verdict === 'no_run') continue;
       if (criticality.verdict !== 'ok' && !_overrides) continue;
-      if (_focus && !(criticality.at
-          && Math.hypot(criticality.at.x - _focus.x, criticality.at.y - _focus.y) <= _focus.radius)) continue;
+      if (
+        _focus &&
+        !(criticality.at && Math.hypot(criticality.at.x - _focus.x, criticality.at.y - _focus.y) <= _focus.radius)
+      )
+        continue;
 
       const info = {
-        seed, type: key, label: TYPES[key].label, town: AppState.map, attempts: order.indexOf(attempt) + 1, attempt,
-        ego_speed: vEgo, route_m: r1(egoEnd), criticality, params: res.params,
+        seed,
+        type: key,
+        label: TYPES[key].label,
+        town: AppState.map,
+        attempts: order.indexOf(attempt) + 1,
+        attempt,
+        ego_speed: vEgo,
+        route_m: r1(egoEnd),
+        criticality,
+        params: res.params,
       };
       info.forced_green_lights = trafficSignals.length;
       if (_focus) info.near = { x: r1(_focus.x), y: r1(_focus.y) };
@@ -2390,18 +2903,26 @@
 
   /** Build and load a scenario into the editor as ONE undo step. */
   function generate(typeKey = null, seed = null, opts = {}) {
-    if (!AppState.mapData) { Toast.error('Zuerst eine Karte laden'); return null; }
-    if (!AppState.laneGraph) { Toast.error('Für diese Karte ist kein Spurgraph geladen'); return null; }
+    if (!AppState.mapData) {
+      Toast.error('Zuerst eine Karte laden');
+      return null;
+    }
+    if (!AppState.laneGraph) {
+      Toast.error('Für diese Karte ist kein Spurgraph geladen');
+      return null;
+    }
     if (typeKey && !TYPES[typeKey]) return null;
 
-    Simulate.stop();   // scoring needs the preview's tick state, see Simulate.stop
+    Simulate.stop(); // scoring needs the preview's tick state, see Simulate.stop
     AppState.cancelPlacement();
     const result = opts.prebuilt || build(typeKey, seed, opts);
     if (!result) {
       const what = typeKey ? TYPES[typeKey].label : 'Szenario';
-      Toast.error(opts.near
-        ? `Kein passender Ort für „${what}" an dieser Stelle — eine andere Stelle oder einen anderen Typ versuchen`
-        : `Kein passender Ort für „${what}" auf ${AppState.map} gefunden`);
+      Toast.error(
+        opts.near
+          ? `Kein passender Ort für „${what}" an dieser Stelle — eine andere Stelle oder einen anderen Typ versuchen`
+          : `Kein passender Ort für „${what}" auf ${AppState.map} gefunden`,
+      );
       return null;
     }
     // The recipe: enough to rebuild this scenario with one parameter changed
@@ -2410,7 +2931,10 @@
     // rebuilds cannot drift across the map.
     const info = result.info;
     const recipe = {
-      type: info.type, label: info.label, seed: info.seed, town: info.town,
+      type: info.type,
+      label: info.label,
+      seed: info.seed,
+      town: info.town,
       near: info.near || opts.near || (info.criticality?.at ? { ...info.criticality.at } : null),
       // Built focused (a click, or a rebuild that needed the focus): `attempt`
       // indexes the focused attempts, so rebuilds stay focused. Otherwise it
@@ -2439,8 +2963,9 @@
     MapView.renderAllActors();
     if (!opts.keepView) _frame(result);
 
-    const problems = [result.ego, ...result.npcs]
-      .flatMap(a => ScenarioRules.problemsOf(a).map(p => `${AppState.actorLabel(a)}: ${p.problem.message}`));
+    const problems = [result.ego, ...result.npcs].flatMap((a) =>
+      ScenarioRules.problemsOf(a).map((p) => `${AppState.actorLabel(a)}: ${p.problem.message}`),
+    );
     if (problems.length) Toast.warn(`Generiertes Szenario hat Probleme: ${problems.join('; ')}`, 8000);
     else if (!opts.quiet) Toast.success(`${result.info.label} generiert · Seed ${result.info.seed}`);
 
@@ -2491,7 +3016,9 @@
       return null;
     }
     return generate(r.type, result.info.seed, {
-      near: r.near, prebuilt: result, keepView: true,
+      near: r.near,
+      prebuilt: result,
+      keepView: true,
       undoLabel: newSeed ? 'Variante' : 'Parameter',
     });
   }
@@ -2524,12 +3051,13 @@
   function _sweepValues(spec, from, to, steps) {
     if (spec.kind === 'bool') return [false, true];
     if (spec.kind === 'choice') return spec.options.map(([k]) => k);
-    const clamp = v => Math.min(spec.max, Math.max(spec.min, v));
-    const a = clamp(Number(from)), b = clamp(Number(to));
+    const clamp = (v) => Math.min(spec.max, Math.max(spec.min, v));
+    const a = clamp(Number(from)),
+      b = clamp(Number(to));
     const n = Math.max(2, Math.min(25, Math.floor(Number(steps) || 2)));
     const out = [];
     for (let i = 0; i < n; i++) {
-      const v = Math.round((a + (b - a) * i / (n - 1)) / spec.step) * spec.step;
+      const v = Math.round((a + ((b - a) * i) / (n - 1)) / spec.step) * spec.step;
       const rv = Math.round(v * 1000) / 1000;
       if (!out.includes(rv)) out.push(rv);
     }
@@ -2542,27 +3070,41 @@
    * editor's own scenario is swapped out and put back exactly as
    * generateBatch does it: plain assignment, undo suspended, `change {}`.
    */
-  async function sweepFromRecipe({ key, from, to, steps = 5, weathers = false,
-                                   onProgress = () => {}, isCancelled = () => false } = {}) {
+  async function sweepFromRecipe({
+    key,
+    from,
+    to,
+    steps = 5,
+    weathers = false,
+    onProgress = () => {},
+    isCancelled = () => false,
+  } = {}) {
     const r = AppState.generated;
     if (!r || !PARAMS[r.type]) return null;
-    const spec = [EGO_SPEED, ...PARAMS[r.type]].find(sp => sp.key === key);
+    const spec = [EGO_SPEED, ...PARAMS[r.type]].find((sp) => sp.key === key);
     if (!spec) return null;
     const values = _sweepValues(spec, from, to, steps);
     const wx = weathers ? Object.keys(WEATHER_PRESETS) : [null];
-    const plan = values.flatMap(v => wx.map(w => ({ v, w }))).slice(0, SWEEP_MAX);
+    const plan = values.flatMap((v) => wx.map((w) => ({ v, w }))).slice(0, SWEEP_MAX);
 
     Simulate.stop();
-    const saved = JSON.parse(JSON.stringify({
-      ego: AppState.ego, npcs: AppState.npcs, staticObjects: AppState.staticObjects,
-      trafficSignals: AppState.trafficSignals, weather: AppState.weather, time: AppState.time,
-      generated: AppState.generated,
-    }));
+    const saved = JSON.parse(
+      JSON.stringify({
+        ego: AppState.ego,
+        npcs: AppState.npcs,
+        staticObjects: AppState.staticObjects,
+        trafficSignals: AppState.trafficSignals,
+        weather: AppState.weather,
+        time: AppState.time,
+        generated: AppState.generated,
+      }),
+    );
     AppState.cancelPlacement();
     AppState.select(null);
     UndoStack.suspend();
-    const entries = [], skipped = [];
-    const cache = new Map();   // one build per value, reused across weathers
+    const entries = [],
+      skipped = [];
+    const cache = new Map(); // one build per value, reused across weathers
     try {
       for (let k = 0; k < plan.length; k++) {
         if (isCancelled()) break;
@@ -2570,8 +3112,13 @@
         const ck = JSON.stringify(v);
         if (!cache.has(ck)) cache.set(ck, _buildFromRecipe(r, { ...(r.overrides || {}), [key]: v }));
         const res = cache.get(ck);
-        if (!res) { skipped.push({ value: v, reason: 'an dieser Stelle nicht baubar' }); continue; }
-        const copy = JSON.parse(JSON.stringify({ ego: res.ego, npcs: res.npcs, props: res.props, sig: res.trafficSignals }));
+        if (!res) {
+          skipped.push({ value: v, reason: 'an dieser Stelle nicht baubar' });
+          continue;
+        }
+        const copy = JSON.parse(
+          JSON.stringify({ ego: res.ego, npcs: res.npcs, props: res.props, sig: res.trafficSignals }),
+        );
         AppState.ego = copy.ego;
         AppState.npcs = copy.npcs;
         AppState.staticObjects = copy.props;
@@ -2579,7 +3126,10 @@
         AppState.weather = w ? _weatherOf(w) : JSON.parse(JSON.stringify(saved.weather));
         AppState.time = saved.time;
         const problems = ScenarioIO.validate().errors;
-        if (problems.length) { skipped.push({ value: v, reason: problems[0] }); continue; }
+        if (problems.length) {
+          skipped.push({ value: v, reason: problems[0] });
+          continue;
+        }
         const n = String(entries.length + 1).padStart(4, '0');
         const vName = String(v).replace(/[^\w.-]/g, '');
         entries.push({
@@ -2587,10 +3137,18 @@
           params: ScenarioIO.buildParams(),
           scenario: AppState.toJSON(),
           meta: {
-            index: entries.length + 1, seed: res.info.seed, town: AppState.map, type: r.type,
-            label: r.label, sweep_param: key, sweep_value: v,
-            weather: w || 'editor', time: AppState.time, ego_speed: res.info.ego_speed,
-            params: res.info.params, pinned: { ...(r.overrides || {}), [key]: v },
+            index: entries.length + 1,
+            seed: res.info.seed,
+            town: AppState.map,
+            type: r.type,
+            label: r.label,
+            sweep_param: key,
+            sweep_value: v,
+            weather: w || 'editor',
+            time: AppState.time,
+            ego_speed: res.info.ego_speed,
+            params: res.info.params,
+            pinned: { ...(r.overrides || {}), [key]: v },
           },
         });
         onProgress(k + 1, plan.length, entries.length);
@@ -2613,7 +3171,10 @@
     try {
       const res = await sweepFromRecipe(opts);
       if (!res) return;
-      if (!res.entries.length) { Toast.error('Serie: kein Wert ließ sich an dieser Stelle bauen'); return; }
+      if (!res.entries.length) {
+        Toast.error('Serie: kein Wert ließ sich an dieser Stelle bauen');
+        return;
+      }
       const r = AppState.generated;
       const filename = `serie_${AppState.map}_${r.type}_${opts.key}_${res.entries.length}.zip`;
       const out = await Api.exportBatch({ scenarios: res.entries, filename });
@@ -2631,7 +3192,7 @@
 
   /** Frame everything the scenario placed, including the ego's route end. */
   function _frame(result) {
-    const pts = [result.ego, ...result.npcs, ...result.props].map(a => ({ x: a.x, y: a.y }));
+    const pts = [result.ego, ...result.npcs, ...result.props].map((a) => ({ x: a.x, y: a.y }));
     const wps = result.ego.events[0]?.action?.waypoints || [];
     if (wps.length) pts.push(wps[wps.length - 1]);
     MapView.frameBounds(pts);
@@ -2643,12 +3204,12 @@
   // without a wet road, or fog with a clear sky, is not a condition anyone
   // drives in. Snow and dust are left out — CARLA 0.9.15 renders neither.
   const WEATHER_PRESETS = {
-    klar:       {},
-    bewoelkt:   { cloudy: 0.8 },
-    regen:      { cloudy: 0.8, rainy: 0.6, wet_road: 0.8 },
+    klar: {},
+    bewoelkt: { cloudy: 0.8 },
+    regen: { cloudy: 0.8, rainy: 0.6, wet_road: 0.8 },
     starkregen: { cloudy: 1.0, rainy: 1.0, wet_road: 1.0, fog: 0.2 },
-    nebel:      { cloudy: 0.5, fog: 0.7 },
-    nass:       { cloudy: 0.3, wet_road: 0.7 },
+    nebel: { cloudy: 0.5, fog: 0.7 },
+    nass: { cloudy: 0.3, wet_road: 0.7 },
   };
   const TIMES = ['daytime', 'morning', 'dusk', 'nighttime'];
   // The towns the CARLA build run.sh starts actually ships (Town10 is a
@@ -2671,7 +3232,7 @@
   function coveragePlan(n, dims, rng) {
     const names = Object.keys(dims);
     const covered = new Set();
-    const pairKeys = combo => {
+    const pairKeys = (combo) => {
       const keys = [];
       for (let i = 0; i < names.length; i++) {
         for (let j = i + 1; j < names.length; j++) {
@@ -2685,18 +3246,22 @@
     // eight scenario types a 9-item all-maps batch landed on only 6 of the 8
     // towns, three of them twice.
     const used = new Map();
-    const usage = combo => names.reduce((sum, nm) => sum + (used.get(`${nm}=${combo[nm]}`) || 0), 0);
+    const usage = (combo) => names.reduce((sum, nm) => sum + (used.get(`${nm}=${combo[nm]}`) || 0), 0);
     const plan = [];
     for (let k = 0; k < n; k++) {
-      let best = null, bestScore = -Infinity;
+      let best = null,
+        bestScore = -Infinity;
       for (let c = 0; c < 40; c++) {
-        const combo = Object.fromEntries(names.map(nm => [nm, rng.pick(dims[nm])]));
-        const gain = pairKeys(combo).filter(p => !covered.has(p)).length;
+        const combo = Object.fromEntries(names.map((nm) => [nm, rng.pick(dims[nm])]));
+        const gain = pairKeys(combo).filter((p) => !covered.has(p)).length;
         const score = gain * 1000 - usage(combo);
-        if (score > bestScore) { best = combo; bestScore = score; }
+        if (score > bestScore) {
+          best = combo;
+          bestScore = score;
+        }
       }
-      pairKeys(best).forEach(p => covered.add(p));
-      names.forEach(nm => used.set(`${nm}=${best[nm]}`, (used.get(`${nm}=${best[nm]}`) || 0) + 1));
+      pairKeys(best).forEach((p) => covered.add(p));
+      names.forEach((nm) => used.set(`${nm}=${best[nm]}`, (used.get(`${nm}=${best[nm]}`) || 0) + 1));
       plan.push(best);
     }
     return plan;
@@ -2708,18 +3273,18 @@
   async function _loadMap(town) {
     if (AppState.map === town && AppState.mapData && AppState.laneGraph) return true;
     const select = document.getElementById('map-select');
-    if (![...select.options].some(o => o.value === town)) return false;
+    if (![...select.options].some((o) => o.value === town)) return false;
     select.value = town;
-    select.dataset.keepScenario = '1';   // toolbar.js: this switch must not clear
+    select.dataset.keepScenario = '1'; // toolbar.js: this switch must not clear
     select.dispatchEvent(new Event('change'));
     for (let i = 0; i < 600; i++) {
-      await new Promise(r => setTimeout(r, 50));
+      await new Promise((r) => setTimeout(r, 50));
       if (AppState.map === town && AppState.mapData && AppState.laneGraph) return true;
     }
     return false;
   }
 
-  const _tick = () => new Promise(r => setTimeout(r, 0));
+  const _tick = () => new Promise((r) => setTimeout(r, 0));
 
   /**
    * Generate `count` scenarios and return {entries, skipped}: one export entry
@@ -2731,22 +3296,30 @@
    * and toJSON read AppState, but nothing needs to render or record them.
    */
   async function generateBatch({
-    count = 50, typeKey = null, typeKeys = null, seed = null,
-    balance = true, varyWeather = true, maps = 'current',
-    onProgress = () => {}, isCancelled = () => false,
+    count = 50,
+    typeKey = null,
+    typeKeys = null,
+    seed = null,
+    balance = true,
+    varyWeather = true,
+    maps = 'current',
+    onProgress = () => {},
+    isCancelled = () => false,
   } = {}) {
     const baseSeed = Number(seed) > 0 ? Math.floor(Number(seed)) : _randomSeed();
     const rng = new Rng(baseSeed);
     // `maps`: 'current', 'carla', or an array of town names (the dialog's
     // selection). Towns missing from #map-select are dropped.
-    const available = new Set([...document.getElementById('map-select').options].map(o => o.value));
-    const towns = Array.isArray(maps) ? maps.filter(t => available.has(t))
-      : maps === 'carla' ? CARLA_TOWNS.filter(t => available.has(t))
-      : [AppState.map];
+    const available = new Set([...document.getElementById('map-select').options].map((o) => o.value));
+    const towns = Array.isArray(maps)
+      ? maps.filter((t) => available.has(t))
+      : maps === 'carla'
+        ? CARLA_TOWNS.filter((t) => available.has(t))
+        : [AppState.map];
     if (!towns.length) towns.push(AppState.map);
     // `typeKeys`: the selected subset; `typeKey` (one type) is the older form.
     const allTypes = Object.keys(TYPES);
-    let types = (typeKeys || (typeKey ? [typeKey] : allTypes)).filter(k => TYPES[k]);
+    let types = (typeKeys || (typeKey ? [typeKey] : allTypes)).filter((k) => TYPES[k]);
     if (!types.length) types = allTypes;
     const subset = types.length < allTypes.length ? types : null;
     const dims = {
@@ -2758,17 +3331,23 @@
     let plan = coveragePlan(count, dims, rng);
     // Without balancing the type is the generator's own random pick instead,
     // from the selected subset (one selected type stays that type).
-    if (!balance && types.length > 1) plan = plan.map(p => ({ ...p, type: subset }));
+    if (!balance && types.length > 1) plan = plan.map((p) => ({ ...p, type: subset }));
     // One map load per town, not one per scenario.
     plan = plan.map((p, i) => ({ ...p, i })).sort((a, b) => towns.indexOf(a.town) - towns.indexOf(b.town) || a.i - b.i);
 
     Simulate.stop();
     const saved = {
       map: AppState.map,
-      state: JSON.parse(JSON.stringify({
-        ego: AppState.ego, npcs: AppState.npcs, staticObjects: AppState.staticObjects,
-        trafficSignals: AppState.trafficSignals, weather: AppState.weather, time: AppState.time,
-      })),
+      state: JSON.parse(
+        JSON.stringify({
+          ego: AppState.ego,
+          npcs: AppState.npcs,
+          staticObjects: AppState.staticObjects,
+          trafficSignals: AppState.trafficSignals,
+          weather: AppState.weather,
+          time: AppState.time,
+        }),
+      ),
     };
     AppState.cancelPlacement();
     AppState.select(null);
@@ -2789,9 +3368,17 @@
         // batch; with a single type selected there is nothing to fall back to.
         let r = build(item.type, s);
         let fellBack = false;
-        if (!r && typeof item.type === 'string' && types.length > 1) { r = build(subset, s); fellBack = !!r; }
+        if (!r && typeof item.type === 'string' && types.length > 1) {
+          r = build(subset, s);
+          fellBack = !!r;
+        }
         if (!r) {
-          skipped.push({ town: item.town, type: Array.isArray(item.type) ? null : item.type, seed: s, reason: 'kein passender Ort' });
+          skipped.push({
+            town: item.town,
+            type: Array.isArray(item.type) ? null : item.type,
+            seed: s,
+            reason: 'kein passender Ort',
+          });
           onProgress(k + 1, plan.length, entries.length);
           await _tick();
           continue;
@@ -2818,15 +3405,22 @@
           params: ScenarioIO.buildParams(),
           scenario: AppState.toJSON(),
           meta: {
-            index: entries.length + 1, seed: s, town: item.town, type: r.info.type,
-            label: r.info.label, type_fallback: fellBack,
+            index: entries.length + 1,
+            seed: s,
+            town: item.town,
+            type: r.info.type,
+            label: r.info.label,
+            type_fallback: fellBack,
             weather: item.weather === '__keep' ? 'editor' : item.weather,
-            time: AppState.time, ego_speed: r.info.ego_speed, route_m: r.info.route_m,
-            attempts: r.info.attempts, params: r.info.params,
+            time: AppState.time,
+            ego_speed: r.info.ego_speed,
+            route_m: r.info.route_m,
+            attempts: r.info.attempts,
+            params: r.info.params,
           },
         });
         onProgress(k + 1, plan.length, entries.length);
-        await _tick();   // let the progress bar paint, and Abbrechen be clicked
+        await _tick(); // let the progress bar paint, and Abbrechen be clicked
       }
     } finally {
       if (saved.map && saved.map !== AppState.map) await _loadMap(saved.map);
@@ -2859,30 +3453,45 @@
       const button = wrap.querySelector('.multi-select-btn');
       const panel = wrap.querySelector('.multi-select-panel');
       ms = _multiSelects[id] = {
-        wrap, button, panel, list: wrap.querySelector('.multi-select-options'),
+        wrap,
+        button,
+        panel,
+        list: wrap.querySelector('.multi-select-options'),
         dd: Dropdown.bind({ button, panel, wrap }),
         boxes: () => [...wrap.querySelectorAll('.multi-select-options input')],
-        values: () => ms.boxes().filter(b => b.checked).map(b => b.value),
-        set: pred => { ms.boxes().forEach(b => { b.checked = !!pred(b.value); }); ms.refresh(); },
+        values: () =>
+          ms
+            .boxes()
+            .filter((b) => b.checked)
+            .map((b) => b.value),
+        set: (pred) => {
+          ms.boxes().forEach((b) => {
+            b.checked = !!pred(b.value);
+          });
+          ms.refresh();
+        },
         refresh() {
-          const boxes = ms.boxes(), on = boxes.filter(b => b.checked);
+          const boxes = ms.boxes(),
+            on = boxes.filter((b) => b.checked);
           wrap.querySelector('.multi-select-count').textContent = `${on.length}/${boxes.length}`;
-          wrap.querySelector('.multi-select-summary').textContent =
-            !on.length ? 'Keine Auswahl'
-            : on.length === boxes.length ? `Alle ${ms.noun}`
-            : on.length === 1 ? on[0].dataset.label
-            : `${on.length} ${ms.noun}`;
+          wrap.querySelector('.multi-select-summary').textContent = !on.length
+            ? 'Keine Auswahl'
+            : on.length === boxes.length
+              ? `Alle ${ms.noun}`
+              : on.length === 1
+                ? on[0].dataset.label
+                : `${on.length} ${ms.noun}`;
         },
       };
       panel.addEventListener('change', () => ms.refresh());
-      panel.addEventListener('click', e => {
+      panel.addEventListener('click', (e) => {
         if (e.target.closest('[data-ms-all]')) ms.set(() => true);
         else if (e.target.closest('[data-ms-none]')) ms.set(() => false);
-        else if (e.target.closest('[data-ms-carla]')) ms.set(v => CARLA_TOWNS.includes(v));
+        else if (e.target.closest('[data-ms-carla]')) ms.set((v) => CARLA_TOWNS.includes(v));
       });
     }
     ms.noun = opts.noun;
-    const sig = opts.items.map(it => it.value).join('|');
+    const sig = opts.items.map((it) => it.value).join('|');
     if (ms.sig !== sig) {
       const prev = ms.sig ? new Set(ms.values()) : null;
       ms.list.innerHTML = '';
@@ -2911,39 +3520,51 @@
   }
 
   function _openBatch() {
-    if (!AppState.mapData) { Toast.error('Zuerst eine Karte laden'); return; }
+    if (!AppState.mapData) {
+      Toast.error('Zuerst eine Karte laden');
+      return;
+    }
     _multiSelect('gen-batch-type', {
       noun: 'Typen',
       items: Object.entries(TYPES).map(([key, t]) => ({ value: key, label: t.label })),
       checked: () => true,
     });
-    const towns = [...document.getElementById('map-select').options].map(o => o.value).filter(Boolean);
+    const towns = [...document.getElementById('map-select').options].map((o) => o.value).filter(Boolean);
     const maps = _multiSelect('gen-batch-maps', {
       noun: 'Karten',
-      items: towns.map(t => ({ value: t, label: t, note: CARLA_TOWNS.includes(t) ? '' : 'nicht in CARLA' })),
-      checked: t => t === AppState.map,
+      items: towns.map((t) => ({ value: t, label: t, note: CARLA_TOWNS.includes(t) ? '' : 'nicht in CARLA' })),
+      checked: (t) => t === AppState.map,
     });
     // A fresh dialog on another town starts on that town if nothing is chosen.
-    if (!maps.values().length) maps.set(t => t === AppState.map);
+    if (!maps.values().length) maps.set((t) => t === AppState.map);
     document.getElementById('gen-batch-progress').classList.add('hidden');
     document.getElementById('gen-batch-overlay').classList.remove('hidden');
     document.getElementById('gen-batch-count').focus();
   }
 
   function _closeBatch() {
-    if (_batchRunning) { _batchCancel = true; return; }
+    if (_batchRunning) {
+      _batchCancel = true;
+      return;
+    }
     document.getElementById('gen-batch-overlay').classList.add('hidden');
   }
 
   async function _runBatch(e) {
     e.preventDefault();
     if (_batchRunning) return;
-    const val = id => document.getElementById(id).value;
+    const val = (id) => document.getElementById(id).value;
     const count = Math.max(1, Math.min(1000, Math.floor(Number(val('gen-batch-count')) || 0)));
     const typeKeys = _multiSelects['gen-batch-type'].values();
     const towns = _multiSelects['gen-batch-maps'].values();
-    if (!typeKeys.length) { Toast.error('Mindestens einen Typ auswählen'); return; }
-    if (!towns.length) { Toast.error('Mindestens eine Karte auswählen'); return; }
+    if (!typeKeys.length) {
+      Toast.error('Mindestens einen Typ auswählen');
+      return;
+    }
+    if (!towns.length) {
+      Toast.error('Mindestens eine Karte auswählen');
+      return;
+    }
     const startBtn = document.getElementById('gen-batch-start');
     const status = document.getElementById('gen-batch-status');
     const fill = document.getElementById('gen-batch-bar-fill');
@@ -2953,12 +3574,14 @@
     startBtn.disabled = true;
     try {
       const res = await generateBatch({
-        count, typeKeys,
-        seed: val('gen-batch-seed') || null, maps: towns,
+        count,
+        typeKeys,
+        seed: val('gen-batch-seed') || null,
+        maps: towns,
         balance: document.getElementById('gen-batch-balance').checked,
         varyWeather: document.getElementById('gen-batch-weather').checked,
         onProgress: (done, total, made) => {
-          fill.style.width = `${Math.round(done / total * 100)}%`;
+          fill.style.width = `${Math.round((done / total) * 100)}%`;
           status.textContent = `${done} / ${total} geplant · ${made} erzeugt`;
         },
         isCancelled: () => _batchCancel,
@@ -2974,9 +3597,12 @@
         return;
       }
       status.textContent = `${res.entries.length} Szenarien werden exportiert …`;
-      const town = towns.length === 1 ? towns[0]
-        : towns.length === CARLA_TOWNS.length && towns.every(t => CARLA_TOWNS.includes(t)) ? 'alle_karten'
-        : `${towns.length}_karten`;
+      const town =
+        towns.length === 1
+          ? towns[0]
+          : towns.length === CARLA_TOWNS.length && towns.every((t) => CARLA_TOWNS.includes(t))
+            ? 'alle_karten'
+            : `${towns.length}_karten`;
       const filename = `szenarien_${town}_${res.entries.length}_s${res.seed}.zip`;
       const out = await Api.exportBatch({ scenarios: res.entries, filename });
       ScenarioIO.downloadBlob(out.blob, filename);
@@ -3000,13 +3626,17 @@
     document.getElementById('gen-batch-cancel').addEventListener('click', _closeBatch);
     // Capture + stopPropagation, like the confirm dialog: Esc closes this and
     // must not also cancel a tool or a path being drawn behind it.
-    document.addEventListener('keydown', e => {
-      if (e.key !== 'Escape' || document.getElementById('gen-batch-overlay').classList.contains('hidden')) return;
-      // An open Typ/Karten dropdown takes this Esc (its own capture handler).
-      if (Object.values(_multiSelects).some(ms => ms.dd.isOpen())) return;
-      e.stopPropagation();
-      _closeBatch();
-    }, true);
+    document.addEventListener(
+      'keydown',
+      (e) => {
+        if (e.key !== 'Escape' || document.getElementById('gen-batch-overlay').classList.contains('hidden')) return;
+        // An open Typ/Karten dropdown takes this Esc (its own capture handler).
+        if (Object.values(_multiSelects).some((ms) => ms.dd.isOpen())) return;
+        e.stopPropagation();
+        _closeBatch();
+      },
+      true,
+    );
   })();
 
   // ── Recipe panel (Übersicht tab) ─────────────────────────────────────────────
@@ -3016,7 +3646,8 @@
   // keeps the pins and draws everything else afresh. Rendered by properties.js
   // (recipeHtml / bindRecipe), like the template panel.
 
-  const _escHtml = v => String(v ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const _escHtml = (v) =>
+    String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
   /** The value the build actually used — not the pin, which the site may
    * not have allowed (an occluder needs a parking lane; a lead faster than
@@ -3036,7 +3667,9 @@
     const attr = `data-recipe-key="${spec.key}" aria-label="${_escHtml(spec.label)}"`;
     if (spec.kind === 'bool') return `<input type="checkbox" ${attr}${v ? ' checked' : ''}>`;
     if (spec.kind === 'choice') {
-      const opts = spec.options.map(([k, l]) => `<option value="${k}"${k === v ? ' selected' : ''}>${_escHtml(l)}</option>`).join('');
+      const opts = spec.options
+        .map(([k, l]) => `<option value="${k}"${k === v ? ' selected' : ''}>${_escHtml(l)}</option>`)
+        .join('');
       return `<select ${attr}>${opts}</select>`;
     }
     return `<input type="number" ${attr} min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${v === '' ? '' : _escHtml(v)}">`;
@@ -3044,7 +3677,8 @@
 
   function _recipeMismatch(r, spec) {
     if (!Object.prototype.hasOwnProperty.call(r.overrides || {}, spec.key)) return false;
-    const want = r.overrides[spec.key], got = _recipeValue(r, spec);
+    const want = r.overrides[spec.key],
+      got = _recipeValue(r, spec);
     if (spec.kind === 'num') return got === '' || Math.abs(Number(got) - want) > spec.step / 2 + 1e-6;
     return got !== want;
   }
@@ -3058,24 +3692,27 @@
     // vehicle of a standing pedestrian) is left out unless it is pinned: a
     // select with no matching option would show its first one as if it had
     // been chosen.
-    const used = spec => spec === EGO_SPEED || r.params?.[spec.key] !== undefined
-      || Object.prototype.hasOwnProperty.call(pins, spec.key);
-    const rows = [EGO_SPEED, ...PARAMS[r.type]].filter(used).map(spec => {
-      const pinned = Object.prototype.hasOwnProperty.call(pins, spec.key);
-      const unpin = pinned
-        ? `<button type="button" class="gen-recipe-unpin" data-recipe-unpin="${spec.key}" title="Festgelegten Wert lösen — wieder zufällig aus dem Seed">×</button>`
-        : '<span></span>';
-      const miss = _recipeMismatch(r, spec);
-      const missTitle = miss
-        ? ` title="Festgelegt auf ${_escHtml(spec.kind === 'choice' ? (spec.options.find(([k]) => k === pins[spec.key]) || [, pins[spec.key]])[1] : pins[spec.key])}, an dieser Stelle nicht möglich"`
-        : '';
-      return `<div class="gen-recipe-row${pinned ? ' pinned' : ''}${miss ? ' unmet' : ''}" data-recipe-row="${spec.key}">
+    const used = (spec) =>
+      spec === EGO_SPEED || r.params?.[spec.key] !== undefined || Object.prototype.hasOwnProperty.call(pins, spec.key);
+    const rows = [EGO_SPEED, ...PARAMS[r.type]]
+      .filter(used)
+      .map((spec) => {
+        const pinned = Object.prototype.hasOwnProperty.call(pins, spec.key);
+        const unpin = pinned
+          ? `<button type="button" class="gen-recipe-unpin" data-recipe-unpin="${spec.key}" title="Festgelegten Wert lösen — wieder zufällig aus dem Seed">×</button>`
+          : '<span></span>';
+        const miss = _recipeMismatch(r, spec);
+        const missTitle = miss
+          ? ` title="Festgelegt auf ${_escHtml(spec.kind === 'choice' ? (spec.options.find(([k]) => k === pins[spec.key]) || [, pins[spec.key]])[1] : pins[spec.key])}, an dieser Stelle nicht möglich"`
+          : '';
+        return `<div class="gen-recipe-row${pinned ? ' pinned' : ''}${miss ? ' unmet' : ''}" data-recipe-row="${spec.key}">
         <span class="gen-recipe-label"${missTitle}>${_escHtml(spec.label)}${miss ? ' ⚠' : ''}</span>
         ${_recipeControl(r, spec)}
         <span class="gen-recipe-unit">${_escHtml(spec.unit || '')}</span>
         ${unpin}
       </div>`;
-    }).join('');
+      })
+      .join('');
     const wrongTown = r.town && r.town !== AppState.map;
     const warn = wrongTown
       ? `<div class="gen-recipe-warn">Gebaut auf ${_escHtml(r.town)} — Karte wechseln, um neu zu bauen.</div>`
@@ -3101,19 +3738,22 @@
 
   function _sweepHtml(r) {
     const specs = [EGO_SPEED, ...PARAMS[r.type]];
-    if (!specs.some(sp => sp.key === _sweepUi.key)) {
-      const firstNum = specs.find(sp => sp.kind === 'num' && sp.key !== 'ego_speed') || specs[0];
+    if (!specs.some((sp) => sp.key === _sweepUi.key)) {
+      const firstNum = specs.find((sp) => sp.kind === 'num' && sp.key !== 'ego_speed') || specs[0];
       Object.assign(_sweepUi, { key: firstNum.key, from: firstNum.min, to: firstNum.max });
     }
-    const spec = specs.find(sp => sp.key === _sweepUi.key);
+    const spec = specs.find((sp) => sp.key === _sweepUi.key);
     const values = _sweepValues(spec, _sweepUi.from, _sweepUi.to, _sweepUi.steps);
     const total = Math.min(SWEEP_MAX, values.length * (_sweepUi.weathers ? Object.keys(WEATHER_PRESETS).length : 1));
-    const opts = specs.map(sp => `<option value="${sp.key}"${sp.key === spec.key ? ' selected' : ''}>${_escHtml(sp.label)}</option>`).join('');
-    const range = spec.kind === 'num'
-      ? `<label>Von</label><input type="number" data-sweep-from min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${_sweepUi.from}">
+    const opts = specs
+      .map((sp) => `<option value="${sp.key}"${sp.key === spec.key ? ' selected' : ''}>${_escHtml(sp.label)}</option>`)
+      .join('');
+    const range =
+      spec.kind === 'num'
+        ? `<label>Von</label><input type="number" data-sweep-from min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${_sweepUi.from}">
          <label>Bis</label><input type="number" data-sweep-to min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${_sweepUi.to}">
          <label>Werte</label><input type="number" data-sweep-steps min="2" max="25" step="1" value="${_sweepUi.steps}">`
-      : `<span class="gen-sweep-all">alle Werte: ${values.map(v => _escHtml(spec.kind === 'bool' ? (v ? 'ja' : 'nein') : spec.options.find(([k]) => k === v)[1])).join(', ')}</span>`;
+        : `<span class="gen-sweep-all">alle Werte: ${values.map((v) => _escHtml(spec.kind === 'bool' ? (v ? 'ja' : 'nein') : spec.options.find(([k]) => k === v)[1])).join(', ')}</span>`;
     return `<details class="gen-sweep" data-sweep${_sweepUi.open ? ' open' : ''}>
       <summary>Serie exportieren</summary>
       <div class="gen-sweep-grid">
@@ -3139,25 +3779,31 @@
     const box = root.querySelector('[data-recipe]');
     if (!box) return;
     const r = AppState.generated;
-    const specs = Object.fromEntries([EGO_SPEED, ...(PARAMS[r?.type] || [])].map(sp => [sp.key, sp]));
+    const specs = Object.fromEntries([EGO_SPEED, ...(PARAMS[r?.type] || [])].map((sp) => [sp.key, sp]));
     const run = async (changes, opts) => {
-      if (!(await _confirmDiscardEdits())) { rerender(); return; }
+      if (!(await _confirmDiscardEdits())) {
+        rerender();
+        return;
+      }
       if (!rebuild(changes, opts)) rerender();
     };
-    box.querySelectorAll('[data-recipe-key]').forEach(el => {
+    box.querySelectorAll('[data-recipe-key]').forEach((el) => {
       el.addEventListener('change', () => {
         const spec = specs[el.dataset.recipeKey];
         if (!spec) return;
         let v;
         if (spec.kind === 'bool') v = el.checked;
         else if (spec.kind === 'num') {
-          if (el.value === '') { rerender(); return; }
+          if (el.value === '') {
+            rerender();
+            return;
+          }
           v = Math.min(spec.max, Math.max(spec.min, Number(el.value)));
         } else v = el.value;
         run({ [spec.key]: v });
       });
     });
-    box.querySelectorAll('[data-recipe-unpin]').forEach(btn => {
+    box.querySelectorAll('[data-recipe-unpin]').forEach((btn) => {
       btn.addEventListener('click', () => run({ [btn.dataset.recipeUnpin]: null }));
     });
     box.querySelector('[data-recipe-variant]')?.addEventListener('click', () => run({}, { newSeed: true }));
@@ -3166,16 +3812,28 @@
     if (!sweep) return;
     // Recorded on the summary click, not on 'toggle': toggle is dispatched as a
     // later task, and a panel re-render in between draws the box closed again.
-    sweep.querySelector('summary').addEventListener('click', () => { _sweepUi.open = !sweep.open; });
-    sweep.querySelector('[data-sweep-key]').addEventListener('change', e => {
+    sweep.querySelector('summary').addEventListener('click', () => {
+      _sweepUi.open = !sweep.open;
+    });
+    sweep.querySelector('[data-sweep-key]').addEventListener('change', (e) => {
       const sp = specs[e.target.value];
       Object.assign(_sweepUi, { key: sp.key, from: sp.min, to: sp.max });
       rerender();
     });
-    for (const [attr, field] of [['data-sweep-from', 'from'], ['data-sweep-to', 'to'], ['data-sweep-steps', 'steps']]) {
-      sweep.querySelector(`[${attr}]`)?.addEventListener('change', e => { _sweepUi[field] = Number(e.target.value); rerender(); });
+    for (const [attr, field] of [
+      ['data-sweep-from', 'from'],
+      ['data-sweep-to', 'to'],
+      ['data-sweep-steps', 'steps'],
+    ]) {
+      sweep.querySelector(`[${attr}]`)?.addEventListener('change', (e) => {
+        _sweepUi[field] = Number(e.target.value);
+        rerender();
+      });
     }
-    sweep.querySelector('[data-sweep-weather]').addEventListener('change', e => { _sweepUi.weathers = e.target.checked; rerender(); });
+    sweep.querySelector('[data-sweep-weather]').addEventListener('change', (e) => {
+      _sweepUi.weathers = e.target.checked;
+      rerender();
+    });
     sweep.querySelector('[data-sweep-run]').addEventListener('click', () => _runSweep({ ..._sweepUi }));
   }
 
@@ -3211,10 +3869,15 @@
   /** Arm "Generate here": the next map click builds `typeKey` (null = any
    * type) at that spot. Esc disarms, like every other placement mode. */
   function armAt(typeKey = null) {
-    if (!AppState.mapData) { Toast.error('Zuerst eine Karte laden'); return; }
+    if (!AppState.mapData) {
+      Toast.error('Zuerst eine Karte laden');
+      return;
+    }
     if (typeKey && !TYPES[typeKey]) return;
     AppState.cancelPlacement({ pendingGenerate: typeKey || 'any' });
-    Toast.info(`„${typeKey ? TYPES[typeKey].label : 'Beliebiger Typ'}": Stelle des Konflikts auf der Karte anklicken (Esc bricht ab)`);
+    Toast.info(
+      `„${typeKey ? TYPES[typeKey].label : 'Beliebiger Typ'}": Stelle des Konflikts auf der Karte anklicken (Esc bricht ab)`,
+    );
   }
 
   async function generateAtClick(x, y, e) {
@@ -3231,7 +3894,10 @@
   }
 
   async function _onMenuPick(e, typeKey) {
-    if (document.getElementById('gen-pick-spot')?.checked) { armAt(typeKey); return; }
+    if (document.getElementById('gen-pick-spot')?.checked) {
+      armAt(typeKey);
+      return;
+    }
     if (!(await _confirmReplace(e))) return;
     _noteUsedSeed(generate(typeKey, _seedFromField()));
   }
@@ -3247,7 +3913,7 @@
       btn.dataset.menuItem = '';
       btn.textContent = label;
       btn.title = 'Strg+Klick ersetzt ohne Rückfrage';
-      btn.addEventListener('click', e => _onMenuPick(e, key));
+      btn.addEventListener('click', (e) => _onMenuPick(e, key));
       holder.appendChild(btn);
     };
     row('Beliebiger Typ', null, 'gen-any');
@@ -3277,10 +3943,14 @@
     sweepFromRecipe,
     sceneSignature,
     recipeEdited,
-    PARAMS: Object.fromEntries(Object.entries(PARAMS).map(([k, v]) => [k, [EGO_SPEED, ...v].map(sp => sp.key)])),
+    PARAMS: Object.fromEntries(Object.entries(PARAMS).map(([k, v]) => [k, [EGO_SPEED, ...v].map((sp) => sp.key)])),
     weatherPreset: _weatherOf,
     WEATHER_PRESETS: Object.keys(WEATHER_PRESETS),
-    coveragePlan(n, dims, seed = 1) { return coveragePlan(n, dims, new Rng(seed)); },
-    get lastInfo() { return _lastInfo; },
+    coveragePlan(n, dims, seed = 1) {
+      return coveragePlan(n, dims, new Rng(seed));
+    },
+    get lastInfo() {
+      return _lastInfo;
+    },
   };
 })();

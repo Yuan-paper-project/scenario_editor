@@ -30,27 +30,31 @@
       if (onOpen) onOpen(on);
     }
 
-    button.addEventListener('click', e => {
-      e.stopPropagation();          // don't trip the outside-click close below
+    button.addEventListener('click', (e) => {
+      e.stopPropagation(); // don't trip the outside-click close below
       set(!isOpen());
     });
 
-    document.addEventListener('click', e => {
+    document.addEventListener('click', (e) => {
       if (isOpen() && !wrap.contains(e.target)) set(false);
     });
 
     // Capture phase + stopPropagation: Esc closes the topmost thing, so it must
     // not also cancel a path being drawn (mapView's own document keydown).
-    document.addEventListener('keydown', e => {
-      if (e.key !== 'Escape' || !isOpen()) return;
-      e.stopPropagation();
-      set(false);
-      button.focus();
-    }, true);
+    document.addEventListener(
+      'keydown',
+      (e) => {
+        if (e.key !== 'Escape' || !isOpen()) return;
+        e.stopPropagation();
+        set(false);
+        button.focus();
+      },
+      true,
+    );
 
     // A menu row runs its own action and then closes; a control row (a
     // checkbox in the layer menu) is marked with neither and leaves it open.
-    panel.addEventListener('click', e => {
+    panel.addEventListener('click', (e) => {
       if (e.target.closest('[data-menu-item]')) set(false);
     });
 
@@ -61,7 +65,7 @@
   // extra behaviour (the layer count pill) calls bind() itself instead.
   for (const wrap of document.querySelectorAll('[data-dropdown]')) {
     const button = wrap.querySelector('[data-dropdown-button]');
-    const panel  = wrap.querySelector('[data-dropdown-panel]');
+    const panel = wrap.querySelector('[data-dropdown-panel]');
     if (button && panel) bind({ button, panel, wrap });
   }
 

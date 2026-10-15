@@ -39,20 +39,22 @@
   const worldGroup = document.getElementById('world');
   const toggleEl = document.getElementById('map-base-toggle');
 
-  let _layer = null;          // <g id="layer-aerial">, first child of #world
-  let _backdrop = null;       // <g> holding the backdrop level
-  let _detail = null;         // <g> holding the zoom-matched level
-  let _meta = null;           // meta.json of the loaded town, or null
+  let _layer = null; // <g id="layer-aerial">, first child of #world
+  let _backdrop = null; // <g> holding the backdrop level
+  let _detail = null; // <g> holding the zoom-matched level
+  let _meta = null; // meta.json of the loaded town, or null
   let _town = null;
-  let _loadSeq = 0;           // drops a stale fetch when the town changes mid-request
-  let _detailTiles = new Map();   // key "L/c/r" → <image>
+  let _loadSeq = 0; // drops a stale fetch when the town changes mid-request
+  let _detailTiles = new Map(); // key "L/c/r" → <image>
   let _rafPending = false;
 
   let _preferred = 'vector';
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (MODES.includes(saved)) _preferred = saved;
-  } catch (_) { /* storage blocked — fall back to vector */ }
+  } catch (_) {
+    /* storage blocked — fall back to vector */
+  }
 
   // ── Mode ───────────────────────────────────────────────────────────────
 
@@ -64,7 +66,11 @@
   function setMode(m) {
     if (!MODES.includes(m)) return;
     _preferred = m;
-    try { localStorage.setItem(STORAGE_KEY, m); } catch (_) { /* per-viewer nicety only */ }
+    try {
+      localStorage.setItem(STORAGE_KEY, m);
+    } catch (_) {
+      /* per-viewer nicety only */
+    }
     _apply();
   }
 
@@ -110,8 +116,12 @@
     if (!town) return;
 
     let meta = null;
-    try { meta = await Api.getAerialMeta(town); } catch (e) { console.warn('[AerialMap]', e); }
-    if (seq !== _loadSeq) return;     // the user switched towns while we waited
+    try {
+      meta = await Api.getAerialMeta(town);
+    } catch (e) {
+      console.warn('[AerialMap]', e);
+    }
+    if (seq !== _loadSeq) return; // the user switched towns while we waited
     _meta = meta;
     if (_meta) _renderBackdrop();
     _apply();
@@ -129,8 +139,7 @@
     const wPx = Math.max(1, Math.floor(_meta.width / f));
     const hPx = Math.max(1, Math.floor(_meta.height / f));
     const ppm = _meta.ppm / f;
-    return { level, ppm, wPx, hPx, ts,
-             cols: Math.ceil(wPx / ts), rows: Math.ceil(hPx / ts) };
+    return { level, ppm, wPx, hPx, ts, cols: Math.ceil(wPx / ts), rows: Math.ceil(hPx / ts) };
   }
 
   function _tileImage(L, c, r) {
@@ -142,8 +151,9 @@
     // exactly leave an anti-aliased hairline at fractional screen positions.
     const over = 1 / L.ppm;
     const img = _el('image', {
-      x, y,
-      width:  wPx / L.ppm + (c < L.cols - 1 ? over : 0),
+      x,
+      y,
+      width: wPx / L.ppm + (c < L.cols - 1 ? over : 0),
       height: hPx / L.ppm + (r < L.rows - 1 ? over : 0),
       preserveAspectRatio: 'none',
     });
@@ -159,9 +169,7 @@
       lvl--;
     }
     const L = _level(lvl);
-    for (let r = 0; r < L.rows; r++)
-      for (let c = 0; c < L.cols; c++)
-        _backdrop.appendChild(_tileImage(L, c, r));
+    for (let r = 0; r < L.rows; r++) for (let c = 0; c < L.cols; c++) _backdrop.appendChild(_tileImage(L, c, r));
     _backdrop.dataset.level = String(lvl);
   }
 
@@ -171,7 +179,10 @@
   function update() {
     if (!_meta || mode() === 'vector' || _rafPending) return;
     _rafPending = true;
-    requestAnimationFrame(() => { _rafPending = false; _updateDetail(); });
+    requestAnimationFrame(() => {
+      _rafPending = false;
+      _updateDetail();
+    });
   }
 
   function _updateDetail() {
@@ -191,8 +202,12 @@
       const box = svg.getBoundingClientRect();
       const inv = ctm.inverse();
       const pt = svg.createSVGPoint();
-      const corners = [[box.left, box.top], [box.right, box.bottom]].map(([sx, sy]) => {
-        pt.x = sx; pt.y = sy;
+      const corners = [
+        [box.left, box.top],
+        [box.right, box.bottom],
+      ].map(([sx, sy]) => {
+        pt.x = sx;
+        pt.y = sy;
         return pt.matrixTransform(inv);
       });
       const tileM = L.ts / L.ppm;
@@ -213,7 +228,10 @@
       }
     }
     for (const [key, img] of _detailTiles) {
-      if (!wanted.has(key)) { img.remove(); _detailTiles.delete(key); }
+      if (!wanted.has(key)) {
+        img.remove();
+        _detailTiles.delete(key);
+      }
     }
   }
 

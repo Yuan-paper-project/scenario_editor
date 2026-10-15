@@ -13,43 +13,43 @@
 (function () {
   'use strict';
 
-  const svg          = document.getElementById('map-svg');
-  const bgRect       = document.getElementById('map-background');
-  const worldGroup   = document.getElementById('world');
-  const layerRoads   = document.getElementById('layer-roads');
-  const layerMarkings    = document.getElementById('layer-markings');
-  const layerSpawns      = document.getElementById('layer-spawns');
-  const layerJunctions   = document.getElementById('layer-intersections');
-  const layerTraj        = document.getElementById('layer-trajectories');
-  const layerProps       = document.getElementById('layer-props');
-  const layerActors      = document.getElementById('layer-actors');
-  const overlayMsg       = document.getElementById('map-overlay-msg');
+  const svg = document.getElementById('map-svg');
+  const bgRect = document.getElementById('map-background');
+  const worldGroup = document.getElementById('world');
+  const layerRoads = document.getElementById('layer-roads');
+  const layerMarkings = document.getElementById('layer-markings');
+  const layerSpawns = document.getElementById('layer-spawns');
+  const layerJunctions = document.getElementById('layer-intersections');
+  const layerTraj = document.getElementById('layer-trajectories');
+  const layerProps = document.getElementById('layer-props');
+  const layerActors = document.getElementById('layer-actors');
+  const overlayMsg = document.getElementById('map-overlay-msg');
 
   // Extra map-detail layers (inserted into #world by renderMap)
-  let layerCrosswalks    = null;
+  let layerCrosswalks = null;
   let layerTrafficLights = null;
-  let layerRoadDir       = null;   // road direction arrows
-  let layerOverpass      = null;   // roads that pass over another road, by level
+  let layerRoadDir = null; // road direction arrows
+  let layerOverpass = null; // roads that pass over another road, by level
   let _overpassGroupsFor = () => null;
-  let _overpassCount     = 0;
+  let _overpassCount = 0;
   let layerTriggerPoints = null;
   // Landmark dots from maps/special_buildings.csv. A map-detail layer like the
   // crosswalks, not a scenario layer: it sits below the actors, is never
   // hit-tested, and holds nothing the user can select or move.
-  let layerBuildings     = null;
+  let layerBuildings = null;
   // Stop/Yield signs and speed-limit roundels (map detail, never hit-tested).
-  let layerSigns         = null;
-  let layerSpeeds        = null;
+  let layerSigns = null;
+  let layerSpeeds = null;
   // The selected actor's own paths, above layer-actors: a path drawn under the
   // other vehicles is both hard to read and, now that its waypoints are
   // draggable, hard to reach.
-  let layerPathsTop      = null;
+  let layerPathsTop = null;
   // ...and the selected actor itself, above its own path. The vehicle stays the
   // top thing on the map — waypoint 1 is seeded on the actor's own pose, so
   // without this the marker sits squarely on the vehicle and hides it, and a
   // grab there would rotate a waypoint instead of moving the car. The waypoint
   // under the vehicle is still reachable from its row in the event card.
-  let layerActorsTop     = null;
+  let layerActorsTop = null;
 
   // ── Pan / zoom state ────────────────────────────────────────────────────────
   //
@@ -63,9 +63,9 @@
   // discards the scenario. resetView() below is the other half of that fix.
   const MIN_ZOOM = 0.25;
   const MAX_ZOOM = 200;
-  const ZOOM_STEP        = 1.12;   // ~26 notches from town view to lane view
-  const ZOOM_STEP_COARSE = 1.40;   // Shift: the same traversal in ~9
-  const ZOOM_TO_SPAN     = 90;     // metres across the view when framing a selection
+  const ZOOM_STEP = 1.12; // ~26 notches from town view to lane view
+  const ZOOM_STEP_COARSE = 1.4; // Shift: the same traversal in ~9
+  const ZOOM_TO_SPAN = 90; // metres across the view when framing a selection
 
   // ONE size for every object label on the map — an actor's, a prop's, a
   // landmark's, a trigger point's. They are the same kind of thing (the name of
@@ -82,8 +82,8 @@
   // Anything that is NOT an object's name keeps its own size: waypoint numbers
   // and per-waypoint velocities, the ruler's distance readout, the preview's
   // status badges. Those annotate a measurement, not an object.
-  const MAP_LABEL_M  = 3.2;   // every object label's font-size, in world metres
-  const LABEL_MIN_PX = 6;     // below this on screen, every object label is hidden
+  const MAP_LABEL_M = 3.2; // every object label's font-size, in world metres
+  const LABEL_MIN_PX = 6; // below this on screen, every object label is hidden
   // ...and above this it stops growing. A label is a name, not a measurement,
   // so capping it when zoomed IN tells no lie about scale (the reverse of the
   // floor above) — uncapped, 3.2 m reached ~60 px at lane zoom and a landmark's
@@ -92,35 +92,34 @@
   // font-size attribute at once.
   const LABEL_MAX_PX = 15;
 
+  const _clampZoom = (z) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
 
-  const _clampZoom = z => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
-
-  let _pan  = { x: 0, y: 0 };
+  let _pan = { x: 0, y: 0 };
   let _zoom = 1.0;
   let _dragging = false;
   let _dragStart = null;
-  let _panStart  = null;
+  let _panStart = null;
   let _panMoved = false;
   let _suppressNextClick = false;
   const _PAN_CLICK_THRESHOLD = 4;
   let _triggerRadiusDrag = null;
-  let _triggerPointDrag  = null;
+  let _triggerPointDrag = null;
 
   // ── Scale ruler ──────────────────────────────────────────────────────────────
-  const _scaleBar   = document.querySelector('.scale-bar');
+  const _scaleBar = document.querySelector('.scale-bar');
   const _scaleLabel = document.getElementById('scale-label');
   // Sub-metre steps keep the bar bounded at lane zoom (1 m used to be several
   // hundred px there): with a 1-2-5 ladder the pick stays within ~70-170 px,
   // which is what lets the bottom-centre controls reserve a fixed strip for
   // the ruler (.map-bottom-stack's `left` in style.css).
   const _NICE_DISTS = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000];
-  const _TARGET_PX  = 120;  // target bar width in screen pixels
+  const _TARGET_PX = 120; // target bar width in screen pixels
 
   /** Screen pixels per world metre, or null before the map has a layout. */
   function _pxPerMetre() {
     const ctm = worldGroup.getScreenCTM();
     if (!ctm) return null;
-    const px = Math.abs(ctm.a);   // scale factor X
+    const px = Math.abs(ctm.a); // scale factor X
     return px > 0 ? px : null;
   }
 
@@ -130,19 +129,18 @@
 
     // Pick the nicest distance that fits close to _TARGET_PX
     let bestDist = _NICE_DISTS[0];
-    let bestPx   = bestDist * pxPerMetre;
+    let bestPx = bestDist * pxPerMetre;
     for (const d of _NICE_DISTS) {
       const px = d * pxPerMetre;
       if (Math.abs(px - _TARGET_PX) < Math.abs(bestPx - _TARGET_PX)) {
         bestDist = d;
-        bestPx   = px;
+        bestPx = px;
       }
     }
 
     const barWidth = Math.round(bestDist * pxPerMetre);
     _scaleBar.style.width = `${barWidth}px`;
-    _scaleLabel.textContent = bestDist >= 1000 ? `${bestDist / 1000} km`
-      : `${String(bestDist).replace('.', ',')} m`;
+    _scaleLabel.textContent = bestDist >= 1000 ? `${bestDist / 1000} km` : `${String(bestDist).replace('.', ',')} m`;
   }
 
   /**
@@ -160,9 +158,7 @@
   }
 
   function _applyTransform() {
-    worldGroup.setAttribute('transform',
-      `translate(${_pan.x},${_pan.y}) scale(${_zoom})`
-    );
+    worldGroup.setAttribute('transform', `translate(${_pan.x},${_pan.y}) scale(${_zoom})`);
     _updateScaleRuler();
     _updateLabelVisibility();
     AerialMap.update();
@@ -180,7 +176,7 @@
     const ctm = worldGroup.getScreenCTM();
     if (!ctm) return { x: 0, y: 0 };
     const inv = ctm.inverse();
-    const w   = pt.matrixTransform(inv);
+    const w = pt.matrixTransform(inv);
     return { x: w.x, y: w.y };
   }
 
@@ -195,53 +191,53 @@
 
   // ── Road rendering ───────────────────────────────────────────────────────────
   function _polyToPoints(polygon) {
-    return polygon.map(p => `${p[0]},${p[1]}`).join(' ');
+    return polygon.map((p) => `${p[0]},${p[1]}`).join(' ');
   }
 
   function renderMap(mapData) {
     // Clear all layers
-    [layerRoads, layerMarkings, layerSpawns, layerJunctions].forEach(
-      g => { while (g.firstChild) g.removeChild(g.firstChild); }
-    );
+    [layerRoads, layerMarkings, layerSpawns, layerJunctions].forEach((g) => {
+      while (g.firstChild) g.removeChild(g.firstChild);
+    });
 
     // Create/reset dynamic detail layers (inserted before trajectories)
-    if (layerCrosswalks)    layerCrosswalks.remove();
+    if (layerCrosswalks) layerCrosswalks.remove();
     if (layerTrafficLights) layerTrafficLights.remove();
-    if (layerRoadDir)       layerRoadDir.remove();
-    if (layerOverpass)      layerOverpass.remove();
+    if (layerRoadDir) layerRoadDir.remove();
+    if (layerOverpass) layerOverpass.remove();
     if (layerTriggerPoints) layerTriggerPoints.remove();
-    if (layerBuildings)     layerBuildings.remove();
-    if (layerSigns)         layerSigns.remove();
-    if (layerSpeeds)        layerSpeeds.remove();
-    if (layerPathsTop)      layerPathsTop.remove();
-    if (layerActorsTop)     layerActorsTop.remove();
+    if (layerBuildings) layerBuildings.remove();
+    if (layerSigns) layerSigns.remove();
+    if (layerSpeeds) layerSpeeds.remove();
+    if (layerPathsTop) layerPathsTop.remove();
+    if (layerActorsTop) layerActorsTop.remove();
     // Cached route geometry is lane geometry, i.e. specific to the town that
     // is being replaced. Ids restart at obj-1/evt-1 in every save file, so a
     // stale entry is a real collision rather than a theoretical one.
     _routeGeomCache.clear();
-    layerCrosswalks    = _svgEl('g', { id: 'layer-crosswalks' });
+    layerCrosswalks = _svgEl('g', { id: 'layer-crosswalks' });
     layerTrafficLights = _svgEl('g', { id: 'layer-trafficlights' });
-    layerRoadDir       = _svgEl('g', { id: 'layer-roaddir' });
-    layerOverpass      = _svgEl('g', { id: 'layer-overpass' });
+    layerRoadDir = _svgEl('g', { id: 'layer-roaddir' });
+    layerOverpass = _svgEl('g', { id: 'layer-overpass' });
     layerTriggerPoints = _svgEl('g', { id: 'layer-trigger-points' });
-    layerBuildings     = _svgEl('g', { id: 'layer-buildings' });
-    layerSigns         = _svgEl('g', { id: 'layer-signs' });
-    layerSpeeds        = _svgEl('g', { id: 'layer-speeds' });
-    layerPathsTop      = _svgEl('g', { id: 'layer-paths-top' });
-    layerActorsTop     = _svgEl('g', { id: 'layer-actors-top' });
-    const layerTrajEl  = document.getElementById('layer-trajectories');
-    worldGroup.insertBefore(layerRoadDir,       layerTrajEl);
-    worldGroup.insertBefore(layerCrosswalks,    layerTrajEl);
+    layerBuildings = _svgEl('g', { id: 'layer-buildings' });
+    layerSigns = _svgEl('g', { id: 'layer-signs' });
+    layerSpeeds = _svgEl('g', { id: 'layer-speeds' });
+    layerPathsTop = _svgEl('g', { id: 'layer-paths-top' });
+    layerActorsTop = _svgEl('g', { id: 'layer-actors-top' });
+    const layerTrajEl = document.getElementById('layer-trajectories');
+    worldGroup.insertBefore(layerRoadDir, layerTrajEl);
+    worldGroup.insertBefore(layerCrosswalks, layerTrajEl);
     // Above the ground-level markings, arrows and crosswalks, so a bridge
     // hides what it passes over; below lights, signs and everything editable.
-    worldGroup.insertBefore(layerOverpass,      layerTrajEl);
+    worldGroup.insertBefore(layerOverpass, layerTrajEl);
     // Spawn dots go back above the bridges: an elevated road's spawn points
     // would otherwise be painted over by its own deck.
-    worldGroup.insertBefore(layerSpawns,        layerTrajEl);
+    worldGroup.insertBefore(layerSpawns, layerTrajEl);
     worldGroup.insertBefore(layerTrafficLights, layerTrajEl);
-    worldGroup.insertBefore(layerBuildings,     layerTrajEl);
-    worldGroup.insertBefore(layerSpeeds,        layerTrajEl);
-    worldGroup.insertBefore(layerSigns,         layerTrajEl);
+    worldGroup.insertBefore(layerBuildings, layerTrajEl);
+    worldGroup.insertBefore(layerSpeeds, layerTrajEl);
+    worldGroup.insertBefore(layerSigns, layerTrajEl);
     // These three go last, i.e. above layer-actors, and in this order: the
     // selected actor's path sits over the other vehicles, the actor itself sits
     // over its own path, and its trigger points sit over everything. Paint
@@ -252,44 +248,44 @@
     worldGroup.appendChild(layerTriggerPoints);
 
     const { bounds, roads, spawnPoints, intersections, trafficLights, crosswalks, grassColor } = mapData;
-    const signs         = mapData.signs || [];
-    const speedSigns    = mapData.speedSigns || [];
+    const signs = mapData.signs || [];
+    const speedSigns = mapData.speedSigns || [];
     const w = bounds.xMax - bounds.xMin;
     const h = bounds.yMax - bounds.yMin;
     const pad = Math.max(w, h) * 0.03;
 
     // Set SVG viewBox to CARLA bounds
-    const vb = `${bounds.xMin - pad} ${bounds.yMin - pad} ${w + pad*2} ${h + pad*2}`;
+    const vb = `${bounds.xMin - pad} ${bounds.yMin - pad} ${w + pad * 2} ${h + pad * 2}`;
     svg.setAttribute('viewBox', vb);
 
     // Background
-    bgRect.setAttribute('x',      bounds.xMin - pad);
-    bgRect.setAttribute('y',      bounds.yMin - pad);
-    bgRect.setAttribute('width',  w + pad*2);
-    bgRect.setAttribute('height', h + pad*2);
-    bgRect.setAttribute('fill',   'transparent');
+    bgRect.setAttribute('x', bounds.xMin - pad);
+    bgRect.setAttribute('y', bounds.yMin - pad);
+    bgRect.setAttribute('width', w + pad * 2);
+    bgRect.setAttribute('height', h + pad * 2);
+    bgRect.setAttribute('fill', 'transparent');
 
     // Reset pan/zoom so new map fills the view
-    _pan  = { x: 0, y: 0 };
+    _pan = { x: 0, y: 0 };
     _zoom = 1.0;
     _applyTransform();
 
     // Sort roads: junctions on top. A road that passes OVER another one
     // (bridge, flyover, ramp) is drawn later still, in #layer-overpass, with
     // its own markings and arrows — see _roadOverpassLevels.
-    const normal    = roads.filter(r => r.junction === '-1');
-    const junctions = roads.filter(r => r.junction !== '-1');
-    const levels    = _roadOverpassLevels(roads);
-    const overpassGroups = [];   // index = level − 1
-    _overpassGroupsFor = level => {
+    const normal = roads.filter((r) => r.junction === '-1');
+    const junctions = roads.filter((r) => r.junction !== '-1');
+    const levels = _roadOverpassLevels(roads);
+    const overpassGroups = []; // index = level − 1
+    _overpassGroupsFor = (level) => {
       while (overpassGroups.length < level) {
         const g = _svgEl('g', { class: 'ovp-level', 'data-level': String(overpassGroups.length + 1) });
         const parts = {
           g,
           shadow: _svgEl('g', { class: 'ovp-shadow' }),
-          roads:  _svgEl('g', { class: 'ovp-roads' }),
-          marks:  _svgEl('g', { class: 'ovp-marks' }),
-          dir:    _svgEl('g', { class: 'ovp-dir' }),
+          roads: _svgEl('g', { class: 'ovp-roads' }),
+          marks: _svgEl('g', { class: 'ovp-marks' }),
+          dir: _svgEl('g', { class: 'ovp-dir' }),
         };
         g.append(parts.shadow, parts.roads, parts.marks, parts.dir);
         layerOverpass.appendChild(g);
@@ -303,7 +299,7 @@
       const grp = level ? _overpassGroupsFor(level) : null;
       const roadTarget = grp ? grp.roads : layerRoads;
       const markTarget = grp ? grp.marks : layerMarkings;
-      const dirTarget  = grp ? grp.dir   : layerRoadDir;
+      const dirTarget = grp ? grp.dir : layerRoadDir;
       for (const lane of road.lanes) {
         // Lane polygon with thin edge outline for visual definition
         const points = _polyToPoints(lane.polygon);
@@ -314,19 +310,23 @@
         }
         const poly = _svgEl('polygon', {
           points,
-          fill:   lane.color,
+          fill: lane.color,
           stroke: _laneStrokeColor(lane.type),
           'stroke-width': '0.3',
           'stroke-linejoin': 'round',
-          class:  `lane lane-${lane.type}`,
+          class: `lane lane-${lane.type}`,
         });
         roadTarget.appendChild(poly);
         // A median/border is a separator, not a lane: hatch it so it reads as
         // blocked in Vektor, and (CSS) instead of a white lane outline in Beides.
         if (BLOCKED_LANE_TYPES.has(lane.type)) {
-          roadTarget.appendChild(_svgEl('polygon', {
-            points, fill: 'url(#hatch-blocked)', class: 'lane-hatch',
-          }));
+          roadTarget.appendChild(
+            _svgEl('polygon', {
+              points,
+              fill: 'url(#hatch-blocked)',
+              class: 'lane-hatch',
+            }),
+          );
         }
       }
 
@@ -334,14 +334,14 @@
       // paints next to nothing inside a junction, and connector edges drawn
       // there criss-cross the whole box)
       if (road.junction === '-1' && road.centerline.length > 1) {
-        const hasDriving = road.lanes.some(l => l.type === 'driving');
+        const hasDriving = road.lanes.some((l) => l.type === 'driving');
         if (road.marks && road.marks.length) {
           _renderRoadMarks(road.marks, markTarget);
         } else if (hasDriving) {
           // No <roadMark> data (render JSON from an older backend, or a map
           // that states none): the old guessed yellow dashed centreline.
           const cl = _svgEl('polyline', {
-            points: road.centerline.map(p => `${p[0]},${p[1]}`).join(' '),
+            points: road.centerline.map((p) => `${p[0]},${p[1]}`).join(' '),
             fill: 'none',
             stroke: 'rgba(255,210,80,0.5)',
             'stroke-width': '0.35',
@@ -356,23 +356,21 @@
           }
         }
         if (hasDriving) {
-
           // Per-lane direction arrows (each lane has its own directionLine
           // with correct travel direction — left lanes are reversed)
           for (const lane of road.lanes) {
-            if (lane.type === 'driving' &&
-                lane.directionLine && lane.directionLine.length > 1) {
+            if (lane.type === 'driving' && lane.directionLine && lane.directionLine.length > 1) {
               _renderRoadDirArrows(lane.directionLine, dirTarget);
             }
           }
         }
       }
     }
-    _overpassCount = [...levels.values()].filter(v => v > 0).length;
+    _overpassCount = [...levels.values()].filter((v) => v > 0).length;
     _applyLayerToggleExtras();
 
-    for (const sign of signs)        _renderSign(sign);
-    for (const sp of speedSigns)     _renderSpeedSign(sp);
+    for (const sign of signs) _renderSign(sign);
+    for (const sp of speedSigns) _renderSpeedSign(sp);
 
     // Spawn point dots
     for (const sp of spawnPoints) {
@@ -381,21 +379,21 @@
     }
 
     // Junction zone circles (subtle highlight)
-    for (const junc of (intersections || [])) {
+    for (const junc of intersections || []) {
       const c = _svgEl('circle', { cx: junc.cx, cy: junc.cy, r: '14', class: 'junction-zone' });
       layerJunctions.appendChild(c);
     }
 
     // ── Crosswalks: zebra stripes perpendicular to road ──────────────────────
     console.log(`[MapView] Rendering ${(crosswalks || []).length} crosswalks`);
-    for (const cw of (crosswalks || [])) {
+    for (const cw of crosswalks || []) {
       _renderCrosswalk(cw);
     }
     console.log(`[MapView] layer-crosswalks children: ${layerCrosswalks.children.length}`);
 
     // ── Traffic lights ─────────────────────────────────────────────────────
     console.log(`[MapView] Rendering ${(trafficLights || []).length} traffic lights`);
-    for (const tl of (trafficLights || [])) {
+    for (const tl of trafficLights || []) {
       _renderTrafficLight(tl);
     }
     console.log(`[MapView] layer-trafficlights children: ${layerTrafficLights.children.length}`);
@@ -436,13 +434,16 @@
    * it passes over — and renderMap draws levels ≥ 1 in #layer-overpass, one
    * group per level, each with its own casing, markings and arrows. */
   const OVERPASS_GAP_M = 4.0;
-  const OVERPASS_SAMPLE_STEP = 2;     // test every 2nd centreline point
+  const OVERPASS_SAMPLE_STEP = 2; // test every 2nd centreline point
 
   function _pointInPoly(x, y, poly) {
     let inside = false;
     for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-      const xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
-      if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+      const xi = poly[i][0],
+        yi = poly[i][1],
+        xj = poly[j][0],
+        yj = poly[j][1];
+      if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
     }
     return inside;
   }
@@ -450,8 +451,10 @@
   function _bboxOf(points, into = null) {
     const b = into || { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
     for (const p of points) {
-      if (p[0] < b.x0) b.x0 = p[0]; if (p[0] > b.x1) b.x1 = p[0];
-      if (p[1] < b.y0) b.y0 = p[1]; if (p[1] > b.y1) b.y1 = p[1];
+      if (p[0] < b.x0) b.x0 = p[0];
+      if (p[0] > b.x1) b.x1 = p[0];
+      if (p[1] < b.y0) b.y0 = p[1];
+      if (p[1] > b.y1) b.y1 = p[1];
     }
     return b;
   }
@@ -461,20 +464,32 @@
   function _roadOverpassLevels(roads) {
     const info = [];
     for (const road of roads) {
-      const cl = (road.centerline || []).filter(p => p.length >= 3);
-      const lanes = (road.lanes || []).filter(l => l.polygon && l.polygon.length >= 3)
-        .map(l => ({ poly: l.polygon, bbox: _bboxOf(l.polygon) }));
+      const cl = (road.centerline || []).filter((p) => p.length >= 3);
+      const lanes = (road.lanes || [])
+        .filter((l) => l.polygon && l.polygon.length >= 3)
+        .map((l) => ({ poly: l.polygon, bbox: _bboxOf(l.polygon) }));
       if (!cl.length || !lanes.length) continue;
       const bbox = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
-      for (const l of lanes) _bboxOf([[l.bbox.x0, l.bbox.y0], [l.bbox.x1, l.bbox.y1]], bbox);
-      const zs = cl.map(p => p[2]);
+      for (const l of lanes)
+        _bboxOf(
+          [
+            [l.bbox.x0, l.bbox.y0],
+            [l.bbox.x1, l.bbox.y1],
+          ],
+          bbox,
+        );
+      const zs = cl.map((p) => p[2]);
       info.push({ id: road.id, cl, lanes, bbox, zMin: Math.min(...zs), zMax: Math.max(...zs) });
     }
     const zAt = (r, x, y) => {
-      let best = Infinity, z = 0;
+      let best = Infinity,
+        z = 0;
       for (const p of r.cl) {
         const d = (p[0] - x) ** 2 + (p[1] - y) ** 2;
-        if (d < best) { best = d; z = p[2]; }
+        if (d < best) {
+          best = d;
+          z = p[2];
+        }
       }
       return z;
     };
@@ -494,7 +509,7 @@
       }
       return 0;
     };
-    const below = new Map(info.map(r => [r.id, new Set()]));
+    const below = new Map(info.map((r) => [r.id, new Set()]));
     for (let i = 0; i < info.length; i++) {
       const a = info[i];
       for (let j = i + 1; j < info.length; j++) {
@@ -510,9 +525,9 @@
     }
     const levels = new Map();
     const visiting = new Set();
-    const levelOf = id => {
+    const levelOf = (id) => {
       if (levels.has(id)) return levels.get(id);
-      if (visiting.has(id)) return 0;          // a cycle: should not happen, never loop
+      if (visiting.has(id)) return 0; // a cycle: should not happen, never loop
       visiting.add(id);
       let lv = 0;
       for (const b of below.get(id) || []) lv = Math.max(lv, levelOf(b) + 1);
@@ -529,10 +544,10 @@
     if (!layerOverpass) return;
     const marks = document.getElementById('toggle-markings');
     const dir = document.getElementById('toggle-roaddir');
-    layerOverpass.querySelectorAll('.ovp-marks').forEach(g => {
+    layerOverpass.querySelectorAll('.ovp-marks').forEach((g) => {
       g.style.display = marks && !marks.checked ? 'none' : '';
     });
-    layerOverpass.querySelectorAll('.ovp-dir').forEach(g => {
+    layerOverpass.querySelectorAll('.ovp-dir').forEach((g) => {
       g.style.display = dir && !dir.checked ? 'none' : '';
     });
   }
@@ -546,7 +561,7 @@
   function _renderRoadMarks(marks, target = layerMarkings) {
     for (const m of marks) {
       const attrs = {
-        points: m.points.map(p => `${p[0]},${p[1]}`).join(' '),
+        points: m.points.map((p) => `${p[0]},${p[1]}`).join(' '),
         fill: 'none',
         stroke: MARK_COLORS[m.color] || MARK_COLORS.white,
         'stroke-width': String(Math.max(m.width, 0.15)),
@@ -562,14 +577,18 @@
   function _renderParkingGlyphs(line, target = layerMarkings) {
     let acc = PARKING_GLYPH_EVERY_M / 2;
     for (let i = 1; i < line.length; i++) {
-      const [x0, y0] = line[i - 1], [x1, y1] = line[i];
+      const [x0, y0] = line[i - 1],
+        [x1, y1] = line[i];
       const seg = Math.hypot(x1 - x0, y1 - y0);
       while (acc <= seg && seg > 0) {
         const t = acc / seg;
         const t2 = _svgEl('text', {
-          x: (x0 + (x1 - x0) * t).toFixed(2), y: (y0 + (y1 - y0) * t).toFixed(2),
-          class: 'parking-glyph', 'font-size': '1.8',
-          'text-anchor': 'middle', 'dominant-baseline': 'central',
+          x: (x0 + (x1 - x0) * t).toFixed(2),
+          y: (y0 + (y1 - y0) * t).toFixed(2),
+          class: 'parking-glyph',
+          'font-size': '1.8',
+          'text-anchor': 'middle',
+          'dominant-baseline': 'central',
         });
         t2.textContent = 'P';
         target.appendChild(t2);
@@ -587,14 +606,19 @@
       transform: `translate(${sign.x},${sign.y})`,
     });
     if (sign.type === 'stop') {
-      const r = 0.8, pts = [];
+      const r = 0.8,
+        pts = [];
       for (let k = 0; k < 8; k++) {
-        const a = Math.PI / 8 + k * Math.PI / 4;
+        const a = Math.PI / 8 + (k * Math.PI) / 4;
         pts.push(`${(r * Math.cos(a)).toFixed(3)},${(r * Math.sin(a)).toFixed(3)}`);
       }
       g.appendChild(_svgEl('polygon', { points: pts.join(' '), class: 'sign-stop-body' }));
-      const t = _svgEl('text', { class: 'sign-stop-text', 'font-size': '0.42',
-                                  'text-anchor': 'middle', 'dominant-baseline': 'central' });
+      const t = _svgEl('text', {
+        class: 'sign-stop-text',
+        'font-size': '0.42',
+        'text-anchor': 'middle',
+        'dominant-baseline': 'central',
+      });
       t.textContent = 'STOP';
       g.appendChild(t);
     } else {
@@ -609,8 +633,12 @@
   function _renderSpeedSign(sp) {
     const g = _svgEl('g', { class: 'speed-limit', transform: `translate(${sp.x},${sp.y})` });
     g.appendChild(_svgEl('circle', { r: '1.6', class: 'speed-limit-ring' }));
-    const t = _svgEl('text', { class: 'speed-limit-text', 'font-size': '1.3',
-                                'text-anchor': 'middle', 'dominant-baseline': 'central' });
+    const t = _svgEl('text', {
+      class: 'speed-limit-text',
+      'font-size': '1.3',
+      'text-anchor': 'middle',
+      'dominant-baseline': 'central',
+    });
     t.textContent = String(sp.kmh);
     g.appendChild(t);
     layerSpeeds.appendChild(g);
@@ -624,14 +652,16 @@
     for (let i = 1; i < centerline.length; i++) {
       const [x0, y0] = centerline[i - 1];
       const [x1, y1] = centerline[i];
-      const dx = x1 - x0, dy = y1 - y0;
+      const dx = x1 - x0,
+        dy = y1 - y0;
       const segLen = Math.sqrt(dx * dx + dy * dy);
       accum += segLen;
       if (accum >= INTERVAL) {
         accum -= INTERVAL;
         // Place arrow at midpoint of this segment
-        const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
-        const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+        const mx = (x0 + x1) / 2,
+          my = (y0 + y1) / 2;
+        const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
         // Small chevron triangle
         const arrow = _svgEl('polygon', {
           points: '2,0 -2,-1.2 -2,1.2',
@@ -654,19 +684,25 @@
   function _laneStrokeColor(type) {
     switch (type) {
       case 'median':
-      case 'bidirectional': return '#7a756a';
+      case 'bidirectional':
+        return '#7a756a';
       case 'border':
-      case 'restricted':    return '#5a5752';
-      case 'driving':       return '#3a3a3a';
-      case 'sidewalk':      return '#b0a07a';
-      case 'shoulder':      return '#555555';
-      default:              return '#444444';
+      case 'restricted':
+        return '#5a5752';
+      case 'driving':
+        return '#3a3a3a';
+      case 'sidewalk':
+        return '#b0a07a';
+      case 'shoulder':
+        return '#555555';
+      default:
+        return '#444444';
     }
   }
 
   function _fitToView(_bounds, _pad) {
     // viewBox is already set to CARLA bounds — SVG handles fitting automatically.
-    _pan  = { x: 0, y: 0 };
+    _pan = { x: 0, y: 0 };
     _zoom = 1.0;
     _applyTransform();
   }
@@ -682,8 +718,8 @@
     const vb = svg.viewBox.baseVal;
     if (!vb || !vb.width) return false;
     _zoom = _clampZoom(zoom);
-    _pan.x = (vb.x + vb.width  / 2) - wx * _zoom;
-    _pan.y = (vb.y + vb.height / 2) - wy * _zoom;
+    _pan.x = vb.x + vb.width / 2 - wx * _zoom;
+    _pan.y = vb.y + vb.height / 2 - wy * _zoom;
     _applyTransform();
     return true;
   }
@@ -695,10 +731,14 @@
    */
   function zoomBy(factor) {
     const vb = svg.viewBox.baseVal;
-    if (!vb || !vb.width) { _zoom = _clampZoom(_zoom * factor); _applyTransform(); return; }
-    const cx = vb.x + vb.width  / 2;
+    if (!vb || !vb.width) {
+      _zoom = _clampZoom(_zoom * factor);
+      _applyTransform();
+      return;
+    }
+    const cx = vb.x + vb.width / 2;
     const cy = vb.y + vb.height / 2;
-    const wx = (cx - _pan.x) / _zoom;   // world point currently at the centre
+    const wx = (cx - _pan.x) / _zoom; // world point currently at the centre
     const wy = (cy - _pan.y) / _zoom;
     _centreOn(wx, wy, _zoom * factor);
   }
@@ -715,7 +755,10 @@
    */
   function zoomToSelection() {
     const actor = AppState.selectedId ? AppState.findById(AppState.selectedId) : null;
-    if (!actor || actor.x == null || actor.y == null) { resetView(); return false; }
+    if (!actor || actor.x == null || actor.y == null) {
+      resetView();
+      return false;
+    }
     return _frameActor(actor);
   }
 
@@ -731,11 +774,13 @@
   function frameBounds(points, marginM = 20) {
     const vb = svg.viewBox.baseVal;
     if (!points?.length || !vb || !vb.width) return false;
-    const xs = points.map(p => p.x), ys = points.map(p => p.y);
-    const minX = Math.min(...xs), maxX = Math.max(...xs);
-    const minY = Math.min(...ys), maxY = Math.max(...ys);
-    const zoom = Math.min(vb.width / (maxX - minX + 2 * marginM),
-                          vb.height / (maxY - minY + 2 * marginM));
+    const xs = points.map((p) => p.x),
+      ys = points.map((p) => p.y);
+    const minX = Math.min(...xs),
+      maxX = Math.max(...xs);
+    const minY = Math.min(...ys),
+      maxY = Math.max(...ys);
+    const zoom = Math.min(vb.width / (maxX - minX + 2 * marginM), vb.height / (maxY - minY + 2 * marginM));
     return _centreOn((minX + maxX) / 2, (minY + maxY) / 2, zoom);
   }
 
@@ -778,11 +823,11 @@
     clearTimeout(_glowTimer);
     // Query off the <svg> and not off layerActors: the layers are null until a
     // map has been rendered, and a prop lives in a different layer entirely.
-    svg.querySelectorAll('.actor-glow').forEach(el => el.classList.remove('actor-glow'));
+    svg.querySelectorAll('.actor-glow').forEach((el) => el.classList.remove('actor-glow'));
     if (!id) return;
     const g = svg.querySelector(`.actor-group[data-id="${CSS.escape(String(id))}"]`);
     if (!g) return;
-    g.getBoundingClientRect();      // reflow, so re-locating the same object replays it
+    g.getBoundingClientRect(); // reflow, so re-locating the same object replays it
     g.classList.add('actor-glow');
     _glowTimer = setTimeout(() => g.classList.remove('actor-glow'), GLOW_MS);
   }
@@ -817,15 +862,16 @@
    *  the same rule: the class must not outlive its keyframes. */
   function glowWaypoint(sel) {
     clearTimeout(_wpGlowTimer);
-    svg.querySelectorAll('.wp-locating').forEach(el => el.classList.remove('wp-locating'));
+    svg.querySelectorAll('.wp-locating').forEach((el) => el.classList.remove('wp-locating'));
     if (!sel) return;
     const g = svg.querySelector(
-      `.path-waypoint[data-actor-id="${CSS.escape(String(sel.actorId))}"]`
-      + `[data-event-id="${CSS.escape(String(sel.eventId))}"]`
-      + `[data-path-type="${CSS.escape(String(sel.pathType))}"]`
-      + `[data-wp-idx="${CSS.escape(String(sel.index))}"]`);
+      `.path-waypoint[data-actor-id="${CSS.escape(String(sel.actorId))}"]` +
+        `[data-event-id="${CSS.escape(String(sel.eventId))}"]` +
+        `[data-path-type="${CSS.escape(String(sel.pathType))}"]` +
+        `[data-wp-idx="${CSS.escape(String(sel.index))}"]`,
+    );
     if (!g) return;
-    g.getBoundingClientRect();      // reflow, so re-locating the same point replays it
+    g.getBoundingClientRect(); // reflow, so re-locating the same point replays it
     g.classList.add('wp-locating');
     _wpGlowTimer = setTimeout(() => g.classList.remove('wp-locating'), GLOW_MS);
   }
@@ -837,16 +883,18 @@
     // Stripes are spaced along the perpendicular axis and each stripe
     // is a thin rectangle whose long side runs parallel to the road.
     const rad = (cw.heading * Math.PI) / 180;
-    const fx = Math.cos(rad), fy = Math.sin(rad);   // road-forward unit vector
-    const px = -fy, py = fx;                         // perpendicular (across road)
+    const fx = Math.cos(rad),
+      fy = Math.sin(rad); // road-forward unit vector
+    const px = -fy,
+      py = fx; // perpendicular (across road)
 
-    const crosswalkWidth = Math.max(1.0, Number(cw.width) || 3.0);   // along-road direction (m)
+    const crosswalkWidth = Math.max(1.0, Number(cw.width) || 3.0); // along-road direction (m)
     const crosswalkLength = Math.max(2.0, Number(cw.length) || 12.0); // across-road direction (m)
     const STRIPE_W = Math.min(1.2, Math.max(0.55, crosswalkLength / 12));
     const STRIPE_GAP = STRIPE_W * 0.75;
     const totalStep = STRIPE_W + STRIPE_GAP;
     const NUM_STRIPES = Math.max(2, Math.floor((crosswalkLength + STRIPE_GAP) / totalStep));
-    const usedLength = (NUM_STRIPES * STRIPE_W) + ((NUM_STRIPES - 1) * STRIPE_GAP);
+    const usedLength = NUM_STRIPES * STRIPE_W + (NUM_STRIPES - 1) * STRIPE_GAP;
     const startOff = -usedLength / 2;
 
     const g = _svgEl('g', { class: 'crosswalk-group' });
@@ -856,21 +904,25 @@
       const offset = startOff + i * totalStep + STRIPE_W / 2;
       const cx = cw.x + px * offset;
       const cy = cw.y + py * offset;
-      const hw = STRIPE_W / 2;   // half-width in perpendicular direction
+      const hw = STRIPE_W / 2; // half-width in perpendicular direction
       const hl = crosswalkWidth / 2; // half-length in road-forward direction
       // Rectangle: long side along road (fx), short side across road (px)
       const pts = [
-        [cx + fx*hl + px*hw, cy + fy*hl + py*hw],
-        [cx + fx*hl - px*hw, cy + fy*hl - py*hw],
-        [cx - fx*hl - px*hw, cy - fy*hl - py*hw],
-        [cx - fx*hl + px*hw, cy - fy*hl + py*hw],
-      ].map(p => `${p[0].toFixed(2)},${p[1].toFixed(2)}`).join(' ');
+        [cx + fx * hl + px * hw, cy + fy * hl + py * hw],
+        [cx + fx * hl - px * hw, cy + fy * hl - py * hw],
+        [cx - fx * hl - px * hw, cy - fy * hl - py * hw],
+        [cx - fx * hl + px * hw, cy - fy * hl + py * hw],
+      ]
+        .map((p) => `${p[0].toFixed(2)},${p[1].toFixed(2)}`)
+        .join(' ');
 
-      g.appendChild(_svgEl('polygon', {
-        points: pts,
-        fill: '#ffffff',
-        'fill-opacity': '0.85',
-      }));
+      g.appendChild(
+        _svgEl('polygon', {
+          points: pts,
+          fill: '#ffffff',
+          'fill-opacity': '0.85',
+        }),
+      );
     }
 
     layerCrosswalks.appendChild(g);
@@ -892,17 +944,18 @@
     // its events set are lit — the old marker was an 8 m red disc with a glow,
     // red whether or not anything was configured, and at lane zoom it was the
     // loudest thing on the map and sat over the crosswalk it belongs to.
-    const lit = new Set((action?.events || []).map(ev => ev.state || 'red'));
+    const lit = new Set((action?.events || []).map((ev) => ev.state || 'red'));
     const g = _svgEl('g', {
       transform: `translate(${x},${y})`,
       // A light the .xodr has but CARLA does not (tl.inCarla === false, from
       // maps/<town>/carla_traffic_lights.json): still selectable, so the panel
       // can say why it cannot be switched, but drawn as a ghost.
-      class: `traffic-light${selected ? ' selected' : ''}${configured ? ' configured' : ''}`
-        + `${tl.inCarla === false ? ' not-in-carla' : ''}`,
+      class:
+        `traffic-light${selected ? ' selected' : ''}${configured ? ' configured' : ''}` +
+        `${tl.inCarla === false ? ' not-in-carla' : ''}`,
       'data-traffic-light-id': id,
     });
-    g.addEventListener('click', e => {
+    g.addEventListener('click', (e) => {
       if (AppState.activeTool || AppState.trajectoryMode || AppState.routeMode) return;
       e.preventDefault();
       e.stopPropagation();
@@ -913,16 +966,31 @@
     // town zoom — the same trick props and trigger points use.
     g.appendChild(_svgEl('circle', { cx: '0', cy: '0', r: '2.4', fill: 'transparent' }));
 
-    const W = 1.5, H = 3.7;
-    g.appendChild(_svgEl('rect', {
-      x: String(-W / 2), y: String(-H / 2), width: String(W), height: String(H), rx: '0.45',
-      class: 'traffic-light-housing',
-    }));
-    [['red', -1.1], ['yellow', 0], ['green', 1.1]].forEach(([state, cy]) => {
-      g.appendChild(_svgEl('circle', {
-        cx: '0', cy: String(cy), r: '0.46',
-        class: `traffic-light-lamp lamp-${state}${lit.has(state) ? ' lit' : ''}`,
-      }));
+    const W = 1.5,
+      H = 3.7;
+    g.appendChild(
+      _svgEl('rect', {
+        x: String(-W / 2),
+        y: String(-H / 2),
+        width: String(W),
+        height: String(H),
+        rx: '0.45',
+        class: 'traffic-light-housing',
+      }),
+    );
+    [
+      ['red', -1.1],
+      ['yellow', 0],
+      ['green', 1.1],
+    ].forEach(([state, cy]) => {
+      g.appendChild(
+        _svgEl('circle', {
+          cx: '0',
+          cy: String(cy),
+          r: '0.46',
+          class: `traffic-light-lamp lamp-${state}${lit.has(state) ? ' lit' : ''}`,
+        }),
+      );
     });
 
     // Selection marks around the housing. Same helper as actors and props: one
@@ -930,11 +998,12 @@
     g.appendChild(_buildSelectionMarks(W + 0.6, H + 0.6));
 
     const title = _svgEl('title', {});
-    title.textContent = tl.inCarla === false
-      ? `Ampel ${id} — existiert in CARLA nicht, nicht schaltbar`
-      : configured
-      ? `Ampel ${id} — ${action.events.length} Event${action.events.length === 1 ? '' : 's'}`
-      : `Ampel ${id} — klicken, um ihren Zustand im Szenario festzulegen`;
+    title.textContent =
+      tl.inCarla === false
+        ? `Ampel ${id} — existiert in CARLA nicht, nicht schaltbar`
+        : configured
+          ? `Ampel ${id} — ${action.events.length} Event${action.events.length === 1 ? '' : 's'}`
+          : `Ampel ${id} — klicken, um ihren Zustand im Szenario festzulegen`;
     g.appendChild(title);
 
     layerTrafficLights.appendChild(g);
@@ -943,7 +1012,7 @@
   function _renderTrafficLights() {
     if (!layerTrafficLights || !AppState.mapData) return;
     while (layerTrafficLights.firstChild) layerTrafficLights.removeChild(layerTrafficLights.firstChild);
-    for (const tl of (AppState.mapData.trafficLights || [])) {
+    for (const tl of AppState.mapData.trafficLights || []) {
       _renderTrafficLight(tl);
     }
   }
@@ -951,35 +1020,35 @@
   // ── Actor rendering ──────────────────────────────────────────────────────────
 
   const ACTOR_COLORS = {
-    ego:         { body: '#4488ff', text: '#fff' },
-    car:         { body: '#ff9933', text: '#222' },
-    van:         { body: '#8899aa', text: '#222' },
-    truck:       { body: '#cc5522', text: '#fff' },
-    bus:         { body: '#ddaa00', text: '#222' },
-    motorcycle:  { body: '#ff7755', text: '#fff' },
-    scooter:     { body: '#b8d600', text: '#222' },
-    police:      { body: '#223f9e', text: '#fff' },
-    ambulance:   { body: '#f0f4f8', text: '#222' },
-    firetruck:   { body: '#c62828', text: '#fff' },
-    pedestrian:  { body: '#cc66cc', text: '#fff' },
-    child:       { body: '#e69ae6', text: '#222' },
-    cyclist:     { body: '#33bb88', text: '#fff' },
+    ego: { body: '#4488ff', text: '#fff' },
+    car: { body: '#ff9933', text: '#222' },
+    van: { body: '#8899aa', text: '#222' },
+    truck: { body: '#cc5522', text: '#fff' },
+    bus: { body: '#ddaa00', text: '#222' },
+    motorcycle: { body: '#ff7755', text: '#fff' },
+    scooter: { body: '#b8d600', text: '#222' },
+    police: { body: '#223f9e', text: '#fff' },
+    ambulance: { body: '#f0f4f8', text: '#222' },
+    firetruck: { body: '#c62828', text: '#fff' },
+    pedestrian: { body: '#cc66cc', text: '#fff' },
+    child: { body: '#e69ae6', text: '#222' },
+    cyclist: { body: '#33bb88', text: '#fff' },
   };
 
   const ACTOR_SIZES = {
-    ego:        { w: 4.5, h: 2.1 },
-    car:        { w: 4.5, h: 2.1 },
-    van:        { w: 5.8, h: 2.2 },
-    truck:      { w: 7.0, h: 2.6 },
-    bus:        { w: 9.0, h: 2.8 },
+    ego: { w: 4.5, h: 2.1 },
+    car: { w: 4.5, h: 2.1 },
+    van: { w: 5.8, h: 2.2 },
+    truck: { w: 7.0, h: 2.6 },
+    bus: { w: 9.0, h: 2.8 },
     motorcycle: { w: 2.2, h: 1.0 },
-    scooter:    { w: 1.7, h: 0.8 },
-    police:     { w: 5.0, h: 2.1 },
-    ambulance:  { w: 6.0, h: 2.4 },
-    firetruck:  { w: 8.5, h: 2.8 },
+    scooter: { w: 1.7, h: 0.8 },
+    police: { w: 5.0, h: 2.1 },
+    ambulance: { w: 6.0, h: 2.4 },
+    firetruck: { w: 8.5, h: 2.8 },
     pedestrian: { w: 1.0, h: 1.0 },
-    child:      { w: 0.6, h: 0.6 },
-    cyclist:    { w: 2.0, h: 0.8 },
+    child: { w: 0.6, h: 0.6 },
+    cyclist: { w: 2.0, h: 0.8 },
   };
 
   /* Yaw-handle geometry (world metres).
@@ -994,8 +1063,8 @@
    *
    * The handle radius is capped at both ends: big enough to hit on a child or a
    * cone, never so big on a bus that it swings back over the roof. */
-  const YAW_HANDLE_GAP   = 0.6;   // clear air between body edge and handle edge
-  const YAW_HANDLE_R_MAX = 1.2;   // grab radius of the rotate handle
+  const YAW_HANDLE_GAP = 0.6; // clear air between body edge and handle edge
+  const YAW_HANDLE_R_MAX = 1.2; // grab radius of the rotate handle
   const YAW_HANDLE_R_MIN = 0.7;
 
   // Drawn as a circle rather than a rectangle. Mirrors _PEDESTRIAN_TYPES in
@@ -1005,7 +1074,7 @@
 
   function renderAllActors() {
     while (layerActors.firstChild) layerActors.removeChild(layerActors.firstChild);
-    while (layerTraj.firstChild)   layerTraj.removeChild(layerTraj.firstChild);
+    while (layerTraj.firstChild) layerTraj.removeChild(layerTraj.firstChild);
     if (layerProps) {
       while (layerProps.firstChild) layerProps.removeChild(layerProps.firstChild);
     }
@@ -1027,9 +1096,9 @@
 
     // Paths live inside event actions for every scenario actor, ego included.
     const allActors = AppState.ego ? [AppState.ego, ...AppState.npcs] : [...AppState.npcs];
-    const withTraj  = allActors.flatMap(a => _pathItems(a, 'trajectory')).filter(item => _shouldRenderPath(item));
-    const withRoute = allActors.flatMap(a => _pathItems(a, 'route')).filter(item => _shouldRenderPath(item));
-    const selId     = AppState.selectedId;
+    const withTraj = allActors.flatMap((a) => _pathItems(a, 'trajectory')).filter((item) => _shouldRenderPath(item));
+    const withRoute = allActors.flatMap((a) => _pathItems(a, 'route')).filter((item) => _shouldRenderPath(item));
+    const selId = AppState.selectedId;
 
     // Non-selected trajectories first (underneath)
     for (const item of withTraj) {
@@ -1057,13 +1126,15 @@
     // below is a no-op for one — no extra guard needed.
     const actor = AppState.findById(AppState.selectedId);
     if (!actor) return;
-    (actor.events || []).forEach(ev => {
+    (actor.events || []).forEach((ev) => {
       const point = ev.trigger?.point;
       if (!point) return;
       const radius = Math.max(0, Number(ev.trigger?.value ?? 20));
       const g = _svgEl('g', { class: 'trigger-point', transform: `translate(${point.x},${point.y})` });
       const ring = _svgEl('circle', {
-        cx: '0', cy: '0', r: _formatSvgNumber(radius),
+        cx: '0',
+        cy: '0',
+        r: _formatSvgNumber(radius),
         fill: 'rgba(0, 0, 0, 0.05)',
         stroke: '#808080',
         'stroke-width': '0.3',
@@ -1075,19 +1146,29 @@
       const marker = _svgEl('g', { class: 'trigger-point-control' });
       // Invisible hit target — the drawn marker is 0.7 m across, which is a
       // sub-pixel click target at whole-town zoom.
-      marker.appendChild(_svgEl('circle', {
-        cx: '0', cy: '0', r: '2.2', fill: 'transparent',
-      }));
-      marker.appendChild(_svgEl('circle', {
-        cx: '0', cy: '0', r: '0.7',
-        fill: '#ffffff00',
-        stroke: '#ffffff',
-        'stroke-width': '0.5',
-      }));
+      marker.appendChild(
+        _svgEl('circle', {
+          cx: '0',
+          cy: '0',
+          r: '2.2',
+          fill: 'transparent',
+        }),
+      );
+      marker.appendChild(
+        _svgEl('circle', {
+          cx: '0',
+          cy: '0',
+          r: '0.7',
+          fill: '#ffffff00',
+          stroke: '#ffffff',
+          'stroke-width': '0.5',
+        }),
+      );
       _attachTriggerPointDrag(marker, actor.id, ev.id);
       g.appendChild(marker);
       const label = _svgEl('text', {
-        x: '0', y: '-4.5',
+        x: '0',
+        y: '-4.5',
         'text-anchor': 'middle',
         'font-size': String(MAP_LABEL_M),
         class: 'map-label',
@@ -1132,7 +1213,7 @@
     while (layerBuildings.firstChild) layerBuildings.removeChild(layerBuildings.firstChild);
     const town = AppState.map;
     if (!town) return;
-    for (const b of (AppState.specialBuildings || [])) {
+    for (const b of AppState.specialBuildings || []) {
       if (b.town !== town) continue;
       const g = _svgEl('g', {
         class: 'special-building',
@@ -1141,7 +1222,8 @@
       g.appendChild(_svgEl('circle', { cx: '0', cy: '0', r: '1.5', class: 'building-dot-casing' }));
       g.appendChild(_svgEl('circle', { cx: '0', cy: '0', r: '1.0', class: 'building-dot' }));
       const label = _svgEl('text', {
-        x: '0', y: '-2.8',
+        x: '0',
+        y: '-2.8',
         'text-anchor': 'middle',
         'font-size': String(MAP_LABEL_M),
         class: 'map-label building-label',
@@ -1158,11 +1240,13 @@
   }
 
   function _formatSvgNumber(value) {
-    return Number(value).toFixed(2).replace(/\.?0+$/, '');
+    return Number(value)
+      .toFixed(2)
+      .replace(/\.?0+$/, '');
   }
 
   function _attachTriggerPointDrag(el, actorId, eventId) {
-    el.addEventListener('mousedown', e => {
+    el.addEventListener('mousedown', (e) => {
       if (e.button !== 0 || window.Simulate?.running) return;
       _triggerPointDrag = { actorId, eventId };
       e.preventDefault();
@@ -1182,7 +1266,7 @@
     const world = svgToWorld(e);
     const x = Math.round(world.x * 10) / 10;
     const y = Math.round(world.y * 10) / 10;
-    const events = (actor.events || []).map(ev => {
+    const events = (actor.events || []).map((ev) => {
       if (ev.id !== _triggerPointDrag.eventId || !ev.trigger?.point) return ev;
       return { ...ev, trigger: { ...ev.trigger, point: { ...ev.trigger.point, x, y } } };
     });
@@ -1191,7 +1275,7 @@
   }
 
   function _attachTriggerRadiusDrag(el, actorId, eventId, point) {
-    el.addEventListener('mousedown', e => {
+    el.addEventListener('mousedown', (e) => {
       if (e.button !== 0 || window.Simulate?.running) return;
       _triggerRadiusDrag = { actorId, eventId, point: { ...point } };
       e.preventDefault();
@@ -1205,7 +1289,7 @@
     const world = svgToWorld(e);
     const p = _triggerRadiusDrag.point;
     const distance = Math.round(Math.hypot(world.x - p.x, world.y - p.y) * 10) / 10;
-    const events = (actor.events || []).map(ev => {
+    const events = (actor.events || []).map((ev) => {
       if (ev.id !== _triggerRadiusDrag.eventId) return ev;
       return {
         ...ev,
@@ -1224,11 +1308,16 @@
   }
 
   function _pathItems(actor, pathType) {
-    return (actor.events || []).flatMap(ev => {
+    return (actor.events || []).flatMap((ev) => {
       const action = ev.action || {};
-      const points = pathType === 'route'
-        ? (action.type === 'assign_route' ? (action.waypoints || []) : [])
-        : (action.type === 'follow_trajectory' ? (action.trajectory || []) : []);
+      const points =
+        pathType === 'route'
+          ? action.type === 'assign_route'
+            ? action.waypoints || []
+            : []
+          : action.type === 'follow_trajectory'
+            ? action.trajectory || []
+            : [];
       return points.length >= 2 ? [{ actor, eventId: ev.id, pathType, points }] : [];
     });
   }
@@ -1267,14 +1356,14 @@
   /** The layer a path belongs in: over the vehicles when it is the selected
    *  actor's, under them otherwise. */
   function _pathLayerFor(actor) {
-    return (actor.id === AppState.selectedId && layerPathsTop) ? layerPathsTop : layerTraj;
+    return actor.id === AppState.selectedId && layerPathsTop ? layerPathsTop : layerTraj;
   }
 
   function _renderActor(actor) {
-    const col  = ACTOR_COLORS[actor.type] || ACTOR_COLORS.car;
+    const col = ACTOR_COLORS[actor.type] || ACTOR_COLORS.car;
     // The ego keeps its own colour but takes its vehicle type's footprint.
     const size = ACTOR_SIZES[AppState.bodyType(actor)] || ACTOR_SIZES.car;
-    const sel  = AppState.selectedId === actor.id;
+    const sel = AppState.selectedId === actor.id;
 
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     g.setAttribute('class', `actor-group${sel ? ' actor-selected' : ''}`);
@@ -1289,27 +1378,36 @@
     } else {
       // Vehicle: rectangle with windshield highlight
       const rect = _svgEl('rect', {
-        x: -size.w/2, y: -size.h/2, width: size.w, height: size.h,
-        rx: 0.4, fill: col.body, class: 'actor-body'
+        x: -size.w / 2,
+        y: -size.h / 2,
+        width: size.w,
+        height: size.h,
+        rx: 0.4,
+        fill: col.body,
+        class: 'actor-body',
       });
       g.appendChild(rect);
       // Windshield (front-right highlight)
       const ws = _svgEl('rect', {
-        x: size.w/2 - 1.4, y: -size.h/2 + 0.2, width: 1.2, height: size.h - 0.4,
-        rx: 0.2, fill: 'rgba(200,230,255,0.4)'
+        x: size.w / 2 - 1.4,
+        y: -size.h / 2 + 0.2,
+        width: 1.2,
+        height: size.h - 0.4,
+        rx: 0.2,
+        fill: 'rgba(200,230,255,0.4)',
       });
       g.appendChild(ws);
     }
 
     // Selection marks, framing what is actually drawn: a walker is a circle of
     // diameter size.w, so its box is square rather than size.w × size.h.
-    g.appendChild(_buildSelectionMarks(
-      size.w, WALKER_TYPES.has(actor.type) ? size.w : size.h));
+    g.appendChild(_buildSelectionMarks(size.w, WALKER_TYPES.has(actor.type) ? size.w : size.h));
 
     // Label. `.map-label` is what _updateLabelVisibility hides below the
     // legibility floor; `.actor-label` carries nothing but this one's styling.
-    g.appendChild(_uprightLabel(_actorMapLabel(actor), actor.yaw,
-      Math.max(size.w, size.h) / 2 + 1.2, 'map-label actor-label'));
+    g.appendChild(
+      _uprightLabel(_actorMapLabel(actor), actor.yaw, Math.max(size.w, size.h) / 2 + 1.2, 'map-label actor-label'),
+    );
 
     // Yaw arrow (vehicles and pedestrians — not static objects). The radius
     // passed is the marker's own, so the rotate handle lands outside it.
@@ -1317,7 +1415,7 @@
 
     // The selected actor goes in the top layer, above its own path — the
     // vehicle you are working on is never buried under anything.
-    ((sel && layerActorsTop) ? layerActorsTop : layerActors).appendChild(g);
+    (sel && layerActorsTop ? layerActorsTop : layerActors).appendChild(g);
   }
 
   /* Static props. Shares the .actor-group class so selection, body dragging and
@@ -1337,9 +1435,9 @@
     if (!cat) return;
 
     const color = cat.color(prop.prop);
-    const fp    = cat.planSize(prop.prop);
-    const size  = Math.max(fp.len, fp.wid);
-    const sel   = AppState.selectedId === prop.id;
+    const fp = cat.planSize(prop.prop);
+    const size = Math.max(fp.len, fp.wid);
+    const sel = AppState.selectedId === prop.id;
 
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     g.setAttribute('class', `actor-group prop-group${sel ? ' actor-selected' : ''}`);
@@ -1352,9 +1450,7 @@
     // stays on the pivot — that is the exported position and the point the
     // prop rotates about, which is why the yaw arrow is left outside.
     const off = cat.planOffset(prop.prop);
-    const meshG = (off.x || off.y)
-      ? _svgEl('g', { transform: `translate(${off.x},${off.y})` })
-      : g;
+    const meshG = off.x || off.y ? _svgEl('g', { transform: `translate(${off.x},${off.y})` }) : g;
 
     // Invisible grab target: a real cone is ~4 px wide at default zoom, too
     // small to click or drag reliably. Same trick as the yaw-arrow handle.
@@ -1371,21 +1467,19 @@
       class: 'actor-body',
       ...(spin ? { transform: `rotate(${spin})` } : {}),
     });
-    cat.planShapes(prop.prop).forEach(s => body.appendChild(s));
+    cat.planShapes(prop.prop).forEach((s) => body.appendChild(s));
     meshG.appendChild(body);
 
     // The body is drawn spun by planRotate, which swaps its extent — frame what
     // is on screen, not the catalogue's unrotated footprint.
     const spun = Math.abs(spin % 180) === 90;
-    meshG.appendChild(_buildSelectionMarks(
-      spun ? fp.wid : fp.len, spun ? fp.len : fp.wid));
+    meshG.appendChild(_buildSelectionMarks(spun ? fp.wid : fp.len, spun ? fp.len : fp.wid));
     if (meshG !== g) g.appendChild(meshG);
 
     // Label only while selected: props are placed in runs (a six-cone taper),
     // and one label per cone buries the glyphs it is meant to annotate.
     if (sel) {
-      g.appendChild(_uprightLabel(_actorMapLabel(prop), prop.yaw,
-        size / 2 + 1.0, 'map-label'));
+      g.appendChild(_uprightLabel(_actorMapLabel(prop), prop.yaw, size / 2 + 1.0, 'map-label'));
     }
 
     // Only oriented props get a yaw handle — a cone or barrel has no heading.
@@ -1426,8 +1520,9 @@
   }
   _btnUndo?.addEventListener('click', () => _stepHistory(false));
   _btnRedo?.addEventListener('click', () => _stepHistory(true));
-  ['change', 'actorUpdated', 'actorRemoved', 'stateLoaded', 'selectionChanged',
-   'trafficSignalUpdated'].forEach(ev => AppState.on(ev, _refreshHistoryButtons));
+  ['change', 'actorUpdated', 'actorRemoved', 'stateLoaded', 'selectionChanged', 'trafficSignalUpdated'].forEach((ev) =>
+    AppState.on(ev, _refreshHistoryButtons),
+  );
 
   function _actorMapLabel(actor) {
     return AppState.actorLabel(actor, { short: true });
@@ -1442,13 +1537,16 @@
    * baseline choice. */
   function _uprightLabel(text, yaw, gap, cls) {
     const deg = yaw || 0;
-    const below = Math.sin(deg * Math.PI / 180) < -0.2;
+    const below = Math.sin((deg * Math.PI) / 180) < -0.2;
     const wrap = _svgEl('g', { transform: `rotate(${-deg})`, style: 'pointer-events:none' });
     const label = _svgEl('text', {
-      x: 0, y: below ? gap : -gap,
-      'text-anchor': 'middle', 'font-size': String(MAP_LABEL_M),
+      x: 0,
+      y: below ? gap : -gap,
+      'text-anchor': 'middle',
+      'font-size': String(MAP_LABEL_M),
       'dominant-baseline': below ? 'hanging' : 'auto',
-      class: cls, fill: '#fff',
+      class: cls,
+      fill: '#fff',
     });
     label.textContent = text;
     wrap.appendChild(label);
@@ -1458,15 +1556,39 @@
   // German names for maps/special_buildings.csv's building_type. Anything not
   // listed falls back to the raw key with underscores as spaces.
   const LANDMARK_LABELS = {
-    bus_stop: 'Haltestelle', store: 'Geschäft', park: 'Park', restaurant: 'Restaurant',
-    parking: 'Parkplatz', farm: 'Bauernhof', playground: 'Spielplatz', cafe: 'Café',
-    hotel: 'Hotel', sports_facility: 'Sportplatz', gas_station: 'Tankstelle',
-    warehouse: 'Lager', supermarket: 'Supermarkt', shopping_mall: 'Einkaufszentrum',
-    museum: 'Museum', library: 'Bibliothek', lake: 'See', bakery: 'Bäckerei',
-    woods: 'Wald', university: 'Universität', train_station: 'Bahnhof',
-    theater: 'Theater', river: 'Fluss', house: 'Haus', factory: 'Fabrik',
-    cinema: 'Kino', church: 'Kirche', beach: 'Strand', atm: 'Geldautomat',
-    school: 'Schule', hospital: 'Krankenhaus', police: 'Polizei', bank: 'Bank',
+    bus_stop: 'Haltestelle',
+    store: 'Geschäft',
+    park: 'Park',
+    restaurant: 'Restaurant',
+    parking: 'Parkplatz',
+    farm: 'Bauernhof',
+    playground: 'Spielplatz',
+    cafe: 'Café',
+    hotel: 'Hotel',
+    sports_facility: 'Sportplatz',
+    gas_station: 'Tankstelle',
+    warehouse: 'Lager',
+    supermarket: 'Supermarkt',
+    shopping_mall: 'Einkaufszentrum',
+    museum: 'Museum',
+    library: 'Bibliothek',
+    lake: 'See',
+    bakery: 'Bäckerei',
+    woods: 'Wald',
+    university: 'Universität',
+    train_station: 'Bahnhof',
+    theater: 'Theater',
+    river: 'Fluss',
+    house: 'Haus',
+    factory: 'Fabrik',
+    cinema: 'Kino',
+    church: 'Kirche',
+    beach: 'Strand',
+    atm: 'Geldautomat',
+    school: 'Schule',
+    hospital: 'Krankenhaus',
+    police: 'Polizei',
+    bank: 'Bank',
   };
   function _landmarkLabel(type) {
     return LANDMARK_LABELS[type] || String(type || '').replace(/_/g, ' ');
@@ -1493,14 +1615,15 @@
    * what keeps a cone legible — a scaled 2 px line goes sub-pixel long before
    * the object it frames does.
    */
-  const SEL_PAD_MIN  = 0.6;    // world m of air between the body and the mark
-  const SEL_PAD_FRAC = 0.18;   // …or this much of the box, whichever is larger
-  const SEL_ARM_FRAC = 0.3;    // corner arm, as a fraction of its own side
-  const SEL_ARM_MAX  = 1.6;    // world m — a long arm on a bus is just a box
+  const SEL_PAD_MIN = 0.6; // world m of air between the body and the mark
+  const SEL_PAD_FRAC = 0.18; // …or this much of the box, whichever is larger
+  const SEL_ARM_FRAC = 0.3; // corner arm, as a fraction of its own side
+  const SEL_ARM_MAX = 1.6; // world m — a long arm on a bus is just a box
 
   function _buildSelectionMarks(w, h) {
     const pad = Math.max(SEL_PAD_MIN, Math.max(w, h) * SEL_PAD_FRAC);
-    const x = w / 2 + pad, y = h / 2 + pad;
+    const x = w / 2 + pad,
+      y = h / 2 + pad;
     const ax = Math.min(2 * x * SEL_ARM_FRAC, SEL_ARM_MAX);
     const ay = Math.min(2 * y * SEL_ARM_FRAC, SEL_ARM_MAX);
     const corners = [
@@ -1533,9 +1656,9 @@
    * commit to a drag.
    */
   function _buildYawArrow(actor, color, bodyRadius) {
-    const handleR  = Math.min(YAW_HANDLE_R_MAX, Math.max(YAW_HANDLE_R_MIN, bodyRadius));
+    const handleR = Math.min(YAW_HANDLE_R_MAX, Math.max(YAW_HANDLE_R_MIN, bodyRadius));
     const arrowLen = bodyRadius + YAW_HANDLE_GAP + handleR;
-    const headLen  = Math.min(1.2, handleR);
+    const headLen = Math.min(1.2, handleR);
 
     // Arrow group: drawn in local (rotated) coords of the actor
     // so the arrow always points in the actor's heading direction (+X axis = forward)
@@ -1545,33 +1668,51 @@
 
     // Shaft — decoration, never a hit target (see .yaw-shaft in style.css)
     const line = _svgEl('line', {
-      x1: bodyRadius, y1: 0, x2: arrowLen, y2: 0,
-      stroke: color, 'stroke-width': 0.5, 'stroke-opacity': 0.9,
-      class: 'yaw-shaft'
+      x1: bodyRadius,
+      y1: 0,
+      x2: arrowLen,
+      y2: 0,
+      stroke: color,
+      'stroke-width': 0.5,
+      'stroke-opacity': 0.9,
+      class: 'yaw-shaft',
     });
     ag.appendChild(line);
 
     // Arrowhead: the direction cue, and part of the handle. Scaled with the
     // handle so it stays clear of the body on a 0.6 m child too.
     const head = _svgEl('polygon', {
-      points: `${arrowLen},0 ${arrowLen-headLen},${-headLen/2} ${arrowLen-headLen},${headLen/2}`,
-      fill: color, class: 'arrow-head yaw-handle', 'data-actor-id': actor.id
+      points: `${arrowLen},0 ${arrowLen - headLen},${-headLen / 2} ${arrowLen - headLen},${headLen / 2}`,
+      fill: color,
+      class: 'arrow-head yaw-handle',
+      'data-actor-id': actor.id,
     });
     ag.appendChild(head);
 
     // Boundary of the grab zone, shown on hover only.
-    ag.appendChild(_svgEl('circle', {
-      cx: arrowLen, cy: 0, r: handleR,
-      fill: 'none', stroke: color, 'stroke-width': 0.15,
-      class: 'yaw-handle-ring'
-    }));
+    ag.appendChild(
+      _svgEl('circle', {
+        cx: arrowLen,
+        cy: 0,
+        r: handleR,
+        fill: 'none',
+        stroke: color,
+        'stroke-width': 0.15,
+        class: 'yaw-handle-ring',
+      }),
+    );
 
     // Invisible hit area, last so it sits on top of the drawn parts.
-    ag.appendChild(_svgEl('circle', {
-      cx: arrowLen, cy: 0, r: handleR,
-      fill: 'transparent', 'data-actor-id': actor.id,
-      class: 'yaw-handle'
-    }));
+    ag.appendChild(
+      _svgEl('circle', {
+        cx: arrowLen,
+        cy: 0,
+        r: handleR,
+        fill: 'transparent',
+        'data-actor-id': actor.id,
+        class: 'yaw-handle',
+      }),
+    );
 
     return ag;
   }
@@ -1581,8 +1722,8 @@
   /* Path line widths, in world metres. Deliberately well under a lane's
    * ~3.5 m: several actors' paths over a town view is a lot of ink, and the
    * line only has to be followable, not emphatic. */
-  const PATH_WIDTH     = 0.35;   // an unselected actor's path
-  const PATH_WIDTH_SEL = 0.6;    // the selected actor's
+  const PATH_WIDTH = 0.35; // an unselected actor's path
+  const PATH_WIDTH_SEL = 0.6; // the selected actor's
 
   // Track which actors have their trajectory hidden (toggled off by user)
   const _hiddenTrajectories = new Set();
@@ -1597,7 +1738,7 @@
    * seeded from `map.get_waypoint(actor_location).next(1)[0]`, so moving the
    * vehicle really does change the route without any waypoint moving.
    */
-  const _routeGeomCache = new Map();   // pathKey -> {sig, points}
+  const _routeGeomCache = new Map(); // pathKey -> {sig, points}
 
   /* The AUTHORED pose, not the live one: a running preview rewrites actor.x/y
    * every tick, which invalidated this signature on every frame and made the
@@ -1606,14 +1747,12 @@
    * either. Simulate.authoredPose returns null when nothing is running, when
    * the actor's own pose already IS the authored one. */
   function _routeSignature(actor, points) {
-    const pose = (window.Simulate && Simulate.authoredPose
-                  && Simulate.authoredPose(actor.id)) || actor;
+    const pose = (window.Simulate && Simulate.authoredPose && Simulate.authoredPose(actor.id)) || actor;
     // The strategy is part of the signature, not decoration: it decides whether
     // a leg is routed or drawn as a chord, and toggling a waypoint to 'Gerade'
     // leaves its coordinates untouched — so keying on position alone left the
     // drawn route showing the lane-following line it no longer is.
-    return `${pose.x},${pose.y}|`
-         + points.map(p => `${p.x},${p.y},${p.strategy || 'fastest'}`).join(';');
+    return `${pose.x},${pose.y}|` + points.map((p) => `${p.x},${p.y},${p.strategy || 'fastest'}`).join(';');
   }
 
   /** The route as CARLA will drive it, or null to fall back to straight chords
@@ -1626,7 +1765,7 @@
     if (hit && hit.sig === sig) return hit.points;
 
     let points = null;
-    const ev = (item.actor.events || []).find(e => e.id === item.eventId);
+    const ev = (item.actor.events || []).find((e) => e.id === item.eventId);
     if (ev) {
       try {
         points = Simulate.routeGeometry(item.actor, ev, item.points);
@@ -1676,9 +1815,11 @@
     // Entf then refuses to act on. Its own marker sits squarely on the actor,
     // so dropping pointer-events also hands those clicks back to the car.
     const interactive = isSel && i > 0;
-    wg.setAttribute('class',
-      `path-waypoint ${item.pathType === 'route' ? 'route-waypoint' : 'traj-waypoint'}`
-      + `${interactive ? ' waypoint-interactive' : ''}${marked ? ' waypoint-marked' : ''}`);
+    wg.setAttribute(
+      'class',
+      `path-waypoint ${item.pathType === 'route' ? 'route-waypoint' : 'traj-waypoint'}` +
+        `${interactive ? ' waypoint-interactive' : ''}${marked ? ' waypoint-marked' : ''}`,
+    );
     wg.setAttribute('data-actor-id', item.actor.id);
     wg.setAttribute('data-event-id', item.eventId);
     wg.setAttribute('data-path-type', item.pathType);
@@ -1691,8 +1832,13 @@
 
   function _isMarkedWaypoint(item, i) {
     const sel = AppState.selectedWaypoint;
-    return !!sel && sel.actorId === item.actor.id && sel.eventId === item.eventId
-        && sel.pathType === item.pathType && sel.index === i;
+    return (
+      !!sel &&
+      sel.actorId === item.actor.id &&
+      sel.eventId === item.eventId &&
+      sel.pathType === item.pathType &&
+      sel.index === i
+    );
   }
 
   /** Invisible grab target — the drawn dot is ~1 m across and sub-pixel at town
@@ -1700,9 +1846,15 @@
   const WAYPOINT_HIT_R = 2.2;
 
   function _appendWaypointHit(wg, wp) {
-    wg.appendChild(_svgEl('circle', {
-      cx: wp.x, cy: wp.y, r: WAYPOINT_HIT_R, fill: 'transparent', class: 'wp-hit',
-    }));
+    wg.appendChild(
+      _svgEl('circle', {
+        cx: wp.x,
+        cy: wp.y,
+        r: WAYPOINT_HIT_R,
+        fill: 'transparent',
+        class: 'wp-hit',
+      }),
+    );
   }
 
   /**
@@ -1723,11 +1875,11 @@
 
   function _renderTrajectory(item) {
     const actor = item.actor;
-    const col  = ACTOR_COLORS[actor.type] || ACTOR_COLORS.car;
+    const col = ACTOR_COLORS[actor.type] || ACTOR_COLORS.car;
     const traj = item.points;
     if (!traj || traj.length < 2) return;
 
-    const isSel    = AppState.selectedId === actor.id;
+    const isSel = AppState.selectedId === actor.id;
 
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     g.setAttribute('data-traj-id', actor.id);
@@ -1738,7 +1890,7 @@
     g.setAttribute('opacity', groupOpacity);
 
     // Dashed path line
-    const pts = traj.map(wp => `${wp.x},${wp.y}`).join(' ');
+    const pts = traj.map((wp) => `${wp.x},${wp.y}`).join(' ');
     const line = _svgEl('polyline', {
       points: pts,
       class: 'traj-line',
@@ -1754,8 +1906,13 @@
 
       const dotR = isSel ? 1.2 : 0.8;
       const c = _svgEl('circle', {
-        cx: wp.x, cy: wp.y, r: dotR,
-        fill: col.body, opacity: '0.9', stroke: '#fff', 'stroke-width': 0.2,
+        cx: wp.x,
+        cy: wp.y,
+        r: dotR,
+        fill: col.body,
+        opacity: '0.9',
+        stroke: '#fff',
+        'stroke-width': 0.2,
         class: 'wp-dot',
       });
       wg.appendChild(c);
@@ -1764,9 +1921,11 @@
       // Velocity label — only for selected actor, every 3rd wp or first/last
       if (isSel && (i === 0 || i === traj.length - 1 || i % 3 === 0)) {
         const vel = _svgEl('text', {
-          x: wp.x + 1.8, y: wp.y - 1.2,
-          'font-size': '1.8', fill: '#fff',
-          style: 'pointer-events:none'
+          x: wp.x + 1.8,
+          y: wp.y - 1.2,
+          'font-size': '1.8',
+          fill: '#fff',
+          style: 'pointer-events:none',
         });
         vel.textContent = `${(wp.velocity || 10).toFixed(0)} m/s`;
         wg.appendChild(vel);
@@ -1775,9 +1934,13 @@
       // Number label inside circle — only for selected actor
       if (isSel) {
         const num = _svgEl('text', {
-          x: wp.x, y: wp.y + 0.5,
-          'text-anchor': 'middle', 'font-size': '1.2', fill: '#fff',
-          'font-weight': 'bold', style: 'pointer-events:none'
+          x: wp.x,
+          y: wp.y + 0.5,
+          'text-anchor': 'middle',
+          'font-size': '1.2',
+          fill: '#fff',
+          'font-weight': 'bold',
+          style: 'pointer-events:none',
         });
         num.textContent = i + 1;
         wg.appendChild(num);
@@ -1796,7 +1959,7 @@
     const route = item.points;
     if (!route || route.length < 2) return;
 
-    const isSel    = AppState.selectedId === actor.id;
+    const isSel = AppState.selectedId === actor.id;
 
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     g.setAttribute('data-route-id', actor.id);
@@ -1815,15 +1978,13 @@
     const driven = _laneFollowingRoute(item);
     const linePoints = driven || route;
     const line = _svgEl('polyline', {
-      points: linePoints.map(wp => `${wp.x},${wp.y}`).join(' '),
+      points: linePoints.map((wp) => `${wp.x},${wp.y}`).join(' '),
       class: `route-line${driven ? '' : ' route-line-approx'}`,
       stroke: col.body,
       'stroke-width': isSel ? PATH_WIDTH_SEL : PATH_WIDTH,
     });
     const title = _svgEl('title', {});
-    title.textContent = driven
-      ? 'Route entlang der Fahrspuren'
-      : 'Luftlinie — keine Fahrspurdaten für diese Route';
+    title.textContent = driven ? 'Route entlang der Fahrspuren' : 'Luftlinie — keine Fahrspurdaten für diese Route';
     line.appendChild(title);
     g.appendChild(line);
 
@@ -1840,8 +2001,10 @@
       const shortest = wp.strategy === 'shortest';
       const half = isSel ? 1.1 : 0.75;
       const dot = _svgEl('rect', {
-        x: wp.x - half, y: wp.y - half,
-        width: half * 2, height: half * 2,
+        x: wp.x - half,
+        y: wp.y - half,
+        width: half * 2,
+        height: half * 2,
         rx: 0.2,
         fill: col.body,
         opacity: '0.9',
@@ -1862,9 +2025,13 @@
 
       if (isSel) {
         const num = _svgEl('text', {
-          x: wp.x, y: wp.y + 0.5,
-          'text-anchor': 'middle', 'font-size': '1.2', fill: '#fff',
-          'font-weight': 'bold', style: 'pointer-events:none'
+          x: wp.x,
+          y: wp.y + 0.5,
+          'text-anchor': 'middle',
+          'font-size': '1.2',
+          fill: '#fff',
+          'font-weight': 'bold',
+          style: 'pointer-events:none',
         });
         num.textContent = i + 1;
         wg.appendChild(num);
@@ -1875,9 +2042,11 @@
 
     if (isSel) {
       const speed = _svgEl('text', {
-        x: route[0].x + 2, y: route[0].y - 2,
-        'font-size': '1.8', fill: '#fff',
-        style: 'pointer-events:none'
+        x: route[0].x + 2,
+        y: route[0].y - 2,
+        'font-size': '1.8',
+        fill: '#fff',
+        style: 'pointer-events:none',
       });
       speed.textContent = '10 m/s';
       g.appendChild(speed);
@@ -1897,28 +2066,36 @@
   // ── Mouse interaction ────────────────────────────────────────────────────────
 
   // Pan with left-drag on the background (not on actors)
-  svg.addEventListener('mousedown', e => {
-    if (e.button !== 0) return;
-    // During a preview nothing on the map is draggable (objects.js stands
-    // down), so a grab on a marker pans like a grab anywhere else.
-    if (!window.Simulate?.running && (e.target.closest('.actor-group') ||
-        e.target.closest('.yaw-arrow') ||
-        e.target.closest('.trigger-radius-control') ||
-        e.target.closest('.trigger-point-control') ||
-        // This handler is capture-phase on the same <svg> objects.js binds on
-        // the bubble phase, so it runs FIRST: without the waypoint here the pan
-        // is already under way by the time the drag handler sees the mousedown.
-        e.target.closest('.path-waypoint'))) return;
+  svg.addEventListener(
+    'mousedown',
+    (e) => {
+      if (e.button !== 0) return;
+      // During a preview nothing on the map is draggable (objects.js stands
+      // down), so a grab on a marker pans like a grab anywhere else.
+      if (
+        !window.Simulate?.running &&
+        (e.target.closest('.actor-group') ||
+          e.target.closest('.yaw-arrow') ||
+          e.target.closest('.trigger-radius-control') ||
+          e.target.closest('.trigger-point-control') ||
+          // This handler is capture-phase on the same <svg> objects.js binds on
+          // the bubble phase, so it runs FIRST: without the waypoint here the pan
+          // is already under way by the time the drag handler sees the mousedown.
+          e.target.closest('.path-waypoint'))
+      )
+        return;
 
-    _dragging  = true;
-    _dragStart = { x: e.clientX, y: e.clientY };
-    _panStart  = { ...(_pan) };
-    _panMoved = false;
-    svg.style.cursor = 'grabbing';
-    e.preventDefault();
-  }, true);
+      _dragging = true;
+      _dragStart = { x: e.clientX, y: e.clientY };
+      _panStart = { ..._pan };
+      _panMoved = false;
+      svg.style.cursor = 'grabbing';
+      e.preventDefault();
+    },
+    true,
+  );
 
-  window.addEventListener('mousemove', e => {
+  window.addEventListener('mousemove', (e) => {
     if (_triggerPointDrag) {
       _updateTriggerPointDrag(e);
       return;
@@ -1948,7 +2125,9 @@
         // dispatch a click at all — the flag has to expire on its own or it
         // swallows an unrelated map click much later (a placement, a waypoint).
         _suppressNextClick = true;
-        setTimeout(() => { _suppressNextClick = false; }, 50);
+        setTimeout(() => {
+          _suppressNextClick = false;
+        }, 50);
       }
       return;
     }
@@ -1965,48 +2144,53 @@
     }
   });
 
-  svg.addEventListener('click', e => {
-    if (!_suppressNextClick) return;
-    _suppressNextClick = false;
-    e.preventDefault();
-    e.stopPropagation();
-  }, true);
+  svg.addEventListener(
+    'click',
+    (e) => {
+      if (!_suppressNextClick) return;
+      _suppressNextClick = false;
+      e.preventDefault();
+      e.stopPropagation();
+    },
+    true,
+  );
 
   // Zoom with mouse wheel
-  svg.addEventListener('wheel', e => {
-    e.preventDefault();
-    const step   = e.shiftKey ? ZOOM_STEP_COARSE : ZOOM_STEP;
-    const factor = e.deltaY < 0 ? step : 1 / step;
-    const cursor = _clientToSvg(e);
-    if (!cursor) return;
+  svg.addEventListener(
+    'wheel',
+    (e) => {
+      e.preventDefault();
+      const step = e.shiftKey ? ZOOM_STEP_COARSE : ZOOM_STEP;
+      const factor = e.deltaY < 0 ? step : 1 / step;
+      const cursor = _clientToSvg(e);
+      if (!cursor) return;
 
-    // Keep the world point under the cursor fixed while zooming. The pan has to
-    // be derived from the CLAMPED zoom and not the requested one — otherwise
-    // wheeling at either limit stops scaling but keeps translating the map,
-    // which walks it off screen just as effectively as no clamp at all.
-    const world = svgToWorld(e);
-    _zoom = _clampZoom(_zoom * factor);
-    _pan.x = cursor.x - world.x * _zoom;
-    _pan.y = cursor.y - world.y * _zoom;
+      // Keep the world point under the cursor fixed while zooming. The pan has to
+      // be derived from the CLAMPED zoom and not the requested one — otherwise
+      // wheeling at either limit stops scaling but keeps translating the map,
+      // which walks it off screen just as effectively as no clamp at all.
+      const world = svgToWorld(e);
+      _zoom = _clampZoom(_zoom * factor);
+      _pan.x = cursor.x - world.x * _zoom;
+      _pan.y = cursor.y - world.y * _zoom;
 
-    _applyTransform();
-  }, { passive: false });
+      _applyTransform();
+    },
+    { passive: false },
+  );
 
   // ── Map view controls ──────────────────────────────────────────────────────
   // Buttons zoom about the view centre; the wheel zooms about the cursor.
-  document.getElementById('btn-zoom-in')
-    ?.addEventListener('click', () => zoomBy(ZOOM_STEP_COARSE));
-  document.getElementById('btn-zoom-out')
-    ?.addEventListener('click', () => zoomBy(1 / ZOOM_STEP_COARSE));
-  document.getElementById('btn-zoom-fit')
-    ?.addEventListener('click', () => {
-      Toast.info(zoomToSelection() ? 'Auf Auswahl gezoomt' : 'Ansicht zur\u00fcckgesetzt');
-    });
+  document.getElementById('btn-zoom-in')?.addEventListener('click', () => zoomBy(ZOOM_STEP_COARSE));
+  document.getElementById('btn-zoom-out')?.addEventListener('click', () => zoomBy(1 / ZOOM_STEP_COARSE));
+  document.getElementById('btn-zoom-fit')?.addEventListener('click', () => {
+    Toast.info(zoomToSelection() ? 'Auf Auswahl gezoomt' : 'Ansicht zur\u00fcckgesetzt');
+  });
 
   // Keyboard shortcuts
   const _shortcutsOverlay = document.getElementById('shortcuts-overlay');
 
-  window.addEventListener('keydown', e => {
+  window.addEventListener('keydown', (e) => {
     // Don't intercept when typing in inputs (except Escape)
     const inInput = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT';
 
@@ -2026,9 +2210,12 @@
     // running preview) and no deletes. Ctrl+Z is still swallowed, so the
     // browser does not act on it either.
     if (window.Simulate?.running) {
-      const editKey = e.key === 'Delete' || e.key === 'Backspace'
-        || ((e.ctrlKey || e.metaKey) && /^[zZy]$/.test(e.key));
-      if (editKey) { e.preventDefault(); return; }
+      const editKey =
+        e.key === 'Delete' || e.key === 'Backspace' || ((e.ctrlKey || e.metaKey) && /^[zZy]$/.test(e.key));
+      if (editKey) {
+        e.preventDefault();
+        return;
+      }
     }
 
     // ? — show keyboard shortcuts
@@ -2095,14 +2282,12 @@
       const sel = AppState.selectedWaypoint;
       ObjectsManager.deletePathPoint(sel.actorId, sel.pathType, sel.index, sel.eventId);
       const left = (AppState.waypointPathOf(sel) || []).length;
-      AppState.selectWaypoint(left
-        ? { ...sel, index: Math.min(sel.index, left - 1) }
-        : null);
+      AppState.selectWaypoint(left ? { ...sel, index: Math.min(sel.index, left - 1) } : null);
       return;
     }
 
     if ((e.key === 'Delete' || e.key === 'Backspace') && AppState.selectedId) {
-      const id    = AppState.selectedId;
+      const id = AppState.selectedId;
       const actor = AppState.findById(id);
       if (!actor) return;
       const label = AppState.actorLabel(actor);
@@ -2118,7 +2303,10 @@
       };
 
       if (e.ctrlKey || e.metaKey) commit();
-      else Confirm.show(`${label} löschen?`, 'Löschen').then(ok => { if (ok) commit(); });
+      else
+        Confirm.show(`${label} löschen?`, 'Löschen').then((ok) => {
+          if (ok) commit();
+        });
     }
   });
 
@@ -2134,15 +2322,45 @@
     document.getElementById('scale-ruler')?.classList.remove('hidden');
 
     const pairs = [
-      { id: 'toggle-crosswalks',     get layer() { return layerCrosswalks; } },
-      { id: 'toggle-trafficlights',  get layer() { return layerTrafficLights; } },
-      { id: 'toggle-spawns',         layer: layerSpawns },
-      { id: 'toggle-markings',       layer: layerMarkings },
-      { id: 'toggle-roaddir',        get layer() { return layerRoadDir; } },
-      { id: 'toggle-props',          layer: layerProps },
-      { id: 'toggle-buildings',      get layer() { return layerBuildings; } },
-      { id: 'toggle-signs',          get layer() { return layerSigns; } },
-      { id: 'toggle-speeds',         get layer() { return layerSpeeds; } },
+      {
+        id: 'toggle-crosswalks',
+        get layer() {
+          return layerCrosswalks;
+        },
+      },
+      {
+        id: 'toggle-trafficlights',
+        get layer() {
+          return layerTrafficLights;
+        },
+      },
+      { id: 'toggle-spawns', layer: layerSpawns },
+      { id: 'toggle-markings', layer: layerMarkings },
+      {
+        id: 'toggle-roaddir',
+        get layer() {
+          return layerRoadDir;
+        },
+      },
+      { id: 'toggle-props', layer: layerProps },
+      {
+        id: 'toggle-buildings',
+        get layer() {
+          return layerBuildings;
+        },
+      },
+      {
+        id: 'toggle-signs',
+        get layer() {
+          return layerSigns;
+        },
+      },
+      {
+        id: 'toggle-speeds',
+        get layer() {
+          return layerSpeeds;
+        },
+      },
     ];
 
     for (const p of pairs) {
@@ -2162,11 +2380,11 @@
 
   // ── Ruler (measure distance) ────────────────────────────────────────────────
 
-  let _rulerActive  = false;
-  let _rulerStart   = null;   // {x, y} world coords
-  let _rulerEnd     = null;
-  let _rulerGroup   = null;   // SVG group for ruler graphics
-  let _rulerPinned  = [];     // Array of pinned measurements [{x1,y1,x2,y2,dist}]
+  let _rulerActive = false;
+  let _rulerStart = null; // {x, y} world coords
+  let _rulerEnd = null;
+  let _rulerGroup = null; // SVG group for ruler graphics
+  let _rulerPinned = []; // Array of pinned measurements [{x1,y1,x2,y2,dist}]
 
   function _ensureRulerLayer() {
     if (!_rulerGroup) {
@@ -2177,28 +2395,50 @@
 
   function _renderRulerLine(x1, y1, x2, y2, pinned) {
     const dist = Math.hypot(x2 - x1, y2 - y1);
-    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
-    const angle = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
+    const mx = (x1 + x2) / 2,
+      my = (y1 + y2) / 2;
+    const angle = (Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI;
     const color = pinned ? '#ffcc00' : '#ffee55';
 
     const g = _svgEl('g', { class: 'ruler-measurement' });
 
     // Main line
-    g.appendChild(_svgEl('line', {
-      x1, y1, x2, y2,
-      stroke: color, 'stroke-width': '0.6', 'stroke-dasharray': '2,1.5',
-      opacity: pinned ? '0.8' : '1',
-    }));
+    g.appendChild(
+      _svgEl('line', {
+        x1,
+        y1,
+        x2,
+        y2,
+        stroke: color,
+        'stroke-width': '0.6',
+        'stroke-dasharray': '2,1.5',
+        opacity: pinned ? '0.8' : '1',
+      }),
+    );
 
     // End markers (small crosshairs)
-    for (const [px, py] of [[x1, y1], [x2, y2]]) {
-      g.appendChild(_svgEl('circle', {
-        cx: px, cy: py, r: '1.2',
-        fill: 'none', stroke: color, 'stroke-width': '0.4',
-      }));
-      g.appendChild(_svgEl('circle', {
-        cx: px, cy: py, r: '0.4', fill: color,
-      }));
+    for (const [px, py] of [
+      [x1, y1],
+      [x2, y2],
+    ]) {
+      g.appendChild(
+        _svgEl('circle', {
+          cx: px,
+          cy: py,
+          r: '1.2',
+          fill: 'none',
+          stroke: color,
+          'stroke-width': '0.4',
+        }),
+      );
+      g.appendChild(
+        _svgEl('circle', {
+          cx: px,
+          cy: py,
+          r: '0.4',
+          fill: color,
+        }),
+      );
     }
 
     // Distance label background
@@ -2206,17 +2446,27 @@
     const textLen = dist.toFixed(1).length + 2; // "+ m"
     const bgW = textLen * labelFontSize * 0.65;
     const bgH = labelFontSize * 1.6;
-    g.appendChild(_svgEl('rect', {
-      x: mx - bgW / 2, y: my - bgH / 2 - labelFontSize * 0.3,
-      width: bgW, height: bgH, rx: '0.8',
-      fill: 'rgba(0,0,0,0.75)', stroke: color, 'stroke-width': '0.3',
-    }));
+    g.appendChild(
+      _svgEl('rect', {
+        x: mx - bgW / 2,
+        y: my - bgH / 2 - labelFontSize * 0.3,
+        width: bgW,
+        height: bgH,
+        rx: '0.8',
+        fill: 'rgba(0,0,0,0.75)',
+        stroke: color,
+        'stroke-width': '0.3',
+      }),
+    );
 
     // Distance label text
     const label = _svgEl('text', {
-      x: mx, y: my + labelFontSize * 0.3,
-      'text-anchor': 'middle', 'font-size': labelFontSize,
-      fill: color, 'font-weight': 'bold',
+      x: mx,
+      y: my + labelFontSize * 0.3,
+      'text-anchor': 'middle',
+      'font-size': labelFontSize,
+      fill: color,
+      'font-weight': 'bold',
       style: 'pointer-events:none',
     });
     label.textContent = `${dist.toFixed(1)} m`;
@@ -2225,15 +2475,24 @@
     // Remove button for pinned rulers
     if (pinned) {
       const delBtn = _svgEl('circle', {
-        cx: x2, cy: y2 - 2.5, r: '1.5',
-        fill: '#cc3333', stroke: '#fff', 'stroke-width': '0.3',
-        style: 'cursor:pointer', class: 'ruler-delete',
+        cx: x2,
+        cy: y2 - 2.5,
+        r: '1.5',
+        fill: '#cc3333',
+        stroke: '#fff',
+        'stroke-width': '0.3',
+        style: 'cursor:pointer',
+        class: 'ruler-delete',
       });
       g.appendChild(delBtn);
       const delX = _svgEl('text', {
-        x: x2, y: y2 - 2.0,
-        'text-anchor': 'middle', 'font-size': '2', fill: '#fff',
-        'font-weight': 'bold', style: 'pointer-events:none',
+        x: x2,
+        y: y2 - 2.0,
+        'text-anchor': 'middle',
+        'font-size': '2',
+        fill: '#fff',
+        'font-weight': 'bold',
+        style: 'pointer-events:none',
       });
       delX.textContent = '\u00d7';
       g.appendChild(delX);
@@ -2251,7 +2510,7 @@
       const g = _renderRulerLine(r.x1, r.y1, r.x2, r.y2, true);
       g.dataset.rulerIdx = idx;
       // Click handler on delete button
-      g.querySelector('.ruler-delete')?.addEventListener('click', e => {
+      g.querySelector('.ruler-delete')?.addEventListener('click', (e) => {
         e.stopPropagation();
         e.preventDefault();
         _rulerPinned.splice(idx, 1);
@@ -2262,9 +2521,7 @@
 
     // Active measurement (being drawn)
     if (_rulerStart && _rulerEnd) {
-      _rulerGroup.appendChild(
-        _renderRulerLine(_rulerStart.x, _rulerStart.y, _rulerEnd.x, _rulerEnd.y, false)
-      );
+      _rulerGroup.appendChild(_renderRulerLine(_rulerStart.x, _rulerStart.y, _rulerEnd.x, _rulerEnd.y, false));
     }
   }
 
@@ -2282,32 +2539,38 @@
   //   - Second click: pin the measurement and start a new one
   //   - Escape / tool change: cancel current measurement
 
-  svg.addEventListener('click', e => {
-    if (AppState.activeTool !== 'ruler') return;
-    if (e.defaultPrevented) return;
+  svg.addEventListener(
+    'click',
+    (e) => {
+      if (AppState.activeTool !== 'ruler') return;
+      if (e.defaultPrevented) return;
 
-    const world = svgToWorld(e);
-    e.preventDefault();
-    e.stopPropagation();
+      const world = svgToWorld(e);
+      e.preventDefault();
+      e.stopPropagation();
 
-    if (!_rulerStart) {
-      // First click — set start
-      _rulerStart = { x: world.x, y: world.y };
-      _rulerEnd = null;
-    } else {
-      // Second click — pin the measurement
-      _rulerPinned.push({
-        x1: _rulerStart.x, y1: _rulerStart.y,
-        x2: world.x, y2: world.y,
-        dist: Math.hypot(world.x - _rulerStart.x, world.y - _rulerStart.y),
-      });
-      _rulerStart = null;
-      _rulerEnd = null;
-      _redrawRuler();
-    }
-  }, true);  // capture phase so it fires before the objects.js click handler
+      if (!_rulerStart) {
+        // First click — set start
+        _rulerStart = { x: world.x, y: world.y };
+        _rulerEnd = null;
+      } else {
+        // Second click — pin the measurement
+        _rulerPinned.push({
+          x1: _rulerStart.x,
+          y1: _rulerStart.y,
+          x2: world.x,
+          y2: world.y,
+          dist: Math.hypot(world.x - _rulerStart.x, world.y - _rulerStart.y),
+        });
+        _rulerStart = null;
+        _rulerEnd = null;
+        _redrawRuler();
+      }
+    },
+    true,
+  ); // capture phase so it fires before the objects.js click handler
 
-  svg.addEventListener('mousemove', e => {
+  svg.addEventListener('mousemove', (e) => {
     if (AppState.activeTool !== 'ruler' || !_rulerStart || _dragging) return;
     const world = svgToWorld(e);
     _rulerEnd = { x: world.x, y: world.y };
@@ -2315,7 +2578,7 @@
   });
 
   // Cancel ruler on tool change
-  AppState.on('change', patch => {
+  AppState.on('change', (patch) => {
     if ('activeTool' in patch) {
       if (AppState.activeTool !== 'ruler') {
         _rulerStart = null;
@@ -2341,9 +2604,15 @@
     centreOn,
     glowWaypoint,
     showPath,
-    actorColor(type) { return ACTOR_COLORS[type] || ACTOR_COLORS.car; },
-    get zoom() { return _zoom; },
-    get svg() { return svg; },
+    actorColor(type) {
+      return ACTOR_COLORS[type] || ACTOR_COLORS.car;
+    },
+    get zoom() {
+      return _zoom;
+    },
+    get svg() {
+      return svg;
+    },
     toggleTrajectoryVisibility(actorId, eventId = null) {
       const key = _pathKey(actorId, eventId, 'trajectory');
       if (_hiddenTrajectories.has(key)) _hiddenTrajectories.delete(key);
@@ -2365,16 +2634,22 @@
     // Exposed so simulate.js's badge overlay can match actor colours/sizes
     // without duplicating these tables (which would drift from the real
     // renderer over time).
-    actorColor(type) { return ACTOR_COLORS[type] || ACTOR_COLORS.car; },
-    actorSize(type) { return ACTOR_SIZES[type] || ACTOR_SIZES.car; },
-    isWalkerType(type) { return WALKER_TYPES.has(type); },
+    actorColor(type) {
+      return ACTOR_COLORS[type] || ACTOR_COLORS.car;
+    },
+    actorSize(type) {
+      return ACTOR_SIZES[type] || ACTOR_SIZES.car;
+    },
+    isWalkerType(type) {
+      return WALKER_TYPES.has(type);
+    },
   };
 
   window.MapView = MapView;
 
   // ── React to state changes ───────────────────────────────────────────────────
-  AppState.on('actorUpdated',  () => MapView.renderAllActors());
-  AppState.on('actorRemoved',  () => MapView.renderAllActors());
+  AppState.on('actorUpdated', () => MapView.renderAllActors());
+  AppState.on('actorRemoved', () => MapView.renderAllActors());
   AppState.on('selectionChanged', () => {
     MapView.renderAllActors();
     _renderTrafficLights();
@@ -2386,7 +2661,7 @@
   // see is a mark on nothing, and Entf would then delete a point with no
   // visible consequence. Reached from the event card's row, which is the one
   // way to mark a waypoint on a path that is currently hidden.
-  AppState.on('change', patch => {
+  AppState.on('change', (patch) => {
     if (!('selectedWaypoint' in patch)) return;
     const sel = AppState.selectedWaypoint;
     if (sel) showPath(sel.actorId, sel.eventId, sel.pathType);
@@ -2394,12 +2669,12 @@
   });
   // specialBuildings arrives once, asynchronously, and may land before or after
   // the first map render — hence both this and the call inside renderMap.
-  AppState.on('change', patch => {
+  AppState.on('change', (patch) => {
     if ('specialBuildings' in patch) _renderSpecialBuildings();
   });
   AppState.on('trafficSignalSelected', () => _renderTrafficLights());
   AppState.on('trafficSignalUpdated', () => _renderTrafficLights());
-  AppState.on('stateLoaded',   () => {
+  AppState.on('stateLoaded', () => {
     if (AppState.mapData) MapView.renderAllActors();
     _renderTrafficLights();
   });

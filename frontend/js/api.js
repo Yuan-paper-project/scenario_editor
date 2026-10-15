@@ -49,9 +49,9 @@
 
     async exportScenario(params) {
       const res = await fetch('/api/export', {
-        method:  'POST',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(params),
+        body: JSON.stringify(params),
       });
       if (!res.ok) {
         const msg = await res.text();
@@ -62,9 +62,9 @@
 
     async exportRoute(params) {
       const res = await fetch('/api/export/route', {
-        method:  'POST',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(params),
+        body: JSON.stringify(params),
       });
       if (!res.ok) {
         const msg = await res.text();
@@ -76,9 +76,9 @@
     /** POST many generated scenarios; resolves to {blob, ok, failed}. */
     async exportBatch(body) {
       const res = await fetch('/api/export/batch', {
-        method:  'POST',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify(body),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
         const msg = await res.text();
@@ -99,7 +99,7 @@
         const body = await res.json().catch(() => ({ detail: res.statusText }));
         throw new Error(body.detail || `Upload failed: ${res.status}`);
       }
-      return res.json();   // { town, roads }
+      return res.json(); // { town, roads }
     },
   };
 

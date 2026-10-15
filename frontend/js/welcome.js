@@ -5,10 +5,10 @@
 (function () {
   'use strict';
 
-  const overlay    = document.getElementById('welcome-overlay');
-  const closeBtn   = document.getElementById('welcome-close');
-  const dontShow   = document.getElementById('welcome-dont-show');
-  const helpBtn    = document.getElementById('btn-help');
+  const overlay = document.getElementById('welcome-overlay');
+  const closeBtn = document.getElementById('welcome-close');
+  const dontShow = document.getElementById('welcome-dont-show');
+  const helpBtn = document.getElementById('btn-help');
 
   const STORAGE_KEY = 'openscenario_hide_welcome';
 
@@ -26,7 +26,7 @@
   closeBtn.addEventListener('click', close);
 
   // Schließen durch Klick außerhalb der Karte
-  overlay.addEventListener('click', e => {
+  overlay.addEventListener('click', (e) => {
     if (e.target === overlay) close();
   });
 

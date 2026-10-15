@@ -15,8 +15,8 @@
   // Elements
   const propsOverview = document.getElementById('props-overview');
   const propsContent = document.getElementById('props-content');
-  const propsTitle   = document.getElementById('props-title');
-  const propsDelete  = document.getElementById('props-delete');
+  const propsTitle = document.getElementById('props-title');
+  const propsDelete = document.getElementById('props-delete');
   const trafficSignalPanel = document.getElementById('traffic-signal-panel');
   const btnAddTrafficEvent = document.getElementById('btn-add-traffic-event');
   const trafficSignalEventList = document.getElementById('traffic-signal-event-list');
@@ -34,16 +34,16 @@
   const propZ = document.getElementById('prop-z');
   const propYaw = document.getElementById('prop-yaw');
   const propZAuto = document.getElementById('prop-z-auto');
-  const propInitSpeed      = document.getElementById('prop-init-speed');
+  const propInitSpeed = document.getElementById('prop-init-speed');
   const propInitSpeedLabel = document.getElementById('prop-init-speed-label');
-  const obeyRow           = document.getElementById('obey-row');
-  const propObeyLights     = document.getElementById('prop-obey-lights');
-  const propObeyObstacles  = document.getElementById('prop-obey-obstacles');
-  const dynamicsRow        = document.getElementById('dynamics-row');
-  const propMaxAccel       = document.getElementById('prop-max-accel');
-  const propMaxDecel       = document.getElementById('prop-max-decel');
+  const obeyRow = document.getElementById('obey-row');
+  const propObeyLights = document.getElementById('prop-obey-lights');
+  const propObeyObstacles = document.getElementById('prop-obey-obstacles');
+  const dynamicsRow = document.getElementById('dynamics-row');
+  const propMaxAccel = document.getElementById('prop-max-accel');
+  const propMaxDecel = document.getElementById('prop-max-decel');
 
-  const npcSection     = document.getElementById('props-npc-section');
+  const npcSection = document.getElementById('props-npc-section');
 
   // Track whether we're syncing to avoid loops
   let _syncing = false;
@@ -85,7 +85,7 @@
         ${activeTab === 'overview' ? _summaryHtml() : ScenarioTemplates.renderPanel()}
       </div>
     `;
-    propsOverview.querySelectorAll('[data-overview-tab]').forEach(btn => {
+    propsOverview.querySelectorAll('[data-overview-tab]').forEach((btn) => {
       btn.addEventListener('click', () => {
         _overviewPanelTab = btn.dataset.overviewTab;
         _renderOverviewPanel();
@@ -101,7 +101,7 @@
     const mapName = AppState.map || 'Keine';
     const withTraj = [AppState.ego, ...AppState.npcs]
       .filter(Boolean)
-      .filter(a => AppState.pathPointsOf(a).length >= 2).length;
+      .filter((a) => AppState.pathPointsOf(a).length >= 2).length;
 
     let html = '<div class="scenario-summary">';
     html += '<h3>Szenario-Übersicht</h3>';
@@ -126,10 +126,11 @@
       html += `<div class="summary-row"><span class="label">Bedingungen</span><span class="value">Klar</span></div>`;
     }
 
-    html += '<div class="summary-hint">Klick zeigt das Objekt auf der Karte<br>'
-          + 'Doppelklick (oder <b>Enter</b>) öffnet es<br>'
-          + 'Bei Requisiten: <b>◀ ▶</b> blättert durch die Instanzen<br>'
-          + 'Drücken Sie <b>?</b> für Tastaturkürzel</div>';
+    html +=
+      '<div class="summary-hint">Klick zeigt das Objekt auf der Karte<br>' +
+      'Doppelklick (oder <b>Enter</b>) öffnet es<br>' +
+      'Bei Requisiten: <b>◀ ▶</b> blättert durch die Instanzen<br>' +
+      'Drücken Sie <b>?</b> für Tastaturkürzel</div>';
     html += '</div>';
 
     return html;
@@ -144,12 +145,13 @@
   /** One clickable row per scenario actor. */
   function _sceneRowHtml(actor) {
     const col = MapView.actorColor(actor.type);
-    const round = _isWalker(actor.type);   // matches how the map draws it
+    const round = _isWalker(actor.type); // matches how the map draws it
     const events = (actor.events || []).length;
     const problems = ScenarioRules.problemsOf(actor).length;
-    const warn = problems > 0
-      ? `<span class="event-warn" title="${problems} Event(s) würden beim Export verworfen">${problems}</span>`
-      : '';
+    const warn =
+      problems > 0
+        ? `<span class="event-warn" title="${problems} Event(s) würden beim Export verworfen">${problems}</span>`
+        : '';
     const label = AppState.actorLabel(actor, { short: true });
     return `
       <div class="scene-row${_locatedId === actor.id ? ' located' : ''}"
@@ -183,7 +185,7 @@
    * difference safe rather than the icons.
    */
   function _propRowHtml(blueprint, items) {
-    const name  = window.PropCatalog?.label(blueprint) || blueprint;
+    const name = window.PropCatalog?.label(blueprint) || blueprint;
     const count = items.length;
     // Props are added and removed by the map and the toolbar too, so the cursor
     // is clamped here rather than trusted.
@@ -192,8 +194,9 @@
     const current = items[cursor];
 
     // At one instance a stepper is a control that can only ever say "1/1".
-    const stepper = count > 1
-      ? `<span class="scene-step">
+    const stepper =
+      count > 1
+        ? `<span class="scene-step">
            <button type="button" class="scene-step-btn" data-prop-step="-1"
                    data-prop-bp="${_esc(blueprint)}"
                    title="Vorherige ${_esc(name)}" aria-label="Vorherige ${_esc(name)}">&#9664;</button>
@@ -202,7 +205,7 @@
                    data-prop-bp="${_esc(blueprint)}"
                    title="Nächste ${_esc(name)}" aria-label="Nächste ${_esc(name)}">&#9654;</button>
          </span>`
-      : `<span class="scene-step"><span class="scene-step-pos">${count}</span></span>`;
+        : `<span class="scene-step"><span class="scene-step-pos">${count}</span></span>`;
 
     const currentLabel = AppState.actorLabel(current, { short: true });
 
@@ -210,14 +213,15 @@
     // would have to say "Alle 1 × …". So the row collapses to a single trash
     // that takes that instance — exactly like an actor row. The spacer keeps
     // the trash in the same grid column as every other row's.
-    const deletes = count > 1
-      ? `<button type="button" class="scene-del scene-del-one" data-scene-del="${_esc(current.id)}"
+    const deletes =
+      count > 1
+        ? `<button type="button" class="scene-del scene-del-one" data-scene-del="${_esc(current.id)}"
                  title="${_esc(currentLabel)} löschen (Strg: ohne Rückfrage)"
                  aria-label="${_esc(currentLabel)} löschen">&#10005;</button>
          <button type="button" class="scene-del scene-del-all" data-prop-del-all="${_esc(blueprint)}"
                  title="Alle ${count} × ${_esc(name)} löschen (Strg: ohne Rückfrage)"
                  aria-label="Alle ${count} ${_esc(name)} löschen">${TRASH_SVG}</button>`
-      : `<span class="scene-del-spacer" aria-hidden="true"></span>
+        : `<span class="scene-del-spacer" aria-hidden="true"></span>
          <button type="button" class="scene-del" data-scene-del="${_esc(current.id)}"
                  title="${_esc(currentLabel)} löschen (Strg: ohne Rückfrage)"
                  aria-label="${_esc(currentLabel)} löschen">${TRASH_SVG}</button>`;
@@ -253,19 +257,20 @@
 
     // Ego — one object, so a collapsible section around it would be a control
     // that can only ever hide a single row.
-    html += '<div class="scene-section"><div class="scene-section-head">'
-          + '<span class="scene-head-label">Ego</span></div>'
-          + '<div class="scene-section-body">'
-          + (AppState.ego
-              ? _sceneRowHtml(AppState.ego)
-              : '<div class="scene-empty">Nicht platziert</div>')
-          + '</div></div>';
+    html +=
+      '<div class="scene-section"><div class="scene-section-head">' +
+      '<span class="scene-head-label">Ego</span></div>' +
+      '<div class="scene-section-body">' +
+      (AppState.ego ? _sceneRowHtml(AppState.ego) : '<div class="scene-empty">Nicht platziert</div>') +
+      '</div></div>';
 
     const npcs = AppState.npcs || [];
-    html += _sceneSectionHtml('npcs', 'NPCs', npcs.length,
-      npcs.length
-        ? npcs.map(_sceneRowHtml).join('')
-        : '<div class="scene-empty">Keine NPCs</div>');
+    html += _sceneSectionHtml(
+      'npcs',
+      'NPCs',
+      npcs.length,
+      npcs.length ? npcs.map(_sceneRowHtml).join('') : '<div class="scene-empty">Keine NPCs</div>',
+    );
 
     // Props are counted per type, never listed per object: a cone taper is a
     // dozen entries that differ only in position, and they would push the
@@ -273,7 +278,7 @@
     // is how you still reach one particular cone.
     const props = AppState.staticObjects || [];
     const byType = new Map();
-    props.forEach(p => {
+    props.forEach((p) => {
       if (!byType.has(p.prop)) byType.set(p.prop, []);
       byType.get(p.prop).push(p);
     });
@@ -292,30 +297,29 @@
   function _locateScene(root, id) {
     if (!id || !MapView.focusActor(id)) return;
     _locatedId = id;
-    root.querySelectorAll(SCENE_ROW_SEL).forEach(r => {
+    root.querySelectorAll(SCENE_ROW_SEL).forEach((r) => {
       r.classList.toggle('located', r.dataset.sceneId === id);
     });
   }
 
   /** Step a prop type's cursor and fly to whatever it now points at. */
   function _stepProp(blueprint, delta) {
-    const items = (AppState.staticObjects || []).filter(p => p.prop === blueprint);
+    const items = (AppState.staticObjects || []).filter((p) => p.prop === blueprint);
     if (items.length < 2) return;
     const next = ((_propCursor[blueprint] ?? 0) + delta + items.length) % items.length;
     _propCursor[blueprint] = next;
     _locatedId = items[next].id;
-    _renderOverviewPanel();          // the row prints "n/N", so it has to redraw
+    _renderOverviewPanel(); // the row prints "n/N", so it has to redraw
     MapView.focusActor(_locatedId);
     // Keep the keyboard on the row that was just stepped.
-    propsOverview.querySelector(`.scene-prop-row[data-prop-bp="${CSS.escape(blueprint)}"]`)
-      ?.focus();
+    propsOverview.querySelector(`.scene-prop-row[data-prop-bp="${CSS.escape(blueprint)}"]`)?.focus();
   }
 
   async function _deleteFromScene(id, skipConfirm = false) {
     const actor = AppState.findById(id);
     if (!actor) return;
     const label = AppState.actorLabel(actor, { ego: 'Ego-Fahrzeug' });
-    if (!skipConfirm && !await Confirm.show(`${label} löschen?`, 'Löschen')) return;
+    if (!skipConfirm && !(await Confirm.show(`${label} löschen?`, 'Löschen'))) return;
     AppState.removeById(id);
     if (_locatedId === id) _locatedId = null;
     MapView.renderAllActors();
@@ -324,19 +328,20 @@
   }
 
   async function _deleteAllProps(blueprint, skipConfirm = false) {
-    const items = (AppState.staticObjects || []).filter(p => p.prop === blueprint);
+    const items = (AppState.staticObjects || []).filter((p) => p.prop === blueprint);
     if (!items.length) return;
     const name = window.PropCatalog?.label(blueprint) || blueprint;
-    if (!skipConfirm
-        && !await Confirm.show(`Alle ${items.length} × ${name} löschen?`, 'Löschen')) return;
-    items.forEach(p => { if (_locatedId === p.id) _locatedId = null; });
+    if (!skipConfirm && !(await Confirm.show(`Alle ${items.length} × ${name} löschen?`, 'Löschen'))) return;
+    items.forEach((p) => {
+      if (_locatedId === p.id) _locatedId = null;
+    });
     // One entry for the whole bulk delete. It used to push one per prop, so a
     // taper of twelve cones took twelve presses of Strg+Z to put back; the
     // history holds whole scenario states now, so the group can be atomic.
     UndoStack.group(`${items.length} × ${name} löschen`, () => {
-      AppState.staticObjects = AppState.staticObjects.filter(p => p.prop !== blueprint);
+      AppState.staticObjects = AppState.staticObjects.filter((p) => p.prop !== blueprint);
       if (AppState.selectedId && !AppState.findById(AppState.selectedId)) AppState.selectedId = null;
-      AppState.set({});              // empty patch: the array-mutation signal
+      AppState.set({}); // empty patch: the array-mutation signal
     });
     delete _propCursor[blueprint];
     MapView.renderAllActors();
@@ -348,7 +353,7 @@
     const list = root.querySelector('.scene-list');
     if (!list) return;
 
-    list.addEventListener('click', e => {
+    list.addEventListener('click', (e) => {
       const toggle = e.target.closest('[data-scene-toggle]');
       if (toggle) {
         const key = toggle.dataset.sceneToggle;
@@ -365,11 +370,20 @@
       // Mac) is the app-wide "I meant it" modifier: it skips the confirm dialog.
       const skip = e.ctrlKey || e.metaKey;
       const delAll = e.target.closest('[data-prop-del-all]');
-      if (delAll) { _deleteAllProps(delAll.dataset.propDelAll, skip); return; }
+      if (delAll) {
+        _deleteAllProps(delAll.dataset.propDelAll, skip);
+        return;
+      }
       const del = e.target.closest('[data-scene-del]');
-      if (del) { _deleteFromScene(del.dataset.sceneDel, skip); return; }
+      if (del) {
+        _deleteFromScene(del.dataset.sceneDel, skip);
+        return;
+      }
       const step = e.target.closest('[data-prop-step]');
-      if (step) { _stepProp(step.dataset.propBp, Number(step.dataset.propStep)); return; }
+      if (step) {
+        _stepProp(step.dataset.propBp, Number(step.dataset.propStep));
+        return;
+      }
 
       const row = e.target.closest(SCENE_ROW_SEL);
       if (row) _locateScene(root, row.dataset.sceneId);
@@ -377,15 +391,15 @@
 
     // Selecting swaps this whole panel out for the object's properties, so it is
     // the deliberate gesture: double click, or Enter on a focused row.
-    list.addEventListener('dblclick', e => {
+    list.addEventListener('dblclick', (e) => {
       if (e.target.closest('[data-scene-del], [data-prop-del-all], [data-prop-step]')) return;
       const row = e.target.closest(SCENE_ROW_SEL);
       if (row) AppState.select(row.dataset.sceneId);
     });
 
-    list.addEventListener('keydown', e => {
+    list.addEventListener('keydown', (e) => {
       const row = e.target.closest(SCENE_ROW_SEL);
-      if (!row || e.target !== row) return;   // let the row's buttons keep their own keys
+      if (!row || e.target !== row) return; // let the row's buttons keep their own keys
       const bp = row.dataset.propBp;
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -414,7 +428,7 @@
   }
 
   function render() {
-    const id    = AppState.selectedId;
+    const id = AppState.selectedId;
     const actor = id ? AppState.findById(id) : null;
     const trafficLightId = AppState.selectedTrafficLightId;
     const trafficLight = trafficLightId ? TrafficSignals.mapSignalById(trafficLightId) : null;
@@ -447,14 +461,14 @@
 
     // Position / yaw / start speed
     _syncing = true;
-    propX.value   = actor.x   != null ? actor.x.toFixed(2)   : '';
-    propY.value   = actor.y   != null ? actor.y.toFixed(2)    : '';
-    propZ.value   = actor.z   != null ? actor.z.toFixed(2)    : '0.20';
+    propX.value = actor.x != null ? actor.x.toFixed(2) : '';
+    propY.value = actor.y != null ? actor.y.toFixed(2) : '';
+    propZ.value = actor.z != null ? actor.z.toFixed(2) : '0.20';
     propYaw.value = actor.yaw != null ? Math.round(actor.yaw) : '0';
     propInitSpeed.value = (actor.initial_speed ?? 0).toFixed(1);
     // Absent means on, in every layer — the value every vehicle was exported
     // with before the toggles existed.
-    propObeyLights.checked    = actor.obey_traffic_lights !== false;
+    propObeyLights.checked = actor.obey_traffic_lights !== false;
     propObeyObstacles.checked = actor.obey_obstacles !== false;
     propMaxAccel.value = UIUtils.fmt(actor.max_acceleration ?? DEFAULT_MAX_ACCEL);
     propMaxDecel.value = UIUtils.fmt(actor.max_deceleration ?? DEFAULT_MAX_DECEL);
@@ -462,10 +476,8 @@
 
     // Only simple_vehicle_control reads these; a walker is on
     // PedestrianControl, which reads neither. Same split as lane_offset.
-    obeyRow.classList.toggle('hidden',
-      !isScenarioActor || !ScenarioRules.honoursLaneOffset(actor.type));
-    dynamicsRow.classList.toggle('hidden',
-      !isScenarioActor || !ScenarioRules.honoursLaneOffset(actor.type));
+    obeyRow.classList.toggle('hidden', !isScenarioActor || !ScenarioRules.honoursLaneOffset(actor.type));
+    dynamicsRow.classList.toggle('hidden', !isScenarioActor || !ScenarioRules.honoursLaneOffset(actor.type));
 
     // .props-group is a bare 2-column grid with no per-row wrapper, so the
     // label and the input have to be hidden individually.
@@ -502,8 +514,7 @@
     npcSection.classList.add('hidden');
     if (trafficSignalPanel) trafficSignalPanel.classList.remove('hidden');
     if (trafficSignalMeta) {
-      trafficSignalMeta.textContent =
-        `${tl.id} · x ${UIUtils.fmt(tl.x)}, y ${UIUtils.fmt(tl.y)}`;
+      trafficSignalMeta.textContent = `${tl.id} · x ${UIUtils.fmt(tl.x)}, y ${UIUtils.fmt(tl.y)}`;
     }
     // The .xodr has lights CARLA does not (Town10HD's traffic_light_10/11);
     // a Schaltung on one aborts the run with "Unknown traffic light". Adding
@@ -522,7 +533,8 @@
       chip.id = 'traffic-signal-ghost';
       chip.className = 'event-problem';
       chip.setAttribute('role', 'status');
-      chip.textContent = '⚠ Diese Ampel gibt es in CARLA nicht. Eine Schaltung würde den Lauf mit „Unknown traffic light" abbrechen.';
+      chip.textContent =
+        '⚠ Diese Ampel gibt es in CARLA nicht. Eine Schaltung würde den Lauf mit „Unknown traffic light" abbrechen.';
       trafficSignalMeta?.after(chip);
     } else if (!ghost && chip) {
       chip.remove();
@@ -585,7 +597,7 @@
       distanceInput.step = '1';
       distanceInput.value = UIUtils.fmt(ev.trigger_distance ?? 40, 0);
       distanceInput.title = 'Abstand des Ego zum Ampelmast';
-      distanceInput.addEventListener('change', e => {
+      distanceInput.addEventListener('change', (e) => {
         _updateTrafficSignalEvent(tl.id, ev.id, {
           trigger_distance: Math.max(0, parseFloat(e.target.value) || 0),
         });
@@ -647,24 +659,22 @@
   function _updateTrafficSignalEvent(signalId, eventId, patch) {
     const signal = TrafficSignals.actionById(signalId);
     if (!signal) return;
-    const events = (signal.events || []).map(ev => (
-      ev.id === eventId ? { ...ev, ...patch } : ev
-    ));
+    const events = (signal.events || []).map((ev) => (ev.id === eventId ? { ...ev, ...patch } : ev));
     TrafficSignals.update(signalId, { events });
   }
 
   function _deleteTrafficSignalEvent(signalId, eventId) {
     const signal = TrafficSignals.actionById(signalId);
     if (!signal) return;
-    const events = (signal.events || []).filter(ev => ev.id !== eventId);
+    const events = (signal.events || []).filter((ev) => ev.id !== eventId);
     TrafficSignals.update(signalId, { events });
   }
 
   function _bindCollapsibleHeaders(root) {
-    root.querySelectorAll('.collapsible-header[data-collapse-target]').forEach(header => {
+    root.querySelectorAll('.collapsible-header[data-collapse-target]').forEach((header) => {
       if (header.dataset.collapseBound === 'true') return;
       header.dataset.collapseBound = 'true';
-      header.addEventListener('click', e => {
+      header.addEventListener('click', (e) => {
         if (e.target.closest('input, select, button:not(.collapsible-header)')) return;
         const targetId = header.dataset.collapseTarget;
         const target = targetId ? document.getElementById(targetId) : null;
@@ -694,9 +704,9 @@
       return Number.isFinite(n) ? n : fallback;
     };
     const patch = {
-      x:   num(propX.value,   actor.x ?? 0),
-      y:   num(propY.value,   actor.y ?? 0),
-      z:   num(propZ.value,   actor.z ?? 0),
+      x: num(propX.value, actor.x ?? 0),
+      y: num(propY.value, actor.y ?? 0),
+      z: num(propZ.value, actor.z ?? 0),
       yaw: num(propYaw.value, actor.yaw ?? 0),
     };
     // Typing a new X/Y moves the object, so its height is re-derived exactly as
@@ -709,7 +719,7 @@
     AppState.updateById(id, patch);
   }
 
-  [propX, propY, propZ, propYaw].forEach(inp => {
+  [propX, propY, propZ, propYaw].forEach((inp) => {
     inp.addEventListener('change', _onPosChange);
   });
 
@@ -719,7 +729,10 @@
   // existed. Floored at 0.1: at 0 the speed could never change.
   const DEFAULT_MAX_ACCEL = 3.0;
   const DEFAULT_MAX_DECEL = 10.0;
-  [[propMaxAccel, 'max_acceleration'], [propMaxDecel, 'max_deceleration']].forEach(([input, key]) => {
+  [
+    [propMaxAccel, 'max_acceleration'],
+    [propMaxDecel, 'max_deceleration'],
+  ].forEach(([input, key]) => {
     input.addEventListener('change', () => {
       if (_syncing) return;
       const id = AppState.selectedId;
@@ -732,15 +745,17 @@
     });
   });
 
-  [[propObeyLights, 'obey_traffic_lights'], [propObeyObstacles, 'obey_obstacles']]
-    .forEach(([box, key]) => {
-      box.addEventListener('change', () => {
-        if (_syncing) return;
-        const id = AppState.selectedId;
-        if (!id || !AppState.findById(id)) return;
-        AppState.updateById(id, { [key]: box.checked });
-      });
+  [
+    [propObeyLights, 'obey_traffic_lights'],
+    [propObeyObstacles, 'obey_obstacles'],
+  ].forEach(([box, key]) => {
+    box.addEventListener('change', () => {
+      if (_syncing) return;
+      const id = AppState.selectedId;
+      if (!id || !AppState.findById(id)) return;
+      AppState.updateById(id, { [key]: box.checked });
     });
+  });
 
   // z is normally derived from the elevation profile on every move, so a
   // hand-typed value is sticky until the object is next moved — with no way
@@ -760,7 +775,7 @@
 
   // ── Actor type ───────────────────────────────────────────────────────────────
 
-  const actorTypeRow    = document.getElementById('actor-type-row');
+  const actorTypeRow = document.getElementById('actor-type-row');
   const actorTypeSelect = document.getElementById('actor-type-select');
 
   function _renderActorTypeRow(actor) {
@@ -768,19 +783,18 @@
     // The ego is offered the vehicle group (its vehicleType); a walker or bike
     // ego is not a thing the hero <Vehicle> under simple_vehicle_control can be.
     const isEgo = actor?.type === 'ego';
-    const group = isEgo ? 'vehicle' : (actor ? AppState.switchGroupFor(actor.type) : null);
+    const group = isEgo ? 'vehicle' : actor ? AppState.switchGroupFor(actor.type) : null;
     actorTypeRow.classList.toggle('hidden', !group);
     if (!group) return;
 
     // Rebuilt per render, not once like the prop select: the option set depends
     // on which group the selected actor is in.
     actorTypeSelect.innerHTML = '';
-    const sections = AppState.ACTOR_TYPE_GROUPS.find(g => g.id === group).sections;
+    const sections = AppState.ACTOR_TYPE_GROUPS.find((g) => g.id === group).sections;
     for (const section of sections) {
       // A single-section group needs no optgroup heading.
-      const parent = sections.length > 1
-        ? actorTypeSelect.appendChild(document.createElement('optgroup'))
-        : actorTypeSelect;
+      const parent =
+        sections.length > 1 ? actorTypeSelect.appendChild(document.createElement('optgroup')) : actorTypeSelect;
       if (parent !== actorTypeSelect) parent.label = section.label;
       for (const { type, label } of section.types) {
         const opt = document.createElement('option');
@@ -799,11 +813,12 @@
     const id = AppState.selectedId;
     if (!id) return;
     // switchActorType re-checks the group itself and is a no-op if not allowed.
-    const ok = AppState.ego?.id === id
-      ? AppState.setEgoVehicleType(actorTypeSelect.value)
-      : AppState.switchActorType(id, actorTypeSelect.value);
+    const ok =
+      AppState.ego?.id === id
+        ? AppState.setEgoVehicleType(actorTypeSelect.value)
+        : AppState.switchActorType(id, actorTypeSelect.value);
     if (!ok) {
-      render();   // resync the select back to the actor's unchanged type
+      render(); // resync the select back to the actor's unchanged type
       return;
     }
     MapView.renderAllActors();
@@ -812,7 +827,7 @@
 
   // ── Prop type ────────────────────────────────────────────────────────────────
 
-  const propTypeRow    = document.getElementById('prop-type-row');
+  const propTypeRow = document.getElementById('prop-type-row');
   const propTypeSelect = document.getElementById('prop-type-select');
 
   function _renderPropTypeRow(actor) {
@@ -823,7 +838,7 @@
 
     if (!propTypeSelect.options.length) {
       for (const group of PropCatalog.GROUPS) {
-        const ids = PropCatalog.ids().filter(id => PropCatalog.get(id).group === group.id);
+        const ids = PropCatalog.ids().filter((id) => PropCatalog.get(id).group === group.id);
         if (!ids.length) continue;
         const og = document.createElement('optgroup');
         og.label = group.label;
@@ -887,7 +902,7 @@
 
   // ── Delete ──────────────────────────────────────────────────────────────────
 
-  propsDelete.addEventListener('click', async e => {
+  propsDelete.addEventListener('click', async (e) => {
     const id = AppState.selectedId;
     if (!id) return;
     const actor = AppState.findById(id);
@@ -895,7 +910,7 @@
     const label = AppState.actorLabel(actor, { ego: 'Ego-Fahrzeug' });
     // Strg (Cmd on a Mac) skips the confirm here exactly as it does on the scene
     // list's trashes \u2014 one modifier, one meaning, everywhere a delete is guarded.
-    const ok = e.ctrlKey || e.metaKey || await Confirm.show(`${label} l\u00f6schen?`, 'L\u00f6schen');
+    const ok = e.ctrlKey || e.metaKey || (await Confirm.show(`${label} l\u00f6schen?`, 'L\u00f6schen'));
     if (!ok) return;
     AppState.removeById(id);
     MapView.renderAllActors();
@@ -912,12 +927,16 @@
   // panel ever sees the focus. A field focused before Play is let go on the
   // first frame.
   const _panelEl = document.getElementById('properties-panel');
-  _panelEl?.addEventListener('focusin', e => {
-    if (document.body.classList.contains('simulating')) e.target.blur?.();
-  }, true);
+  _panelEl?.addEventListener(
+    'focusin',
+    (e) => {
+      if (document.body.classList.contains('simulating')) e.target.blur?.();
+    },
+    true,
+  );
   // simulate.js loads after this file, hence the deferred subscription.
   document.addEventListener('DOMContentLoaded', () => {
-    Simulate.onTime(t => {
+    Simulate.onTime((t) => {
       if (t != null && _panelEl?.contains(document.activeElement)) document.activeElement.blur();
     });
   });
@@ -925,15 +944,21 @@
   AppState.on('selectionChanged', () => render());
   AppState.on('trafficSignalSelected', () => render());
   AppState.on('trafficSignalUpdated', () => render());
-  AppState.on('actorUpdated',     id => {
+  AppState.on('actorUpdated', (id) => {
     if (id === AppState.selectedId) render();
     else if (!AppState.selectedId) _renderOverviewPanel();
   });
-  AppState.on('actorRemoved',     id => { if (_locatedId === id) _locatedId = null; render(); });
+  AppState.on('actorRemoved', (id) => {
+    if (_locatedId === id) _locatedId = null;
+    render();
+  });
   // Ids restart at obj-1 in every save file, so a stale _locatedId would mark
   // some unrelated actor's row in the newly loaded scenario.
-  AppState.on('stateLoaded',      () => { _locatedId = null; render(); });
-  AppState.on('change',           patch => {
+  AppState.on('stateLoaded', () => {
+    _locatedId = null;
+    render();
+  });
+  AppState.on('change', (patch) => {
     // 'map'/'mapData' are in here because the summary prints the town name and
     // used to sit on "Karte: None" from load until some unrelated event forced
     // a render — which read as intermittent rather than broken.
@@ -944,10 +969,16 @@
     // not select what it placed, so the overview stays on screen and would
     // otherwise keep showing the pre-placement counts.
     const sceneChanged = Object.keys(patch).length === 0;
-    if (!AppState.selectedId
-        && (sceneChanged
-            || 'weather' in patch || 'time' in patch || 'map' in patch || 'mapData' in patch
-            || 'generated' in patch || 'userTemplates' in patch)) {
+    if (
+      !AppState.selectedId &&
+      (sceneChanged ||
+        'weather' in patch ||
+        'time' in patch ||
+        'map' in patch ||
+        'mapData' in patch ||
+        'generated' in patch ||
+        'userTemplates' in patch)
+    ) {
       _renderOverviewPanel();
     }
     // Entering or leaving draw mode changes which event card is marked as the

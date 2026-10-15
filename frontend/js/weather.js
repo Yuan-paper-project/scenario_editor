@@ -9,7 +9,7 @@
   'use strict';
 
   const timeSelect = document.getElementById('w-time');
-  const summary    = document.getElementById('env-summary');
+  const summary = document.getElementById('env-summary');
   const presetsBox = document.getElementById('env-presets');
   const WEATHER_KEYS = ['fog', 'rainy', 'cloudy', 'sunny', 'wet_road', 'snowy', 'dust_storm'];
 
@@ -17,22 +17,24 @@
   // WEATHER_PRESETS) — rain without a wet road is not a condition anyone drives
   // in. A preset sets ALL keys, the rest to 0, so "matches a preset" is exact.
   const PRESETS = [
-    { id: 'klar',       label: 'Klar',       w: {} },
-    { id: 'bewoelkt',   label: 'Bewölkt',    w: { cloudy: 0.8 } },
-    { id: 'regen',      label: 'Regen',      w: { cloudy: 0.8, rainy: 0.6, wet_road: 0.8 } },
+    { id: 'klar', label: 'Klar', w: {} },
+    { id: 'bewoelkt', label: 'Bewölkt', w: { cloudy: 0.8 } },
+    { id: 'regen', label: 'Regen', w: { cloudy: 0.8, rainy: 0.6, wet_road: 0.8 } },
     { id: 'starkregen', label: 'Starkregen', w: { cloudy: 1.0, rainy: 1.0, wet_road: 1.0, fog: 0.2 } },
-    { id: 'nebel',      label: 'Nebel',      w: { cloudy: 0.5, fog: 0.7 } },
-    { id: 'nass',       label: 'Nass',       w: { cloudy: 0.3, wet_road: 0.7 } },
+    { id: 'nebel', label: 'Nebel', w: { cloudy: 0.5, fog: 0.7 } },
+    { id: 'nass', label: 'Nass', w: { cloudy: 0.3, wet_road: 0.7 } },
   ];
 
-  const _full = w => Object.fromEntries(WEATHER_KEYS.map(k => [k, w[k] || 0]));
+  const _full = (w) => Object.fromEntries(WEATHER_KEYS.map((k) => [k, w[k] || 0]));
 
   function _matchingPreset() {
     const cur = _full(AppState.weather || {});
-    return PRESETS.find(p => {
-      const want = _full(p.w);
-      return WEATHER_KEYS.every(k => Math.abs(want[k] - cur[k]) < 1e-6);
-    }) || null;
+    return (
+      PRESETS.find((p) => {
+        const want = _full(p.w);
+        return WEATHER_KEYS.every((k) => Math.abs(want[k] - cur[k]) < 1e-6);
+      }) || null
+    );
   }
 
   /** "Regen · Nacht" on the menu button, so the setting is readable shut. */
@@ -40,14 +42,14 @@
     const p = _matchingPreset();
     const wx = p ? p.label : 'Eigenes Wetter';
     if (summary) summary.textContent = `${wx} · ${AppState.timeLabel(AppState.time || 'daytime')}`;
-    presetsBox?.querySelectorAll('.env-preset').forEach(btn => {
+    presetsBox?.querySelectorAll('.env-preset').forEach((btn) => {
       btn.classList.toggle('active', !!p && btn.dataset.preset === p.id);
     });
   }
 
   // ── Presets ─────────────────────────────────────────────────────────────────
 
-  PRESETS.forEach(p => {
+  PRESETS.forEach((p) => {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'env-preset';
@@ -63,8 +65,8 @@
 
   // ── Bind sliders ─────────────────────────────────────────────────────────────
 
-  WEATHER_KEYS.forEach(key => {
-    const slider  = document.getElementById(`w-${key}`);
+  WEATHER_KEYS.forEach((key) => {
+    const slider = document.getElementById(`w-${key}`);
     const valSpan = document.getElementById(`wv-${key}`);
 
     if (!slider) return;
@@ -86,12 +88,12 @@
   // ── Sync panel when state is loaded ─────────────────────────────────────────
 
   function syncFromState() {
-    WEATHER_KEYS.forEach(key => {
-      const slider  = document.getElementById(`w-${key}`);
+    WEATHER_KEYS.forEach((key) => {
+      const slider = document.getElementById(`w-${key}`);
       const valSpan = document.getElementById(`wv-${key}`);
       if (!slider) return;
       const val = AppState.weather[key] || 0;
-      slider.value       = val;
+      slider.value = val;
       valSpan.textContent = val.toFixed(2);
     });
     timeSelect.value = AppState.time || 'daytime';
@@ -99,7 +101,7 @@
   }
 
   AppState.on('stateLoaded', syncFromState);
-  AppState.on('change', patch => {
+  AppState.on('change', (patch) => {
     if ('weather' in patch || 'time' in patch) renderSummary();
   });
   // Once at load too, so the readouts use the same 2-decimal format before the

@@ -22,7 +22,7 @@
   'use strict';
 
   const DEBOUNCE_MS = 400;
-  const RUN_TIME_S = 60;            // every Act's MaxSimTime
+  const RUN_TIME_S = 60; // every Act's MaxSimTime
 
   const stack = document.getElementById('map-bottom-stack');
   const controls = document.getElementById('sim-controls');
@@ -34,17 +34,21 @@
   panel.setAttribute('aria-label', 'Ablauf der Events');
   stack.insertBefore(panel, controls);
 
-  (controls.querySelector('.sim-row-top') || controls).insertAdjacentHTML('beforeend', `
+  (controls.querySelector('.sim-row-top') || controls).insertAdjacentHTML(
+    'beforeend',
+    `
     <button id="sim-lanes-toggle" type="button" class="btn btn-small btn-secondary sim-toggle" aria-pressed="false"
-            title="Ablauf: alle Events auf einer Zeitachse — Klick springt zum Zeitpunkt">Ablauf</button>`);
+            title="Ablauf: alle Events auf einer Zeitachse — Klick springt zum Zeitpunkt">Ablauf</button>`,
+  );
   const btn = document.getElementById('sim-lanes-toggle');
 
   let _open = false;
-  let _data = null;     // { run, end, rows: [{actor, events: [...]}] }
+  let _data = null; // { run, end, rows: [{actor, events: [...]}] }
   let _timer = null;
 
-  const _esc = v => String(v ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  const fmt = t => `${UIUtils.fmt(t)} s`;
+  const _esc = (v) =>
+    String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  const fmt = (t) => `${UIUtils.fmt(t)} s`;
 
   function _actors() {
     return [AppState.ego, ...AppState.npcs].filter(Boolean);
@@ -56,13 +60,12 @@
     const run = Simulate.runHeadless({ dt: 0.05, maxTime: RUN_TIME_S, stopWhenIdle: true });
     if (!run) return null;
     const end = run.times.length ? run.times[run.times.length - 1] : 0;
-    const rows = actors.map(actor => ({
+    const rows = actors.map((actor) => ({
       actor,
       events: (actor.events || []).map((ev, i) => {
         const firedAt = run.fired[actor.id]?.[ev.id];
         const doneAt = run.completed?.[actor.id]?.[ev.id];
-        return { ev, index: i, firedAt: firedAt ?? null, doneAt: doneAt ?? null,
-                 name: EventPanel.displayName(ev, i) };
+        return { ev, index: i, firedAt: firedAt ?? null, doneAt: doneAt ?? null, name: EventPanel.displayName(ev, i) };
       }),
     }));
     return { run, end: Math.max(end, 1), rows };
@@ -78,30 +81,37 @@
     const ticks = [];
     const step = end > 40 ? 10 : end > 15 ? 5 : end > 6 ? 2 : 1;
     for (let t = 0; t <= end + 1e-6; t += step) ticks.push(t);
-    const pct = t => `${Math.max(0, Math.min(100, t / end * 100))}%`;
-    const rowHtml = rows.map(({ actor, events }) => {
-      const blocks = events.filter(e => e.firedAt != null).map(e => {
-        const open = e.doneAt == null;
-        const w = Math.max(0.6, ((open ? end : e.doneAt) - e.firedAt) / end * 100);
-        const title = `${e.name} — ${fmt(e.firedAt)}${open ? ' bis Ende (läuft weiter)' : ` bis ${fmt(e.doneAt)}`}`
-          + ' · Klick springt hierher';
-        return `<div class="sim-lane-block${open ? ' open' : ''}"
+    const pct = (t) => `${Math.max(0, Math.min(100, (t / end) * 100))}%`;
+    const rowHtml = rows
+      .map(({ actor, events }) => {
+        const blocks = events
+          .filter((e) => e.firedAt != null)
+          .map((e) => {
+            const open = e.doneAt == null;
+            const w = Math.max(0.6, (((open ? end : e.doneAt) - e.firedAt) / end) * 100);
+            const title =
+              `${e.name} — ${fmt(e.firedAt)}${open ? ' bis Ende (läuft weiter)' : ` bis ${fmt(e.doneAt)}`}` +
+              ' · Klick springt hierher';
+            return `<div class="sim-lane-block${open ? ' open' : ''}"
                      style="left:${pct(e.firedAt)};width:${w}%"
                      data-actor="${actor.id}" data-event="${e.ev.id}" data-t="${e.firedAt}" title="${_esc(title)}">
                   <span>${_esc(e.name)}</span></div>`;
-      }).join('');
-      const never = events.filter(e => e.firedAt == null);
-      const neverHtml = never.length
-        ? `<span class="sim-lane-never" title="${_esc(never.map(e => e.name).join(', '))} feuert in diesem Lauf nie">nie: ${never.length}</span>` : '';
-      return `<div class="sim-lane-row">
+          })
+          .join('');
+        const never = events.filter((e) => e.firedAt == null);
+        const neverHtml = never.length
+          ? `<span class="sim-lane-never" title="${_esc(never.map((e) => e.name).join(', '))} feuert in diesem Lauf nie">nie: ${never.length}</span>`
+          : '';
+        return `<div class="sim-lane-row">
         <button type="button" class="sim-lane-label" data-actor="${actor.id}" title="Akteur zeigen">${_esc(AppState.actorLabel(actor, { short: true }))}</button>
         <div class="sim-lane-track">${blocks}</div>
         ${neverHtml || '<span></span>'}
       </div>`;
-    }).join('');
+      })
+      .join('');
     panel.innerHTML = `
       <div class="sim-lane-row sim-lane-axis"><span></span>
-        <div class="sim-lane-track">${ticks.map(t => `<span class="sim-lane-tick" style="left:${pct(t)}">${t}s</span>`).join('')}</div>
+        <div class="sim-lane-track">${ticks.map((t) => `<span class="sim-lane-tick" style="left:${pct(t)}">${t}s</span>`).join('')}</div>
         <span></span>
       </div>
       ${rowHtml}
@@ -117,13 +127,16 @@
    * end at a different time. A time past the axis end pins to its edge. */
   let _lastTime = null;
 
-  function _axisTrack() { return panel.querySelector('.sim-lane-axis .sim-lane-track'); }
+  function _axisTrack() {
+    return panel.querySelector('.sim-lane-axis .sim-lane-track');
+  }
 
   function _placePlayhead(t = _lastTime) {
     const head = panel.querySelector('.sim-lane-playhead');
     const track = _axisTrack();
     if (!head || !track || !_data) return;
-    const box = panel.getBoundingClientRect(), tr = track.getBoundingClientRect();
+    const box = panel.getBoundingClientRect(),
+      tr = track.getBoundingClientRect();
     const f = Math.max(0, Math.min(1, (t ?? 0) / _data.end));
     head.style.left = `${tr.left - box.left + panel.scrollLeft + f * tr.width}px`;
     head.style.height = `${panel.scrollHeight}px`;
@@ -135,15 +148,15 @@
     return Math.max(0, Math.min(1, (clientX - tr.left) / Math.max(1, tr.width))) * _data.end;
   }
 
-  Simulate.onTime(t => {
+  Simulate.onTime((t) => {
     _lastTime = t;
-    if (t == null) EventPanel.highlight(null);   // the mark is a preview-time aid
+    if (t == null) EventPanel.highlight(null); // the mark is a preview-time aid
     if (_open) _placePlayhead(t);
   });
 
   // Scrub: same contract as the preview bar's — pause while dragging, resume
   // afterwards if it was playing. Starts a paused preview when none runs.
-  panel.addEventListener('pointerdown', e => {
+  panel.addEventListener('pointerdown', (e) => {
     if (e.button !== 0 || !_data) return;
     if (!e.target.closest('.sim-lane-playhead, .sim-lane-axis')) return;
     e.preventDefault();
@@ -153,7 +166,7 @@
     Simulate.pause();
     panel.setPointerCapture(e.pointerId);
     panel.classList.add('scrubbing');
-    const move = ev => Simulate.seek(_timeAt(ev.clientX));
+    const move = (ev) => Simulate.seek(_timeAt(ev.clientX));
     const up = () => {
       panel.removeEventListener('pointermove', move);
       panel.removeEventListener('pointerup', up);
@@ -174,7 +187,8 @@
     const box = panel.getBoundingClientRect();
     svg.setAttribute('width', box.width);
     svg.setAttribute('height', box.height);
-    const blockOf = (actorId, eventId) => panel.querySelector(`.sim-lane-block[data-actor="${actorId}"][data-event="${eventId}"]`);
+    const blockOf = (actorId, eventId) =>
+      panel.querySelector(`.sim-lane-block[data-actor="${actorId}"][data-event="${eventId}"]`);
     let paths = '';
     for (const { actor, events } of _data.rows) {
       for (const e of events) {
@@ -183,9 +197,12 @@
         const to = blockOf(actor.id, e.ev.id);
         const from = blockOf(t.actor_ref || actor.id, t.event_id);
         if (!to || !from) continue;
-        const a = from.getBoundingClientRect(), b = to.getBoundingClientRect();
-        const x1 = (t.type === 'after_event' ? a.right : a.left) - box.left, y1 = a.top + a.height / 2 - box.top;
-        const x2 = b.left - box.left, y2 = b.top + b.height / 2 - box.top;
+        const a = from.getBoundingClientRect(),
+          b = to.getBoundingClientRect();
+        const x1 = (t.type === 'after_event' ? a.right : a.left) - box.left,
+          y1 = a.top + a.height / 2 - box.top;
+        const x2 = b.left - box.left,
+          y2 = b.top + b.height / 2 - box.top;
         const mx = Math.max(x1, x2) - 6;
         paths += `<path d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}"/>`;
       }
@@ -204,7 +221,12 @@
       else panel.innerHTML = '<div class="sim-lanes-empty">Vorschau läuft — der Ablauf erscheint nach Stopp.</div>';
       return;
     }
-    try { _data = _compute(); } catch (err) { console.warn('[eventTimeline]', err); _data = null; }
+    try {
+      _data = _compute();
+    } catch (err) {
+      console.warn('[eventTimeline]', err);
+      _data = null;
+    }
     _render();
   }
 
@@ -226,7 +248,7 @@
     }
   }
 
-  panel.addEventListener('click', e => {
+  panel.addEventListener('click', (e) => {
     const block = e.target.closest('.sim-lane-block');
     if (block) {
       Simulate.seek(Number(block.dataset.t));
@@ -242,22 +264,42 @@
   });
   btn.addEventListener('click', () => toggle());
 
-  const IGNORED_KEYS = new Set(['selectedId', 'selectedTrafficLightId', 'selectedWaypoint', 'activeTool',
-    'pendingTemplate', 'pendingProp', 'pendingGenerate', 'trajectoryMode', 'activeTrajectoryId',
-    'routeMode', 'activeRouteId', 'activePathEventId', 'weather', 'time', 'userTemplates']);
-  AppState.on('change', patch => {
+  const IGNORED_KEYS = new Set([
+    'selectedId',
+    'selectedTrafficLightId',
+    'selectedWaypoint',
+    'activeTool',
+    'pendingTemplate',
+    'pendingProp',
+    'pendingGenerate',
+    'trajectoryMode',
+    'activeTrajectoryId',
+    'routeMode',
+    'activeRouteId',
+    'activePathEventId',
+    'weather',
+    'time',
+    'userTemplates',
+  ]);
+  AppState.on('change', (patch) => {
     const keys = Object.keys(patch || {});
-    if (keys.length && keys.every(k => IGNORED_KEYS.has(k))) return;
+    if (keys.length && keys.every((k) => IGNORED_KEYS.has(k))) return;
     _schedule();
   });
   for (const evt of ['actorUpdated', 'actorRemoved', 'stateLoaded']) {
-    AppState.on(evt, () => { if (!Simulate.running) _schedule(); });
+    AppState.on(evt, () => {
+      if (!Simulate.running) _schedule();
+    });
   }
 
   window.EventTimeline = {
     refresh,
     toggle,
-    get open() { return _open; },
-    get data() { return _data; },
+    get open() {
+      return _open;
+    },
+    get data() {
+      return _data;
+    },
   };
 })();

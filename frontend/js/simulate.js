@@ -44,18 +44,18 @@
 
   // ── Playback state ───────────────────────────────────────────────────────────
 
-  let _running    = false;
-  let _paused     = false;
-  let _simTime    = 0;       // seconds elapsed in simulation (the stepping clock)
-  let _lastFrame  = 0;       // timestamp of last rAF
-  let _animId     = null;
-  let _speed      = 1.0;     // playback speed multiplier
+  let _running = false;
+  let _paused = false;
+  let _simTime = 0; // seconds elapsed in simulation (the stepping clock)
+  let _lastFrame = 0; // timestamp of last rAF
+  let _animId = null;
+  let _speed = 1.0; // playback speed multiplier
 
-  let _egoId      = null;
-  let _originals  = new Map();  // actorId → {x, y, z, yaw}, to restore on stop
-  let _simActors  = new Map();  // actorId → sim actor record (see _makeSimActor)
-  let _tickSpeeds = new Map();  // actorId → speed, snapshotted once per tick
-  let _tickPoses  = new Map();  // actorId → {x, y, z}, snapshotted with it
+  let _egoId = null;
+  let _originals = new Map(); // actorId → {x, y, z, yaw}, to restore on stop
+  let _simActors = new Map(); // actorId → sim actor record (see _makeSimActor)
+  let _tickSpeeds = new Map(); // actorId → speed, snapshotted once per tick
+  let _tickPoses = new Map(); // actorId → {x, y, z}, snapshotted with it
   // `actorId::eventId` → completedAt, snapshotted once per tick. Same reasoning
   // as _tickSpeeds: a cross-actor after_event that read another actor's live
   // fired-map would resolve differently depending on which actor _stepActor
@@ -65,7 +65,7 @@
   let _tickCompleted = new Map();
   // `actorId::eventId` → firedAt, the event_started counterpart of the above.
   let _tickStarted = new Map();
-  let _layerSimBadges = null;   // our own SVG layer, appended into #world
+  let _layerSimBadges = null; // our own SVG layer, appended into #world
 
   // ── Tunables mirroring the real controllers ─────────────────────────────────
   // simple_vehicle_control.py / pedestrian_control.py / atomic_behaviors.py —
@@ -73,27 +73,27 @@
   // because each one is a specific, cited real-world value, not a preview
   // choice.
 
-  const DISTANCE_TO_EGO_FALLBACK_S = 60.0;  // event_builders.py fallback_time
-  const ACT_TEARDOWN_DISTANCE_M = 500.0;    // every Act's StopTrigger
-  const VEHICLE_WAYPOINT_ACCEPT_M = 4.0;    // SimpleVehicleControl explicit-waypoint advance
-  const VRU_WAYPOINT_ACCEPT_M = 1.0;        // PedestrianControl advance
-  const LEADING_WAYPOINT_DROP_M = 0.5;      // both controllers, on activation
-  const LANE_CHANGE_SAME_LANE_M = 5.0;      // _distance_same_lane constant
-  const LANE_CHANGE_OTHER_LANE_M = 10.0;    // distance_other_lane, hardcoded in the parser call
-  const LANE_NEIGHBOR_MIN_M = 1.5;          // plausible adjacent-lane lateral offset band
+  const DISTANCE_TO_EGO_FALLBACK_S = 60.0; // event_builders.py fallback_time
+  const ACT_TEARDOWN_DISTANCE_M = 500.0; // every Act's StopTrigger
+  const VEHICLE_WAYPOINT_ACCEPT_M = 4.0; // SimpleVehicleControl explicit-waypoint advance
+  const VRU_WAYPOINT_ACCEPT_M = 1.0; // PedestrianControl advance
+  const LEADING_WAYPOINT_DROP_M = 0.5; // both controllers, on activation
+  const LANE_CHANGE_SAME_LANE_M = 5.0; // _distance_same_lane constant
+  const LANE_CHANGE_OTHER_LANE_M = 10.0; // distance_other_lane, hardcoded in the parser call
+  const LANE_NEIGHBOR_MIN_M = 1.5; // plausible adjacent-lane lateral offset band
   const LANE_NEIGHBOR_MAX_M = 6.5;
   const LANE_NEIGHBOR_DIR_TOLERANCE_DEG = 45; // "same direction of travel" tolerance
-  const LANE_SEARCH_MAX_DIST_M = 15;          // how far to reach for a lane anchor
+  const LANE_SEARCH_MAX_DIST_M = 15; // how far to reach for a lane anchor
 
   // ChangeActorWaypoints.initialise, as patched in the install run.sh runs
   // (/home/dellpro2/Antonio/scenario_runner — see CLAUDE.md, Verification;
   // the yungloon checkout carries the same filter but is run by nothing). These govern which of
   // the router's points survive into the actor's waypoint list.
-  const ROUTE_SEED_AHEAD_M = 1.0;             // ego_waypoint.next(1)[0]
-  const ROUTE_DEDUP_MIN_M = 1.0;              // drop a point closer than this to the last kept one
-  const ROUTE_SHORT_REF_M = 0.5;              // reference vector too short to give a heading
-  const ROUTE_HEADING_ACCEPT_LO = 2.0;        // accept when |delta| < LO ...
-  const ROUTE_HEADING_ACCEPT_HI = 4.3;        // ... or > HI; the band between is a reversal
+  const ROUTE_SEED_AHEAD_M = 1.0; // ego_waypoint.next(1)[0]
+  const ROUTE_DEDUP_MIN_M = 1.0; // drop a point closer than this to the last kept one
+  const ROUTE_SHORT_REF_M = 0.5; // reference vector too short to give a heading
+  const ROUTE_HEADING_ACCEPT_LO = 2.0; // accept when |delta| < LO ...
+  const ROUTE_HEADING_ACCEPT_HI = 4.3; // ... or > HI; the band between is a reversal
 
   // Which actor types AssignRouteAction accepts — mirrors _ROUTE_ACTION_TYPES in
   // ../llm-scenario-gen/generator/event_builders.py. Shared with eventPanel.js
@@ -133,10 +133,10 @@
   const bottomStack = document.getElementById('map-bottom-stack');
   bottomStack.insertAdjacentHTML('beforeend', controlsHtml);
 
-  const simControls  = document.getElementById('sim-controls');
-  const btnPlay      = document.getElementById('sim-play');
-  const playText     = document.getElementById('sim-play-text');
-  const btnPause     = document.getElementById('sim-pause');
+  const simControls = document.getElementById('sim-controls');
+  const btnPlay = document.getElementById('sim-play');
+  const playText = document.getElementById('sim-play-text');
+  const btnPause = document.getElementById('sim-pause');
   /** The play button is icon-only: its state lives in the hidden text, the
    * tooltip and the accessible name; „Nochmal" swaps in the replay icon. */
   function _setPlayLabel(text) {
@@ -145,26 +145,31 @@
     btnPlay.setAttribute('aria-label', text);
     btnPlay.classList.toggle('replay', text === 'Nochmal');
   }
-  const btnStop      = document.getElementById('sim-stop');
-  const speedSlider  = document.getElementById('sim-speed');
-  const speedLabel   = document.getElementById('sim-speed-label');
-  const btnReact     = document.getElementById('sim-ego-react');
+  const btnStop = document.getElementById('sim-stop');
+  const speedSlider = document.getElementById('sim-speed');
+  const speedLabel = document.getElementById('sim-speed-label');
+  const btnReact = document.getElementById('sim-ego-react');
   // Flipping it re-simulates the run: stop, then reopen at the same time,
   // playing again if it was.
   btnReact.addEventListener('click', () => {
-    const was = _running, paused = _paused, t = _viewTime;
+    const was = _running,
+      paused = _paused,
+      t = _viewTime;
     if (was) _stopSimulation();
     _reactiveEgo = !_reactiveEgo;
     btnReact.setAttribute('aria-pressed', String(_reactiveEgo));
     btnReact.classList.toggle('active', _reactiveEgo);
-    if (was) { _seek(t); if (!paused) _startSimulation(); }
+    if (was) {
+      _seek(t);
+      if (!paused) _startSimulation();
+    }
   });
-  const timeLabel    = document.getElementById('sim-time-label');
+  const timeLabel = document.getElementById('sim-time-label');
   const progressFill = document.getElementById('sim-progress-fill');
-  const progressBar  = document.getElementById('sim-progress-bar');
+  const progressBar = document.getElementById('sim-progress-bar');
 
   // Show controls once a map is loaded
-  AppState.on('change', patch => {
+  AppState.on('change', (patch) => {
     if ('mapData' in patch && AppState.mapData) {
       simControls.classList.remove('hidden');
     }
@@ -194,7 +199,7 @@
    */
   function _pose(sim) {
     if (!sim || !sim.laneOffset) return sim;
-    const rad = (sim.yaw || 0) * Math.PI / 180;
+    const rad = ((sim.yaw || 0) * Math.PI) / 180;
     return {
       x: sim.x - sim.laneOffset * Math.sin(rad),
       y: sim.y + sim.laneOffset * Math.cos(rad),
@@ -203,7 +208,7 @@
   }
 
   function _angleDiffDeg(a, b) {
-    return Math.abs(((a - b + 180) % 360 + 360) % 360 - 180);
+    return Math.abs(((((a - b + 180) % 360) + 360) % 360) - 180);
   }
 
   /**
@@ -214,22 +219,35 @@
    */
   function _walkDirLine(dirLine, x, y, z, startIdx, step) {
     let idx = startIdx;
-    let cx = x, cy = y, cz = z, yaw = null;
+    let cx = x,
+      cy = y,
+      cz = z,
+      yaw = null;
     let remaining = step;
     while (remaining > 1e-9 && idx < dirLine.length) {
       const [tx, ty, tz = 0] = dirLine[idx];
-      const dx = tx - cx, dy = ty - cy;
+      const dx = tx - cx,
+        dy = ty - cy;
       const dist = Math.hypot(dx, dy);
-      if (dist < 1e-6) { idx += 1; continue; }
+      if (dist < 1e-6) {
+        idx += 1;
+        continue;
+      }
       const seg = Math.min(remaining, dist);
       const frac = seg / dist;
-      cx += dx * frac; cy += dy * frac; cz += (tz - cz) * frac;
-      yaw = Math.atan2(dy, dx) * 180 / Math.PI;
+      cx += dx * frac;
+      cy += dy * frac;
+      cz += (tz - cz) * frac;
+      yaw = (Math.atan2(dy, dx) * 180) / Math.PI;
       remaining -= seg;
       if (seg >= dist - 1e-9) idx += 1;
     }
     return {
-      x: cx, y: cy, z: cz, yaw, idx,
+      x: cx,
+      y: cy,
+      z: cz,
+      yaw,
+      idx,
       consumed: step - remaining, // actual arc length walked, short of `step` if the line ran out
       ranOut: idx >= dirLine.length && remaining > 1e-9,
     };
@@ -245,8 +263,15 @@
   // after_event→assign_route rewrite, then — LAST, so it also catches the
   // just-rewritten case — the ego self-distance rewrite.
 
-  const TRIGGER_TYPES = new Set(['simulation_time', 'distance_to_ego', 'distance_to_point',
-                                 'ego_speed', 'relative_speed', 'after_event', 'event_started']);
+  const TRIGGER_TYPES = new Set([
+    'simulation_time',
+    'distance_to_ego',
+    'distance_to_point',
+    'ego_speed',
+    'relative_speed',
+    'after_event',
+    'event_started',
+  ]);
 
   // SimpleVehicleControl's rate limits when the actor states none — the same
   // defaults the emitter writes (xml_builder._DYNAMICS_DEFAULTS).
@@ -265,8 +290,14 @@
   // straight at a waypoint a few metres ahead. So the gap shrinks by
   // 1 − exp(−d / L) per d metres, with this L.
   const LANE_OFFSET_APPROACH_M = 3.0;
-  const ACTION_TYPES  = new Set(['follow_trajectory', 'assign_route', 'set_speed',
-                                 'set_distance', 'lane_change', 'lane_offset']);
+  const ACTION_TYPES = new Set([
+    'follow_trajectory',
+    'assign_route',
+    'set_speed',
+    'set_distance',
+    'lane_change',
+    'lane_offset',
+  ]);
 
   // The emitter's own "does this action produce XML" rule, shared with the
   // panel's warning chips and the export gate (ScenarioRules, app.js).
@@ -277,10 +308,10 @@
     const isEgo = actor.type === 'ego';
 
     for (const ev of events) {
-      const trigger = (ev.trigger && typeof ev.trigger === 'object') ? ev.trigger : {};
+      const trigger = ev.trigger && typeof ev.trigger === 'object' ? ev.trigger : {};
       if (!TRIGGER_TYPES.has(trigger.type)) trigger.type = 'simulation_time';
       ev.trigger = trigger;
-      const action = (ev.action && typeof ev.action === 'object') ? ev.action : {};
+      const action = ev.action && typeof ev.action === 'object' ? ev.action : {};
       if (!ACTION_TYPES.has(action.type)) action.type = 'follow_trajectory';
       ev.action = action;
       if (action.type === 'assign_route') ev.trigger = { type: 'simulation_time', value: 0 };
@@ -299,8 +330,7 @@
 
     if (isEgo) {
       for (const ev of events) {
-        if (ev.trigger.type === 'distance_to_ego' &&
-            (!ev.trigger.entity_ref || ev.trigger.entity_ref === actor.id)) {
+        if (ev.trigger.type === 'distance_to_ego' && (!ev.trigger.entity_ref || ev.trigger.entity_ref === actor.id)) {
           ev.trigger = { type: 'simulation_time', value: 0 };
         }
       }
@@ -323,11 +353,13 @@
       // well defined. An NPC waiting on an ego event is refused outright
       // (ScenarioRules.mayWaitOnActor). In neither case does the preview
       // pretend the chain can proceed.
-      if (!target || !_actionEmits(target.event.action, target.actor.type) ||
-          (ev.trigger.type === 'after_event' &&
-           ScenarioRules.neverCompletes(target.event.action)) ||
-          !ScenarioRules.mayWaitOnActor(actor, target.actor) ||
-          ScenarioRules.afterEventCycles(actor, ev)) {
+      if (
+        !target ||
+        !_actionEmits(target.event.action, target.actor.type) ||
+        (ev.trigger.type === 'after_event' && ScenarioRules.neverCompletes(target.event.action)) ||
+        !ScenarioRules.mayWaitOnActor(actor, target.actor) ||
+        ScenarioRules.afterEventCycles(actor, ev)
+      ) {
         ev.trigger.neverFires = true;
       } else if (target.actor.id !== actor.id) {
         ev.trigger.watchActorId = target.actor.id;
@@ -349,7 +381,7 @@
    * behaviour-tree order — hence the snapshot rather than sim.speed live — and
    * an actor missing from it yields 0.0 (a printed warning, never a raise). */
   function _refSpeed(id) {
-    const ref = id || _egoId;  // an omitted entity_ref exports as `hero`
+    const ref = id || _egoId; // an omitted entity_ref exports as `hero`
     return _tickSpeeds.has(ref) ? _tickSpeeds.get(ref) : 0;
   }
 
@@ -367,8 +399,8 @@
         if (simTime > DISTANCE_TO_EGO_FALLBACK_S) return true;
         // „Abstand zu Akteur": another actor than the ego is read from the
         // per-tick pose snapshot, exactly as the ego is.
-        const other = trigger.entity_ref && trigger.entity_ref !== _egoId
-          ? _tickPoses.get(trigger.entity_ref) : egoPrevPos;
+        const other =
+          trigger.entity_ref && trigger.entity_ref !== _egoId ? _tickPoses.get(trigger.entity_ref) : egoPrevPos;
         if (!other) return false;
         return _dist3(_pose(sim), other) < (trigger.value ?? 400);
       }
@@ -427,9 +459,7 @@
   // ── Lane geometry (vehicle "no waypoints" mode + lane_change) ───────────────
 
   function _laneAnchor(x, y, z = null) {
-    return ObjectsManager.nearestLaneProjection(
-      x, y, new Set(['driving']), LANE_SEARCH_MAX_DIST_M, z
-    );
+    return ObjectsManager.nearestLaneProjection(x, y, new Set(['driving']), LANE_SEARCH_MAX_DIST_M, z);
   }
 
   /** Project (x, y) onto `dirLine`, returning the nearest point's distance,
@@ -437,14 +467,17 @@
   function _nearestPointOnDirLine(dirLine, x, y) {
     let best = null;
     for (let i = 1; i < dirLine.length; i++) {
-      const [x0, y0] = dirLine[i - 1], [x1, y1] = dirLine[i];
-      const dx = x1 - x0, dy = y1 - y0;
+      const [x0, y0] = dirLine[i - 1],
+        [x1, y1] = dirLine[i];
+      const dx = x1 - x0,
+        dy = y1 - y0;
       const len2 = dx * dx + dy * dy;
       if (len2 <= 0) continue;
       const t = Math.max(0, Math.min(1, ((x - x0) * dx + (y - y0) * dy) / len2));
-      const px = x0 + t * dx, py = y0 + t * dy;
+      const px = x0 + t * dx,
+        py = y0 + t * dy;
       const d = Math.hypot(x - px, y - py);
-      if (!best || d < best.d) best = { d, px, py, idx: i, yaw: Math.atan2(dy, dx) * 180 / Math.PI };
+      if (!best || d < best.d) best = { d, px, py, idx: i, yaw: (Math.atan2(dy, dx) * 180) / Math.PI };
     }
     return best;
   }
@@ -462,10 +495,11 @@
    * reports no neighbour) — see _laneNeighbor.
    */
   function _findSameDirectionNeighbor(near, direction) {
-    const rad = near.laneYaw * Math.PI / 180;
+    const rad = (near.laneYaw * Math.PI) / 180;
     // Right-hand vector in this map's y-down convention (verified: heading
     // +x/east with north-up-on-screen, "right" points +y/south).
-    const rightX = -Math.sin(rad), rightY = Math.cos(rad);
+    const rightX = -Math.sin(rad),
+      rightY = Math.cos(rad);
     let best = null;
 
     for (const lane of near.road.lanes || []) {
@@ -587,11 +621,17 @@
    */
   function _walkLaneChained(cursor, x, y, z, step) {
     let cur = cursor;
-    let cx = x, cy = y, cz = z, yaw = null;
+    let cx = x,
+      cy = y,
+      cz = z,
+      yaw = null;
     let remaining = step;
     while (remaining > 1e-9) {
       const r = _walkDirLine(cur.dirLine, cx, cy, cz, cur.idx, remaining);
-      cx = r.x; cy = r.y; cz = r.z; if (r.yaw != null) yaw = r.yaw;
+      cx = r.x;
+      cy = r.y;
+      cz = r.z;
+      if (r.yaw != null) yaw = r.yaw;
       cur = { ...cur, idx: r.idx };
       remaining -= r.consumed;
       if (!r.ranOut) break;
@@ -625,7 +665,9 @@
   function _buildLaneChangePlan(near, direction, diagTotal) {
     const STEP = 2.0;
     let cursor = { road: near.road, lane: near.lane, dirLine: near.lane.directionLine, idx: near.segIndex };
-    let x = near.x, y = near.y, z = near.z;
+    let x = near.x,
+      y = near.y,
+      z = near.z;
     const waypoints = [];
 
     let dist = 0;
@@ -633,7 +675,10 @@
       const r = _walkLaneChained(cursor, x, y, z, STEP);
       if (r.ranOut) return null;
       dist += Math.hypot(r.x - x, r.y - y);
-      cursor = r.cursor; x = r.x; y = r.y; z = r.z;
+      cursor = r.cursor;
+      x = r.x;
+      y = r.y;
+      z = r.z;
       waypoints.push({ x, y, z });
     }
 
@@ -647,13 +692,18 @@
     waypoints.push({ x: proj.px, y: proj.py, z: lc.z });
 
     let ocursor = { road: neighbor.road, lane: neighbor.lane, dirLine: neighbor.dirLine, idx: proj.idx };
-    x = proj.px; y = proj.py; z = lc.z;
+    x = proj.px;
+    y = proj.py;
+    z = lc.z;
     dist = 0;
     while (dist < LANE_CHANGE_OTHER_LANE_M) {
       const r = _walkLaneChained(ocursor, x, y, z, STEP);
       if (r.ranOut) return null;
       dist += Math.hypot(r.x - x, r.y - y);
-      ocursor = r.cursor; x = r.x; y = r.y; z = r.z;
+      ocursor = r.cursor;
+      x = r.x;
+      y = r.y;
+      z = r.z;
       waypoints.push({ x, y, z });
     }
 
@@ -672,9 +722,15 @@
     const near = _laneAnchor(x, y, z);
     if (!near || !near.road) return null;
     return {
-      roadId: Number(near.road.id), sectionId: near.lane.sectionId, laneId: near.lane.laneId,
-      x: near.x, y: near.y, z: near.z,
-      rawX: x, rawY: y, rawZ: z !== undefined ? z : near.z,
+      roadId: Number(near.road.id),
+      sectionId: near.lane.sectionId,
+      laneId: near.lane.laneId,
+      x: near.x,
+      y: near.y,
+      z: near.z,
+      rawX: x,
+      rawY: y,
+      rawZ: z !== undefined ? z : near.z,
     };
   }
 
@@ -706,21 +762,33 @@
     // back to it (Town03 road 5 is a 0.8 m stub: a 194 m loop the preview did
     // not show).
     const refOf = (road, lane, p) => ({
-      roadId: Number(road.id), sectionId: lane.sectionId, laneId: lane.laneId,
-      x: p.x, y: p.y, z: p.z, rawX: p.x, rawY: p.y, rawZ: p.z,
+      roadId: Number(road.id),
+      sectionId: lane.sectionId,
+      laneId: lane.laneId,
+      x: p.x,
+      y: p.y,
+      z: p.z,
+      rawX: p.x,
+      rawY: p.y,
+      rawZ: p.z,
     });
 
-    let road = near.road, lane = near.lane;
+    let road = near.road,
+      lane = near.lane;
     const dl0 = lane.directionLine;
-    const segT = Math.hypot(near.x - dl0[near.segIndex - 1][0], near.y - dl0[near.segIndex - 1][1])
-      / (Math.hypot(dl0[near.segIndex][0] - dl0[near.segIndex - 1][0],
-                    dl0[near.segIndex][1] - dl0[near.segIndex - 1][1]) || 1);
+    const segT =
+      Math.hypot(near.x - dl0[near.segIndex - 1][0], near.y - dl0[near.segIndex - 1][1]) /
+      (Math.hypot(
+        dl0[near.segIndex][0] - dl0[near.segIndex - 1][0],
+        dl0[near.segIndex][1] - dl0[near.segIndex - 1][1],
+      ) || 1);
     let walked = _walkDirLineS(dl0, near.segIndex, segT, ROUTE_SEED_AHEAD_M);
-    if (!walked) { // no s on this payload's points — fall back to arc length
+    if (!walked) {
+      // no s on this payload's points — fall back to arc length
       const w = _walkDirLine(dl0, near.x, near.y, near.z, near.segIndex, ROUTE_SEED_AHEAD_M);
       walked = { ...w, remaining: ROUTE_SEED_AHEAD_M - w.consumed };
     }
-    let headingRad = (walked.yaw !== null ? walked.yaw : near.laneYaw) * Math.PI / 180;
+    let headingRad = ((walked.yaw !== null ? walked.yaw : near.laneYaw) * Math.PI) / 180;
 
     // .next(1.0) walks on through as many successors as the metre reaches.
     for (let hop = 0; walked.ranOut && hop < 8; hop++) {
@@ -740,13 +808,14 @@
       if (!found || (found.lane.directionLine || []).length < 2) {
         // No successor -> CARLA's IndexError path: the seed is the actor's
         // own waypoint.
-        return { ref: refOf(near.road, near.lane, near), headingRad: near.laneYaw * Math.PI / 180 };
+        return { ref: refOf(near.road, near.lane, near), headingRad: (near.laneYaw * Math.PI) / 180 };
       }
-      road = found.road; lane = found.lane;
+      road = found.road;
+      lane = found.lane;
       const next = _walkDirLineS(lane.directionLine, 1, 0, walked.remaining);
       if (!next) break;
       walked = next;
-      if (walked.yaw !== null) headingRad = walked.yaw * Math.PI / 180;
+      if (walked.yaw !== null) headingRad = (walked.yaw * Math.PI) / 180;
     }
 
     return { ref: refOf(road, lane, walked), headingRad };
@@ -768,7 +837,8 @@
     const s0 = sAt(idx - 1) + (sAt(idx) - sAt(idx - 1)) * t;
     const target = s0 + sign * ds;
     for (let i = idx; i < dirLine.length; i++) {
-      const a = dirLine[i - 1], b = dirLine[i];
+      const a = dirLine[i - 1],
+        b = dirLine[i];
       // The lane's own end is exclusive: next() landing exactly on it already
       // returns the successor (a generated actor 1 m before a fork does this).
       const last = i === dirLine.length - 1;
@@ -776,15 +846,24 @@
         const span = b[3] - a[3];
         const f = span ? Math.max(0, Math.min(1, (target - a[3]) / span)) : 1;
         return {
-          x: a[0] + (b[0] - a[0]) * f, y: a[1] + (b[1] - a[1]) * f, z: a[2] + (b[2] - a[2]) * f,
-          yaw: Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI, ranOut: false, remaining: 0,
+          x: a[0] + (b[0] - a[0]) * f,
+          y: a[1] + (b[1] - a[1]) * f,
+          z: a[2] + (b[2] - a[2]) * f,
+          yaw: (Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI,
+          ranOut: false,
+          remaining: 0,
         };
       }
     }
-    const a = dirLine[dirLine.length - 2], b = dirLine[dirLine.length - 1];
+    const a = dirLine[dirLine.length - 2],
+      b = dirLine[dirLine.length - 1];
     return {
-      x: b[0], y: b[1], z: b[2], yaw: Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI,
-      ranOut: true, remaining: Math.abs(target - b[3]),
+      x: b[0],
+      y: b[1],
+      z: b[2],
+      yaw: (Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI,
+      ranOut: true,
+      remaining: Math.abs(target - b[3]),
     };
   }
 
@@ -847,7 +926,9 @@
           let lastHeading;
           if (route.length > 1) {
             const prev = route[route.length - 2];
-            const rx = last.x - prev.x, ry = last.y - prev.y, rz = (last.z || 0) - (prev.z || 0);
+            const rx = last.x - prev.x,
+              ry = last.y - prev.y,
+              rz = (last.z || 0) - (prev.z || 0);
             if (Math.hypot(rx, ry, rz) < ROUTE_SHORT_REF_M) {
               // Too short to yield a meaningful heading; accepting beats
               // rejecting the rest of an otherwise legitimate route.
@@ -882,10 +963,13 @@
     return {
       id: actor.id,
       type: actor.type,
-      body: AppState.bodyType(actor),   // footprint type: the ego's vehicleType
+      body: AppState.bodyType(actor), // footprint type: the ego's vehicleType
       isEgo,
       isWalker: MapView.isWalkerType(actor.type),
-      x: actor.x, y: actor.y, z: actor.z ?? 0, yaw: actor.yaw || 0,
+      x: actor.x,
+      y: actor.y,
+      z: actor.z ?? 0,
+      yaw: actor.yaw || 0,
       spawnYaw: actor.yaw || 0,
       // The Init <SpeedAction>: ChangeActorTargetSpeed(..., init_speed=True)
       // runs in InitialActorSettings on tick 1, before any Act's
@@ -902,22 +986,22 @@
       // starts at it.
       target: Math.max(0, actor.initial_speed || 0),
       speed: MapView.isWalkerType(actor.type) ? Math.max(0, actor.initial_speed || 0) : 0,
-      lastCmd: null,               // SimpleVehicleControl._last_target_speed
+      lastCmd: null, // SimpleVehicleControl._last_target_speed
       maxAccel: actor.max_acceleration ?? DEFAULT_MAX_ACCEL,
       maxDecel: actor.max_deceleration ?? DEFAULT_MAX_DECEL,
       events,
-      fired: new Map(),           // eventId → {firedAt, completedAt|null}
+      fired: new Map(), // eventId → {firedAt, completedAt|null}
       activeSpeedEventId: null,
-      speedEventDuration: 0,       // dynamics.value: seconds, or m/s² when the dimension is 'rate'
+      speedEventDuration: 0, // dynamics.value: seconds, or m/s² when the dimension is 'rate'
       speedEventDimension: 'time',
-      speedRampFrom: 0,            // ChangeActorTargetSpeed._start_speed, 'rate' only
-      speedRampTarget: 0,          // ._target_speed as snapshotted in initialise()
-      speedRelativeRef: null,      // entity id to keep tracking; null ⇒ absolute target
+      speedRampFrom: 0, // ChangeActorTargetSpeed._start_speed, 'rate' only
+      speedRampTarget: 0, // ._target_speed as snapshotted in initialise()
+      speedRelativeRef: null, // entity id to keep tracking; null ⇒ absolute target
       speedRelativeDelta: 0,
-      speedRelativeFactor: null,   // speedTargetValueType="factor"; null ⇒ delta
-      speedContinuous: false,      // continuous="true": tracks for good, never completes
+      speedRelativeFactor: null, // speedTargetValueType="factor"; null ⇒ delta
+      speedContinuous: false, // continuous="true": tracks for good, never completes
       activePathEventId: null,
-      pathKind: null,              // 'follow_trajectory' | 'assign_route'
+      pathKind: null, // 'follow_trajectory' | 'assign_route'
       waypoints: null,
       activeLaneChangeEventId: null,
       laneChange: null,
@@ -927,15 +1011,15 @@
       // path-following maths keeps running on the centreline exactly as
       // SimpleVehicleControl's own waypoint list does — the controller offsets
       // its aim point, it does not re-plan around the displaced position.
-      laneOffset: 0,               // the offset actually driven, eased toward laneOffsetTarget
-      laneOffsetTarget: 0,         // what the controller's _offset is set to
-      laneOffsetReturns: false,    // continuous="false": completes on reaching, then resets to 0
+      laneOffset: 0, // the offset actually driven, eased toward laneOffsetTarget
+      laneOffsetTarget: 0, // what the controller's _offset is set to
+      laneOffsetReturns: false, // continuous="false": completes on reaching, then resets to 0
       activeLaneOffsetEventId: null,
-      laneFollow: null,            // {lane, dirLine, idx} anchor while path-less
+      laneFollow: null, // {lane, dirLine, idx} anchor while path-less
       badge: null,
       traveled: 0,
       frozen: false,
-      goalStopped: false,          // SimpleVehicleControl._reached_goal — sticky
+      goalStopped: false, // SimpleVehicleControl._reached_goal — sticky
       hasNoEvents: events.length === 0,
       noEventsBadgeShown: false,
     };
@@ -947,11 +1031,14 @@
     // relativeTime, then collapsed back into ONE average speed for the whole
     // path (total_dist / total_time) — the real controller never sees the
     // per-segment values a trajectory was authored with.
-    let totalDist = 0, totalTime = 0;
+    let totalDist = 0,
+      totalTime = 0;
     for (let i = 1; i < points.length; i++) {
-      const dx = points[i].x - points[i - 1].x, dy = points[i].y - points[i - 1].y;
+      const dx = points[i].x - points[i - 1].x,
+        dy = points[i].y - points[i - 1].y;
       const dist = Math.hypot(dx, dy);
-      const v1 = points[i - 1].velocity ?? 10, v2 = points[i].velocity ?? 10;
+      const v1 = points[i - 1].velocity ?? 10,
+        v2 = points[i].velocity ?? 10;
       const avgV = (v1 + v2) / 2 || 1;
       totalDist += dist;
       totalTime += dist / avgV;
@@ -1040,7 +1127,7 @@
       // for the whole duration (see _stepActor), so the parameters are kept.
       const target = action.target || {};
       const isRelative = target.mode === 'relative';
-      sim.speedRelativeRef = isRelative ? (target.entity_ref || _egoId) : null;
+      sim.speedRelativeRef = isRelative ? target.entity_ref || _egoId : null;
       sim.speedRelativeDelta = isRelative ? (target.delta ?? 0) : 0;
       sim.speedRelativeFactor = isRelative && target.value_type === 'factor' ? (target.factor ?? 1) : null;
       sim.speedContinuous = isRelative && target.continuous === true;
@@ -1048,13 +1135,11 @@
       sim.speedEventDuration = (action.dynamics && action.dynamics.value) ?? 5.0;
       // The emitter forces a continuous follow to a plain step ('time'): with
       // continuous="true" the atomic's ramp branch is skipped anyway.
-      sim.speedEventDimension = sim.speedContinuous ? 'time'
-        : (action.dynamics && action.dynamics.dimension) || 'time';
+      sim.speedEventDimension = sim.speedContinuous ? 'time' : (action.dynamics && action.dynamics.dimension) || 'time';
 
       // A negative absolute target is „Rückwärts" — vehicles only (the backend
       // rejects it for a walker, whose controller raises on it).
-      const absolute = Math.max(0, target.value ?? 10) *
-        (target.reverse === true && !sim.isWalker ? -1 : 1);
+      const absolute = Math.max(0, target.value ?? 10) * (target.reverse === true && !sim.isWalker ? -1 : 1);
       const resolvedTarget = isRelative ? _relativeTarget(sim) : absolute;
 
       if (sim.speedEventDimension === 'rate') {
@@ -1071,10 +1156,9 @@
       } else {
         sim.target = resolvedTarget;
       }
-
     } else if (action.type === 'follow_trajectory' || action.type === 'assign_route') {
       const isRoute = action.type === 'assign_route';
-      const rawPoints = isRoute ? (action.waypoints || []) : (action.trajectory || []);
+      const rawPoints = isRoute ? action.waypoints || [] : action.trajectory || [];
       if (!_actionEmits(action, sim.type)) return; // dropped at export — never applies
       _supersedeLaneOffset(sim, simTime, { reset: true });
       sim.activePathEventId = ev.id;
@@ -1093,7 +1177,7 @@
           sim.waypoints = exact;
           sim.badge = null;
         } else {
-          sim.waypoints = rawPoints.map(p => ({ x: p.x, y: p.y, z: p.z ?? 0.2 }));
+          sim.waypoints = rawPoints.map((p) => ({ x: p.x, y: p.y, z: p.z ?? 0.2 }));
           sim.badge = { icon: '≈', text: 'Route ist ungefähr — kein CARLA-Kartengraph für diese Karte/Punkte' };
         }
       } else {
@@ -1103,24 +1187,20 @@
         // assign_route nor lane_change does (both issue waypoint commands
         // only, stamped on a separate _last_waypoint_command).
         _supersedeSpeedEvent(sim, simTime);
-        sim.waypoints = rawPoints.map(p => ({ x: p.x, y: p.y, z: p.z ?? 0.2 }));
+        sim.waypoints = rawPoints.map((p) => ({ x: p.x, y: p.y, z: p.z ?? 0.2 }));
         sim.target = _avgTrajectorySpeed(rawPoints);
         if (!sim.goalStopped || sim.isWalker) sim.badge = null;
       }
 
-      while (sim.waypoints.length &&
-             _dist3(sim, sim.waypoints[0]) < LEADING_WAYPOINT_DROP_M) {
+      while (sim.waypoints.length && _dist3(sim, sim.waypoints[0]) < LEADING_WAYPOINT_DROP_M) {
         sim.waypoints.shift();
       }
-
     } else if (action.type === 'lane_change') {
       _supersedeLaneOffset(sim, simTime, { reset: true });
       sim.activeLaneChangeEventId = ev.id;
       _startLaneChange(sim, action, simTime);
-
     } else if (action.type === 'lane_offset') {
       _startLaneOffset(sim, ev, action, simTime);
-
     } else if (action.type === 'set_distance') {
       // Deliberately not simulated — see file header. Never completes, so any
       // after_event chained onto it never fires here either, matching the
@@ -1158,9 +1238,13 @@
     sim.laneOffsetReturns = action.continuous === false;
     sim.activeLaneOffsetEventId = ev.id;
     if (sim.goalStopped) return;
-    sim.badge = magnitude > 0
-      ? { icon: '⇥', text: `Spurversatz ${UIUtils.fmt(magnitude)} m ${action.direction === 'right' ? 'rechts' : 'links'} (${sim.laneOffsetReturns ? 'hin & zurück' : 'dauerhaft'})` }
-      : { icon: '⇥', text: 'Zurück zur Spurmitte' };
+    sim.badge =
+      magnitude > 0
+        ? {
+            icon: '⇥',
+            text: `Spurversatz ${UIUtils.fmt(magnitude)} m ${action.direction === 'right' ? 'rechts' : 'links'} (${sim.laneOffsetReturns ? 'hin & zurück' : 'dauerhaft'})`,
+          }
+        : { icon: '⇥', text: 'Zurück zur Spurmitte' };
   }
 
   function _startLaneChange(sim, action, simTime) {
@@ -1193,9 +1277,11 @@
     // plan.verified only says the neighbour came from the graph rather than a
     // geometric guess — an xodr-derived graph (no live CARLA behind it) still
     // gets its own, less confident label than an actual CARLA probe.
-    const source = !plan.verified ? 'geschätzt'
-      : (AppState.laneGraph && AppState.laneGraph.source === 'xodr') ? 'aus Kartendatei'
-      : 'CARLA-Kartendaten';
+    const source = !plan.verified
+      ? 'geschätzt'
+      : AppState.laneGraph && AppState.laneGraph.source === 'xodr'
+        ? 'aus Kartendatei'
+        : 'CARLA-Kartendaten';
     sim.badge = { icon: '↔', text: `Spurwechsel ${dirLabel} läuft (~${totalM} m, ${source})` };
   }
 
@@ -1220,7 +1306,8 @@
     let remaining = sim.speed * dt;
     while (remaining > 1e-9 && sim.waypoints.length) {
       const target = sim.waypoints[0];
-      const dx = target.x - sim.x, dy = target.y - sim.y;
+      const dx = target.x - sim.x,
+        dy = target.y - sim.y;
       const dist2d = Math.hypot(dx, dy);
       if (dist2d <= acceptR) {
         // Advance to the next waypoint the instant we're within radius —
@@ -1252,8 +1339,10 @@
       }
       const step = Math.min(remaining, dist2d);
       const frac = step / dist2d;
-      sim.x += dx * frac; sim.y += dy * frac; sim.z += (target.z - sim.z) * frac;
-      sim.yaw = Math.atan2(dy, dx) * 180 / Math.PI;
+      sim.x += dx * frac;
+      sim.y += dy * frac;
+      sim.z += (target.z - sim.z) * frac;
+      sim.yaw = (Math.atan2(dy, dx) * 180) / Math.PI;
       sim.traveled += step;
       remaining -= step;
     }
@@ -1265,8 +1354,8 @@
    * that is straight back along the current heading. The lane-follow anchor and
    * any waypoints are left alone, so driving forward again resumes them. */
   function _advanceReverse(sim, dt) {
-    const rad = (sim.yaw || 0) * Math.PI / 180;
-    const step = sim.speed * dt;  // negative
+    const rad = ((sim.yaw || 0) * Math.PI) / 180;
+    const step = sim.speed * dt; // negative
     sim.x += Math.cos(rad) * step;
     sim.y += Math.sin(rad) * step;
     sim.traveled += Math.abs(step);
@@ -1290,7 +1379,10 @@
    * `want` is the target after any reacting-ego braking.
    */
   function _applyControllerLimits(sim, want, dt) {
-    if (sim.isWalker) { sim.speed = Math.max(0, want); return; }
+    if (sim.isWalker) {
+      sim.speed = Math.max(0, want);
+      return;
+    }
     const current = Math.abs(sim.speed);
     if (sim.lastCmd == null) sim.lastCmd = current;
     let cmd = want;
@@ -1315,8 +1407,11 @@
       sim.laneOffset += diff * (1 - Math.exp(-travelled / LANE_OFFSET_APPROACH_M));
       if (Math.abs(sim.laneOffsetTarget - sim.laneOffset) < 0.005) sim.laneOffset = sim.laneOffsetTarget;
     }
-    if (sim.laneOffsetReturns && sim.activeLaneOffsetEventId &&
-        Math.abs(sim.laneOffset - sim.laneOffsetTarget) < LANE_OFFSET_THRESHOLD_M) {
+    if (
+      sim.laneOffsetReturns &&
+      sim.activeLaneOffsetEventId &&
+      Math.abs(sim.laneOffset - sim.laneOffsetTarget) < LANE_OFFSET_THRESHOLD_M
+    ) {
       const rec = sim.fired.get(sim.activeLaneOffsetEventId);
       if (rec && rec.completedAt == null) rec.completedAt = simTime;
       sim.activeLaneOffsetEventId = null;
@@ -1330,7 +1425,7 @@
     // PedestrianControl with no waypoints walks its CURRENT forward vector —
     // which, having never been given a waypoint, is still the spawn yaw.
     // Exact: no map query, no lane dependency at all.
-    const rad = sim.spawnYaw * Math.PI / 180;
+    const rad = (sim.spawnYaw * Math.PI) / 180;
     const step = sim.speed * dt;
     sim.x += Math.cos(rad) * step;
     sim.y += Math.sin(rad) * step;
@@ -1363,8 +1458,8 @@
     const next = _nextLaneCursor(sim.laneFollow);
     if (!next) return false;
     sim.laneFollow = next;
-    const graphSource = (AppState.laneGraph && AppState.laneGraph.source === 'xodr')
-      ? 'aus Kartendatei abgeleitet' : 'CARLA-Kartendaten';
+    const graphSource =
+      AppState.laneGraph && AppState.laneGraph.source === 'xodr' ? 'aus Kartendatei abgeleitet' : 'CARLA-Kartendaten';
     sim.badge = { icon: '↷', text: `Fährt an bekannter Abzweigung weiter (${graphSource})` };
     return true;
   }
@@ -1373,7 +1468,10 @@
     if (!_ensureLaneFollowAnchor(sim)) return;
     const dirLine = sim.laneFollow.dirLine;
     const r = _walkDirLine(dirLine, sim.x, sim.y, sim.z, sim.laneFollow.idx, sim.speed * dt);
-    sim.x = r.x; sim.y = r.y; sim.z = r.z; if (r.yaw != null) sim.yaw = r.yaw;
+    sim.x = r.x;
+    sim.y = r.y;
+    sim.z = r.z;
+    if (r.yaw != null) sim.yaw = r.yaw;
     sim.laneFollow.idx = r.idx;
     sim.traveled += r.consumed;
     if (r.ranOut) {
@@ -1392,11 +1490,20 @@
 
   function _advancePosition(sim, dt) {
     // The vehicle goal latch: nothing moves it again (see _applyEventAction).
-    if (sim.goalStopped && !sim.isWalker) { sim.speed = 0; return; }
-    if (sim.speed < 0) { _advanceReverse(sim, dt); return; }
-    if (sim.waypoints && sim.waypoints.length) { _advanceWaypoints(sim, dt); return; }
+    if (sim.goalStopped && !sim.isWalker) {
+      sim.speed = 0;
+      return;
+    }
+    if (sim.speed < 0) {
+      _advanceReverse(sim, dt);
+      return;
+    }
+    if (sim.waypoints && sim.waypoints.length) {
+      _advanceWaypoints(sim, dt);
+      return;
+    }
     if (sim.speed <= 0) return; // stationary — also the honest state for an
-                                 // assign_route with no set_speed yet
+    // assign_route with no set_speed yet
     if (sim.isWalker) _advanceStraight(sim, dt);
     else _advanceLaneFollow(sim, dt);
   }
@@ -1413,11 +1520,11 @@
   // its own obstacle braking (consider_obstacles); this is not a model of it.
   // The commanded speed lives in `target`, the driven one in `speed`, so the
   // event logic above never sees the brake.
-  const REACT_PLAN_DECEL = 6.0;     // m/s², what it plans a stop with
-  const REACT_STANDOFF_M = 2.0;     // bumper gap it stops at
+  const REACT_PLAN_DECEL = 6.0; // m/s², what it plans a stop with
+  const REACT_STANDOFF_M = 2.0; // bumper gap it stops at
   const REACT_LOOKAHEAD_M = 60;
   let _reactiveEgo = false;
-  let _staticObstacles = [];        // [{x, y, len, wid}] for the run being simulated
+  let _staticObstacles = []; // [{x, y, len, wid}] for the run being simulated
 
   function _footprintOf(type, prop) {
     if (type === 'prop') {
@@ -1432,12 +1539,14 @@
    * nearest thing in its path, Infinity when the path is clear. */
   function _egoAllowedSpeed(ego) {
     const p = _pose(ego);
-    const rad = (ego.yaw || 0) * Math.PI / 180;
-    const cx = Math.cos(rad), cy = Math.sin(rad);
+    const rad = ((ego.yaw || 0) * Math.PI) / 180;
+    const cx = Math.cos(rad),
+      cy = Math.sin(rad);
     const me = _footprintOf(ego.body || 'ego');
     let gapMin = Infinity;
     const consider = (x, y, len, wid) => {
-      const dx = x - p.x, dy = y - p.y;
+      const dx = x - p.x,
+        dy = y - p.y;
       const lon = dx * cx + dy * cy;
       const lat = -dx * cy + dy * cx;
       if (lon <= 0 || lon > REACT_LOOKAHEAD_M) return;
@@ -1482,9 +1591,10 @@
       // so an actor that never reacts to anything reads as authored, not broken.
       if (!sim.noEventsBadgeShown) {
         sim.noEventsBadgeShown = true;
-        sim.badge = sim.target > 0
-          ? { icon: '▶', text: 'Kein Event — fährt nur mit Startgeschwindigkeit' }
-          : { icon: '⏸', text: 'Kein Event — steht still' };
+        sim.badge =
+          sim.target > 0
+            ? { icon: '▶', text: 'Kein Event — fährt nur mit Startgeschwindigkeit' }
+            : { icon: '⏸', text: 'Kein Event — steht still' };
       }
     } else {
       for (const ev of sim.events) {
@@ -1516,15 +1626,12 @@
             const elapsed = simTime - rec.firedAt;
             const sign = sim.speedRampTarget >= sim.speedRampFrom ? 1 : -1;
             const ramped = sim.speedRampFrom + sign * sim.speedEventDuration * elapsed;
-            const commanded = sign > 0
-              ? Math.min(ramped, sim.speedRampTarget)
-              : Math.max(ramped, sim.speedRampTarget);
+            const commanded = sign > 0 ? Math.min(ramped, sim.speedRampTarget) : Math.max(ramped, sim.speedRampTarget);
             if (!sim.goalStopped) sim.target = commanded;
             if (commanded === sim.speedRampTarget) rec.completedAt = simTime;
           } else if (sim.speedContinuous) {
             // continuous="true": neither duration nor distance may end it.
-          } else if (sim.speedEventDimension === 'time' &&
-              simTime - rec.firedAt >= sim.speedEventDuration) {
+          } else if (sim.speedEventDimension === 'time' && simTime - rec.firedAt >= sim.speedEventDuration) {
             rec.completedAt = simTime;
           }
         }
@@ -1549,15 +1656,15 @@
   // A fixed step is also closer to CARLA than the old rAF-sized one, whose
   // step length depended on the frame rate and the playback speed.
 
-  const SIM_DT_S = 0.05;                 // ScenarioRunner's synchronous 20 Hz tick
-  const MAX_SIM_TIME_S = 60.0;           // every Act's MaxSimTime StopTrigger
-  const TAIL_AFTER_ACTIVITY_S = 3.0;     // keep this much idle time after the last motion
+  const SIM_DT_S = 0.05; // ScenarioRunner's synchronous 20 Hz tick
+  const MAX_SIM_TIME_S = 60.0; // every Act's MaxSimTime StopTrigger
+  const TAIL_AFTER_ACTIVITY_S = 3.0; // keep this much idle time after the last motion
 
-  let _frames = [];        // [{t, poses: {id: {x,y,z,yaw}}, badges: {id: badge|null}}]
-  let _timelineEnd = 0;    // seconds; the last recorded frame's t
-  let _markers = [];       // [{t, label, kind}] — event starts and the run's end
-  let _endReason = null;   // 'teardown' | 'maxtime' | 'idle'
-  let _viewTime = 0;       // the time currently on screen
+  let _frames = []; // [{t, poses: {id: {x,y,z,yaw}}, badges: {id: badge|null}}]
+  let _timelineEnd = 0; // seconds; the last recorded frame's t
+  let _markers = []; // [{t, label, kind}] — event starts and the run's end
+  let _endReason = null; // 'teardown' | 'maxtime' | 'idle'
+  let _viewTime = 0; // the time currently on screen
 
   function _ensureBadgeLayer() {
     if (_layerSimBadges && _layerSimBadges.isConnected) return;
@@ -1573,7 +1680,7 @@
     for (const [id, badge] of Object.entries(badges || {})) {
       if (!badge || !poses[id]) continue;
       const sim = _simActors.get(id);
-      const size = MapView.actorSize(sim ? (sim.body || sim.type) : 'car');
+      const size = MapView.actorSize(sim ? sim.body || sim.type : 'car');
       const yOff = -Math.max(size.w, size.h) / 2 - 4.5;
       const g = document.createElementNS(SVG_NS, 'g');
       g.setAttribute('transform', `translate(${poses[id].x},${poses[id].y + yOff})`);
@@ -1621,7 +1728,8 @@
     const actor = AppState.findById(sim.id);
     const who = actor ? AppState.actorLabel(actor, { short: true }) : sim.id;
     const what = window.EventPanel?.displayName
-      ? EventPanel.displayName(ev, sim.events.indexOf(ev)) : (ev.action?.type || ev.id);
+      ? EventPanel.displayName(ev, sim.events.indexOf(ev))
+      : ev.action?.type || ev.id;
     return `${who}: ${what}`;
   }
 
@@ -1668,16 +1776,24 @@
       }
       if (active) lastActivity = _simTime;
 
-      if (egoSim && egoSim.traveled >= ACT_TEARDOWN_DISTANCE_M) { _endReason = 'teardown'; break; }
+      if (egoSim && egoSim.traveled >= ACT_TEARDOWN_DISTANCE_M) {
+        _endReason = 'teardown';
+        break;
+      }
       // An unfired distance_to_ego event still has its 60 s OR-fallback ahead
       // of it, so "pending" keeps the run going to the end in that case — the
       // file really does do something at 60 s.
-      if (!pending && _simTime - lastActivity >= TAIL_AFTER_ACTIVITY_S) { _endReason = 'idle'; break; }
+      if (!pending && _simTime - lastActivity >= TAIL_AFTER_ACTIVITY_S) {
+        _endReason = 'idle';
+        break;
+      }
     }
     _timelineEnd = _simTime;
-    const endText = { teardown: 'Ende — Ego hat 500 m zurückgelegt (Stop-Trigger jedes Acts)',
-                      maxtime: 'Ende — 60 s erreicht (MaxSimTime jedes Acts)',
-                      idle: 'Ende — nichts bewegt sich mehr, kein Event steht aus' }[_endReason];
+    const endText = {
+      teardown: 'Ende — Ego hat 500 m zurückgelegt (Stop-Trigger jedes Acts)',
+      maxtime: 'Ende — 60 s erreicht (MaxSimTime jedes Acts)',
+      idle: 'Ende — nichts bewegt sich mehr, kein Event steht aus',
+    }[_endReason];
     _markers.push({ t: _timelineEnd, label: endText, kind: 'end' });
   }
 
@@ -1690,7 +1806,10 @@
     _egoId = null;
 
     const actors = [];
-    if (AppState.ego) { actors.push(AppState.ego); _egoId = AppState.ego.id; }
+    if (AppState.ego) {
+      actors.push(AppState.ego);
+      _egoId = AppState.ego.id;
+    }
     for (const npc of AppState.npcs) actors.push(npc);
 
     if (actors.length === 0) {
@@ -1702,9 +1821,9 @@
       _originals.set(actor.id, { x: actor.x, y: actor.y, z: actor.z, yaw: actor.yaw });
       _simActors.set(actor.id, _makeSimActor(actor, actor.id === _egoId));
     }
-    _staticObstacles = (AppState.staticObjects || []).map(o => ({ x: o.x, y: o.y, ..._footprintOf('prop', o.prop) }));
+    _staticObstacles = (AppState.staticObjects || []).map((o) => ({ x: o.x, y: o.y, ..._footprintOf('prop', o.prop) }));
     _snapshotSpeeds(); // so an event firing on the very first tick reads real
-                       // init speeds rather than an empty map
+    // init speeds rather than an empty map
     _ensureBadgeLayer();
     _simulateTimeline();
     _renderTimelineMarkers();
@@ -1731,7 +1850,8 @@
     const f = b === a ? 0 : Math.max(0, Math.min(1, (_viewTime - a.t) / (b.t - a.t)));
     const poses = {};
     for (const id of Object.keys(a.poses)) {
-      const pa = a.poses[id], pb = b.poses[id] || pa;
+      const pa = a.poses[id],
+        pb = b.poses[id] || pa;
       poses[id] = {
         x: pa.x + (pb.x - pa.x) * f,
         y: pa.y + (pb.y - pa.y) * f,
@@ -1744,14 +1864,20 @@
     _renderTimelineHead();
   }
 
-  function _fmtTime(t) { return `${t.toFixed(1)} s`; }
+  function _fmtTime(t) {
+    return `${t.toFixed(1)} s`;
+  }
 
   // Listeners on the preview's time (eventTimeline.js's playhead): called with
   // the view time on every frame shown, and with null when the preview stops.
   const _timeListeners = [];
   function _emitTime(t) {
     for (const fn of _timeListeners) {
-      try { fn(t); } catch (err) { console.warn('[simulate] time listener', err); }
+      try {
+        fn(t);
+      } catch (err) {
+        console.warn('[simulate] time listener', err);
+      }
     }
   }
 
@@ -1765,7 +1891,7 @@
   }
 
   function _renderTimelineMarkers() {
-    progressBar.querySelectorAll('.sim-marker').forEach(n => n.remove());
+    progressBar.querySelectorAll('.sim-marker').forEach((n) => n.remove());
     if (!(_timelineEnd > 0)) return;
     // Several events often fire on the same tick (a chain's first link, every
     // route at t = 0) — one tick mark with all their names in the tooltip.
@@ -1776,7 +1902,7 @@
       byTick.get(key).labels.push(m.label);
     }
     for (const m of byTick.values()) {
-      if (m.kind === 'end') continue;   // the bar's own right edge says that
+      if (m.kind === 'end') continue; // the bar's own right edge says that
       const el = document.createElement('div');
       el.className = `sim-marker sim-marker-${m.kind}`;
       el.style.left = `${(m.t / _timelineEnd) * 100}%`;
@@ -1784,8 +1910,9 @@
       el.dataset.t = String(m.t);
       progressBar.appendChild(el);
     }
-    progressBar.title = `${_markers.find(m => m.kind === 'end')?.label || ''} — `
-      + 'klicken oder ziehen zum Springen, ←/→ ±0,5 s (Umschalt ±5 s), Pos1/Ende';
+    progressBar.title =
+      `${_markers.find((m) => m.kind === 'end')?.label || ''} — ` +
+      'klicken oder ziehen zum Springen, ←/→ ±0,5 s (Umschalt ±5 s), Pos1/Ende';
   }
 
   function _startSimulation() {
@@ -1813,14 +1940,17 @@
       // way. None of that is an edit: without this a single run would push
       // hundreds of entries and bury the user's actual history.
       UndoStack.suspend();
-      if (!_prepareSimulation()) { UndoStack.resume(); return; }
+      if (!_prepareSimulation()) {
+        UndoStack.resume();
+        return;
+      }
       _viewTime = 0;
       _running = true;
       AppState.select(null);
       document.body.classList.add('simulating');
       btnStop.classList.remove('sim-idle');
     } else if (_viewTime >= _timelineEnd - 1e-6) {
-      _viewTime = 0;   // Play at the end replays from the start
+      _viewTime = 0; // Play at the end replays from the start
     }
     _paused = false;
     _lastFrame = performance.now();
@@ -1874,7 +2004,7 @@
     _timelineEnd = 0;
     _viewTime = 0;
     if (_layerSimBadges) while (_layerSimBadges.firstChild) _layerSimBadges.removeChild(_layerSimBadges.firstChild);
-    progressBar.querySelectorAll('.sim-marker').forEach(n => n.remove());
+    progressBar.querySelectorAll('.sim-marker').forEach((n) => n.remove());
     progressBar.title = 'Klicken zum Springen — startet die Vorschau angehalten';
 
     document.body.classList.remove('simulating');
@@ -1898,7 +2028,7 @@
     _lastFrame = now;
     _showTime(_viewTime + realDt * _speed);
     if (_viewTime >= _timelineEnd - 1e-6) {
-      _pauseSimulation();   // hold the last frame; Play replays
+      _pauseSimulation(); // hold the last frame; Play replays
       return;
     }
     _animId = requestAnimationFrame(_tick);
@@ -1912,7 +2042,7 @@
 
   function _togglePlayPause() {
     if (_running && !_paused) _pauseSimulation();
-    else _startSimulation();   // cold start and resume are the same call
+    else _startSimulation(); // cold start and resume are the same call
   }
 
   /* Leertaste = Play/Pause, Esc = Stop.
@@ -1923,11 +2053,10 @@
    * its own Escape branch before this one — harmless during a run, since
    * _startSimulation has already cleared everything it would clear.
    */
-  window.addEventListener('keydown', e => {
+  window.addEventListener('keydown', (e) => {
     if (window.Confirm?.isOpen) return;
     const t = e.target;
-    if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' ||
-        t.isContentEditable) return;
+    if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
 
     if (e.key === ' ' || e.code === 'Space') {
@@ -1941,8 +2070,8 @@
       // preventDefault below is load-bearing for exactly that case: it is what
       // stops the browser turning this keydown into a click on that button.
       if (UIUtils.keyboardFocused(t)) return;
-      if (simControls.classList.contains('hidden')) return;   // no map loaded yet
-      e.preventDefault();                                     // and no page scroll
+      if (simControls.classList.contains('hidden')) return; // no map loaded yet
+      e.preventDefault(); // and no page scroll
       _togglePlayPause();
       return;
     }
@@ -1968,8 +2097,7 @@
     }
 
     // Stops from either state — _paused implies _running.
-    if (e.key === 'Escape' && _running &&
-        document.getElementById('shortcuts-overlay')?.classList.contains('hidden')) {
+    if (e.key === 'Escape' && _running && document.getElementById('shortcuts-overlay')?.classList.contains('hidden')) {
       _stopSimulation();
       Toast.info('Vorschau beendet');
     }
@@ -1992,10 +2120,10 @@
     return f * _timelineEnd;
   }
 
-  progressBar.addEventListener('pointerdown', e => {
+  progressBar.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
     e.preventDefault();
-    if (!_running) _seek(0);            // simulate first, so _timelineEnd is known
+    if (!_running) _seek(0); // simulate first, so _timelineEnd is known
     if (!_running) return;
     const resume = !_paused;
     _pauseSimulation();
@@ -2004,7 +2132,7 @@
     // A press on an event tick lands exactly on the event, not on the pixel.
     const tick = e.target.closest?.('.sim-marker');
     _seek(tick ? parseFloat(tick.dataset.t) : _timeAtPointer(e));
-    const move = ev => _seek(_timeAtPointer(ev));
+    const move = (ev) => _seek(_timeAtPointer(ev));
     const up = () => {
       progressBar.removeEventListener('pointermove', move);
       progressBar.removeEventListener('pointerup', up);
@@ -2018,7 +2146,7 @@
   });
 
   // Stop simulation if user interacts with editing tools
-  AppState.on('change', patch => {
+  AppState.on('change', (patch) => {
     if (_running && ('activeTool' in patch || 'trajectoryMode' in patch || 'routeMode' in patch)) {
       if (AppState.activeTool || AppState.trajectoryMode || AppState.routeMode) {
         _stopSimulation();
@@ -2056,8 +2184,7 @@
     // position — so computing this from the live pose made the drawn route
     // crawl along underneath the moving vehicle, redrawn every frame. The
     // route is a property of the scenario, not of where the car has got to.
-    const sim = _makeSimActor({ ...actor, ...(authoredPose(actor.id) || {}) },
-                              actor.type === 'ego');
+    const sim = _makeSimActor({ ...actor, ...(authoredPose(actor.id) || {}) }, actor.type === 'ego');
     return _exactRoute(sim, points);
   }
 
@@ -2083,8 +2210,15 @@
    * or null while a live preview is running (the two share this module's
    * tick state). scenarioGenerator.js measures conflicts off the tracks.
    */
-  function runHeadless({ dt = 0.05, maxTime = 40, ego = AppState.ego, npcs = AppState.npcs,
-                         reactiveEgo = false, props = [], stopWhenIdle = false } = {}) {
+  function runHeadless({
+    dt = 0.05,
+    maxTime = 40,
+    ego = AppState.ego,
+    npcs = AppState.npcs,
+    reactiveEgo = false,
+    props = [],
+    stopWhenIdle = false,
+  } = {}) {
     // `ego`/`npcs` default to the editor's scenario; the generator passes a
     // candidate it has not loaded, so it can score one before committing it.
     // _makeSimActor reads only the actor it is given, and cross-actor lookups
@@ -2097,7 +2231,7 @@
     const savedReact = _reactiveEgo;
     _reactiveEgo = !!reactiveEgo;
     const savedStatic = _staticObstacles;
-    _staticObstacles = (props || []).map(o => ({ x: o.x, y: o.y, ..._footprintOf('prop', o.prop) }));
+    _staticObstacles = (props || []).map((o) => ({ x: o.x, y: o.y, ..._footprintOf('prop', o.prop) }));
     _simActors.clear();
     _tickSpeeds.clear();
     _tickCompleted.clear();
@@ -2120,7 +2254,7 @@
       // generator's scoring keeps the old rule.
       const seen = new Set();
       let lastActivity = 0;
-      for (_simTime = 0; _simTime < maxTime;) {
+      for (_simTime = 0; _simTime < maxTime; ) {
         _simTime += dt;
         const egoPrevPos = egoSim ? { ..._pose(egoSim), z: egoSim.z } : null;
         _snapshotSpeeds();
@@ -2133,7 +2267,10 @@
           if (sim.frozen && frozenAt[sim.id] == null) frozenAt[sim.id] = r3(_simTime);
           if (Math.abs(sim.speed) > 0.05 && !sim.frozen && !sim.goalStopped) moving = true;
         }
-        if (egoSim && egoSim.traveled >= ACT_TEARDOWN_DISTANCE_M) { ended = 'teardown'; break; }
+        if (egoSim && egoSim.traveled >= ACT_TEARDOWN_DISTANCE_M) {
+          ended = 'teardown';
+          break;
+        }
         if (stopWhenIdle) {
           let active = moving;
           let pending = false;
@@ -2148,17 +2285,23 @@
             }
           }
           if (active) lastActivity = _simTime;
-          if (!pending && _simTime - lastActivity >= TAIL_AFTER_ACTIVITY_S) { ended = 'idle'; break; }
+          if (!pending && _simTime - lastActivity >= TAIL_AFTER_ACTIVITY_S) {
+            ended = 'idle';
+            break;
+          }
           continue;
         }
         // Everything has been standing still for 10 s and no event can still
         // move it before the distance fallback — nothing more will happen.
         still = moving ? 0 : still + dt;
-        if (still > 10 && _simTime > DISTANCE_TO_EGO_FALLBACK_S) { ended = 'stopped'; break; }
+        if (still > 10 && _simTime > DISTANCE_TO_EGO_FALLBACK_S) {
+          ended = 'stopped';
+          break;
+        }
       }
       const fired = {};
-      const completed = {};  // actorId -> eventId -> completedAt (absent while still running)
-      const frozen = {};   // actorId -> the badge it froze with (lane ran out, no successor, …)
+      const completed = {}; // actorId -> eventId -> completedAt (absent while still running)
+      const frozen = {}; // actorId -> the badge it froze with (lane ran out, no successor, …)
       for (const sim of _simActors.values()) {
         fired[sim.id] = {};
         completed[sim.id] = {};
@@ -2181,33 +2324,53 @@
     }
   }
 
-  const r3 = v => Math.round(v * 1000) / 1000;
+  const r3 = (v) => Math.round(v * 1000) / 1000;
 
   window.Simulate = {
     runHeadless,
     // The generator stops a running preview before it replaces the scenario:
     // runHeadless refuses to run beside it, and the preview's Stop would then
     // try to put back poses on actors that no longer exist.
-    get running() { return _running; },
-    get reactiveEgo() { return _reactiveEgo; },
+    get running() {
+      return _running;
+    },
+    get reactiveEgo() {
+      return _reactiveEgo;
+    },
     // Jump the preview to time t (starting it paused if none runs) — the
     // event timeline's block click (eventTimeline.js).
-    seek(t) { _seek(t); },
-    stop() { if (_running) _stopSimulation(); },
-    pause() { _pauseSimulation(); },
-    play() { _startSimulation(); },
-    get paused() { return _paused; },
-    get time() { return _running ? _viewTime : null; },
-    get end() { return _running ? _timelineEnd : null; },
+    seek(t) {
+      _seek(t);
+    },
+    stop() {
+      if (_running) _stopSimulation();
+    },
+    pause() {
+      _pauseSimulation();
+    },
+    play() {
+      _startSimulation();
+    },
+    get paused() {
+      return _paused;
+    },
+    get time() {
+      return _running ? _viewTime : null;
+    },
+    get end() {
+      return _running ? _timelineEnd : null;
+    },
     /** fn(t) on every shown frame, fn(null) on Stop. */
-    onTime(fn) { _timeListeners.push(fn); },
+    onTime(fn) {
+      _timeListeners.push(fn);
+    },
     // routeForTesting exists purely for tests/test_route_fidelity_e2e.py: it
     // returns the route without running the animation. Asserting on the route
     // directly is deterministic, whereas sampling a moving actor can only ever
     // catch a reversal that happens to straddle two samples.
     routeForTesting(actor) {
       const sim = _makeSimActor(actor, actor.type === 'ego');
-      const ev = (sim.events || []).find(e => e.action && e.action.type === 'assign_route');
+      const ev = (sim.events || []).find((e) => e.action && e.action.type === 'assign_route');
       if (!ev) return null;
       return _exactRoute(sim, ev.action.waypoints || []);
     },

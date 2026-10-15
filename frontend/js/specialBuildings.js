@@ -21,7 +21,7 @@
   const SpecialBuildings = {
     /** The rows for one town, in file order. */
     forTown(town) {
-      return (AppState.specialBuildings || []).filter(b => b.town === town);
+      return (AppState.specialBuildings || []).filter((b) => b.town === town);
     },
 
     /**

@@ -29,9 +29,9 @@
     let idx = _indexed.get(graph);
     if (idx) return idx;
 
-    const nodeById = new Map(graph.nodes.map(n => [n.id, n]));
-    const adjacency = new Map();   // nodeId -> [{to, edge}]
-    const edgeByPair = new Map();  // "from:to" -> edge
+    const nodeById = new Map(graph.nodes.map((n) => [n.id, n]));
+    const adjacency = new Map(); // nodeId -> [{to, edge}]
+    const edgeByPair = new Map(); // "from:to" -> edge
     for (const edge of graph.edges) {
       if (!adjacency.has(edge.from)) adjacency.set(edge.from, []);
       const pair = `${edge.from}:${edge.to}`;
@@ -39,12 +39,12 @@
       // A networkx DiGraph keeps one edge per pair: a repeat add_edge updates
       // the attributes in place without moving it in the adjacency order,
       // which A*'s tie-breaking depends on.
-      const existing = edgeByPair.has(pair) ? list.findIndex(a => a.to === edge.to) : -1;
+      const existing = edgeByPair.has(pair) ? list.findIndex((a) => a.to === edge.to) : -1;
       if (existing >= 0) list[existing] = { to: edge.to, edge };
       else list.push({ to: edge.to, edge });
       edgeByPair.set(pair, edge);
     }
-    const lanesByKey = new Map(graph.lanes.map(l => [_laneKey(l.roadId, l.sectionId, l.laneId), l]));
+    const lanesByKey = new Map(graph.lanes.map((l) => [_laneKey(l.roadId, l.sectionId, l.laneId), l]));
 
     idx = { nodeById, adjacency, edgeByPair, lanesByKey };
     _indexed.set(graph, idx);
@@ -76,9 +76,9 @@
    */
   function realSuccessors(record) {
     if (!record) return [];
-    return record.successors.filter(s => !(
-      s.roadId === record.roadId && s.sectionId === record.sectionId && s.laneId === record.laneId
-    ));
+    return record.successors.filter(
+      (s) => !(s.roadId === record.roadId && s.sectionId === record.sectionId && s.laneId === record.laneId),
+    );
   }
 
   // ── A* routing (ports agents.navigation.global_route_planner._path_search) ─
@@ -97,16 +97,22 @@
    * Written as sqrt(dot) rather than Math.hypot so the float comes out
    * bit-identical — A* ties are decided on exact f values (see _astar). */
   function _heuristic(a, b) {
-    const dx = a.x - b.x, dy = a.y - b.y, dz = (a.z || 0) - (b.z || 0);
+    const dx = a.x - b.x,
+      dy = a.y - b.y,
+      dz = (a.z || 0) - (b.z || 0);
     return Math.sqrt(dx * dx + dy * dy + dz * dz);
   }
 
   /** Ports _find_closest_in_list — index of the entry nearest `cur`. */
   function _closestIndex(cur, list) {
-    let bestIdx = -1, bestDist = Infinity;
+    let bestIdx = -1,
+      bestDist = Infinity;
     for (let i = 0; i < list.length; i++) {
       const d = _dist3(list[i], cur);
-      if (d < bestDist) { bestDist = d; bestIdx = i; }
+      if (d < bestDist) {
+        bestDist = d;
+        bestIdx = i;
+      }
     }
     return bestIdx;
   }
@@ -134,21 +140,25 @@
       while (i > 0) {
         const p = (i - 1) >> 1;
         if (!less(heap[i], heap[p])) break;
-        [heap[i], heap[p]] = [heap[p], heap[i]]; i = p;
+        [heap[i], heap[p]] = [heap[p], heap[i]];
+        i = p;
       }
     };
     const pop = () => {
-      const top = heap[0], last = heap.pop();
+      const top = heap[0],
+        last = heap.pop();
       if (heap.length) {
         heap[0] = last;
         let i = 0;
         for (;;) {
-          const l = 2 * i + 1, r = l + 1;
+          const l = 2 * i + 1,
+            r = l + 1;
           let m = i;
           if (l < heap.length && less(heap[l], heap[m])) m = l;
           if (r < heap.length && less(heap[r], heap[m])) m = r;
           if (m === i) break;
-          [heap[i], heap[m]] = [heap[m], heap[i]]; i = m;
+          [heap[i], heap[m]] = [heap[m], heap[i]];
+          i = m;
         }
       }
       return top;
@@ -232,7 +242,7 @@
     const destination = {
       x: to.rawX !== undefined ? to.rawX : to.x,
       y: to.rawY !== undefined ? to.rawY : to.y,
-      z: to.rawZ !== undefined ? to.rawZ : (to.z || 0),
+      z: to.rawZ !== undefined ? to.rawZ : to.z || 0,
     };
     const destinationWaypoint = { x: to.x, y: to.y, z: to.z || 0 };
 
@@ -249,8 +259,7 @@
         const nextPair = _edgeForLane(graph, exitRef.roadId, exitRef.sectionId, exitRef.laneId);
         const nextEdge = nextPair ? idx.edgeByPair.get(`${nextPair[0]}:${nextPair[1]}`) : null;
         if (nextEdge && nextEdge.path.length) {
-          const ci = Math.min(nextEdge.path.length - 1,
-                              _closestIndex(current, nextEdge.path) + LANE_CHANGE_SKIP_AHEAD);
+          const ci = Math.min(nextEdge.path.length - 1, _closestIndex(current, nextEdge.path) + LANE_CHANGE_SKIP_AHEAD);
           current = nextEdge.path[ci];
         } else if (nextEdge) {
           current = nextEdge.exit;
@@ -265,15 +274,13 @@
       // _build_topology walks a single lane from entry to exit — so the entry's
       // lane ref identifies the whole path. The cache does not stamp a lane ref
       // on individual path points, which is why this uses the edge's.
-      const onDestinationLane = edge.entry.roadId === to.roadId
-        && edge.entry.sectionId === to.sectionId
-        && edge.entry.laneId === to.laneId;
+      const onDestinationLane =
+        edge.entry.roadId === to.roadId && edge.entry.sectionId === to.sectionId && edge.entry.laneId === to.laneId;
 
       for (let j = closestIndex; j < path.length; j++) {
         current = path[j];
         trace.push(current);
-        if (routeNodes.length - i <= 2
-            && _dist3(current, destination) < 2 * SAMPLING_RESOLUTION_M) break;
+        if (routeNodes.length - i <= 2 && _dist3(current, destination) < 2 * SAMPLING_RESOLUTION_M) break;
         if (routeNodes.length - i <= 2 && onDestinationLane) {
           // Compares the loop's START index, not j — faithful to CARLA, which
           // uses `closest_index` here rather than the running index.

@@ -30,18 +30,18 @@
         {
           label: 'Fahrzeuge',
           types: [
-            { type: 'car',        label: 'Auto' },
-            { type: 'van',        label: 'Transporter' },
-            { type: 'truck',      label: 'LKW' },
-            { type: 'bus',        label: 'Bus' },
+            { type: 'car', label: 'Auto' },
+            { type: 'van', label: 'Transporter' },
+            { type: 'truck', label: 'LKW' },
+            { type: 'bus', label: 'Bus' },
             { type: 'motorcycle', label: 'Moto' },
-            { type: 'scooter',    label: 'Roller' },
+            { type: 'scooter', label: 'Roller' },
           ],
         },
         {
           label: 'Einsatzfahrzeuge',
           types: [
-            { type: 'police',    label: 'Polizei' },
+            { type: 'police', label: 'Polizei' },
             { type: 'ambulance', label: 'Rettung' },
             { type: 'firetruck', label: 'Feuerwehr' },
           ],
@@ -55,8 +55,8 @@
           label: 'Personen',
           types: [
             { type: 'pedestrian', label: 'Fußgänger' },
-            { type: 'child',      label: 'Kind' },
-            { type: 'cyclist',    label: 'Radfahrer' },
+            { type: 'child', label: 'Kind' },
+            { type: 'cyclist', label: 'Radfahrer' },
           ],
         },
       ],
@@ -73,19 +73,28 @@
    * 'wet_road' underneath a slider labelled 'Nasse Str.'.
    */
   const WEATHER_LABELS = {
-    fog: 'Nebel', rainy: 'Regen', cloudy: 'Wolken', sunny: 'Sonne',
-    wet_road: 'Nasse Stra\u00dfe', snowy: 'Schnee', dust_storm: 'Staub',
+    fog: 'Nebel',
+    rainy: 'Regen',
+    cloudy: 'Wolken',
+    sunny: 'Sonne',
+    wet_road: 'Nasse Stra\u00dfe',
+    snowy: 'Schnee',
+    dust_storm: 'Staub',
   };
   const TIME_LABELS = {
-    daytime: 'Tags\u00fcber', morning: 'Morgen', noon: 'Mittag',
-    afternoon: 'Nachmittag', dusk: 'D\u00e4mmerung', nighttime: 'Nacht',
+    daytime: 'Tags\u00fcber',
+    morning: 'Morgen',
+    noon: 'Mittag',
+    afternoon: 'Nachmittag',
+    dusk: 'D\u00e4mmerung',
+    nighttime: 'Nacht',
   };
 
   const AppState = {
     // ── Map ──────────────────────────────────────────────────
-    map:      null,       // selected town name string
-    mapData:  null,       // road render JSON from /api/maps/{town}/render
-    laneGraph: null,      // cached CARLA routing graph from /api/maps/{town}/lane_graph, or null if unprobed
+    map: null, // selected town name string
+    mapData: null, // road render JSON from /api/maps/{town}/render
+    laneGraph: null, // cached CARLA routing graph from /api/maps/{town}/lane_graph, or null if unprobed
     // Landmark reference points from maps/special_buildings.csv, ALL towns at
     // once — the map draws only the rows whose `town` matches AppState.map.
     // Pure map reference data: never part of the scenario, so it is absent from
@@ -94,15 +103,20 @@
     specialBuildings: [],
 
     // ── Scenario ─────────────────────────────────────────────
-    ego: null,            // {id, type:'ego', x, y, z, yaw, initial_speed, events} or null
-    npcs: [],             // [{id, type, x, y, z, yaw, initial_speed, events}]
-    staticObjects: [],    // [{id, type:'prop', prop:'static.prop.*', x, y, z, yaw}]
-    trafficSignals: [],   // configured traffic-light events from the map
+    ego: null, // {id, type:'ego', x, y, z, yaw, initial_speed, events} or null
+    npcs: [], // [{id, type, x, y, z, yaw, initial_speed, events}]
+    staticObjects: [], // [{id, type:'prop', prop:'static.prop.*', x, y, z, yaw}]
+    trafficSignals: [], // configured traffic-light events from the map
 
     // ── Weather / time ────────────────────────────────────────
     weather: {
-      fog: 0, rainy: 0, cloudy: 0, sunny: 0,
-      wet_road: 0, snowy: 0, dust_storm: 0,
+      fog: 0,
+      rainy: 0,
+      cloudy: 0,
+      sunny: 0,
+      wet_road: 0,
+      snowy: 0,
+      dust_storm: 0,
     },
     time: 'daytime',
     // Background traffic (bgTraffic.js): SUMO cars CARLA replays as puppets.
@@ -112,34 +126,36 @@
     bgTraffic: { enabled: false, count: 30, seed: 1, clearance: 0.5, radius: 80 },
 
     // ── Editor interaction ─────────────────────────────────────
-    selectedId:          null,   // id of selected actor/object
+    selectedId: null, // id of selected actor/object
     selectedTrafficLightId: null, // id of selected map traffic light
     // The one path waypoint currently under the cursor's attention, shared by
     // the map (mapView.js) and the event card's waypoint list (eventPanel.js)
     // so the two always agree on which point is which:
     //   { actorId, eventId, pathType: 'trajectory'|'route', index }
     // Editor-only state, so it records no undo entry (_isScenarioPatch).
-    selectedWaypoint:    null,
-    activeTool:          null,   // selected toolbar tool, or null
-    trajectoryMode:      false,  // true while drawing a path
-    activeTrajectoryId:  null,   // actor id whose trajectory we're drawing
-    routeMode:           false,  // true while drawing a route
-    activeRouteId:       null,   // actor id whose route we're drawing
-    activePathEventId:    null,   // event id whose action path/route we're drawing
-    pendingTemplate:     null,   // scenario template to apply to the next placed actor
-    pendingGenerate:     null,   // generator type key (or 'any') to build at the next map click
+    selectedWaypoint: null,
+    activeTool: null, // selected toolbar tool, or null
+    trajectoryMode: false, // true while drawing a path
+    activeTrajectoryId: null, // actor id whose trajectory we're drawing
+    routeMode: false, // true while drawing a route
+    activeRouteId: null, // actor id whose route we're drawing
+    activePathEventId: null, // event id whose action path/route we're drawing
+    pendingTemplate: null, // scenario template to apply to the next placed actor
+    pendingGenerate: null, // generator type key (or 'any') to build at the next map click
     // Recipe of the scenario the generator last built ({type, seed, near,
     // overrides, params, criticality, signature}) or null. Scenario state:
     // saved, and part of every undo snapshot, so undoing a rebuild restores
     // the recipe that built what is on screen.
-    generated:           null,
-    pendingProp:         null,   // CARLA blueprint id to place while activeTool === 'prop'
+    generated: null,
+    pendingProp: null, // CARLA blueprint id to place while activeTool === 'prop'
 
     // ── Listeners ─────────────────────────────────────────────
     _listeners: {},
 
     // ── Helpers ───────────────────────────────────────────────
-    nextId() { return `obj-${_nextId++}`; },
+    nextId() {
+      return `obj-${_nextId++}`;
+    },
 
     /** True for static props, which have no speed, events, or path. */
     isProp(actorOrId) {
@@ -155,18 +171,22 @@
      * events, never on the actor itself.
      */
     pathEventOf(actor) {
-      return (actor?.events || []).find(ev => {
-        const a = ev.action || {};
-        return (a.type === 'follow_trajectory' && (a.trajectory || []).length > 0)
-            || (a.type === 'assign_route'      && (a.waypoints  || []).length > 0);
-      }) || null;
+      return (
+        (actor?.events || []).find((ev) => {
+          const a = ev.action || {};
+          return (
+            (a.type === 'follow_trajectory' && (a.trajectory || []).length > 0) ||
+            (a.type === 'assign_route' && (a.waypoints || []).length > 0)
+          );
+        }) || null
+      );
     },
 
     /** The path event's points ([] when the actor has no path event yet). */
     pathPointsOf(actor) {
       const ev = this.pathEventOf(actor);
       if (!ev) return [];
-      return ev.action.type === 'assign_route' ? (ev.action.waypoints || []) : (ev.action.trajectory || []);
+      return ev.action.type === 'assign_route' ? ev.action.waypoints || [] : ev.action.trajectory || [];
     },
 
     on(event, fn) {
@@ -176,11 +196,11 @@
 
     off(event, fn) {
       if (!this._listeners[event]) return;
-      this._listeners[event] = this._listeners[event].filter(f => f !== fn);
+      this._listeners[event] = this._listeners[event].filter((f) => f !== fn);
     },
 
     emit(event, data) {
-      (this._listeners[event] || []).forEach(fn => fn(data));
+      (this._listeners[event] || []).forEach((fn) => fn(data));
     },
 
     /** Patch state and emit 'change'. */
@@ -198,9 +218,9 @@
     /** Find any object by id (ego, npc, or static). */
     findById(id) {
       if (this.ego && this.ego.id === id) return this.ego;
-      const npc = this.npcs.find(n => n.id === id);
+      const npc = this.npcs.find((n) => n.id === id);
       if (npc) return npc;
-      return this.staticObjects.find(o => o.id === id) || null;
+      return this.staticObjects.find((o) => o.id === id) || null;
     },
 
     /** Update an existing object's fields. */
@@ -210,10 +230,10 @@
       if (this.ego && this.ego.id === id) {
         Object.assign(this.ego, patch);
       } else {
-        const npc = this.npcs.find(n => n.id === id);
+        const npc = this.npcs.find((n) => n.id === id);
         if (npc) Object.assign(npc, patch);
         else {
-          const obj = this.staticObjects.find(o => o.id === id);
+          const obj = this.staticObjects.find((o) => o.id === id);
           if (obj) Object.assign(obj, patch);
         }
       }
@@ -227,8 +247,8 @@
       if (this.ego && this.ego.id === id) {
         this.ego = null;
       } else {
-        this.npcs          = this.npcs.filter(n => n.id !== id);
-        this.staticObjects = this.staticObjects.filter(o => o.id !== id);
+        this.npcs = this.npcs.filter((n) => n.id !== id);
+        this.staticObjects = this.staticObjects.filter((o) => o.id !== id);
       }
       if (this.selectedId === id) this.selectedId = null;
       if (this.selectedWaypoint?.actorId === id) this.selectedWaypoint = null;
@@ -264,7 +284,7 @@
     waypointPathOf(sel) {
       if (!sel) return null;
       const actor = this.findById(sel.actorId);
-      const ev = (actor?.events || []).find(item => item.id === sel.eventId);
+      const ev = (actor?.events || []).find((item) => item.id === sel.eventId);
       const action = ev?.action;
       if (!action) return null;
       const points = sel.pathType === 'route' ? action.waypoints : action.trajectory;
@@ -274,10 +294,14 @@
     /** Find nearest spawn point within maxDist metres. Returns null if none. */
     nearestSpawn(wx, wy, maxDist = 10) {
       if (!this.mapData) return null;
-      let best = null, bestDist = maxDist;
+      let best = null,
+        bestDist = maxDist;
       for (const sp of this.mapData.spawnPoints) {
         const d = Math.hypot(sp.x - wx, sp.y - wy);
-        if (d < bestDist) { bestDist = d; best = sp; }
+        if (d < bestDist) {
+          bestDist = d;
+          best = sp;
+        }
       }
       return best;
     },
@@ -301,16 +325,12 @@
       // (every prop has type === 'prop', so the type would carry no meaning).
       if (actor.type === 'prop') {
         const name = (window.PropCatalog?.label(actor.prop) || 'Requisite').toUpperCase();
-        const idx = this.staticObjects
-          .filter(o => o.prop === actor.prop)
-          .findIndex(o => o.id === actor.id);
+        const idx = this.staticObjects.filter((o) => o.prop === actor.prop).findIndex((o) => o.id === actor.id);
         return idx >= 0 ? `${name} ${idx + 1}` : name;
       }
 
       const type = String(actor.type || 'actor').toUpperCase();
-      const index = this.npcs
-        .filter(n => n.type === actor.type)
-        .findIndex(n => n.id === actor.id);
+      const index = this.npcs.filter((n) => n.type === actor.type).findIndex((n) => n.id === actor.id);
       return index >= 0 ? `${type} ${index + 1}` : type;
     },
 
@@ -327,17 +347,21 @@
     TIME_LABELS,
 
     /** German name for a weather key, falling back to the key itself. */
-    weatherLabel(key) { return WEATHER_LABELS[key] || String(key || ''); },
+    weatherLabel(key) {
+      return WEATHER_LABELS[key] || String(key || '');
+    },
 
     /** German name for a time-of-day value, falling back to the value itself. */
-    timeLabel(value) { return TIME_LABELS[value] || String(value || ''); },
+    timeLabel(value) {
+      return TIME_LABELS[value] || String(value || '');
+    },
 
     typeLabel(type) {
       if (type === 'ego') return 'Ego-Fahrzeug';
       if (type === 'prop') return 'Requisite';
       for (const group of ACTOR_TYPE_GROUPS) {
         for (const section of group.sections) {
-          const hit = section.types.find(t => t.type === type);
+          const hit = section.types.find((t) => t.type === type);
           if (hit) return hit.label;
         }
       }
@@ -356,7 +380,7 @@
      */
     bodyType(actor) {
       if (!actor) return 'car';
-      return actor.type === 'ego' ? (actor.vehicleType || 'car') : actor.type;
+      return actor.type === 'ego' ? actor.vehicleType || 'car' : actor.type;
     },
 
     /**
@@ -374,15 +398,14 @@
 
     /** Switch group an actor type belongs to, or null if it cannot be swapped. */
     switchGroupFor(type) {
-      const group = ACTOR_TYPE_GROUPS.find(g =>
-        g.sections.some(s => s.types.some(t => t.type === type)));
+      const group = ACTOR_TYPE_GROUPS.find((g) => g.sections.some((s) => s.types.some((t) => t.type === type)));
       return group ? group.id : null;
     },
 
     /** All swappable types for a group id, flattened across its sections. */
     switchTypesFor(groupId) {
-      const group = ACTOR_TYPE_GROUPS.find(g => g.id === groupId);
-      return group ? group.sections.flatMap(s => s.types.map(t => t.type)) : [];
+      const group = ACTOR_TYPE_GROUPS.find((g) => g.id === groupId);
+      return group ? group.sections.flatMap((s) => s.types.map((t) => t.type)) : [];
     },
 
     /** True if a placed actor of type `from` may be swapped to type `to`. */
@@ -403,9 +426,9 @@
      * allowed (ego, prop, unknown or cross-group type).
      */
     switchActorType(id, nextType) {
-      const actor = this.npcs.find(n => n.id === id);
+      const actor = this.npcs.find((n) => n.id === id);
       if (!actor || !this.canSwitchType(actor.type, nextType)) return false;
-      this.npcs = [...this.npcs.filter(n => n.id !== id), actor];
+      this.npcs = [...this.npcs.filter((n) => n.id !== id), actor];
       this.updateById(id, { type: nextType });
       return true;
     },
@@ -414,7 +437,7 @@
     _dumpActor(a) {
       return {
         ...a,
-        events: (a.events || []).map(ev => ({ ...ev })),
+        events: (a.events || []).map((ev) => ({ ...ev })),
       };
     },
 
@@ -428,11 +451,11 @@
         bgTraffic: { ...this.bgTraffic },
         // Nullable: a scenario may hold only props before an ego is placed.
         ego: this.ego ? this._dumpActor(this.ego) : null,
-        npcs: this.npcs.map(n => this._dumpActor(n)),
-        staticObjects: this.staticObjects.map(o => ({ ...o })),
-        trafficSignals: this.trafficSignals.map(sig => ({
+        npcs: this.npcs.map((n) => this._dumpActor(n)),
+        staticObjects: this.staticObjects.map((o) => ({ ...o })),
+        trafficSignals: this.trafficSignals.map((sig) => ({
           ...sig,
-          events: sig.events.map(ev => ({ ...ev })),
+          events: sig.events.map((ev) => ({ ...ev })),
         })),
         generated: this.generated ? JSON.parse(JSON.stringify(this.generated)) : null,
       };
@@ -466,15 +489,17 @@
       const legacy = ego.trajectory || [];
       delete ego.trajectory;
       if (legacy.length === 0) return ego;
-      const hasPathEvent = ego.events.some(ev =>
-        ['follow_trajectory', 'assign_route'].includes(ev.action?.type));
+      const hasPathEvent = ego.events.some((ev) => ['follow_trajectory', 'assign_route'].includes(ev.action?.type));
       if (hasPathEvent) return ego;
-      ego.events = [{
-        id: 'evt-legacy-path',
-        // Not distance_to_ego: that is a self-distance for the hero.
-        trigger: { type: 'simulation_time', value: 0 },
-        action: { type: 'follow_trajectory', trajectory: legacy.map(p => ({ ...p })) },
-      }, ...ego.events];
+      ego.events = [
+        {
+          id: 'evt-legacy-path',
+          // Not distance_to_ego: that is a self-distance for the hero.
+          trigger: { type: 'simulation_time', value: 0 },
+          action: { type: 'follow_trajectory', trajectory: legacy.map((p) => ({ ...p })) },
+        },
+        ...ego.events,
+      ];
       return ego;
     },
 
@@ -493,23 +518,40 @@
      */
     cancelPlacement(extra = {}) {
       this.set({
-        activeTool: null, pendingTemplate: null, pendingProp: null, pendingGenerate: null,
-        trajectoryMode: false, activeTrajectoryId: null,
-        routeMode: false, activeRouteId: null, activePathEventId: null,
+        activeTool: null,
+        pendingTemplate: null,
+        pendingProp: null,
+        pendingGenerate: null,
+        trajectoryMode: false,
+        activeTrajectoryId: null,
+        routeMode: false,
+        activeRouteId: null,
+        activePathEventId: null,
         ...extra,
       });
     },
 
     /** True while a tool is armed, a prop is pending or a path is being drawn. */
     get placementActive() {
-      return !!(this.activeTool || this.pendingTemplate || this.pendingProp || this.pendingGenerate ||
-                this.trajectoryMode || this.routeMode);
+      return !!(
+        this.activeTool ||
+        this.pendingTemplate ||
+        this.pendingProp ||
+        this.pendingGenerate ||
+        this.trajectoryMode ||
+        this.routeMode
+      );
     },
 
     /** True when there is anything a clear would throw away. */
     get hasScenarioContent() {
-      return !!(this.ego || this.npcs.length || this.staticObjects.length || this.generated
-        || this.trafficSignals.some(sig => (sig.events || []).length));
+      return !!(
+        this.ego ||
+        this.npcs.length ||
+        this.staticObjects.length ||
+        this.generated ||
+        this.trafficSignals.some((sig) => (sig.events || []).length)
+      );
     },
 
     /**
@@ -524,8 +566,13 @@
       UndoStack.group('Szenario geleert', () => {
         this.select(null);
         this.set({
-          ego: null, npcs: [], staticObjects: [], trafficSignals: [], generated: null,
-          selectedTrafficLightId: null, selectedWaypoint: null,
+          ego: null,
+          npcs: [],
+          staticObjects: [],
+          trafficSignals: [],
+          generated: null,
+          selectedTrafficLightId: null,
+          selectedWaypoint: null,
         });
         // Empty patch: the overview's "arrays changed" signal (properties.js).
         // selectionChanged redraws the actors and the signal heads on the map.
@@ -536,38 +583,39 @@
 
     /** Restore editor state from scenario JSON. */
     loadJSON(data) {
-      this.map             = data.map || null;
-      this.weather         = data.weather ? { ...data.weather } : { ...this.weather };
-      this.time            = data.time || 'daytime';
+      this.map = data.map || null;
+      this.weather = data.weather ? { ...data.weather } : { ...this.weather };
+      this.time = data.time || 'daytime';
       // A file from before the feature has no traffic: off, not "keep whatever
       // the editor had", or loading an old scenario would quietly add cars.
-      this.bgTraffic       = { enabled: false, count: 30, seed: 1, clearance: 0.5, radius: 80, ...(data.bgTraffic || {}) };
-      this.ego             = data.ego ? this._migrateEgoTrajectory(this._hydrateActor(data.ego)) : null;
-      this.npcs            = (data.npcs || []).map(n => this._hydrateActor(n));
-      this.staticObjects   = data.staticObjects || [];
-      this.trafficSignals = (data.trafficSignals || []).map(sig => ({ ...sig, events: sig.events || [] }));
-      this.generated       = data.generated || null;
+      this.bgTraffic = { enabled: false, count: 30, seed: 1, clearance: 0.5, radius: 80, ...(data.bgTraffic || {}) };
+      this.ego = data.ego ? this._migrateEgoTrajectory(this._hydrateActor(data.ego)) : null;
+      this.npcs = (data.npcs || []).map((n) => this._hydrateActor(n));
+      this.staticObjects = data.staticObjects || [];
+      this.trafficSignals = (data.trafficSignals || []).map((sig) => ({ ...sig, events: sig.events || [] }));
+      this.generated = data.generated || null;
 
       // Advance the id counter past everything just loaded, otherwise the next
       // placed object reuses an id that already exists in the file.
       const loadedIds = [this.ego, ...this.npcs, ...this.staticObjects, ...this.trafficSignals]
-        .filter(Boolean).map(o => o.id);
+        .filter(Boolean)
+        .map((o) => o.id);
       for (const id of loadedIds) {
         const n = parseInt(String(id).replace(/^obj-/, ''), 10);
         if (Number.isFinite(n) && n >= _nextId) _nextId = n + 1;
       }
 
-      this.selectedId      = null;
+      this.selectedId = null;
       this.selectedTrafficLightId = null;
       this.selectedWaypoint = null;
-      this.activeTool      = null;
-      this.trajectoryMode  = false;
+      this.activeTool = null;
+      this.trajectoryMode = false;
       this.activeTrajectoryId = null;
-      this.routeMode       = false;
-      this.activeRouteId   = null;
+      this.routeMode = false;
+      this.activeRouteId = null;
       this.activePathEventId = null;
       this.pendingTemplate = null;
-      this.pendingProp     = null;
+      this.pendingProp = null;
       this.pendingGenerate = null;
       this.emit('stateLoaded', data);
     },
@@ -605,22 +653,26 @@
     return d.innerHTML;
   }
 
-  window.Toast = { show: showToast, success: (m, d) => showToast(m, 'success', d),
-    error: (m, d) => showToast(m, 'error', d || 6000), warn: (m, d) => showToast(m, 'warning', d),
-    info: (m, d) => showToast(m, 'info', d) };
+  window.Toast = {
+    show: showToast,
+    success: (m, d) => showToast(m, 'success', d),
+    error: (m, d) => showToast(m, 'error', d || 6000),
+    warn: (m, d) => showToast(m, 'warning', d),
+    info: (m, d) => showToast(m, 'info', d),
+  };
 
   // ── Confirm dialog ──────────────────────────────────────────────────────────
 
   const _confirmOverlay = document.getElementById('confirm-overlay');
-  const _confirmMsg     = document.getElementById('confirm-message');
-  const _confirmCancel  = document.getElementById('confirm-cancel');
-  const _confirmOk      = document.getElementById('confirm-ok');
-  let _confirmResolve   = null;
+  const _confirmMsg = document.getElementById('confirm-message');
+  const _confirmCancel = document.getElementById('confirm-cancel');
+  const _confirmOk = document.getElementById('confirm-ok');
+  let _confirmResolve = null;
 
   function showConfirm(message, okLabel = 'L\u00f6schen') {
-    return new Promise(resolve => {
+    return new Promise((resolve) => {
       _confirmMsg.textContent = message;
-      _confirmOk.textContent  = okLabel;
+      _confirmOk.textContent = okLabel;
       _confirmOverlay.classList.remove('hidden');
       _confirmResolve = resolve;
       // Focus the confirming button, so Enter lands on it and the dialog opens
@@ -644,13 +696,17 @@
   // button. CAPTURE phase and stopPropagation: mapView's own Escape handler
   // would otherwise also cancel the tool or the path being drawn *behind* the
   // dialog, and Enter would reach the finish-path shortcut.
-  window.addEventListener('keydown', e => {
-    if (_confirmOverlay.classList.contains('hidden')) return;
-    if (e.key !== 'Enter' && e.key !== 'Escape') return;
-    e.preventDefault();
-    e.stopPropagation();
-    _closeConfirm(e.key === 'Enter');
-  }, true);
+  window.addEventListener(
+    'keydown',
+    (e) => {
+      if (_confirmOverlay.classList.contains('hidden')) return;
+      if (e.key !== 'Enter' && e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      _closeConfirm(e.key === 'Enter');
+    },
+    true,
+  );
 
   // ── Map switch: one scenario per town ───────────────────────────────────────
   // A scenario's poses belong to the town they were placed on. Leaving a town
@@ -661,9 +717,11 @@
   // selector (toolbar.js), the .xodr import (mapImport.js) and Laden
   // (scenarioIO.js). The batch generator swaps maps itself and bypasses this.
 
-  const _parked = new Map();   // town → UndoStack.park() result
+  const _parked = new Map(); // town → UndoStack.park() result
 
-  function _emitParked() { AppState.emit('mapScenariosChanged'); }
+  function _emitParked() {
+    AppState.emit('mapScenariosChanged');
+  }
 
   /** Park the current town's scenario (or forget it, when there is nothing). */
   function leaveMap() {
@@ -686,7 +744,10 @@
     const entry = _parked.get(town);
     _parked.delete(town);
     _emitParked();
-    if (entry) { UndoStack.unpark(entry); return true; }
+    if (entry) {
+      UndoStack.unpark(entry);
+      return true;
+    }
     AppState.clearScenario();
     UndoStack.clear();
     return false;
@@ -705,12 +766,16 @@
   }
 
   /** Towns holding a parked scenario (not counting the current one). */
-  function parkedTowns() { return [..._parked.keys()]; }
+  function parkedTowns() {
+    return [..._parked.keys()];
+  }
 
   window.Confirm = {
     show: showConfirm,
     /** True while a dialog is open — key handlers use this to stand down. */
-    get isOpen() { return !_confirmOverlay.classList.contains('hidden'); },
+    get isOpen() {
+      return !_confirmOverlay.classList.contains('hidden');
+    },
   };
 
   // ── Undo / redo history ──────────────────────────────────────────────────────
@@ -742,11 +807,11 @@
   // path evict every placement behind it.
   const MAX_HISTORY = 100;
 
-  const _undo = [];       // states BEFORE each edit, oldest first
-  const _redo = [];       // states AFTER each undone edit
-  let _baseline   = null; // the scenario as of the last settled edit
-  let _openKind   = null; // coalescing key of the edit currently in progress
-  let _suspend    = 0;    // >0 while something else owns the actor poses
+  const _undo = []; // states BEFORE each edit, oldest first
+  const _redo = []; // states AFTER each undone edit
+  let _baseline = null; // the scenario as of the last settled edit
+  let _openKind = null; // coalescing key of the edit currently in progress
+  let _suspend = 0; // >0 while something else owns the actor poses
   let _groupDepth = 0;
   let _groupLabel = null;
   let _groupTaken = false;
@@ -762,15 +827,17 @@
    * very edit it is supposed to be the "before" of.
    */
   function _snapshot(label) {
-    const copy = JSON.parse(JSON.stringify({
-      ego:            AppState.ego,
-      npcs:           AppState.npcs,
-      staticObjects:  AppState.staticObjects,
-      trafficSignals: AppState.trafficSignals,
-      generated:      AppState.generated,
-    }));
-    copy.label                  = label || '';
-    copy.selectedId             = AppState.selectedId;
+    const copy = JSON.parse(
+      JSON.stringify({
+        ego: AppState.ego,
+        npcs: AppState.npcs,
+        staticObjects: AppState.staticObjects,
+        trafficSignals: AppState.trafficSignals,
+        generated: AppState.generated,
+      }),
+    );
+    copy.label = label || '';
+    copy.selectedId = AppState.selectedId;
     copy.selectedTrafficLightId = AppState.selectedTrafficLightId;
     return copy;
   }
@@ -804,7 +871,7 @@
     }
     _baseline.label = label || '';
     _undo.push(_baseline);
-    _baseline = null;           // _settle() takes the post-edit state
+    _baseline = null; // _settle() takes the post-edit state
     if (_undo.length > MAX_HISTORY) _undo.shift();
     _redo.length = 0;
   }
@@ -822,19 +889,19 @@
     // mutated in place (`AppState.npcs = [...]; AppState.set({})`), which is how
     // every placement and the bulk prop delete announce themselves.
     if (keys.length === 0) return true;
-    return keys.some(k => SCENARIO_KEYS.includes(k));
+    return keys.some((k) => SCENARIO_KEYS.includes(k));
   }
 
   // Patch shapes worth naming in the toast. Everything else undoes as a plain
   // "Rückgängig" rather than guessing a name for it.
   const PATCH_LABELS = [
-    [['x', 'y', 'z'],       'Verschieben'],
-    [['yaw'],               'Drehen'],
-    [['type'],              'Typwechsel'],
-    [['prop'],              'Typwechsel'],
-    [['initial_speed'],     'Startgeschwindigkeit'],
-    [['max_acceleration'],  'Max. Beschleunigung'],
-    [['max_deceleration'],  'Max. Verzögerung'],
+    [['x', 'y', 'z'], 'Verschieben'],
+    [['yaw'], 'Drehen'],
+    [['type'], 'Typwechsel'],
+    [['prop'], 'Typwechsel'],
+    [['initial_speed'], 'Startgeschwindigkeit'],
+    [['max_acceleration'], 'Max. Beschleunigung'],
+    [['max_deceleration'], 'Max. Verzögerung'],
     // Last, so a bare {yaw} still reads 'Drehen': the Spawnpunkt fields commit
     // all four together (_onPosChange), and naming the panel section is more
     // use than picking one of the four to name.
@@ -844,7 +911,7 @@
   function _labelForPatch(patch) {
     const keys = Object.keys(patch);
     if (!keys.length) return '';
-    const hit = PATCH_LABELS.find(([fields]) => keys.every(k => fields.includes(k)));
+    const hit = PATCH_LABELS.find(([fields]) => keys.every((k) => fields.includes(k)));
     return hit ? hit[1] : '';
   }
 
@@ -881,9 +948,7 @@
     if (!('x' in patch) && !('y' in patch)) return patch;
     if (window.Simulate && Simulate.authoredPose && Simulate.authoredPose(id)) return patch;
 
-    const actor = (AppState.ego && AppState.ego.id === id)
-      ? AppState.ego
-      : AppState.npcs.find(n => n.id === id);
+    const actor = AppState.ego && AppState.ego.id === id ? AppState.ego : AppState.npcs.find((n) => n.id === id);
     if (!actor) return patch;
 
     const x = 'x' in patch ? patch.x : actor.x;
@@ -891,12 +956,10 @@
     const z = 'z' in patch ? patch.z : actor.z;
 
     let hasPath = false;
-    const events = (actor.events || []).map(ev => {
+    const events = (actor.events || []).map((ev) => {
       const action = ev.action || {};
       const isRoute = action.type === 'assign_route';
-      const path = isRoute ? action.waypoints
-                 : action.type === 'follow_trajectory' ? action.trajectory
-                 : null;
+      const path = isRoute ? action.waypoints : action.type === 'follow_trajectory' ? action.trajectory : null;
       if (!path || !path.length) return ev;
       hasPath = true;
 
@@ -905,15 +968,12 @@
         // Snapped like any other 'fastest' waypoint — the actor's own pose need
         // not be on a lane (hand-typed, or dragged onto the verge).
         const snap = ObjectsManager.routeWaypointAt(x, y);
-        seed = { ...path[0], x: snap.x, y: snap.y,
-                 z: snap.snapped ? snap.z : (z ?? path[0].z), strategy: 'fastest' };
+        seed = { ...path[0], x: snap.x, y: snap.y, z: snap.snapped ? snap.z : (z ?? path[0].z), strategy: 'fastest' };
       } else {
-        seed = { ...path[0], x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10,
-                 z: z ?? path[0].z };
+        seed = { ...path[0], x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, z: z ?? path[0].z };
       }
       const next = [seed, ...path.slice(1)];
-      return { ...ev, action: isRoute ? { ...action, waypoints: next }
-                                      : { ...action, trajectory: next } };
+      return { ...ev, action: isRoute ? { ...action, waypoints: next } : { ...action, trajectory: next } };
     });
 
     return hasPath ? { ...patch, events } : patch;
@@ -922,8 +982,9 @@
   function _isNoOpPatch(id, patch) {
     const actor = AppState.findById(id);
     if (!actor) return false;
-    return Object.keys(patch).every(k => {
-      const a = actor[k], b = patch[k];
+    return Object.keys(patch).every((k) => {
+      const a = actor[k],
+        b = patch[k];
       if (a === b) return true;
       if (a && b && typeof a === 'object' && typeof b === 'object') {
         return JSON.stringify(a) === JSON.stringify(b);
@@ -962,11 +1023,11 @@
     const next = patch.events || [];
 
     if (next.length > prev.length) {
-      const added = next.find(ev => !prev.some(p => p.id === ev.id));
+      const added = next.find((ev) => !prev.some((p) => p.id === ev.id));
       return { key: added ? added.id : 'neu', label: 'Event hinzugefügt' };
     }
     if (next.length < prev.length) {
-      const gone = prev.find(ev => !next.some(n => n.id === ev.id));
+      const gone = prev.find((ev) => !next.some((n) => n.id === ev.id));
       return { key: gone ? gone.id : 'weg', label: 'Event gelöscht' };
     }
     const changed = next.find((ev, i) => ev !== prev[i]);
@@ -1000,19 +1061,21 @@
       // Copy out of the snapshot: updateById mutates an actor in place with
       // Object.assign, so handing the stored object straight to AppState would
       // let the next edit rewrite an entry still sitting in the history.
-      const restored = JSON.parse(JSON.stringify({
-        ego: snap.ego, npcs: snap.npcs,
-        staticObjects: snap.staticObjects, trafficSignals: snap.trafficSignals,
-        generated: snap.generated ?? null,
-      }));
-      AppState.ego            = restored.ego;
-      AppState.npcs           = restored.npcs;
-      AppState.staticObjects  = restored.staticObjects;
+      const restored = JSON.parse(
+        JSON.stringify({
+          ego: snap.ego,
+          npcs: snap.npcs,
+          staticObjects: snap.staticObjects,
+          trafficSignals: snap.trafficSignals,
+          generated: snap.generated ?? null,
+        }),
+      );
+      AppState.ego = restored.ego;
+      AppState.npcs = restored.npcs;
+      AppState.staticObjects = restored.staticObjects;
       AppState.trafficSignals = restored.trafficSignals;
-      AppState.generated      = restored.generated;
-      AppState.selectedId = snap.selectedId && AppState.findById(snap.selectedId)
-        ? snap.selectedId
-        : null;
+      AppState.generated = restored.generated;
+      AppState.selectedId = snap.selectedId && AppState.findById(snap.selectedId) ? snap.selectedId : null;
       AppState.selectedTrafficLightId = snap.selectedTrafficLightId;
       // Waypoint indices are positions in an array the snapshot has just
       // replaced, so a mark taken before the undo can now name a different
@@ -1039,7 +1102,9 @@
      * committed edit in the app — without it two consecutive Spawnpunkt edits
      * fold into one, since _onPosChange sends the same four keys every time.
      */
-    seal() { _openKind = null; },
+    seal() {
+      _openKind = null;
+    },
 
     /**
      * Stop recording. Balanced with resume(); nests.
@@ -1050,8 +1115,10 @@
      * drag's mouseup z-fixup (objects.js) invisible to the history rather than
      * merely unrecorded.
      */
-    suspend() { _suspend++; },
-    resume()  {
+    suspend() {
+      _suspend++;
+    },
+    resume() {
       _suspend = Math.max(0, _suspend - 1);
       if (_suspend === 0) _settle();
     },
@@ -1061,19 +1128,30 @@
       _openKind = null;
       const outerLabel = _groupLabel;
       const outerTaken = _groupTaken;
-      if (_groupDepth === 0) { _groupLabel = label || ''; _groupTaken = false; }
+      if (_groupDepth === 0) {
+        _groupLabel = label || '';
+        _groupTaken = false;
+      }
       _groupDepth++;
       try {
         return fn();
       } finally {
         _groupDepth--;
-        if (_groupDepth === 0) { _groupLabel = null; _groupTaken = false; _openKind = null; }
-        else { _groupLabel = outerLabel; _groupTaken = outerTaken; }
+        if (_groupDepth === 0) {
+          _groupLabel = null;
+          _groupTaken = false;
+          _openKind = null;
+        } else {
+          _groupLabel = outerLabel;
+          _groupTaken = outerTaken;
+        }
       }
     },
 
     /** Record the current state as the "before" of an edit made outside AppState. */
-    record(label) { _record(null, label || ''); },
+    record(label) {
+      _record(null, label || '');
+    },
 
     /** Undo one edit. Returns { label } or null when there is nothing to undo. */
     undo() {
@@ -1095,7 +1173,12 @@
       return { label: after.label };
     },
 
-    clear() { _undo.length = 0; _redo.length = 0; _openKind = null; _baseline = null; },
+    clear() {
+      _undo.length = 0;
+      _redo.length = 0;
+      _openKind = null;
+      _baseline = null;
+    },
 
     /** Take the live scenario and its whole history out (a map switch, see
      * UIUtils.leaveMap). The live state is left as it is; the caller replaces it. */
@@ -1108,13 +1191,19 @@
     /** Put a park() result back: its scenario live, its history as the stacks. */
     unpark(entry) {
       _apply({ ...entry.snap, selectedId: null, selectedTrafficLightId: null });
-      _undo.length = 0; _undo.push(...entry.undo);
-      _redo.length = 0; _redo.push(...entry.redo);
+      _undo.length = 0;
+      _undo.push(...entry.undo);
+      _redo.length = 0;
+      _redo.push(...entry.redo);
       _openKind = null;
     },
 
-    get length()     { return _undo.length; },
-    get redoLength() { return _redo.length; },
+    get length() {
+      return _undo.length;
+    },
+    get redoLength() {
+      return _redo.length;
+    },
   };
 
   // Seal on the two events that precede a committed edit. Every editable field
@@ -1133,7 +1222,7 @@
     if (t && typeof t.closest === 'function' && t.closest('.event-card')) return;
     UndoStack.seal();
   }
-  document.addEventListener('change',    _sealUnlessInEventCard, true);
+  document.addEventListener('change', _sealUnlessInEventCard, true);
   document.addEventListener('mousedown', _sealUnlessInEventCard, true);
 
   // Opening a file replaces the scenario the history describes. Restoring a
@@ -1157,8 +1246,16 @@
    * that is not in the file, and can never fire.
    */
   const ROUTE_ACTION_TYPES = new Set([
-    'car', 'van', 'truck', 'bus', 'motorcycle', 'scooter',
-    'police', 'ambulance', 'firetruck', 'ego',
+    'car',
+    'van',
+    'truck',
+    'bus',
+    'motorcycle',
+    'scooter',
+    'police',
+    'ambulance',
+    'firetruck',
+    'ego',
   ]);
 
   /* ChangeActorLaneOffset writes through to the controller's `_offset`, and only
@@ -1173,7 +1270,6 @@
    * stated as the exclusion it is. Same split as mapView.js's WALKER_TYPES and
    * xml_builder._PEDESTRIAN_TYPES; keep all three in step. */
   const WALKER_ACTION_TYPES = new Set(['pedestrian', 'child']);
-
 
   /** A trigger point is only usable once it actually carries coordinates. */
   function _isTriggerPoint(point) {
@@ -1200,7 +1296,7 @@
   // other starts" never fires either.
 
   const EVENT_REF_TRIGGERS = new Set(['after_event', 'event_started']);
-  const _isEventRef = trigger => !!trigger && EVENT_REF_TRIGGERS.has(trigger.type);
+  const _isEventRef = (trigger) => !!trigger && EVENT_REF_TRIGGERS.has(trigger.type);
 
   const _afterEventKey = (actorId, eventId) => `${actorId}::${eventId}`;
 
@@ -1215,8 +1311,8 @@
   function _afterEventTarget(actor, trigger, events) {
     const owner = _afterEventOwner(actor, trigger);
     if (!owner) return null;
-    const list = (owner === actor && events) ? events : (owner.events || []);
-    const index = list.findIndex(o => String(o.id) === String(trigger.event_id));
+    const list = owner === actor && events ? events : owner.events || [];
+    const index = list.findIndex((o) => String(o.id) === String(trigger.event_id));
     return index >= 0 ? { actor: owner, event: list[index], index } : null;
   }
 
@@ -1229,7 +1325,8 @@
    */
   function _afterEventReach(startActor, startEvent) {
     const seen = new Set();
-    let actor = startActor, ev = startEvent;
+    let actor = startActor,
+      ev = startEvent;
     for (;;) {
       const trigger = (ev && ev.trigger) || {};
       if (!_isEventRef(trigger)) return seen;
@@ -1284,7 +1381,7 @@
       if (!actor || !action || action.type !== 'set_speed') return false;
       const target = action.target || {};
       if (target.mode !== 'relative' || target.entity_ref !== actor.id) return false;
-      return ((action.dynamics || {}).dimension !== 'rate') || target.continuous === true;
+      return (action.dynamics || {}).dimension !== 'rate' || target.continuous === true;
     },
 
     /**
@@ -1306,11 +1403,11 @@
       return {
         code: 'after_own_path_end',
         short: 'Wirkungslos — steht nach Pfadende',
-        message: 'das Fahrzeug bleibt am Ende seiner Trajektorie endgültig stehen '
-          + '(SimpleVehicleControl), ein danach startendes Event bewegt es nicht mehr',
+        message:
+          'das Fahrzeug bleibt am Ende seiner Trajektorie endgültig stehen ' +
+          '(SimpleVehicleControl), ein danach startendes Event bewegt es nicht mehr',
       };
     },
-
 
     afterEventKey: _afterEventKey,
 
@@ -1366,7 +1463,7 @@
         return (action.waypoints || []).length >= 2 && ROUTE_ACTION_TYPES.has(actorType);
       }
       if (action.type === 'lane_offset') return this.honoursLaneOffset(actorType);
-      return true;   // set_speed / set_distance / lane_change never fail to emit
+      return true; // set_speed / set_distance / lane_change never fail to emit
     },
 
     /**
@@ -1428,8 +1525,12 @@
         };
       }
 
-      if (action.type === 'set_speed' && (action.target || {}).reverse === true &&
-          (action.target || {}).mode !== 'relative' && !this.canReverse(type)) {
+      if (
+        action.type === 'set_speed' &&
+        (action.target || {}).reverse === true &&
+        (action.target || {}).mode !== 'relative' &&
+        !this.canReverse(type)
+      ) {
         return {
           code: 'reverse_not_vehicle',
           short: 'Rückwärts nur für Fahrzeuge möglich',
@@ -1440,8 +1541,9 @@
         return {
           code: 'self_speed_compounds',
           short: 'Eigene Geschw. nur mit Rate, nicht dauerhaft',
-          message: 'eine Geschwindigkeit relativ zur eigenen braucht die Dynamik „Rate" und '
-            + 'darf nicht dauerhaft folgen — sonst schaukelt sie sich jeden Tick auf',
+          message:
+            'eine Geschwindigkeit relativ zur eigenen braucht die Dynamik „Rate" und ' +
+            'darf nicht dauerhaft folgen — sonst schaukelt sie sich jeden Tick auf',
         };
       }
       if ((trigger.type === 'distance_to_ego' || trigger.type === 'relative_speed') && actor) {
@@ -1510,15 +1612,17 @@
         // dropdown never offers the former and the backend rejects it with a
         // 400; this catches a save file or an LLM payload before the export does.
         if (trigger.type === 'after_event' && this.neverCompletes(targetAction)) {
-          return targetAction.type === 'lane_offset' ? {
-            code: 'after_lane_offset',
-            short: 'Auslöser feuert nie — Spurversatz endet nicht',
-            message: 'der Auslöser wartet auf einen Spurversatz, der dauerhaft gilt und nie endet',
-          } : {
-            code: 'after_continuous_speed',
-            short: 'Auslöser feuert nie — Folgen endet nicht',
-            message: 'der Auslöser wartet auf ein dauerhaftes Geschwindigkeit-Folgen, das nie endet',
-          };
+          return targetAction.type === 'lane_offset'
+            ? {
+                code: 'after_lane_offset',
+                short: 'Auslöser feuert nie — Spurversatz endet nicht',
+                message: 'der Auslöser wartet auf einen Spurversatz, der dauerhaft gilt und nie endet',
+              }
+            : {
+                code: 'after_continuous_speed',
+                short: 'Auslöser feuert nie — Folgen endet nicht',
+                message: 'der Auslöser wartet auf ein dauerhaftes Geschwindigkeit-Folgen, das nie endet',
+              };
         }
         if (!this.actionEmits(targetAction, target.actor.type)) {
           return {
@@ -1536,7 +1640,7 @@
       const events = (actor && actor.events) || [];
       return events
         .map((ev, index) => ({ ev, index, problem: this.eventProblem(actor, ev, events) }))
-        .filter(entry => entry.problem);
+        .filter((entry) => entry.problem);
     },
   };
 
@@ -1555,13 +1659,27 @@
    * this; a bare mousedown clears it.
    */
   let _focusByKeyboard = false;
-  document.addEventListener('mousedown', () => { _focusByKeyboard = false; }, true);
-  document.addEventListener('keydown', e => {
-    if (e.key === 'Tab' || e.key === 'Home' || e.key === 'End' ||
-        (typeof e.key === 'string' && e.key.startsWith('Arrow'))) {
-      _focusByKeyboard = true;
-    }
-  }, true);
+  document.addEventListener(
+    'mousedown',
+    () => {
+      _focusByKeyboard = false;
+    },
+    true,
+  );
+  document.addEventListener(
+    'keydown',
+    (e) => {
+      if (
+        e.key === 'Tab' ||
+        e.key === 'Home' ||
+        e.key === 'End' ||
+        (typeof e.key === 'string' && e.key.startsWith('Arrow'))
+      ) {
+        _focusByKeyboard = true;
+      }
+    },
+    true,
+  );
 
   window.UIUtils = {
     leaveMap,
@@ -1640,7 +1758,7 @@
 
     /** Next free numeric suffix for `${prefix}-${n}` ids within `events`. */
     nextIndexedId(events, prefix) {
-      const used = new Set((events || []).map(ev => String(ev.id || '')));
+      const used = new Set((events || []).map((ev) => String(ev.id || '')));
       let idx = events.length + 1;
       while (used.has(`${prefix}-${idx}`)) idx += 1;
       return idx;

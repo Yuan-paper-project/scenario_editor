@@ -10,9 +10,9 @@
 (function () {
   'use strict';
 
-  const wrap    = document.getElementById('layer-toggles');
-  const btn     = document.getElementById('layer-menu-btn');
-  const panel   = document.getElementById('layer-menu-panel');
+  const wrap = document.getElementById('layer-toggles');
+  const btn = document.getElementById('layer-menu-btn');
+  const panel = document.getElementById('layer-menu-panel');
   const countEl = document.getElementById('layer-menu-count');
   if (!wrap || !btn || !panel || !countEl) return;
 
@@ -20,7 +20,7 @@
 
   function _updateCount() {
     const all = boxes();
-    countEl.textContent = `${all.filter(cb => cb.checked).length}/${all.length}`;
+    countEl.textContent = `${all.filter((cb) => cb.checked).length}/${all.length}`;
   }
 
   Dropdown.bind({ button: btn, panel, wrap });
@@ -29,7 +29,7 @@
   // does the ticking, so mapView's onchange runs for free.
   panel.addEventListener('change', _updateCount);
 
-  panel.addEventListener('click', e => {
+  panel.addEventListener('click', (e) => {
     const action = e.target.closest('[data-layer-action]');
     if (!action) return;
     const on = action.dataset.layerAction === 'all';

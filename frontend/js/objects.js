@@ -14,11 +14,11 @@
 (function () {
   'use strict';
 
-  const svg        = MapView.svg;
+  const svg = MapView.svg;
   const trajBanner = document.getElementById('traj-banner');
   const trajBannerText = document.getElementById('traj-banner-text');
-  const trajDoneBtn    = document.getElementById('traj-done-btn');
-  const trajUndoBtn    = document.getElementById('traj-undo-btn');
+  const trajDoneBtn = document.getElementById('traj-done-btn');
+  const trajUndoBtn = document.getElementById('traj-undo-btn');
 
   // Speed a newly placed actor starts with, emitted as a SpeedAction in the
   // Storyboard Init. An actor with no events gets no Act at all, so this is the
@@ -32,21 +32,23 @@
   const DEFAULT_INIT_SPEED = 10.0;
 
   // ── Drag state ───────────────────────────────────────────────────────────────
-  let _dragState = null;   // { type: 'actor'|'yaw'|'waypoint', actorId, ... }
+  let _dragState = null; // { type: 'actor'|'yaw'|'waypoint', actorId, ... }
 
   // ── SVG click handler ─────────────────────────────────────────────────────────
 
-  svg.addEventListener('click', e => {
+  svg.addEventListener('click', (e) => {
     if (e.defaultPrevented) return;
-    if (_wasDragging) { _wasDragging = false; return; }
+    if (_wasDragging) {
+      _wasDragging = false;
+      return;
+    }
 
     const world = MapView.svgToWorld(e);
 
     const activeType = AppState.routeMode ? 'route' : 'trajectory';
     const activeId = AppState.routeMode ? AppState.activeRouteId : AppState.activeTrajectoryId;
     if ((AppState.trajectoryMode || AppState.routeMode) && activeId) {
-      _addPathPoint(activeId, activeType, world.x, world.y,
-                    AppState.activePathEventId, e.shiftKey);
+      _addPathPoint(activeId, activeType, world.x, world.y, AppState.activePathEventId, e.shiftKey);
       return;
     }
 
@@ -69,7 +71,7 @@
     const actorGroup = e.target.closest('.actor-group');
     if (actorGroup && AppState.activeTool !== 'prop') {
       const id = actorGroup.dataset.id;
-      AppState.set({ activeTool: null, pendingTemplate: null, pendingProp: null });   // exit placement mode
+      AppState.set({ activeTool: null, pendingTemplate: null, pendingProp: null }); // exit placement mode
       AppState.select(AppState.selectedId === id ? null : id);
       e.preventDefault();
       return;
@@ -90,26 +92,25 @@
   const ROAD_FACING_TYPES = new Set(['pedestrian', 'child', 'cyclist', 'bicycle']);
 
   function _placeActor(type, wx, wy, shiftKey = false) {
-    if (type === 'prop') { _placeProp(wx, wy, shiftKey); return; }
+    if (type === 'prop') {
+      _placeProp(wx, wy, shiftKey);
+      return;
+    }
 
     const pendingTemplate = AppState.pendingTemplate;
     const templatePlacement = ScenarioTemplates.placementFor(pendingTemplate);
     const roadFacing = ROAD_FACING_TYPES.has(type);
-    const laneSnap = templatePlacement?.snap === 'lane-center'
-      ? _nearestLaneProjection(
-          wx,
-          wy,
-          new Set(templatePlacement.laneTypes || []),
-          templatePlacement.maxDistance
-        )
-      : null;
+    const laneSnap =
+      templatePlacement?.snap === 'lane-center'
+        ? _nearestLaneProjection(wx, wy, new Set(templatePlacement.laneTypes || []), templatePlacement.maxDistance)
+        : null;
     const vehicleSnap = roadFacing || templatePlacement || shiftKey ? null : _vehicleLaneSnap(wx, wy);
     const snap = laneSnap || vehicleSnap;
     const x = snap ? snap.x : Math.round(wx * 10) / 10;
     const y = snap ? snap.y : Math.round(wy * 10) / 10;
     // Shift on a vehicle: the position is the click, but it still faces along
     // the nearest lane rather than due east.
-    let yaw = roadFacing ? _roadFacingYaw(wx, wy) : (shiftKey ? _roadAlongYaw(wx, wy) : 0);
+    let yaw = roadFacing ? _roadFacingYaw(wx, wy) : shiftKey ? _roadAlongYaw(wx, wy) : 0;
     if (templatePlacement?.orientation === 'along-lane') yaw = _roadAlongYaw(wx, wy);
     if (snap) yaw = snap.yaw ?? snap.laneYaw;
     // A snap already carries the surface height of the exact point it snapped
@@ -124,7 +125,12 @@
     // its own (a parked car's is 0); vehicles keep DEFAULT_INIT_SPEED.
     const tplSpeed = ScenarioTemplates.initialSpeedFor(pendingTemplate);
     const actor = {
-      id: AppState.nextId(), type, x, y, z, yaw,
+      id: AppState.nextId(),
+      type,
+      x,
+      y,
+      z,
+      yaw,
       initial_speed: tplSpeed ?? (ROAD_FACING_TYPES.has(type) ? 0 : DEFAULT_INIT_SPEED),
       events: [],
     };
@@ -156,12 +162,12 @@
    * Unlike actors this is sticky (the tool stays armed) and does not select the
    * new prop, so a cone line is one click per cone.
    */
-  const PROP_SNAP_MAX_DIST = 20;   // Shift: how far to reach for a lane to snap onto
-  const PROP_YAW_MAX_DIST  = 25;   // how far to reach for a lane to orient against
+  const PROP_SNAP_MAX_DIST = 20; // Shift: how far to reach for a lane to snap onto
+  const PROP_YAW_MAX_DIST = 25; // how far to reach for a lane to orient against
 
   /** Normalise degrees into [-180, 180). */
   function _wrapDeg(deg) {
-    return ((deg + 180) % 360 + 360) % 360 - 180;
+    return ((((deg + 180) % 360) + 360) % 360) - 180;
   }
 
   /* Placement orientation for a prop, from the OpenDRIVE direction of the
@@ -177,7 +183,7 @@
     const rule = PropCatalog.facing(blueprint);
     if (rule === 'none' || !near) return 0;
 
-    const toRoad = Math.atan2(near.y - wy, near.x - wx) * 180 / Math.PI;
+    const toRoad = (Math.atan2(near.y - wy, near.x - wx) * 180) / Math.PI;
 
     switch (rule) {
       case 'oncoming':
@@ -190,7 +196,7 @@
         // Long axis stays parallel to the kerb; pick the flip that turns the
         // object's open side (local +Y, i.e. yaw + 90) toward the carriageway.
         const openAt = _wrapDeg(near.laneYaw + 90);
-        const flip   = Math.abs(_wrapDeg(openAt - toRoad)) > 90;
+        const flip = Math.abs(_wrapDeg(openAt - toRoad)) > 90;
         return Math.round(_wrapDeg(near.laneYaw + (flip ? 180 : 0)));
       }
       default:
@@ -223,7 +229,7 @@
     };
 
     AppState.staticObjects = [...AppState.staticObjects, prop];
-    AppState.set({});          // empty patch: fires 'change' for the array mutation
+    AppState.set({}); // empty patch: fires 'change' for the array mutation
     MapView.renderAllActors();
   }
 
@@ -232,10 +238,9 @@
     // shoulder, parking bay or kerb the nearest lane of any type is often the
     // one under the walker's feet, and "perpendicular to that" faced half of
     // all crossings away from the road.
-    const nearest = _nearestLaneProjection(wx, wy, new Set(['driving']), 30)
-      || _nearestLaneProjection(wx, wy);
+    const nearest = _nearestLaneProjection(wx, wy, new Set(['driving']), 30) || _nearestLaneProjection(wx, wy);
     if (!nearest) return 0;
-    const towardRoad = Math.atan2(nearest.y - wy, nearest.x - wx) * 180 / Math.PI;
+    const towardRoad = (Math.atan2(nearest.y - wy, nearest.x - wx) * 180) / Math.PI;
     if (Math.hypot(nearest.x - wx, nearest.y - wy) > 0.2) return Math.round(towardRoad);
     return Math.round(nearest.laneYaw + 90);
   }
@@ -264,19 +269,25 @@
           const t = Math.max(0, Math.min(1, ((wx - x0) * dx + (wy - y0) * dy) / len2));
           const x = x0 + t * dx;
           const y = y0 + t * dy;
-          const dist = wz === null || wz === undefined
-            ? Math.hypot(wx - x, wy - y)
-            : Math.hypot(wx - x, wy - y, wz - (z0 + t * (z1 - z0)));
+          const dist =
+            wz === null || wz === undefined
+              ? Math.hypot(wx - x, wy - y)
+              : Math.hypot(wx - x, wy - y, wz - (z0 + t * (z1 - z0)));
           if (dist <= maxDistance && (!best || dist < best.dist)) {
             best = {
-              x, y, dist,
+              x,
+              y,
+              dist,
               // Road-surface height, lerped along the same segment the position
               // came from. The `= 0` destructuring defaults keep this working
               // against 2-element points, i.e. a cached older render payload.
               z: z0 + t * (z1 - z0),
-              laneYaw: Math.atan2(dy, dx) * 180 / Math.PI,
-              laneId: lane.laneId, laneType: lane.type,
-              road, lane, segIndex: i,
+              laneYaw: (Math.atan2(dy, dx) * 180) / Math.PI,
+              laneId: lane.laneId,
+              laneType: lane.type,
+              road,
+              lane,
+              segIndex: i,
             };
           }
         }
@@ -303,9 +314,9 @@
    * `prevYaw` (the vehicle's current yaw on a drag) wins: dragging a car through
    * a junction keeps it on the connector it is already following.
    */
-  const VEHICLE_SNAP_LANE_TYPES = new Set(['driving', 'parking']);   // not 'bidirectional', a wall
-  const VEHICLE_SNAP_MAX_DIST   = 12;
-  const VEHICLE_SNAP_TIE_M      = 1.0;
+  const VEHICLE_SNAP_LANE_TYPES = new Set(['driving', 'parking']); // not 'bidirectional', a wall
+  const VEHICLE_SNAP_MAX_DIST = 12;
+  const VEHICLE_SNAP_TIE_M = 1.0;
 
   function _vehicleLaneSnap(wx, wy, prevYaw = null) {
     const perLane = [];
@@ -319,27 +330,34 @@
           const [x1, y1, z1 = 0] = line[i];
           // Cheap reject before the projection: the segment's box, grown by
           // the snap radius, must contain the point.
-          if (wx < Math.min(x0, x1) - VEHICLE_SNAP_MAX_DIST || wx > Math.max(x0, x1) + VEHICLE_SNAP_MAX_DIST ||
-              wy < Math.min(y0, y1) - VEHICLE_SNAP_MAX_DIST || wy > Math.max(y0, y1) + VEHICLE_SNAP_MAX_DIST) continue;
-          const dx = x1 - x0, dy = y1 - y0;
+          if (
+            wx < Math.min(x0, x1) - VEHICLE_SNAP_MAX_DIST ||
+            wx > Math.max(x0, x1) + VEHICLE_SNAP_MAX_DIST ||
+            wy < Math.min(y0, y1) - VEHICLE_SNAP_MAX_DIST ||
+            wy > Math.max(y0, y1) + VEHICLE_SNAP_MAX_DIST
+          )
+            continue;
+          const dx = x1 - x0,
+            dy = y1 - y0;
           const len2 = dx * dx + dy * dy;
           if (len2 <= 0) continue;
           const t = Math.max(0, Math.min(1, ((wx - x0) * dx + (wy - y0) * dy) / len2));
-          const x = x0 + t * dx, y = y0 + t * dy;
+          const x = x0 + t * dx,
+            y = y0 + t * dy;
           const dist = Math.hypot(wx - x, wy - y);
           if (dist <= VEHICLE_SNAP_MAX_DIST && (!best || dist < best.dist)) {
-            best = { x, y, z: z0 + t * (z1 - z0), dist, laneYaw: Math.atan2(dy, dx) * 180 / Math.PI };
+            best = { x, y, z: z0 + t * (z1 - z0), dist, laneYaw: (Math.atan2(dy, dx) * 180) / Math.PI };
           }
         }
         if (best) perLane.push(best);
       }
     }
     if (!perLane.length) return null;
-    const nearest = Math.min(...perLane.map(c => c.dist));
-    const close = perLane.filter(c => c.dist <= nearest + VEHICLE_SNAP_TIE_M);
+    const nearest = Math.min(...perLane.map((c) => c.dist));
+    const close = perLane.filter((c) => c.dist <= nearest + VEHICLE_SNAP_TIE_M);
     let pick = close.reduce((a, b) => (a.dist <= b.dist ? a : b));
     if (Number.isFinite(prevYaw) && close.length > 1) {
-      const turn = c => Math.abs(_wrapDeg(c.laneYaw - prevYaw));
+      const turn = (c) => Math.abs(_wrapDeg(c.laneYaw - prevYaw));
       pick = close.reduce((a, b) => (turn(a) <= turn(b) ? a : b));
     }
     return {
@@ -371,7 +389,7 @@
    * the catalogue's per-prop z is already a surface-relative offset.
    */
   const SPAWN_CLEARANCE = { vehicle: 0.5, vru: 0.6, waypoint: 0.5 };
-  const GROUND_Z_MAX_DIST = 60;   // how far to reach for a lane to take height from
+  const GROUND_Z_MAX_DIST = 60; // how far to reach for a lane to take height from
 
   function _clearanceFor(type) {
     return ROAD_FACING_TYPES.has(type) ? SPAWN_CLEARANCE.vru : SPAWN_CLEARANCE.vehicle;
@@ -405,8 +423,8 @@
    * literally, vertex by vertex, and its whole purpose is going where lanes do
    * not — a pedestrian crossing, a cyclist bending out, a reversing curve.
    */
-  const ROUTE_SNAP_LANE_TYPES = new Set(['driving']);   // CARLA's get_waypoint default; Town03's 'bidirectional' is a wall
-  const ROUTE_SNAP_MAX_DIST   = 25;   // how far to reach for a lane to snap onto
+  const ROUTE_SNAP_LANE_TYPES = new Set(['driving']); // CARLA's get_waypoint default; Town03's 'bidirectional' is a wall
+  const ROUTE_SNAP_MAX_DIST = 25; // how far to reach for a lane to snap onto
 
   /**
    * A route waypoint for the click at (wx, wy): the nearest driving-lane
@@ -435,9 +453,7 @@
    * category's clearance, or plus the catalogue offset for a prop. The single
    * entry point for anything that moves an already-placed object. */
   function _surfaceZFor(type, x, y, propBlueprint = null) {
-    const base = type === 'prop'
-      ? PropCatalog.defaultZ(propBlueprint)
-      : _clearanceFor(type);
+    const base = type === 'prop' ? PropCatalog.defaultZ(propBlueprint) : _clearanceFor(type);
     return _roundZ(groundZAt(x, y) + base);
   }
 
@@ -445,7 +461,7 @@
 
   let _wasDragging = false;
 
-  svg.addEventListener('mousedown', e => {
+  svg.addEventListener('mousedown', (e) => {
     if (e.button !== 0) return;
 
     // Nothing on the map is draggable while a tool is armed or a path is being
@@ -468,10 +484,10 @@
      */
     const wpEl = e.target.closest('.path-waypoint');
     if (wpEl) {
-      const actorId  = wpEl.dataset.actorId;
-      const eventId  = wpEl.dataset.eventId;
+      const actorId = wpEl.dataset.actorId;
+      const eventId = wpEl.dataset.eventId;
       const pathType = wpEl.dataset.pathType;
-      const index    = Number(wpEl.dataset.wpIdx);
+      const index = Number(wpEl.dataset.wpIdx);
       if (actorId === AppState.selectedId && Number.isFinite(index)) {
         AppState.selectWaypoint({ actorId, eventId, pathType, index });
         _dragState = { type: 'waypoint', actorId, eventId, pathType, index };
@@ -491,9 +507,8 @@
      */
     const handle = e.target.closest('.yaw-handle');
     if (handle) {
-      const actorId = handle.dataset.actorId ||
-                      handle.closest('[data-actor-id]')?.dataset?.actorId;
-      const actor   = actorId ? AppState.findById(actorId) : null;
+      const actorId = handle.dataset.actorId || handle.closest('[data-actor-id]')?.dataset?.actorId;
+      const actor = actorId ? AppState.findById(actorId) : null;
       if (actor) {
         _dragState = {
           type: 'yaw',
@@ -513,9 +528,9 @@
     // Move: the body.
     const actorGroup = e.target.closest('.actor-group');
     if (actorGroup) {
-      const id     = actorGroup.dataset.id;
-      const actor  = AppState.findById(id);
-      const world  = MapView.svgToWorld(e);
+      const id = actorGroup.dataset.id;
+      const actor = AppState.findById(id);
+      const world = MapView.svgToWorld(e);
       if (actor) {
         _dragState = {
           type: 'actor',
@@ -535,7 +550,7 @@
     }
   });
 
-  window.addEventListener('mousemove', e => {
+  window.addEventListener('mousemove', (e) => {
     if (!_dragState) return;
     _wasDragging = true;
 
@@ -555,23 +570,26 @@
         // Always the same three keys, snapped or not: the undo entry coalesces
         // on id + patch keys, and an alternating key set would split one drag
         // into several entries.
-        AppState.updateById(_dragState.actorId, snap
-          ? { x: snap.x, y: snap.y, yaw: snap.yaw }
-          : { x, y, yaw: actor?.yaw ?? 0 });
+        AppState.updateById(
+          _dragState.actorId,
+          snap ? { x: snap.x, y: snap.y, yaw: snap.yaw } : { x, y, yaw: actor?.yaw ?? 0 },
+        );
       }
-
     } else if (_dragState.type === 'waypoint') {
       ObjectsManager.movePathPoint(
-        _dragState.actorId, _dragState.pathType, _dragState.index,
-        world.x, world.y, _dragState.eventId,
+        _dragState.actorId,
+        _dragState.pathType,
+        _dragState.index,
+        world.x,
+        world.y,
+        _dragState.eventId,
       );
-
     } else if (_dragState.type === 'yaw') {
       // Compute angle from actor centre to current mouse position
       const dx = world.x - _dragState.actorPos.x;
       const dy = world.y - _dragState.actorPos.y;
       // atan2 gives angle in radians; convert to degrees; SVG Y is flipped so Y is already correct
-      let yaw = Math.round(Math.atan2(dy, dx) * 180 / Math.PI);
+      let yaw = Math.round((Math.atan2(dy, dx) * 180) / Math.PI);
       AppState.updateById(_dragState.actorId, { yaw });
     }
   });
@@ -596,8 +614,9 @@
           const snap = _dragState.snap;
           UndoStack.suspend();
           AppState.updateById(actor.id, {
-            z: snap ? _roundZ(snap.z + _clearanceFor(actor.type))
-                    : _surfaceZFor(actor.type, actor.x, actor.y, actor.prop),
+            z: snap
+              ? _roundZ(snap.z + _clearanceFor(actor.type))
+              : _surfaceZFor(actor.type, actor.x, actor.y, actor.prop),
           });
           UndoStack.resume();
         }
@@ -612,15 +631,22 @@
         if (pt) {
           UndoStack.suspend();
           ObjectsManager.movePathPoint(
-            _dragState.actorId, _dragState.pathType, _dragState.index,
-            pt.x, pt.y, _dragState.eventId, true,
+            _dragState.actorId,
+            _dragState.pathType,
+            _dragState.index,
+            pt.x,
+            pt.y,
+            _dragState.eventId,
+            true,
           );
           UndoStack.resume();
         }
       }
       _dragState = null;
       document.body.classList.remove('rotating', 'dragging-actor');
-      setTimeout(() => { _wasDragging = false; }, 50);
+      setTimeout(() => {
+        _wasDragging = false;
+      }, 50);
     }
   });
 
@@ -630,21 +656,26 @@
   // and acted on. A path event that never got 2 waypoints is discarded here
   // rather than in _finishPathMode(): Esc clears the mode flags directly
   // (mapView.js), so hanging the check off the *button* would miss it.
-  let _drawContext = null;   // { actorId, eventId, type }
+  let _drawContext = null; // { actorId, eventId, type }
 
-  AppState.on('change', patch => {
-    if (!('trajectoryMode' in patch) && !('activeTrajectoryId' in patch) &&
-        !('routeMode' in patch) && !('activeRouteId' in patch) &&
-        !('activePathEventId' in patch)) return;
+  AppState.on('change', (patch) => {
+    if (
+      !('trajectoryMode' in patch) &&
+      !('activeTrajectoryId' in patch) &&
+      !('routeMode' in patch) &&
+      !('activeRouteId' in patch) &&
+      !('activePathEventId' in patch)
+    )
+      return;
 
-    const pathId = (AppState.trajectoryMode && AppState.activeTrajectoryId) ||
-                   (AppState.routeMode && AppState.activeRouteId);
+    const pathId =
+      (AppState.trajectoryMode && AppState.activeTrajectoryId) || (AppState.routeMode && AppState.activeRouteId);
     const next = pathId
       ? {
-        actorId: pathId,
-        eventId: AppState.activePathEventId,
-        type: AppState.routeMode ? 'route' : 'trajectory',
-      }
+          actorId: pathId,
+          eventId: AppState.activePathEventId,
+          type: AppState.routeMode ? 'route' : 'trajectory',
+        }
       : null;
 
     const left = _drawContext;
@@ -661,8 +692,8 @@
     const actor = AppState.findById(next.actorId);
     const name = actor ? AppState.actorLabel(actor, { short: true }) : next.actorId;
     trajBannerText.innerHTML =
-      `${next.type === 'route' ? 'Route' : 'Pfad'} für <strong></strong> zeichnen — auf die Karte klicken, `
-      + `um Wegpunkte zu setzen · <b>Enter</b> beendet`;
+      `${next.type === 'route' ? 'Route' : 'Pfad'} für <strong></strong> zeichnen — auf die Karte klicken, ` +
+      `um Wegpunkte zu setzen · <b>Enter</b> beendet`;
     trajBannerText.querySelector('strong').textContent = name;
   });
 
@@ -678,18 +709,20 @@
   function _discardIncompletePath(context) {
     const actor = _findActor(context.actorId);
     if (!actor) return;
-    const ev = (actor.events || []).find(item => item.id === context.eventId);
+    const ev = (actor.events || []).find((item) => item.id === context.eventId);
     if (!ev) return;
     const action = ev.action || {};
     const isRoute = action.type === 'assign_route';
     if (action.type !== 'follow_trajectory' && !isRoute) return;
-    const points = isRoute ? (action.waypoints || []) : (action.trajectory || []);
+    const points = isRoute ? action.waypoints || [] : action.trajectory || [];
     if (points.length >= 2) return;
 
     EventPanel.deleteEvent(actor, context.eventId);
-    Toast.warn(isRoute
-      ? 'Event verworfen — eine Route braucht mindestens 2 Wegpunkte'
-      : 'Event verworfen — eine Trajektorie braucht mindestens 2 Wegpunkte');
+    Toast.warn(
+      isRoute
+        ? 'Event verworfen — eine Route braucht mindestens 2 Wegpunkte'
+        : 'Event verworfen — eine Trajektorie braucht mindestens 2 Wegpunkte',
+    );
     MapView.renderAllActors();
   }
 
@@ -712,7 +745,7 @@
   // map: click the waypoints, press Enter. Esc still cancels (mapView.js).
   // Bound here rather than in mapView's keydown because _finishPathMode and the
   // banner both live in this module.
-  window.addEventListener('keydown', e => {
+  window.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     if (!AppState.trajectoryMode && !AppState.routeMode) return;
     // A dialog on top owns Enter, and so does a focused field.
@@ -735,32 +768,39 @@
   });
 
   function _finishPathMode() {
-    AppState.set({ trajectoryMode: false, activeTrajectoryId: null, routeMode: false, activeRouteId: null, activePathEventId: null });
+    AppState.set({
+      trajectoryMode: false,
+      activeTrajectoryId: null,
+      routeMode: false,
+      activeRouteId: null,
+      activePathEventId: null,
+    });
   }
 
   /** Find any actor (ego or NPC) that supports path drawing. */
   function _findActor(id) {
     if (AppState.ego && AppState.ego.id === id) return AppState.ego;
-    return AppState.npcs.find(n => n.id === id) || null;
+    return AppState.npcs.find((n) => n.id === id) || null;
   }
 
   function _eventPath(actor, eventId, type) {
     if (!eventId) return null;
-    const ev = (actor.events || []).find(item => item.id === eventId);
+    const ev = (actor.events || []).find((item) => item.id === eventId);
     const action = ev?.action;
     if (!action) return null;
     return type === 'route' ? action.waypoints : action.trajectory;
   }
 
   function _setEventPath(actor, eventId, type, points) {
-    const events = (actor.events || []).map(ev => {
+    const events = (actor.events || []).map((ev) => {
       if (ev.id !== eventId) return ev;
       const action = ev.action || { type: type === 'route' ? 'assign_route' : 'follow_trajectory' };
       return {
         ...ev,
-        action: type === 'route'
-          ? { ...action, type: 'assign_route', waypoints: points }
-          : { ...action, type: 'follow_trajectory', trajectory: points },
+        action:
+          type === 'route'
+            ? { ...action, type: 'assign_route', waypoints: points }
+            : { ...action, type: 'follow_trajectory', trajectory: points },
       };
     });
     // Through updateById, not `actor.events = …` directly. This used to be the
@@ -794,11 +834,14 @@
         // seed by centimetres — but a hand-typed or dragged pose need not be
         // on a lane at all, and leg 0 would then start off the network.
         const snap = _routeWaypointAt(actor.x, actor.y);
-        path = [{
-          x: snap.x, y: snap.y,
-          z: snap.snapped ? snap.z : (actor.z ?? 0),
-          strategy: 'fastest',
-        }];
+        path = [
+          {
+            x: snap.x,
+            y: snap.y,
+            z: snap.snapped ? snap.z : (actor.z ?? 0),
+            strategy: 'fastest',
+          },
+        ];
       }
       _setEventPath(actor, eventId, type, path);
     }
@@ -840,7 +883,8 @@
         const x = Math.round(wx * 10) / 10;
         const y = Math.round(wy * 10) / 10;
         point = {
-          x, y,
+          x,
+          y,
           z: _roundZ(groundZAt(x, y) + SPAWN_CLEARANCE.waypoint),
           strategy: 'shortest',
         };
@@ -855,9 +899,7 @@
       point = { x, y, z: _roundZ(groundZAt(x, y) + SPAWN_CLEARANCE.waypoint) };
     }
     if (type === 'trajectory') {
-      point.velocity = path.length > 0
-        ? path[path.length - 1].velocity
-        : 10.0;
+      point.velocity = path.length > 0 ? path[path.length - 1].velocity : 10.0;
     }
     // A NEW array, not path.push(). _eventPath returns the live
     // action.trajectory/waypoints, so mutating it in place would change the
@@ -880,11 +922,12 @@
    */
   function _triggerPointAt(actor, eventId, wx, wy) {
     const events = actor.events || [];
-    const currentEvent = events.find(ev => ev.id === eventId);
-    const pointIndex = events.reduce((max, ev) => {
-      const match = String(ev.trigger?.point?.name || '').match(/^Point\s+(\d+)$/);
-      return match ? Math.max(max, parseInt(match[1], 10)) : max;
-    }, 0) + 1;
+    const currentEvent = events.find((ev) => ev.id === eventId);
+    const pointIndex =
+      events.reduce((max, ev) => {
+        const match = String(ev.trigger?.point?.name || '').match(/^Point\s+(\d+)$/);
+        return match ? Math.max(max, parseInt(match[1], 10)) : max;
+      }, 0) + 1;
     const px = Math.round(wx * 10) / 10;
     const py = Math.round(wy * 10) / 10;
     return {
@@ -914,7 +957,7 @@
     if (!actor) return;
     const events = actor.events || [];
     const point = _triggerPointAt(actor, eventId, wx, wy);
-    const patchedEvents = events.map(ev => {
+    const patchedEvents = events.map((ev) => {
       if (ev.id !== eventId) return ev;
       return {
         ...ev,
@@ -936,7 +979,9 @@
     if (_unsnappedWarned) return;
     _unsnappedWarned = true;
     Toast.warn(`Kein Fahrstreifen in ${ROUTE_SNAP_MAX_DIST} m — Wegpunkt nicht eingerastet`);
-    setTimeout(() => { _unsnappedWarned = false; }, 4000);
+    setTimeout(() => {
+      _unsnappedWarned = false;
+    }, 4000);
   }
 
   /**
@@ -964,14 +1009,15 @@
     } else {
       const x = Math.round(wx * 10) / 10;
       const y = Math.round(wy * 10) / 10;
-      patch = deriveZ
-        ? { x, y, z: _roundZ(groundZAt(x, y) + SPAWN_CLEARANCE.waypoint) }
-        : { x, y };
+      patch = deriveZ ? { x, y, z: _roundZ(groundZAt(x, y) + SPAWN_CLEARANCE.waypoint) } : { x, y };
     }
     // Copy rather than write through to the live point — see _addPathPoint.
-    _setEventPath(actor, eventId, type, path.map((pt, i) => (
-      i === idx ? { ...pt, ...patch } : pt
-    )));
+    _setEventPath(
+      actor,
+      eventId,
+      type,
+      path.map((pt, i) => (i === idx ? { ...pt, ...patch } : pt)),
+    );
   }
 
   /* Waypoint 1 IS the vehicle: it is seeded on the actor's pose and tracks it
@@ -991,7 +1037,12 @@
     const path = actor ? _eventPath(actor, eventId, type) : null;
     if (!actor || !path) return;
     // Copy rather than splice the live array — see _addPathPoint.
-    _setEventPath(actor, eventId, type, path.filter((_, i) => i !== idx));
+    _setEventPath(
+      actor,
+      eventId,
+      type,
+      path.filter((_, i) => i !== idx),
+    );
   }
 
   /* Flip one route waypoint between the two strategies.
@@ -1015,9 +1066,12 @@
       if (!snap.snapped) _warnUnsnapped();
       patch = { ...patch, x: snap.x, y: snap.y, z: snap.z };
     }
-    _setEventPath(actor, eventId, 'route', path.map((pt, i) => (
-      i === idx ? { ...pt, ...patch } : pt
-    )));
+    _setEventPath(
+      actor,
+      eventId,
+      'route',
+      path.map((pt, i) => (i === idx ? { ...pt, ...patch } : pt)),
+    );
   }
 
   /** One speed for the whole trajectory, written to every vertex (see
@@ -1029,7 +1083,12 @@
     const v = Math.min(50, Math.max(0, parseFloat(velocity)));
     const speed = Number.isFinite(v) ? v : 10.0;
     // Copy rather than write through to the live point — see _addPathPoint.
-    _setEventPath(actor, eventId, 'trajectory', path.map(pt => ({ ...pt, velocity: speed })));
+    _setEventPath(
+      actor,
+      eventId,
+      'trajectory',
+      path.map((pt) => ({ ...pt, velocity: speed })),
+    );
   }
 
   function clearPath(actorId, type, eventId = null) {
