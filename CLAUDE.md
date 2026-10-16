@@ -108,7 +108,7 @@ Every z the editor writes is `elev(s)` at the placement point plus a per-categor
 - `SPAWN_CLEARANCE` (`frontend/js/objectsCore.js`): vehicles `0.5`, VRUs `0.6`, waypoints `0.5`, props none. **Always err high** — spawning below the surface fails hard in CARLA (`"collision at spawn position"`), while spawning above it is free because actors settle under physics within a tick. VRUs get more because the profile models the *reference line* and not kerbs or sidewalk height, and sidewalk lanes carry no `directionLine`, so a pedestrian on a kerb takes its z from the carriageway ~0.15 m below. A prop's catalogue `z` is a surface-relative offset, and for a prop it is **not** a clearance to err high on: it is the measured lift that puts a mesh with an off-base pivot onto the road — see "Static props".
 - **z recomputes on `mouseup`, not on `mousemove`** (`frontend/js/objectsDrag.js`). `_nearestLaneProjection` is a linear scan over every lane segment (~59k points on Town03), so per-frame recompute would stutter — and z has no visual effect in a top-down 2D view. A hand-typed z therefore survives until the object is next moved.
 - **`maps/Town10` uses an absolute geoid datum** (+50…+103 m; it is a georeferenced VectorZero map, *not* `Town10HD`). Actors placed there get those heights verbatim. The startup log flags it (`⚠ absolute datum?` from the per-town `elevation` range). Do not subtract a datum without first checking what CARLA reports for a waypoint on that map — if it builds the mesh from the same `.xodr`, the road really is up there and shifting it reintroduces the bug.
-- `backend/scenario_io.py` still defaults a missing z to `0.2` / `0.0`. That is now only a fallback for payloads the editor did not build (hand-written, LLM-generated); it is not the editor's behaviour.
+- The backend (`scenario_io.py`, `event_normalize.py`) still defaults a missing z to `0.2` / `0.0`. That is now only a fallback for payloads the editor did not build (hand-written, LLM-generated); it is not the editor's behaviour.
 
 **Two different serializations of editor state; do not confuse them:**
 
@@ -169,7 +169,7 @@ so a missed table exports a clean, wrong file:
 | `../llm-scenario-gen/config/vehicle_catalog.yaml` | archetype → blueprint, **and** the `vehicle_category:` entry | exports as `vehicle.lincoln.mkz_2017` / `vehicleCategory="car"` |
 | `xml_builder.py` `_VEHICLE_PARAMS` or `_PEDESTRIAN_PARAMS` | Performance + BoundingBox + Axles | car physics (69 m/s firetruck) |
 | `xml_builder.py` `_TYPE_ALIASES` **and** the verbatim copy in `event_builders.py` | alias → archetype | the two resolve the type differently |
-| `event_builders.py` `_ROUTE_ACTION_TYPES` — **and its copies** in `backend/scenario_io.py` (`_ROUTE_ACTOR_TYPES`) and `frontend/js/scenarioRules.js` (`ScenarioRules.ROUTE_ACTION_TYPES`) | may use `assign_route` | the action grid greys the button out and the backend 400s, on a type the emitter would have routed happily |
+| `event_builders.py` `_ROUTE_ACTION_TYPES` — **and its copies** in `backend/event_rules.py` (`_ROUTE_ACTOR_TYPES`) and `frontend/js/scenarioRules.js` (`ScenarioRules.ROUTE_ACTION_TYPES`) | may use `assign_route` | the action grid greys the button out and the backend 400s, on a type the emitter would have routed happily |
 | `xml_builder.py` `_PEDESTRIAN_TYPES` | `<Pedestrian>` vs `<Vehicle>`, controller module, base template | a `<Vehicle>` holding a `walker.*` blueprint |
 | `config/scenario_components.yaml`, `scripts/generate_and_record.py` | LLM vocabulary + recording script's own third blueprint map | LLM/recording paths don't know the type |
 
@@ -180,7 +180,7 @@ downstream lookup would otherwise turn a typo into a Lincoln MKZ. Laden warns ab
 offers no way out of a type that is in no group — the fix is to delete and re-place the actor.
 
 `mapMarkers.js` `WALKER_TYPES`, `xml_builder` `_PEDESTRIAN_TYPES`, `event_builders`
-`_WALKER_ACTION_TYPES` and `backend/scenario_io.py` `_WALKER_ACTOR_TYPES` are the
+`_WALKER_ACTION_TYPES` and `backend/event_rules.py` `_WALKER_ACTOR_TYPES` are the
 same split maintained **four** times — keep them in step. The last two gate
 `lane_offset`, which is available to every `<Vehicle>` and therefore to a
 **wider** set than `assign_route`: a `cyclist` aliases to `bike`, so the route
@@ -234,7 +234,7 @@ encoding.
 
 Every scenario actor — **ego included** — holds `events: [{ id, name, trigger, action }]`.
 The ego is not a special case here: it goes through the same UI (`eventPanel*.js`),
-the same backend normalizer (`_normalize_actor` in `backend/scenario_io.py`),
+the same backend normalizer (`_normalize_actor` in `backend/event_normalize.py`),
 and the same emitter path (`_build_actor_act` in `xml_builder.py`) as every NPC.
 Its entity name is `hero`; an NPC's is `adversary`/`adversaryN`.
 
@@ -280,7 +280,7 @@ Adding or changing one means editing all three layers:
 | Layer | File | Holds |
 |---|---|---|
 | UI | `frontend/js/eventPanel*.js` | `EVENT_ACTIONS` / `EVENT_TRIGGERS` lists (`eventPanelCore.js`) + per-action and trigger forms (`eventPanelActions.js`, `eventPanelTriggers.js`) |
-| Validation | `backend/scenario_io.py` | `_normalize_structured_event` (per-event) / `_normalize_actor` (per-actor) — whitelists, clamps, defaults |
+| Validation | `backend/event_normalize.py`, `backend/event_rules.py` | `_normalize_structured_event` (per-event) / `_normalize_actor` (per-actor) — clamps, defaults; the whitelists and the scenario-wide reference rules in `event_rules.py` |
 | Emission | `../llm-scenario-gen/generator/event_builders.py` | the actual OpenSCENARIO XML (two-phase across actors — see the cross-actor `after_event` section) |
 
 The `EVENT_ACTIONS` / `EVENT_TRIGGERS` **labels are German while the keys stay the
@@ -316,20 +316,20 @@ re-renders on an `activePathEventId` change to keep it current.
 Silent behaviours worth knowing when debugging "my event did nothing":
 
 - Unknown action/trigger strings are **silently coerced** to `follow_trajectory` / `simulation_time` rather than raising. The coercion is still silent, but its usual consequence no longer is: a typo'd action name coerces to a `follow_trajectory` with no waypoints, which is now a hard 400 (see "An event the emitter would drop" below) instead of an event that vanished.
-- An `assign_route` action forces its own trigger to `simulation_time @ 0` (`backend/scenario_io.py`, mirrored in `frontend/js/scenarioIO.js`).
+- An `assign_route` action forces its own trigger to `simulation_time @ 0` (`backend/event_normalize.py`, mirrored in `frontend/js/scenarioIO.js`).
 - An `after_event` trigger pointing at an `assign_route` event is rewritten to `distance_to_ego @ 400` — **on whichever actor owns the route**, see the cross-actor section below.
 - A `distance_to_ego` trigger on an **ego-owned** event that names no other actor (or the ego itself) is rewritten to `simulation_time @ 0` — a distance from hero to itself is always 0, so the condition would fire on tick 1 regardless of the configured value. One naming an NPC is kept. This coercion runs in `_normalize_after_event_chains` **after** the `after_event`→`assign_route` rewrite above, so a rewritten trigger on an ego event is caught too. `eventPanelTriggers.js` additionally omits the option from the trigger dropdown when the actor is the ego, and `event_builders.py`'s `build_start_event` / `_add_custom_event_start_trigger` fall back to `simulation_time` for `entity_name == 'hero'` as a third, defensive layer.
 - **An event the emitter would drop is a hard 400, and the editor will not let you build one.** `_add_follow_trajectory_action` / `_add_assign_route_action` return `False` under 2 waypoints (and the latter also for a non-vehicle type), `build_custom_event_chain` then skips the whole event, and anything chained onto it with `after_event` is left pointing at a `storyboardElementRef` that is not in the file. Four layers now close that off, and the frontend three share one predicate — `ScenarioRules` in `frontend/js/scenarioRules.js` (`actionEmits` / `eventProblem` / `problemsOf`), which `eventPanelCards.js` (warning chip + the `#event-warn` count), `scenarioIO.js` (`_validateScenario`) and `simEvents.js` all call:
   - a path event is still **seeded with one waypoint on the actor's own pose** (`startPathMode`), so the *first* map click already completes a usable 2-point path — but it now **deletes itself** when draw mode ends still under 2 (`_discardIncompletePath`, `frontend/js/objectsPaths.js`, hung off the `AppState.on('change')` mode transition rather than the *Fertig* button, because Esc clears the flags directly in `mapKeys.js`). The seed alone was the old failure: below the emitter's minimum, invisible on the map (`mapPaths.js` skips a path under 2 points), and reported by the card as „Pfad gezeichnet".
   - **`Route zuweisen` is `disabled` for `pedestrian`/`child`/`cyclist`** — `AssignRouteAction` is vehicle-only (`_ROUTE_ACTION_TYPES`), and the grid used to offer it to everyone.
-  - `validate_scenario_params` raises on both cases. `_ROUTE_ACTOR_TYPES` (`backend/scenario_io.py`) is a third copy of that type list and **must include the aliases that resolve to a routable type** (`lorry`, `moped`) — the emitter runs `_TYPE_ALIASES` first, so without them the backend rejects payloads the emitter accepts.
+  - `validate_scenario_params` raises on both cases. `_ROUTE_ACTOR_TYPES` (`backend/event_rules.py`) is a third copy of that type list and **must include the aliases that resolve to a routable type** (`lorry`, `moped`) — the emitter runs `_TYPE_ALIASES` first, so without them the backend rejects payloads the emitter accepts.
   - `build_custom_event_chain` builds its name table from the events that **actually got appended** (two passes: actions first, then triggers), so a chained `after_event` whose target was skipped now falls back to a plain `simulation_time` start instead of dangling. This was the long-standing `KNOWN` entry in `test_events_e2e.py`.
 - **A `distance_to_point` trigger is never point-less.** Choosing it in the panel places the point on the acting actor immediately (`ObjectsManager.defaultTriggerPoint`) with a **5 m** radius (`DEFAULT_POINT_RADIUS`, `eventPanelCore.js` — a fresh radius rather than the outgoing trigger's value, which is a delay in seconds or a 400 m ego distance and means nothing here). A missing point used to be defaulted to `(0, 0, 0.2)` in `_normalize_structured_event` — the map origin, which a 3-D `DistanceCondition` can never reach — so that is now a 400 too; and in the emitter it fell through to `simulation_time(value)`, reading the radius in metres as a delay in seconds (a 20 m radius became `t > 20 s`). Both fixed. (The `?? 20` fallbacks left in the frontend and `_normalize_structured_event`'s `trigger.get("value", 20.0)` are for a payload carrying no value at all, and still agree with each other — only the *creation* default is 5.)
 - **The point is moved by dragging its map marker; there is no picking mode.** `layer-trigger-points` is appended **after** `layer-actors` (`renderMap`, `mapRender.js`, last of the three top layers — `layer-paths-top` and `layer-actors-top` go before it) rather than under the trajectory layer, because a point seeded on its own actor would otherwise be drawn *and hit-tested* under the vehicle rectangle. The marker carries an invisible 2.2 m hit circle (`.trigger-point-control`) — the drawn one is 0.7 m and sub-pixel at town zoom — and its drag writes x/y per mousemove but re-derives z once, on mouseup, via `ObjectsManager.moveTriggerPoint` (`_nearestLaneProjection` is a full lane scan; same reasoning as an actor's z). The mouseup also **expires** `_suppressNextClick` on a timer: the marker is re-rendered mid-drag, so the element the drag started on is detached by mouseup and the browser may dispatch no click at all — a permanently-set flag then swallows an unrelated map click much later.
 ### Event references (`after_event`, `event_started`) may name another actor's event, and may never form a loop
 
 Everything below applies to both reference kinds — `ScenarioRules.isEventRef`
-(`frontend/js/scenarioRules.js`) and `_EVENT_REF_TRIGGERS` (`backend/scenario_io.py`) are the
+(`frontend/js/scenarioRules.js`) and `_EVENT_REF_TRIGGERS` (`backend/event_rules.py`) are the
 switch — except the `lane_offset` ban, which is about *completion* and so covers
 `after_event` only: a `lane_offset`'s START is well defined, and `event_started` may
 name one. `_isChainTarget(ev, triggerType)` is the dropdown/default/re-point predicate
@@ -376,7 +376,7 @@ entirely ours.
   guard for exactly this, or deleting this actor's `evt-2` would re-point a
   trigger naming *another* actor's `evt-2`.
 - **The scenario-wide event-reference rules live in one place**,
-  `_normalize_after_event_chains` (`backend/scenario_io.py`), called from
+  `_normalize_after_event_chains` (`backend/event_rules.py`), called from
   `validate_scenario_params` **after** every `_normalize_actor`. The
   assign_route rewrite and the hero self-distance coercion used to be the tail
   of `_normalize_actor`, which was correct only while a reference could not
@@ -592,7 +592,7 @@ half a lane straddles the line; Town01/02 lanes are 4 m, so a fixed 1.75 m is no
 - **An `after_event` may never name a held `lane_offset`** — nor a continuous
   relative `set_speed`, the other action that never completes on its own. One
   predicate on each side: `ScenarioRules.neverCompletes` (`scenarioRules.js`) and
-  `_never_completes` (`scenario_io.py`). The runtime *would* complete one that a
+  `_never_completes` (`event_rules.py`). The runtime *would* complete one that a
   later command supersedes, but that was judged too conditional to author against.
   Enforced in four places: `_afterEventGroups` omits it from the dropdown —
   and so do the new-event default (`_defaultEvent`) and the delete re-point
@@ -747,7 +747,7 @@ Both the `resolveAction`/`resolveTrigger` pair in `buildScenarioParams`
 `validate_scenario_params` do the remap; the payload carries `ego.id` purely so
 the backend's copy can resolve the ego too. **An `entity_ref` that resolves to
 neither `hero` nor a real `adversaryN` is a hard 400** (`_entity_ref`,
-`backend/scenario_io.py`), not a coercion — same policy as an unknown prop id or
+`backend/event_rules.py`), not a coercion — same policy as an unknown prop id or
 actor type. The alternative was proven bad: an unresolved ref used to pass
 through verbatim, ScenarioRunner matched no actor, left `trigger_actor = None`,
 and the condition simply never fired — indistinguishable from a badly-tuned
@@ -1300,7 +1300,7 @@ once is cheap, so nothing is faked. The `HeroActComplete` stop group is not mode
 The Play/Pause/Stop preview is a per-tick kinematic re-implementation of the real controllers
 (`SimpleVehicleControl` / `PedestrianControl`), not an idealisation of the authored events — it
 evaluates all 7 real triggers (including the `distance_to_ego` 60 s OR-fallback, the
-`assign_route`/`after_event` trigger rewrites `backend/scenario_io.py` applies at export,
+`assign_route`/`after_event` trigger rewrites the backend applies at export (`event_normalize.py`, `event_rules.py`),
 an event reference naming another actor's event, and `ego_speed`/`relative_speed` off the
 per-tick speed snapshot; „Abstand zu Akteur" reads the other actor off the per-tick pose
 snapshot `_tickPoses`), and
@@ -1940,7 +1940,7 @@ the criticality badge (2026-10-11); retime an event in its card. `tests/test_eve
 `AppState` by plain assignment (not `set()`), so nothing renders or records undo, and the saved
 actors/weather/time/map are put back at the end. It emits `change {}` afterwards, **never
 `stateLoaded`** — `undo.js` clears the undo history on that. `POST /api/export/batch`
-(`export_batch_zip`, `backend/scenario_io.py`) zips `<name>.xosc`, `<name>.json` (an editor save
+(`export_batch_zip`, `backend/batch_export.py`) zips `<name>.xosc`, `<name>.json` (an editor save
 file, reopens with **Laden**) and `<name>_route.xml` (the ego route as a goal for an AV stack) per
 scenario plus `manifest.csv`/`manifest.json` (seed, town, type, weather, time,
 every type parameter). Each scenario is exported independently; a failure is a manifest row with

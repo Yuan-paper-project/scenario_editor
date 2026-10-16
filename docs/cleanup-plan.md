@@ -21,7 +21,9 @@ Line counts are `wc -l`. The sibling repo `../llm-scenario-gen` is out of scope 
 | `frontend/js/properties.js` | done (`5ac3c27` shared `scene`, `264d244` `panel.render` hook, `25524a7` split, docs after) |
 | `frontend/js/templates.js` | done (`a112e51` split, docs after) |
 | `backend/map_renderer.py` | done (`24b0c44` split, docs after) |
-| `backend/scenario_io.py`, `bg_traffic.py`, `lane_graph_builder.py` | open |
+| `backend/scenario_io.py` | done (`414b411` split, docs after) |
+| `backend/bg_traffic.py`, `lane_graph_builder.py` | open |
+| `frontend/js/bgTraffic.js` (561), `backend/main.py` (463) | kept, by decision: each is one cohesive module somewhat over the target; `bgTraffic.js`'s only seam (the keep-out) would not justify a shared scope, and `main.py` is a flat route list that routers would only add indirection to |
 
 How each split was done, and the checks to repeat: propose → approve → (1) any wiring change needed to make the move possible, alone, inside the old file; (2) the move itself, by script, asserting every original line lands in exactly one new file; (3) docs. After each: `bash tools/lint.sh` (no new findings), `bash tests/run_tests.sh --quick`, and the export/generator fingerprint must be byte-identical; a deliberately wrong load order must fail `test_smoke_e2e.py`. Test against a server without `--reload` (port 9091). For a stylesheet, the fingerprint is `tools/css_fingerprint.py` (computed styles, see CLAUDE.md).
 
@@ -49,7 +51,7 @@ How each split was done, and the checks to repeat: propose → approve → (1) a
 | File | Lines before (now) | Seams |
 |---|---|---|
 | ~~`backend/map_renderer.py`~~ | 1142 (1183) | **Done** — split into `xodr_geometry.py` (263, reference-line maths: offsets, elevation, sampling, lateral points, `_eval_geometry_at_s`), `xodr_lanes.py` (332, lane sections, widths, centres, polygons, road marks), `xodr_features.py` (226, lights, signs, crosswalks), `spawn_points.py` (139, with the `_LLMGEN` lookup only it uses), `map_renderer.py` (291, path scans, colours, `_process_root_to_render_data`, public API). Imports only go downward in that order. No re-exports: `lane_graph_builder.py` imports from `xodr_lanes`. Verified by hashing every town's render JSON and xodr-derived lane graph directly (`build_lane_graph_from_xodr` on all towns, since the API serves probed graphs for most) plus the browser fingerprint. `_process_root_to_render_data` (169 lines) moved whole. |
-| `backend/scenario_io.py` | 1018 (1027) | per-event/per-actor normalisation (34–500) · scenario-wide event-reference rules (502–620) · type/prop/signal validation (621–731) · `validate_scenario_params` + export (732–928) · batch zip (929–) |
+| ~~`backend/scenario_io.py`~~ | 1018 (1027) | **Done** — split into `event_rules.py` (260: the type/trigger whitelists, `ROUTE_STRATEGIES`, `_entity_ref`, `_never_completes`, `_normalize_after_event_chains`), `event_normalize.py` (364: `_normalize_waypoints`, `_normalize_structured_event`, `_normalize_actor`), `batch_export.py` (95), `scenario_io.py` (328: `_LLMGEN`, type/prop/signal checks, `validate_scenario_params`, both exports). `_entity_ref` went to the rules rather than with its only caller to keep `event_normalize.py` under 400 — it is a rule in its own right (a dangling or self ref is a 400). The batch zip was checked separately (old vs new `export_batch_zip` on a real 5-entry batch with one failing entry): identical. |
 | `backend/bg_traffic.py` | 883 (1045) | SUMO install/net (123–193) · keep-out (194–385) · trip generation and FCD I/O (386–640) · `generate` loop (680–876) |
 | `backend/lane_graph_builder.py` | 634 (701) | XML extraction (93–307) · successor resolution (308–392) · `build_lane_graph_from_xodr` (395–) |
 | `backend/main.py` | 446 (463) | just over; app setup + map routes vs export/bg-traffic routes |
@@ -61,7 +63,7 @@ How each split was done, and the checks to repeat: propose → approve → (1) a
 
 ### Over-long functions (≥ 90 lines)
 
-Python: `scenario_io._normalize_structured_event` (259), `lane_graph_builder.build_lane_graph_from_xodr` (240), `bg_traffic.generate` (195), `map_renderer._process_root_to_render_data` (169), `scenario_io.validate_scenario_params` (124), `scenario_io._normalize_after_event_chains` (117).
+Python: `event_normalize._normalize_structured_event` (259), `lane_graph_builder.build_lane_graph_from_xodr` (240), `bg_traffic.generate` (195), `map_renderer._process_root_to_render_data` (169), `scenario_io.validate_scenario_params` (124), `event_rules._normalize_after_event_chains` (117).
 
 JS: `propSideShapes.sideShapes` (336, data), `eventPanelTriggers._appendEventTriggerControls` (219), `mapRender.renderMap` (221), `propPlanShapes.planShapes` (166, data), `generatorTypesObstacle._oncomingDrift` (159), `ScenarioRules.eventProblem` (156), `generatorTypesVru._vruCrossingAt` (134), `eventPanelCards._renderEventList` (133), `eventPanelActions._appendSpeedActionControls` (116), `eventPanelPaths._renderPathList` (116), `scenarioIO.buildScenarioParams` (116), `simActions._applyEventAction` (114), `generatorTypesJunction._junctionConflict` (104), `propCatalog.renderPanel` (103), `generatorTypesObstacle._obstacle` (100), `simulate.runHeadless` (97), `eventPanel._renderEventActionGrid` (96), `mapPaths._renderRoute` (95).
 
@@ -83,7 +85,7 @@ Ordered by how safe the merge is. Check each pair's bodies before merging; sever
 | Nearest-point-on-lane | `objects._nearestLaneProjection` (251), `generatorCore._projectOnLane`, `simLanes._nearestPointOnDirLine` | Different inputs and outputs; probably a shared segment-projection kernel underneath. Investigate. |
 | Test boilerplate | 4 e2e suites (`test_props`, `test_prop_yaw`, `test_elevation`, `test_undo`) don't import `_harness` and launch the browser themselves; `seed`/`place`/`load_map`/`speed_event` helpers are redefined in several suites | Move the shared ones into `_harness.py`. |
 
-Event/actor rules mirrored across frontend, backend and emitter (`ScenarioRules` ↔ `scenario_io.py` ↔ `event_builders.py`) are deliberate cross-layer copies, documented in CLAUDE.md. They are out of scope for this cleanup.
+Event/actor rules mirrored across frontend, backend and emitter (`ScenarioRules` ↔ `event_rules.py` / `event_normalize.py` ↔ `event_builders.py`) are deliberate cross-layer copies, documented in CLAUDE.md. They are out of scope for this cleanup.
 
 ## 3. Dead code
 

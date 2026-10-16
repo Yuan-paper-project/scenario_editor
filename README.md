@@ -24,6 +24,8 @@ scenario_editor/
 │   ├── main.py            REST API + static file server (incl. map upload, .pptx)
 │   ├── map_renderer.py    OpenDRIVE parser → road geometry JSON
 │   ├── xodr_*.py, spawn_points.py  its geometry, lane, feature and spawn-point helpers
+│   ├── event_rules.py, event_normalize.py  per-event validation and the event-reference rules
+│   ├── batch_export.py    generator batch → zip
 │   └── scenario_io.py     Validation + export to .xosc / route XML
 ├── frontend/              Vanilla JS + CSS (no build step)
 │   ├── index.html         Single-page application shell
