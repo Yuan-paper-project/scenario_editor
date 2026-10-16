@@ -2228,7 +2228,6 @@ Umgebung menu (AppState.bgTraffic {enabled,count,seed,clearance,radius}) + timed
 
 ## Repo notes
 
-- `README_UPDATED.md` is a second, newer README coexisting with `README.md`. Check both before assuming docs are stale.
 - `generate_pptx.py` and `frontend/presentation.html` are the project slide deck, served by `GET /api/presentation.pptx` (which shells out to the script). Unrelated to editor functionality.
 - Exports are written to `/tmp/` and removed by a `BackgroundTask` after the response is sent (both export endpoints, `backend/main.py`).
 
