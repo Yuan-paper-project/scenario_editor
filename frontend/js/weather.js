@@ -10,16 +10,8 @@
   const presetsBox = document.getElementById('env-presets');
   const WEATHER_KEYS = ['fog', 'rainy', 'cloudy', 'sunny', 'wet_road', 'snowy', 'dust_storm'];
 
-  // The generator's batch presets (generatorBatch.js WEATHER_PRESETS). A preset sets every key,
-  // the rest to 0, so matching one is exact.
-  const PRESETS = [
-    { id: 'klar', label: 'Klar', w: {} },
-    { id: 'bewoelkt', label: 'Bewölkt', w: { cloudy: 0.8 } },
-    { id: 'regen', label: 'Regen', w: { cloudy: 0.8, rainy: 0.6, wet_road: 0.8 } },
-    { id: 'starkregen', label: 'Starkregen', w: { cloudy: 1.0, rainy: 1.0, wet_road: 1.0, fog: 0.2 } },
-    { id: 'nebel', label: 'Nebel', w: { cloudy: 0.5, fog: 0.7 } },
-    { id: 'nass', label: 'Nass', w: { cloudy: 0.3, wet_road: 0.7 } },
-  ];
+  // Shared with the generator's batch; a preset sets every key, so matching one is exact.
+  const PRESETS = AppState.WEATHER_PRESETS;
 
   const _full = (w) => Object.fromEntries(WEATHER_KEYS.map((k) => [k, w[k] || 0]));
 

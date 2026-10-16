@@ -192,6 +192,30 @@ with sync_playwright() as p:
     page.wait_for_function("AppState.npcs.length === 3", timeout=5000)
     check("one Strg+Z undoes the whole generation", page.evaluate("AppState.ego.id") == example["ego"]["id"])
 
+    # ── Umgebung presets (shared with the generator's batch weathers) ────────
+    presets = {
+        "klar": ("Klar", {}),
+        "bewoelkt": ("Bewölkt", {"cloudy": 0.8}),
+        "regen": ("Regen", {"cloudy": 0.8, "rainy": 0.6, "wet_road": 0.8}),
+        "starkregen": ("Starkregen", {"cloudy": 1.0, "rainy": 1.0, "wet_road": 1.0, "fog": 0.2}),
+        "nebel": ("Nebel", {"cloudy": 0.5, "fog": 0.7}),
+        "nass": ("Nass", {"cloudy": 0.3, "wet_road": 0.7}),
+    }
+    page.click("#env-menu-btn")
+    bad = []
+    for pid, (label, want) in presets.items():
+        page.click(f'.env-preset[data-preset="{pid}"]')
+        got = {k: v for k, v in page.evaluate("AppState.weather").items() if v}
+        summary = page.inner_text("#env-summary")
+        if got != want or not summary.startswith(label):
+            bad.append((pid, got, summary))
+    page.keyboard.press("Escape")
+    check("each Umgebung preset sets its weather and names itself on the button", not bad, str(bad))
+    check(
+        "the batch generator offers the same presets, in the same order",
+        page.evaluate("ScenarioGenerator.WEATHER_PRESETS") == list(presets),
+    )
+
     unexpected = [e for e in errors if "404" not in e]
     check("no JS errors during the run", not unexpected, str(unexpected[:3]))
     browser.close()

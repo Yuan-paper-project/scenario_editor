@@ -157,14 +157,7 @@
   // ── Batch generation and coverage sampling ──────────────────────────────────
   // Consistent presets rather than independent sliders (rain needs a wet road). No snow or dust:
   // CARLA 0.9.15 renders neither. weather.js's PRESETS carry the same values.
-  const WEATHER_PRESETS = {
-    klar: {},
-    bewoelkt: { cloudy: 0.8 },
-    regen: { cloudy: 0.8, rainy: 0.6, wet_road: 0.8 },
-    starkregen: { cloudy: 1.0, rainy: 1.0, wet_road: 1.0, fog: 0.2 },
-    nebel: { cloudy: 0.5, fog: 0.7 },
-    nass: { cloudy: 0.3, wet_road: 0.7 },
-  };
+  const WEATHER_PRESETS = Object.fromEntries(AppState.WEATHER_PRESETS.map((p) => [p.id, p.w]));
   const TIMES = ['daytime', 'morning', 'dusk', 'nighttime'];
   // The towns run.sh's CARLA build ships (not Town10, not uploaded maps).
   const CARLA_TOWNS = ['Town01', 'Town02', 'Town03', 'Town04', 'Town05', 'Town06', 'Town07', 'Town10HD'];

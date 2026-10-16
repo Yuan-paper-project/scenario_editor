@@ -71,6 +71,16 @@
     dusk: 'D\u00e4mmerung',
     nighttime: 'Nacht',
   };
+  /* The Umgebung menu's presets and the generator's batch weathers. A preset sets every key, the
+   * rest to 0. The order is the batch's coverage order, so reordering changes generated batches. */
+  const WEATHER_PRESETS = [
+    { id: 'klar', label: 'Klar', w: {} },
+    { id: 'bewoelkt', label: 'Bewölkt', w: { cloudy: 0.8 } },
+    { id: 'regen', label: 'Regen', w: { cloudy: 0.8, rainy: 0.6, wet_road: 0.8 } },
+    { id: 'starkregen', label: 'Starkregen', w: { cloudy: 1.0, rainy: 1.0, wet_road: 1.0, fog: 0.2 } },
+    { id: 'nebel', label: 'Nebel', w: { cloudy: 0.5, fog: 0.7 } },
+    { id: 'nass', label: 'Nass', w: { cloudy: 0.3, wet_road: 0.7 } },
+  ];
 
   const AppState = {
     // ── Map ──────────────────────────────────────────────────
@@ -267,6 +277,7 @@
 
     WEATHER_LABELS,
     TIME_LABELS,
+    WEATHER_PRESETS,
 
     /** German name for a weather key, falling back to the key itself. */
     weatherLabel(key) {
