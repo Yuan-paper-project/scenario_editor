@@ -1,0 +1,164 @@
+/* ── Umgebung menu (weather + time of day) ───────────────── */
+/* Was a full-width bar under the map; now a header dropdown. weather.js
+   still binds the same w-* / wv-* ids. */
+.env-panel {
+  width: 280px;
+  padding: 10px;
+  gap: 6px;
+  cursor: default;
+}
+.env-row {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.env-row select {
+  background: var(--panel2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 11px;
+  min-width: 0;
+}
+.env-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.env-presets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+.env-preset {
+  font-size: 11px;
+  padding: 5px 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.env-preset:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.env-preset.active {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+.env-sliders {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 14px;
+}
+.weather-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.weather-item label {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  display: flex;
+  justify-content: space-between;
+}
+.w-val {
+  color: var(--accent);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+#env-summary {
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Hintergrundverkehr (bgTraffic.js), the Umgebung menu's last section */
+.bg-enable-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text);
+  cursor: pointer;
+}
+.bg-grid {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  align-items: center;
+  gap: 6px 10px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.bg-grid input[type="number"] {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  font-size: 11px;
+  padding: 3px 6px;
+  background: var(--panel2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.bg-seed-wrap {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+}
+.bg-unit-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.bg-dice {
+  padding: 0 6px;
+  height: 24px;
+  font-size: 13px;
+  line-height: 1;
+}
+.env-panel.bg-off .bg-grid {
+  opacity: 0.5;
+}
+.bg-status {
+  font-size: 11px;
+  color: var(--text-dim);
+  min-height: 15px;
+}
+.bg-status.busy {
+  color: var(--accent);
+}
+.bg-status.error {
+  color: var(--danger);
+}
+/* The background cars on the map: true size, grey, never hit-tested. */
+#layer-bg-traffic {
+  pointer-events: none;
+}
+.bg-car {
+  fill: #8a93a6;
+  stroke: #2b3142;
+  stroke-width: 0.15;
+}
+.bg-car-nose {
+  fill: #2b3142;
+}

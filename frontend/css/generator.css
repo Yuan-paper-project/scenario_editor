@@ -1,0 +1,298 @@
+/* ── Generator menu ─────────────────────────────────────────── */
+.gen-menu-types {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.gen-menu-types .menu-item.gen-any {
+  color: var(--text);
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+  border-radius: 5px 5px 0 0;
+  margin-bottom: 2px;
+}
+.gen-seed-row {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 2px;
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.gen-seed-row input {
+  width: 100%;
+  min-width: 0;
+  font-size: 11px;
+  padding: 3px 6px;
+}
+.gen-pick-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 2px;
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.gen-pick-row:hover {
+  color: var(--text);
+}
+
+/* Recipe panel (Übersicht → Generiert): label | control | unit | unpin. */
+.gen-recipe-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  margin: 4px 0 6px;
+}
+.gen-recipe-head span {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.gen-recipe-warn {
+  font-size: 11px;
+  color: #8a5b00;
+  background: #fff3d6;
+  border: 1px solid #e0b44a;
+  border-radius: 5px;
+  padding: 4px 6px;
+  margin-bottom: 6px;
+}
+.gen-recipe-grid {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content 18px;
+  gap: 4px 6px;
+  align-items: center;
+}
+.gen-recipe-row {
+  display: contents;
+}
+.gen-recipe-label {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.gen-recipe-row.pinned .gen-recipe-label {
+  color: var(--text);
+  font-weight: 600;
+}
+.gen-recipe-row.pinned .gen-recipe-label::before {
+  content: "● ";
+  color: var(--accent);
+  font-size: 8px;
+  vertical-align: middle;
+}
+.gen-recipe-grid input[type="number"],
+.gen-recipe-grid select {
+  width: 100%;
+  min-width: 0;
+  font-size: 11px;
+  padding: 2px 4px;
+}
+.gen-recipe-grid input[type="checkbox"] {
+  justify-self: start;
+}
+.gen-recipe-row.unmet .gen-recipe-label {
+  color: #a33a0b;
+}
+.gen-recipe-unit {
+  font-size: 10px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.gen-recipe-unpin {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+.gen-recipe-unpin:hover {
+  color: var(--danger);
+  background: var(--panel2);
+}
+.gen-recipe-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+.gen-sweep {
+  margin-top: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+}
+.gen-sweep summary {
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--text);
+}
+.gen-sweep-grid {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 6px;
+  align-items: center;
+  margin-top: 6px;
+  font-size: 11px;
+}
+.gen-sweep-grid label {
+  color: var(--text-dim);
+}
+.gen-sweep-grid input,
+.gen-sweep-grid select {
+  width: 100%;
+  min-width: 0;
+  font-size: 11px;
+  padding: 2px 4px;
+}
+.gen-sweep-all {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.gen-sweep-weather {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 6px;
+}
+
+/* ── Batch generator dialog ──────────────────────────────── */
+#gen-batch-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#gen-batch-overlay.hidden {
+  display: none !important;
+}
+.gen-batch-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px 24px;
+  width: min(440px, calc(100vw - 32px));
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.gen-batch-card h2 {
+  font-size: 15px;
+  margin: 0;
+  color: var(--text);
+}
+.gen-batch-note {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  margin: 0;
+}
+.gen-batch-note code {
+  font-size: 10.5px;
+}
+.gen-batch-grid {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 8px 12px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.gen-batch-grid input,
+.gen-batch-grid select {
+  min-width: 0;
+  font-size: 12px;
+  padding: 4px 6px;
+}
+/* Multi-select dropdowns (Typ, Karten): the Ebenen menu's look — count
+   pill, Alle/Keine bar, .layer-toggle checkbox rows. */
+.multi-select {
+  min-width: 0;
+}
+.multi-select-btn {
+  width: 100%;
+  font-size: 12px;
+  padding: 4px 8px;
+}
+.multi-select-summary {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.multi-select-panel {
+  right: 0;
+  max-height: 320px;
+  overflow-y: auto;
+  z-index: 10001;
+}
+.multi-select-actions-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.multi-select-note {
+  margin-left: auto;
+  padding-left: 8px;
+  font-size: 10px;
+  opacity: 0.7;
+}
+.gen-batch-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text);
+}
+.gen-batch-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.gen-batch-progress.hidden {
+  display: none;
+}
+.gen-batch-bar {
+  height: 6px;
+  background: var(--panel2);
+  border-radius: 3px;
+  overflow: hidden;
+}
+#gen-batch-bar-fill {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width 0.15s;
+}
+.gen-batch-status {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.gen-menu-types .menu-item.gen-batch-item {
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 5px 5px;
+  margin-top: 2px;
+  color: var(--accent);
+}

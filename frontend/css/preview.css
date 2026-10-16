@@ -1,0 +1,389 @@
+/* ── Simulation controls ─────────────────────────────────── */
+/* Two rows in a FIXED-width card (simTimeline.js): transport, tempo + toggles
+   on top, scrub bar + time below. Nothing in it may change width when a
+   preview starts or its state changes — the timeline would move out from
+   under a cursor about to scrub it. So the card has a width, the play/pause
+   icons share one slot, Stop keeps its slot while idle (visibility, not
+   display) and the toggles and time label are fixed width. */
+.sim-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 560px;
+  max-width: 100%;
+  box-sizing: border-box;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  box-shadow: 0 4px 14px rgba(26, 30, 46, 0.18);
+}
+.sim-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.sim-row-spacer {
+  flex: 1;
+}
+.sim-speed-label {
+  font-size: 10px;
+  color: var(--accent);
+  font-weight: 700;
+  min-width: 28px;
+  text-align: left;
+}
+.sim-time-label {
+  font-size: 10px;
+  color: var(--text-dim);
+  font-weight: 600;
+  min-width: 84px;
+  text-align: right;
+  font-variant-numeric: tabular-nums; /* fits "60.0 s / 60.0 s" */
+}
+.sim-controls input[type="range"] {
+  width: 56px;
+  height: 3px;
+  flex: none;
+}
+.sim-progress-bar {
+  /* The scrubbable timeline. The visible track is 4 px, but the element is
+     16 px tall so it is a reasonable target to grab; the track is drawn by the
+     ::before pseudo-element and the fill sits on top of it. */
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 16px;
+  cursor: pointer;
+  touch-action: none;
+}
+.sim-progress-bar::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 6px;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+}
+.sim-progress-bar:hover::before,
+.sim-progress-bar.scrubbing::before {
+  top: 5px;
+  height: 6px;
+}
+.sim-marker {
+  position: absolute;
+  top: 2px;
+  width: 2px;
+  height: 12px;
+  margin-left: -1px;
+  background: #e0a400;
+  border-radius: 1px;
+  pointer-events: auto;
+}
+.sim-marker:hover {
+  background: #ff8c00;
+  width: 4px;
+  margin-left: -2px;
+}
+.sim-controls .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.sim-icon-btn {
+  width: 30px;
+  height: 24px;
+  padding: 0;
+  justify-content: center;
+  flex: none;
+}
+.sim-controls .btn svg {
+  width: 10px;
+  height: 10px;
+  fill: currentColor;
+}
+#sim-play .ic-replay {
+  display: none;
+}
+#sim-play.replay .ic-play {
+  display: none;
+}
+#sim-play.replay .ic-replay {
+  display: inline;
+}
+#sim-stop.sim-idle {
+  visibility: hidden;
+}
+.sim-sep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border);
+}
+.sim-progress-fill {
+  position: absolute;
+  left: 0;
+  top: 6px;
+  height: 4px;
+  background: var(--accent);
+  width: 0%;
+  border-radius: 2px;
+  pointer-events: none;
+}
+.sim-progress-bar:hover .sim-progress-fill,
+.sim-progress-bar.scrubbing .sim-progress-fill {
+  top: 5px;
+  height: 6px;
+}
+.sim-progress-fill::after {
+  /* The playhead knob. */
+  content: "";
+  position: absolute;
+  right: -5px;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--panel);
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* „Ablauf" (eventTimeline.js): one row per actor above the preview bar. */
+.sim-lanes {
+  position: relative;
+  max-width: 100%;
+  max-height: 40vh;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  box-shadow: 0 4px 14px rgba(26, 30, 46, 0.18);
+  font-size: 10px;
+}
+.sim-lanes-empty {
+  color: var(--text-dim);
+  padding: 4px;
+}
+.sim-lane-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 6px;
+  min-height: 20px;
+}
+.sim-lane-axis {
+  min-height: 14px;
+  color: var(--text-dim);
+}
+.sim-lane-label {
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  padding: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sim-lane-label:hover {
+  color: var(--accent);
+}
+.sim-lane-track {
+  position: relative;
+  height: 18px;
+  border-bottom: 1px dashed var(--border);
+}
+.sim-lane-axis .sim-lane-track {
+  border-bottom: none;
+  height: 12px;
+}
+.sim-lane-tick {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+.sim-lane-block {
+  position: absolute;
+  top: 2px;
+  height: 14px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: #cfe0f5;
+  border: 1px solid #6b93c8;
+  color: #1c3d66;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.sim-lane-block.open {
+  border-right-style: dashed;
+  background: linear-gradient(90deg, #cfe0f5 70%, rgba(207, 224, 245, 0.2));
+}
+.sim-lane-block span {
+  padding: 0 3px;
+  white-space: nowrap;
+  line-height: 12px;
+  pointer-events: none;
+}
+.sim-lane-never {
+  color: #a33a0b;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.sim-lane-links {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+.sim-lane-links path {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.2;
+  stroke-dasharray: 3 2;
+}
+/* The preview's current time. A 9 px grab strip with a 2 px line drawn in it. */
+.sim-lane-playhead {
+  position: absolute;
+  top: 0;
+  width: 9px;
+  margin-left: -4px;
+  cursor: ew-resize;
+  z-index: 2;
+  background: linear-gradient(90deg, transparent 3.5px, #d0342c 3.5px, #d0342c 5.5px, transparent 5.5px);
+}
+.sim-lane-playhead::before {
+  /* handle on the axis row */
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 9px;
+  height: 9px;
+  background: #d0342c;
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+.sim-lane-playhead.idle {
+  opacity: 0.45;
+}
+.sim-lane-axis {
+  cursor: ew-resize;
+}
+.sim-lanes.scrubbing {
+  cursor: ew-resize;
+  user-select: none;
+}
+
+/* Fixed width, like Play/Pause: the bar must not change width (timeline). */
+.sim-toggle {
+  width: 88px;
+  justify-content: center;
+  white-space: nowrap;
+  flex: none;
+}
+.sim-toggle.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+/* During simulation, dim editing UI to hint it is disabled */
+body.simulating #toolbar {
+  opacity: 0.4;
+  pointer-events: none;
+}
+body.simulating #btn-save,
+body.simulating #btn-new-scenario,
+body.simulating #btn-load-label,
+body.simulating #btn-export,
+body.simulating #btn-export-route,
+body.simulating .history-btns,
+body.simulating #btn-import-map-label {
+  opacity: 0.4;
+  pointer-events: none;
+}
+/* The properties panel stays at full opacity and scrolls during a preview —
+   it is how you read what an actor is doing — but is view-only: every
+   descendant ignores the pointer, except the two scroll containers, so the
+   wheel still scrolls them. Keyboard entry is blocked in properties.js. The
+   cue is the sticky banner plus an accent frame, not a fade. */
+.preview-lock-banner {
+  display: none;
+}
+body.simulating #properties-panel {
+  box-shadow: inset 0 0 0 2px var(--accent);
+  position: relative;
+}
+body.simulating #properties-panel * {
+  pointer-events: none;
+}
+body.simulating #properties-panel .waypoint-list {
+  pointer-events: auto;
+}
+body.simulating #properties-panel :is(input, select, textarea, button) {
+  cursor: not-allowed;
+}
+body.simulating .preview-lock-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: sticky;
+  top: -10px;
+  z-index: 5;
+  margin: -10px -10px 8px;
+  padding: 7px 10px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+}
+.preview-lock-banner svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+.preview-lock-banner kbd {
+  font: inherit;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.22);
+}
+/* The card the „Ablauf" timeline points at (EventPanel.highlight). Static —
+   the panel re-renders every preview frame, so an animation would restart on
+   each one. Red like the timeline's playhead. */
+.event-card.timeline-focus {
+  outline: 2px solid #d0342c;
+  outline-offset: 1px;
+  background: #fdf1f0;
+}
+/* Nothing on the map is draggable in a preview: no rotate handle, and a
+   marker offers selection (pointer) rather than a move. */
+body.simulating #map-svg .yaw-arrow {
+  display: none;
+}
+body.simulating #map-svg .actor-group,
+body.simulating #map-svg .path-waypoint,
+body.simulating #map-svg .trigger-point-control,
+body.simulating #map-svg .trigger-radius-control {
+  cursor: pointer;
+}
