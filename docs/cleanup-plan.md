@@ -93,21 +93,7 @@ Event/actor rules mirrored across frontend, backend and emitter (`ScenarioRules`
 
 ## 3. Dead code
 
-Found by searching each definition's name across the frontend, `index.html`, `help.html` and the tests. No unreferenced Python function turned up.
-
-| Symbol | Where | Evidence |
-|---|---|---|
-| `AppState.nearestSpawn` | `appState.js` | no caller anywhere (placement snaps to lanes now, not spawn points) |
-| `AppState.switchTypesFor` | `appState.js` | no caller |
-| `_isXodrDrag` | `mapImport.js:84` | defined, never called |
-| `SpecialBuildings.forTown` | `specialBuildings.js:23` | no caller (`mapFeatures.js` filters by town itself) |
-| `_overpassCount` | `mapRender.js` (`renderMap`) | assigned, never read |
-
-Also check:
-
-- `tools/probes/probe_carla_mesh_dims.py`: superseded by `probe_carla_props.py` (per CLAUDE.md).
-- `tools/probes/probe_carla_mesh_facing.py`: CLAUDE.md calls it untrustworthy for `yaw_offset`.
-- `Simulate.routeForTesting` and `ScenarioIO.buildParamsForTesting`: test hooks only. Keep them.
+**Done** (phase 5, step 1): `AppState.nearestSpawn`, `AppState.switchTypesFor`, `_isXodrDrag`, `SpecialBuildings.forTown` and `_overpassCount` deleted, and the two superseded probes `probe_carla_mesh_dims.py` / `probe_carla_mesh_facing.py`. `Simulate.routeForTesting` and `ScenarioIO.buildParamsForTesting` are test hooks and stay.
 
 ## 4. Messy areas
 

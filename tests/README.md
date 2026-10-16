@@ -405,17 +405,6 @@ PYTHONPATH=/home/dellpro2/yungloon/fail2drive/f2d_carla/PythonAPI/carla \
   /home/dellpro2/Antonio/carla-venv/bin/python tools/probes/probe_puppet_obstacle.py --port 2010
 ```
 
-`probe_carla_mesh_facing.py` and `probe_carla_mesh_dims.py` are one-off
-measurement tools, not assertions. They need a running CARLA on port 3000 and
-the `carla-venv` environment:
-
-```bash
-source /home/dellpro2/Antonio/carla-venv/bin/activate
-export PYTHONPATH="/home/dellpro2/CC/carla_0.9.15/PythonAPI/carla/dist/carla-0.9.15-cp310-cp310-linux_x86_64.egg:/home/dellpro2/CC/carla_0.9.15/PythonAPI/carla:/home/dellpro2/CC/carla_0.9.15/PythonAPI"
-python tools/probes/probe_carla_mesh_dims.py       # bounding-box extents -> catalogue dims
-python tools/probes/probe_carla_mesh_facing.py     # two axis-aligned views per prop
-```
-
 `probe_carla_actor_blueprints.py` checks every id in `vehicle_catalog.yaml`
 against the running build and lists each `walker.pedestrian.*` with its `age`
 attribute. Both questions are invisible in the `.xosc` — a blueprint that does
@@ -425,16 +414,7 @@ it moves between versions. The `child` archetype's id comes from this output.
 It spawns nothing, so it is safe against a live session, and exits non-zero
 only when an id is missing.
 
-`probe_carla_mesh_dims.py` is reliable — its extents are what the catalogue's
-measured footprints came from.
-
-**`probe_carla_mesh_facing.py` is not trustworthy for `yaw_offset`.** It got
-several props 180° wrong by mistaking a mesh's back for its front. Determine
-rotation by running the scenario and looking at it; use the probe only to narrow
-down which axis is involved. Both destroy every actor they spawn in a `finally`
-block, so they are safe to run against a live session.
-
-`probe_carla_lane_graph.py` is different in kind from the two above: it does not
+`probe_carla_lane_graph.py` is different in kind from the props probe: it does not
 measure a mesh, it caches CARLA's own routing/topology graph per bundled town so
 `frontend/js/sim/simulate.js` can route `assign_route`/`lane_change`/path-less
 driving exactly instead of approximating — see CLAUDE.md's "cached CARLA lane

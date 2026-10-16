@@ -1,6 +1,6 @@
 """probe_carla_lane_graph.py — cache CARLA's lane topology per bundled town.
 
-Not a test: a one-off tool, like probe_carla_mesh_dims.py (see tests/README.md
+Not a test: a one-off tool, like probe_carla_props.py (see tests/README.md
 for the general CARLA-probe pattern). Needs a running CARLA and the
 `carla-venv` environment, since this repo's own .venv has no `carla` package:
 

@@ -978,7 +978,7 @@ applied to the body group alone, so the selection ring, hit target, yaw arrow an
 are all untouched.
 
 Footprints are real measured metres, taken from `bounding_box.extent` on the live meshes
-(`tools/probes/probe_carla_props.py`, which supersedes `probe_carla_mesh_dims.py`) — several were badly wrong before that: `container` is a ~1.9 m
+(`tools/probes/probe_carla_props.py`) — several were badly wrong before that: `container` is a ~1.9 m
 skip, not a 6 m shipping container. Note the measured extents are in the **mesh** frame, so for any
 prop with a ±90 `yaw_offset` the axes must be swapped before use as `plan.len`/`plan.wid`, where +X
 means the facing.
@@ -2346,4 +2346,4 @@ Two measurement traps the bench cases added:
 - **A cross-street actor triggered at act start clears the junction before the ego arrives** (measured on Town05 junction 1863: adversary in at t=1.0 s, ego at t=5.9 s). The paths cross in space and never in time, and every speed and geometry check still passes. Trigger on `distance_to_ego` and assert `closest_approach`.
 - **Distance radii need margin for the corner a turning ego cuts.** A `distance_to_ego@35` missed by 0.6 m because a left-turning ego starts its swing before the junction centre; the condition never fired, the actor waited out the 60 s `TimeFallback`, and the run looked like a hang.
 
-`tests/` also holds CARLA measurement probes. `probe_carla_props.py` (private CARLA on 2050, `--all` for every blueprint in the build) is where the catalogue's footprints, pivot offsets and `z` lifts come from, and it reproduces ScenarioRunner's spawn-with-physics sequence; `probe_carla_mesh_dims.py` is its older, 16-prop predecessor. `probe_carla_mesh_facing.py` **is not trustworthy for `yaw_offset`** — it got several props 180° wrong. Determine rotation by running the scenario and looking at it.
+`tests/` also holds CARLA measurement probes. `probe_carla_props.py` (private CARLA on 2050, `--all` for every blueprint in the build) is where the catalogue's footprints, pivot offsets and `z` lifts come from, and it reproduces ScenarioRunner's spawn-with-physics sequence. **Rotation (`yaw_offset`) cannot be probed from photographs** — an earlier two-camera probe got several props 180° wrong by mistaking a back for a front, and was deleted. Determine it by running the scenario and looking at it.
