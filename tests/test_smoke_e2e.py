@@ -84,6 +84,12 @@ with sync_playwright() as p:
     scripts = page.evaluate("[...document.scripts].map(s => s.src).filter(Boolean)")
     bad = [s for s in scripts if page.request.get(s).status != 200]
     check(f"all {len(scripts)} <script src> files are served", scripts and not bad, str(bad))
+    if missing:
+        # Everything below calls into the globals, so a missing one would end
+        # the run in a traceback before the report names it.
+        check("no JS errors during load", not errors, str(errors[:3]))
+        browser.close()
+        sys.exit(check.report())
 
     # ── Backend API ───────────────────────────────────────────────────────────
     maps = page.request.get(f"{H.BASE}/api/maps").json().get("maps", [])
