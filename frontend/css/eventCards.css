@@ -1,0 +1,341 @@
+/* eventCards.css — the event list and its cards (eventPanelCards.js); loads before eventRows.css. */
+
+/* Event editor */
+.event-section {
+  margin-top: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.event-section-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+}
+.event-section-title {
+  flex: 1;
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+}
+.event-section-titlebar .btn-small {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.event-section-header {
+  border-top: 0;
+  padding: 0 0 6px;
+}
+.collapsible-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.event-count {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-align: center;
+}
+/* How many of this actor's events would be dropped at export. Hidden at 0, so
+   its presence alone is the signal — the count is the detail. */
+.event-warn {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: #fdecea;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-align: center;
+}
+.event-warn::before {
+  content: "⚠ ";
+}
+/* Only rendered above the list from two events on — with one card there is
+   nothing to bulk-collapse. */
+.event-list-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+.event-bulk-toggle {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-dim);
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.event-bulk-toggle:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.event-action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: 5px;
+}
+.event-action-button {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 11px;
+  line-height: 1.15;
+  min-height: 26px;
+  cursor: pointer;
+  text-align: center;
+}
+.event-action-button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+/* The two path actions stay in the grid once a path event exists — disabled
+   with a title, rather than removed with no explanation. */
+.event-action-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.event-action-button:disabled:hover {
+  border-color: var(--border);
+  color: var(--text);
+}
+.event-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 5px;
+}
+.event-card {
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+/* The card whose path is being drawn / whose trigger point is being picked.
+   Until now only the map banner said which event the clicks belonged to. */
+.event-card.active-draw {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(42, 111, 219, 0.18);
+}
+/* An event the exporter would throw away. The editor prevents creating one, so
+   in practice this marks a loaded .json — hence a statement of the reason
+   rather than a bare colour change. */
+.event-card.has-problem {
+  border-color: var(--danger);
+}
+.event-problem {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  background: #fdecea;
+  border: 1px solid var(--danger);
+  border-radius: 4px;
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 1.3;
+  padding: 3px 6px;
+}
+.event-problem-icon {
+  flex: 0 0 auto;
+  font-size: 11px;
+}
+/* Exports fine, does nothing in CARLA (ScenarioRules.eventWarning) — amber,
+   not red, and it never blocks the export. */
+.event-problem.event-warning {
+  background: #fff6e0;
+  border-color: #c98a00;
+  color: #8a5d00;
+}
+/* Title and delete only: the trigger summary moved down into .event-summary,
+   where it reads as one line with the action instead of being ellipsised
+   against the title in a capped column. */
+.event-card-header {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 18px;
+  gap: 5px;
+  align-items: center;
+}
+.event-title-text {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.event-card input,
+.event-card select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 2px 5px;
+  font-size: 11px;
+  min-width: 0;
+  min-height: 24px;
+}
+.event-card label {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.event-row {
+  display: grid;
+  grid-template-columns: 70px 1fr;
+  gap: 5px;
+  align-items: center;
+}
+.event-param-row {
+  display: grid;
+  grid-template-columns: 70px 1fr auto;
+  gap: 5px;
+  align-items: center;
+}
+.event-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  width: 100%;
+}
+.event-toggle button {
+  background: var(--bg);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 4px 5px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.event-toggle button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.event-toggle button.active {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+  font-weight: 700;
+}
+.event-toggle button.quiet-danger {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--danger);
+}
+.event-toggle button.quiet-danger:hover {
+  background: rgba(192, 57, 43, 0.08);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.traffic-signal-meta {
+  color: var(--text-dim);
+  font-size: 11px;
+  margin: -6px 0 12px;
+  font-variant-numeric: tabular-nums;
+}
+.traffic-signal-titlebar {
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  margin-bottom: 6px;
+}
+.traffic-signal-hint {
+  margin-top: 8px;
+}
+.traffic-when {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 5px;
+  align-items: center;
+  color: var(--text-dim);
+  font-size: 11px;
+  white-space: nowrap;
+}
+/* „Dann" mirrors „Wenn" so the card reads as one sentence top to bottom. */
+.traffic-event-card > .event-row > label {
+  color: var(--accent);
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+/* Title + delete: no collapse button on a signal's card. */
+.traffic-event-header {
+  grid-template-columns: minmax(0, 1fr) 18px;
+}
+.traffic-event-header .event-title-text {
+  padding-left: 2px;
+}
+.traffic-state-picker {
+  grid-template-columns: repeat(3, 1fr);
+}
+.traffic-state-picker .traffic-state-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+.traffic-state-lamp {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+}
+.traffic-state-option.red .traffic-state-lamp {
+  background: #ef4444;
+}
+.traffic-state-option.yellow .traffic-state-lamp {
+  background: #facc15;
+}
+.traffic-state-option.green .traffic-state-lamp {
+  background: #22c55e;
+}
+/* The selected state takes its own colour rather than the generic toggle blue,
+   so the card reads as the light it sets. */
+.event-toggle .traffic-state-option.red.active {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #fff;
+}
+.event-toggle .traffic-state-option.yellow.active {
+  background: #eab308;
+  border-color: #eab308;
+  color: #1f2937;
+}
+.event-toggle .traffic-state-option.green.active {
+  background: #16a34a;
+  border-color: #16a34a;
+  color: #fff;
+}
+.traffic-state-option.active .traffic-state-lamp {
+  box-shadow: 0 0 0 1.5px #fff;
+}
+.event-speed-row {
+  display: grid;
+  grid-template-columns: auto minmax(54px, 1fr) auto auto minmax(54px, 1fr) auto;
+  gap: 4px;
+  align-items: center;
+}
+.event-speed-row label,
+.event-speed-row span {
+  color: var(--text-dim);
+  font-size: 11px;
+  white-space: nowrap;
+}

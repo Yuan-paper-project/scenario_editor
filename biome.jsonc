@@ -1,0 +1,75 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.14/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "includes": ["frontend/js/**/*.js", "frontend/css/**/*.css"]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 120
+  },
+  "javascript": {
+    "parser": {
+      "jsxEverywhere": false
+    },
+    "formatter": {
+      "quoteStyle": "single",
+      "semicolons": "always",
+      "trailingCommas": "all"
+    },
+    "globals": [
+      "AppState",
+      "Api",
+      "MapView",
+      "ObjectsManager",
+      "EventPanel",
+      "TrafficSignals",
+      "ScenarioTemplates",
+      "PropCatalog",
+      "LaneGraph",
+      "Dropdown",
+      "SpecialBuildings",
+      "AerialMap",
+      "ScenarioGenerator",
+      "EventTimeline",
+      "BgTraffic",
+      "Toast",
+      "Confirm",
+      "UndoStack",
+      "UIUtils",
+      "ScenarioRules",
+      "Simulate",
+      "ScenarioIO"
+    ]
+  },
+  "assist": {
+    "enabled": false
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "suspicious": {
+        "noRedundantUseStrict": "off",
+        // Its fix is unsafe here: forEach/map callbacks deliberately return a value or nothing.
+        "useIterableCallbackReturn": "off"
+      },
+      "style": {
+        "noDescendingSpecificity": "off",
+        // Multi-line HTML is easier to read as joined pieces than as one long template.
+        "useTemplate": "off"
+      },
+      "complexity": {
+        "noImportantStyles": "off",
+        // An unsafe fix: `a && a.b` and `a?.b` differ when a is falsy but not nullish (0, '').
+        "useOptionalChain": "off"
+      }
+    }
+  }
+}

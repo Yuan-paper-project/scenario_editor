@@ -4,7 +4,20 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OpenSCENARIO Editor</title>
-  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/css/base.css">
+  <link rel="stylesheet" href="/static/css/header.css">
+  <link rel="stylesheet" href="/static/css/generator.css">
+  <link rel="stylesheet" href="/static/css/map.css">
+  <link rel="stylesheet" href="/static/css/toolbar.css">
+  <link rel="stylesheet" href="/static/css/properties.css">
+  <link rel="stylesheet" href="/static/css/eventCards.css">
+  <link rel="stylesheet" href="/static/css/eventRows.css">
+  <link rel="stylesheet" href="/static/css/environment.css">
+  <link rel="stylesheet" href="/static/css/mapMarkers.css">
+  <link rel="stylesheet" href="/static/css/dialogs.css">
+  <link rel="stylesheet" href="/static/css/overview.css">
+  <link rel="stylesheet" href="/static/css/preview.css">
+  <link rel="stylesheet" href="/static/css/help.css">
 </head>
 <body>
 
@@ -17,7 +30,7 @@
     </select>
     <span id="map-status" class="status-badge">Keine Karte geladen</span>
     <!-- Layer visibility: one dropdown, six checkboxes. The input ids are the
-         contract with mapView.js's _setupLayerToggles(); #layer-toggles is what
+         contract with mapRender.js's _setupLayerToggles(); #layer-toggles is what
          mapImport.js un-hides once a map is loaded. -->
     <div id="layer-toggles" class="menu hidden">
       <button type="button" id="layer-menu-btn" class="btn btn-secondary menu-btn"
@@ -177,7 +190,7 @@
       </div>
     </div>
     <!-- Random scenario generator. The type rows are filled in by
-         scenarioGenerator.js from its own TYPES table, so a new type needs no
+         scenarioGenerator.js from the TYPES table (generatorParams.js), so a new type needs no
          markup; the seed field reproduces a scenario exactly. -->
     <div class="menu" data-dropdown>
       <button type="button" id="gen-menu-btn" class="btn btn-secondary menu-btn"
@@ -199,7 +212,7 @@
         </div>
       </div>
     </div>
-    <!-- Undo / redo. Same path as Strg+Z / Strg+Y (mapView.js _stepHistory);
+    <!-- Undo / redo. Same path as Strg+Z / Strg+Y (mapInput.js _stepHistory);
          greyed out while the matching stack is empty. -->
     <div class="history-btns" role="group" aria-label="Verlauf">
       <button type="button" id="btn-undo" class="btn btn-secondary icon-btn" disabled
@@ -358,18 +371,16 @@
   <!-- ── MAP CANVAS ── -->
   <main id="map-container">
     <!-- Empty state. toolbar.js fills #map-quick-pick with one button per town
-         once the map list arrives; mapView.js hides the whole block on render. -->
+         once the map list arrives; mapRender.js hides the whole block on render. -->
     <div id="map-overlay-msg">
       <div class="map-empty-title">Karte wählen, um zu beginnen</div>
       <div id="map-quick-pick" class="map-quick-pick"></div>
       <div class="map-empty-sub">oder eine eigene <strong>.xodr</strong> hierher ziehen</div>
     </div>
     <svg id="map-svg" xmlns="http://www.w3.org/2000/svg">
-      <!-- Trajectory arrow markers are created per actor at runtime by
-           mapView.js `_ensureArrowMarker`, which appends into this <defs>. -->
       <defs>
         <!-- Diagonal "do not drive" hatching for median / border / restricted
-             lanes (mapView.js BLOCKED_LANE_TYPES). World units: 1.2 m period. -->
+             lanes (mapRoadDetail.js BLOCKED_LANE_TYPES). World units: 1.2 m period. -->
         <pattern id="hatch-blocked" patternUnits="userSpaceOnUse" width="1.2" height="1.2"
                  patternTransform="rotate(45)">
           <rect width="0.45" height="1.2" fill="rgba(255,255,255,.55)"/>
@@ -389,7 +400,7 @@
         <g id="layer-actors"></g>
       </g>
     </svg>
-    <!-- Kartenansicht: Zoom und Zurücksetzen. Der Zoom ist in mapView.js auf
+    <!-- Kartenansicht: Zoom und Zurücksetzen. Der Zoom ist in mapCore.js auf
          MIN_ZOOM/MAX_ZOOM begrenzt; "Ansicht zurücksetzen" ist der Weg zurück
          aus einer Ansicht, die die Karte nicht mehr enthält — den gab es nicht.
          Bleibt versteckt, bis eine Karte geladen ist (_setupLayerToggles). -->
@@ -444,9 +455,9 @@
     <!-- Bottom-centre overlay stack. Both children float over the map and are
          independently hidden, so they are stacked rather than given fixed
          bottom offsets — nothing has to know whether the other is visible.
-         simulate.js injects #sim-controls in here at load. -->
+         simTimeline.js injects #sim-controls in here at load. -->
     <div id="map-bottom-stack" class="map-bottom-stack">
-      <!-- Zeichenmodus-Banner für das Pfad-/Routenzeichnen; objects.js schreibt
+      <!-- Zeichenmodus-Banner für das Pfad-/Routenzeichnen; objectsPaths.js schreibt
            den Text je Modus. -->
       <div id="traj-banner" class="traj-banner hidden">
         <span id="traj-banner-text">Pfad für <strong id="traj-banner-name"></strong> zeichnen — auf die Karte klicken, um Wegpunkte zu setzen</span>
@@ -682,7 +693,7 @@
   </div>
 </div>
 
-<!-- Batch generator (scenarioGenerator.js). Opened from Generieren → "Mehrere
+<!-- Batch generator (generatorBatchDialog.js). Opened from Generieren → "Mehrere
      generieren …"; builds N scenarios off-screen and downloads one zip. -->
 <div id="gen-batch-overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="gen-batch-title">
   <form id="gen-batch-form" class="gen-batch-card">
@@ -742,29 +753,91 @@
 </div>
 
 <!-- ── JS modules (load order matters) ── -->
-<script src="/static/js/app.js"></script>
-<script src="/static/js/api.js"></script>
+<script src="/static/js/core/appState.js"></script>
+<script src="/static/js/core/dialogs.js"></script>
+<script src="/static/js/core/undo.js"></script>  <!-- after appState.js: subscribes to AppState at load -->
+<script src="/static/js/core/scenarioRules.js"></script>
+<script src="/static/js/core/uiUtils.js"></script>
+<script src="/static/js/core/api.js"></script>
 <script src="/static/js/trafficSignals.js"></script>
-<script src="/static/js/templates.js"></script>
-<script src="/static/js/propCatalog.js"></script>  <!-- before toolbar.js: renders the prop tiles -->
-<script src="/static/js/aerialMap.js"></script>  <!-- before mapView.js: renderMap/_applyTransform call into it -->
-<script src="/static/js/mapView.js"></script>
+<script src="/static/js/templates/templatesTable.js"></script>
+<script src="/static/js/templates/templatesGeometry.js"></script>
+<script src="/static/js/templates/templatesUser.js"></script>
+<script src="/static/js/templates/templates.js"></script>
+<script src="/static/js/props/propData.js"></script>
+<script src="/static/js/props/propSideShapes.js"></script>
+<script src="/static/js/props/propPlanShapes.js"></script>
+<script src="/static/js/props/propCatalog.js"></script>  <!-- after the three above (reads them at load); before toolbar.js: renders the prop tiles -->
+<script src="/static/js/map/aerialMap.js"></script>  <!-- before the map files: renderMap/_applyTransform call into it -->
+<!-- mapCore.js … mapView.js share MapCore; their order is fixed (a wrong one throws at load).
+     mapInput.js before mapRuler.js: its capture-phase click swallow must run before the ruler's. -->
+<script src="/static/js/map/mapCore.js"></script>
+<script src="/static/js/map/mapRoadDetail.js"></script>
+<script src="/static/js/map/mapMarkers.js"></script>
+<script src="/static/js/map/mapFeatures.js"></script>
+<script src="/static/js/map/mapTriggerPoints.js"></script>
+<script src="/static/js/map/mapPaths.js"></script>
+<script src="/static/js/map/mapRender.js"></script>
+<script src="/static/js/map/mapInput.js"></script>
+<script src="/static/js/map/mapRuler.js"></script>
+<script src="/static/js/map/mapKeys.js"></script>
+<script src="/static/js/map/mapView.js"></script>
 <script src="/static/js/toolbar.js"></script>
-<script src="/static/js/dropdown.js"></script>  <!-- before layerMenu.js: auto-binds [data-dropdown] menus -->
-<script src="/static/js/layerMenu.js"></script>  <!-- header "Ebenen" dropdown; mapView.js owns the checkbox wiring -->
-<script src="/static/js/objects.js"></script>
-<script src="/static/js/eventPanel.js"></script>
-<script src="/static/js/properties.js"></script>
+<script src="/static/js/core/dropdown.js"></script>  <!-- before layerMenu.js: auto-binds [data-dropdown] menus -->
+<script src="/static/js/map/layerMenu.js"></script>  <!-- header "Ebenen" dropdown; mapRender.js owns the checkbox wiring -->
+<script src="/static/js/objects/objectsCore.js"></script>
+<script src="/static/js/objects/objectsPaths.js"></script>
+<script src="/static/js/objects/objectsPathEdit.js"></script>
+<script src="/static/js/objects/objectsDrag.js"></script>
+<script src="/static/js/objects/objects.js"></script>
+<script src="/static/js/events/eventPanelCore.js"></script>
+<script src="/static/js/events/eventPanelWidgets.js"></script>
+<script src="/static/js/events/eventPanelSummary.js"></script>
+<script src="/static/js/events/eventPanelChains.js"></script>
+<script src="/static/js/events/eventPanelActions.js"></script>
+<script src="/static/js/events/eventPanelTriggers.js"></script>
+<script src="/static/js/events/eventPanelPaths.js"></script>
+<script src="/static/js/events/eventPanelCards.js"></script>
+<script src="/static/js/events/eventPanel.js"></script>
+<script src="/static/js/properties/propertiesCore.js"></script>
+<script src="/static/js/properties/propertiesOverview.js"></script>
+<script src="/static/js/properties/propertiesSignal.js"></script>
+<script src="/static/js/properties/properties.js"></script>
 <script src="/static/js/weather.js"></script>
 <script src="/static/js/scenarioIO.js"></script>
-<script src="/static/js/laneGraph.js"></script>  <!-- before simulate.js: its only consumer -->
-<script src="/static/js/simulate.js"></script>
-<script src="/static/js/scenarioGenerator.js"></script>  <!-- after simulate.js (routeGeometry), objects.js, propCatalog.js, dropdown.js -->
-<script src="/static/js/eventTimeline.js"></script>  <!-- after simulate.js (#sim-controls, runHeadless, seek) and eventPanel.js (displayName) -->
+<script src="/static/js/sim/laneGraph.js"></script>  <!-- before the preview: its only consumer -->
+<!-- The in-editor preview. Each sim file reads what the ones above it define
+     (SimCore), so their order is fixed; simulate.js goes last. -->
+<script src="/static/js/sim/simCore.js"></script>
+<script src="/static/js/sim/simEvents.js"></script>
+<script src="/static/js/sim/simLanes.js"></script>
+<script src="/static/js/sim/simRoute.js"></script>
+<script src="/static/js/sim/simActions.js"></script>
+<script src="/static/js/sim/simMotion.js"></script>
+<script src="/static/js/sim/simTimeline.js"></script>
+<script src="/static/js/sim/simPlayback.js"></script>
+<script src="/static/js/sim/simulate.js"></script>
+<!-- The scenario generator, after simulate.js (routeGeometry, runHeadless), objects.js,
+     propCatalog.js, dropdown.js. Each generator file reads what the ones above it
+     define (GeneratorCore), so their order is fixed; scenarioGenerator.js goes last. -->
+<script src="/static/js/generator/generatorCore.js"></script>
+<script src="/static/js/generator/generatorCorridor.js"></script>
+<script src="/static/js/generator/generatorTypesLead.js"></script>
+<script src="/static/js/generator/generatorTypesLaneChange.js"></script>
+<script src="/static/js/generator/generatorTypesVru.js"></script>
+<script src="/static/js/generator/generatorTypesJunction.js"></script>
+<script src="/static/js/generator/generatorTypesObstacle.js"></script>
+<script src="/static/js/generator/generatorParams.js"></script>
+<script src="/static/js/generator/generatorAssess.js"></script>
+<script src="/static/js/generator/generatorBuild.js"></script>
+<script src="/static/js/generator/generatorBatch.js"></script>
+<script src="/static/js/generator/generatorBatchDialog.js"></script>
+<script src="/static/js/generator/scenarioGenerator.js"></script>
+<script src="/static/js/sim/eventTimeline.js"></script>  <!-- after simulate.js (#sim-controls, runHeadless, seek) and eventPanel.js (displayName) -->
 <script src="/static/js/bgTraffic.js"></script>  <!-- after simulate.js (runHeadless, routeGeometry, onTime) and scenarioIO.js (export bundle) -->
 
-<script src="/static/js/specialBuildings.js"></script>  <!-- landmark dots from maps/special_buildings.csv; mapView.js draws them -->
-<script src="/static/js/mapImport.js"></script>
+<script src="/static/js/map/specialBuildings.js"></script>  <!-- landmark dots from maps/special_buildings.csv; mapFeatures.js draws them -->
+<script src="/static/js/map/mapImport.js"></script>
 <script src="/static/js/welcome.js"></script>
 
 </body>

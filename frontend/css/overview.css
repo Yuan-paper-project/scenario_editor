@@ -1,0 +1,356 @@
+/* overview.css — the Übersicht/Templates panel: scenario summary, scene list, user-template rows. */
+
+/* „Eigene Vorlagen" rows in the Templates tab: name | place | delete. */
+.user-template-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content 22px;
+  gap: 4px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.user-template-name {
+  width: 100%;
+  min-width: 0;
+  font-size: 11px;
+  padding: 3px 5px;
+}
+.user-template-place {
+  padding: 3px 8px;
+}
+.user-template-del {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  border-radius: 4px;
+}
+.user-template-del:hover {
+  color: var(--danger);
+  background: var(--panel2);
+}
+.user-template-io {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+.user-template-io label {
+  cursor: pointer;
+}
+.event-template-save {
+  grid-column: 1 / -1;
+  margin-top: 4px;
+}
+/* ── Scenario summary (empty props panel) ────────────────── */
+.scenario-summary {
+  padding: 8px 2px;
+}
+.scenario-summary h3 {
+  font-size: 12px;
+  color: var(--accent);
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
+  text-align: center;
+}
+.summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 12px;
+}
+.summary-row .label {
+  color: var(--text-dim);
+}
+.summary-row .value {
+  color: var(--text);
+  font-weight: 600;
+}
+.summary-section {
+  margin-top: 12px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  margin-bottom: 6px;
+  text-align: center;
+}
+.summary-hint {
+  margin-top: 16px;
+  padding: 10px;
+  background: var(--panel2);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  text-align: center;
+}
+
+/* ── Scene list (Übersicht) ──────────────────────────────
+   One row per scenario actor. Props are counted by type instead of listed:
+   a cone taper is a dozen objects that differ only in position, and one row
+   each would bury the actors the list exists to find. */
+.scene-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.scene-section {
+  display: flex;
+  flex-direction: column;
+}
+.scene-section.collapsed .scene-section-body {
+  display: none;
+}
+
+.scene-section-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 8px 0 6px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  text-align: left;
+  font-family: inherit;
+}
+button.scene-section-head {
+  cursor: pointer;
+}
+button.scene-section-head:hover {
+  color: var(--text);
+}
+.scene-section-head .scene-head-label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.scene-head-count {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--panel2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-align: center;
+}
+
+.scene-row {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 4px 3px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  user-select: none;
+}
+.scene-row:hover {
+  background: var(--panel2);
+  border-color: var(--border);
+}
+.scene-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* Which row the last single click flew the map to — without it, walking the
+   list with the arrow keys loses track of where the view actually is. */
+.scene-row.located {
+  background: var(--panel2);
+  border-color: var(--accent);
+}
+
+/* Row deletes. The trash is rightmost on every row; on a prop row the quieter
+   ✕ beside the stepper takes the single instance and the trash takes the whole
+   type, which is why they are different glyphs in different places. */
+.scene-del {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text-dim);
+  cursor: pointer;
+  opacity: 0.45;
+  font-size: 11px;
+  line-height: 1;
+  font-family: inherit;
+  transition:
+    opacity 0.15s,
+    color 0.15s,
+    border-color 0.15s,
+    background 0.15s;
+}
+.scene-del svg {
+  width: 13px;
+  height: 13px;
+}
+.scene-row:hover .scene-del,
+.scene-prop-row:hover .scene-del,
+.scene-del:focus-visible {
+  opacity: 1;
+}
+.scene-del:hover {
+  opacity: 1;
+  color: var(--danger);
+  border-color: var(--danger);
+  background: rgba(192, 57, 43, 0.08);
+}
+.scene-del-one {
+  font-size: 10px;
+}
+/* Put a visible divider between the two prop deletes: adjacent and evenly
+   spaced, "this one" and "all six" read as one control group. */
+.scene-del-all {
+  margin-left: 3px;
+  border-left: 1px solid var(--border);
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  padding-left: 4px;
+  width: 24px;
+}
+.scene-del-all:hover {
+  border-left-color: var(--danger);
+}
+/* Holds the ✕ column open on a single-instance row so every trash in the
+   section lines up. */
+.scene-del-spacer {
+  display: inline-block;
+  width: 20px;
+}
+
+.scene-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+}
+.scene-swatch.round {
+  border-radius: 50%;
+}
+.scene-name {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.scene-meta {
+  font-size: 10px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.scene-empty {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-style: italic;
+  padding: 5px 6px;
+}
+
+/* A prop row is one type, plus a stepper that walks that type's instances —
+   the row's data-scene-id is whichever instance the stepper points at. */
+.scene-prop-row {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px 3px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  user-select: none;
+}
+.scene-prop-row:hover {
+  background: var(--panel2);
+  border-color: var(--border);
+}
+.scene-prop-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.scene-prop-row.located {
+  background: var(--panel2);
+  border-color: var(--accent);
+}
+.scene-prop-row .scene-name {
+  font-weight: 600;
+}
+
+.scene-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+}
+.scene-step-btn {
+  width: 16px;
+  height: 18px;
+  padding: 0;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--text-dim);
+  font-size: 8px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+}
+.scene-step-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.scene-step-pos {
+  min-width: 30px;
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Templates tab: one line of how-it-works above the buttons. */
+.templates-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin: 2px 2px 8px;
+  line-height: 1.4;
+}
+
+/* Event panel: "Ablauf aus Template …" spans the whole action grid. */
+.event-template-select {
+  grid-column: 1 / -1;
+  width: 100%;
+  font-size: 11px;
+  padding: 4px 6px;
+  border: 1px dashed var(--border);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--text);
+}

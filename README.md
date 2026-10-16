@@ -1,144 +1,109 @@
 # OpenSCENARIO GUI Editor for CARLA
 
-A browser-based visual editor for creating, editing, and exporting autonomous driving test scenarios in [OpenSCENARIO 1.0](https://www.asam.net/standards/detail/openscenario/) format, built on top of [CARLA](https://carla.org/) simulator maps.
+A browser-based editor for building autonomous-driving test scenarios on CARLA maps and exporting them as [ASAM OpenSCENARIO 1.0](https://www.asam.net/standards/detail/openscenario/) (`.xosc`) for CARLA ScenarioRunner. Roads are rendered from the map's OpenDRIVE (`.xodr`) file; you place actors, give each of them events (an action plus a start trigger), preview the run in the browser, and export.
 
----
+The UI is in German. The user handbook is built in: **Hilfe → Handbuch** in the editor (`frontend/help.html`).
 
-## What It Does
+## Quick start
 
-- **Visualises CARLA maps** — Parses OpenDRIVE (`.xodr`) road networks and renders them as interactive SVG with lane polygons, direction arrows, crosswalks, traffic lights, and spawn points.
-- **Import your own maps** — Upload any CARLA `.xodr` file via the header button or by dragging it onto the canvas; imported maps appear in the dropdown (marked ★) and render instantly.
-- **Place & configure actors** — Drag-and-drop ego vehicle, cars, trucks, buses, motorcycles, cyclists, and pedestrians onto the map. Snap-to-spawn for precise placement.
-- **Draw trajectories** — Click to draw waypoint-based paths for each actor with per-waypoint velocity. Ego trajectory doubles as the planner route.
-- **Set trigger conditions** — Configure per-NPC trigger distance so actors activate when the ego approaches.
-- **Simulate preview** — Animate all actors along their trajectories at configurable playback speed (0.25x–4x) to visually verify the scenario before export.
-- **Export industry-standard files** — One-click export to OpenSCENARIO `.xosc`, route `.xml` (for Autoware/CARLA planners), and scenario `.json` (for reload).
-
----
-
-## Architecture
-
-```
-scenario_editor/
-├── backend/               Python (FastAPI)
-│   ├── main.py            REST API + static file server (incl. map upload, .pptx)
-│   ├── map_renderer.py    OpenDRIVE parser → road geometry JSON
-│   └── scenario_io.py     Validation + export to .xosc / route XML
-├── frontend/              Vanilla JS + CSS (no build step)
-│   ├── index.html         Single-page application shell
-│   ├── presentation.html  Standalone project presentation (TUM-style slides)
-│   ├── css/style.css      Dark theme UI
-│   └── js/
-│       ├── app.js         Global state store + event bus
-│       ├── api.js         HTTP client
-│       ├── mapView.js     SVG map rendering, pan/zoom, layers
-│       ├── mapImport.js   Custom .xodr import (button + drag-and-drop)
-│       ├── toolbar.js     Tool palette + map selector
-│       ├── objects.js     Actor placement + trajectory drawing
-│       ├── properties.js  Right-panel property editor
-│       ├── weather.js     Weather & time-of-day controls
-│       ├── scenarioIO.js  Save / Load / Export logic
-│       ├── simulate.js    Trajectory preview animation
-│       └── welcome.js     Welcome modal + help button
-├── generate_pptx.py       Generates the project presentation as .pptx
-└── example/               Sample scenario files (Town01)
-```
-
-The backend parses CARLA's OpenDRIVE maps into JSON geometry and delegates `.xosc` generation to the [`llm-scenario-gen`](../llm-scenario-gen/) library — the sibling repo that also powers LLM-driven scenario generation. This editor is the manual/interactive counterpart; both share the same vehicle catalog and export logic. The frontend is a zero-dependency single-page app — no Node.js, no bundler, just plain JavaScript modules served as static files.
-
----
-
-## Key Features
-
-| Feature | Description |
-|---|---|
-| **Interactive Map** | Pan, zoom, and click on rendered CARLA town maps (Town01–Town10HD) |
-| **Custom Map Import** | Upload any CARLA `.xodr` via header button or drag-and-drop; imported maps are marked ★ in the dropdown |
-| **Actor Toolbox** | 7 actor types: ego, car, truck, bus, motorcycle, pedestrian, cyclist |
-| **Trajectory Editor** | Click-to-place waypoints with editable per-point velocity |
-| **NPC Trigger Distance** | Configurable activation radius (5–1000 m) per NPC |
-| **Trajectory Simulation** | Animated playback with play/pause/stop, speed control, and seek bar |
-| **Layer Controls** | Toggle visibility of crosswalks, traffic lights, spawns, lane markings, direction arrows |
-| **Scale Ruler** | Dynamic scale bar that updates with zoom level |
-| **Measurement Ruler** | Click two points to measure real-world distance; pin multiple measurements |
-| **Weather & Time** | Sliders for fog, rain, clouds, sun, wet road, snow, dust; time-of-day presets |
-| **Undo Support** | Ctrl+Z to restore deleted actors (up to 20 levels) |
-| **Multi-format Export** | `.xosc` (OpenSCENARIO), `.xml` (route for planners), `.json` (save/reload) |
-| **Onboarding Help** | Welcome modal on first load plus a help button to reopen it any time |
-| **Project Presentation** | Built-in slide deck (`presentation.html`) and downloadable `.pptx` via `/api/presentation.pptx` |
-
----
-
-## Quick Start
-
-### Prerequisites
-
-- Python 3.10+
-- CARLA OpenDRIVE maps (`.xodr` files) under `../llm-scenario-gen/maps/`
-- The [`llm-scenario-gen`](../llm-scenario-gen/) library (sibling directory)
-
-### Run
+Prerequisites: Python 3.11 and the sibling repository [`llm-scenario-gen`](../llm-scenario-gen/) checked out next to this one (it generates the `.xosc`; see below).
 
 ```bash
-cd scenario_editor
-bash run.sh          # starts on port 9090
-# or
+bash run.sh          # http://localhost:9090
 bash run.sh 8080     # custom port
 ```
 
-Open **http://localhost:9090** in your browser.
+On first run `run.sh` creates `.venv/` and installs the dependencies (FastAPI, uvicorn, PyYAML, and the SUMO wheel used for background traffic). Start it from the repo root's script, not from inside `backend/` — the app is imported as `backend.main`.
 
-The startup script creates a Python virtual environment, installs dependencies, and launches the server with hot-reload enabled.
+To check it works: place an ego, give it a path event, add an NPC with a *Geschw. setzen* event, and click **Export .xosc**. A scenario in which no actor has an event is rejected.
 
----
+## What it does
+
+- **Maps** — Town01–07, Town10 and Town10HD are bundled and parsed at startup. Lanes, markings, crosswalks, signs, traffic lights, overpasses and spawn points are drawn from the `.xodr`; the CARLA towns also have an aerial photo (Vektor / Luftbild / Beides). Any other `.xodr` can be uploaded (Datei menu or drag and drop).
+- **Actors** — ego, 9 vehicle types (car, van, truck, bus, motorcycle, scooter, police, ambulance, fire truck), pedestrian, child and cyclist, plus 79 static CARLA props (cones, barriers, lost cargo, street furniture …). Vehicles snap to a lane centre and face its direction of travel; heights come from the road's elevation profile.
+- **Events** — every actor, the ego included, has a list of events. Actions: follow trajectory, assign route (per-waypoint *fastest*/*shortest*), set speed (absolute, relative, ramped, reverse), lane change, lane offset. Triggers: simulation time, distance to an actor or a point, ego speed, relative speed, and after / with the start of another event (on any actor). Traffic lights can be forced to a state when the ego approaches.
+- **Preview** — a per-tick re-implementation of ScenarioRunner's controllers and triggers, with a scrubbable timeline, an event timeline („Ablauf") and an optional braking ego. Lane following and routing use CARLA's own lane graph (probed from CARLA, or derived from the `.xodr`).
+- **Templates and generator** — 17 one-actor templates (cut-in, emergency brake, crossing pedestrian …), your own saved templates, and a random scenario generator with twelve conflict types (lead brake, cut-in/out, junction conflict, VRU crossing, oncoming drift …) that builds single scenarios, scenarios at a clicked spot, parameter sweeps, or pairwise-covering batches as a zip.
+- **Background traffic** — optional SUMO traffic around the ego, replayed identically in the preview and in CARLA.
+- **Environment** — weather presets and sliders, time of day.
+- **Editing** — undo/redo for every scenario edit, a measuring ruler, a separate scenario per town for the session, save/load as JSON.
 
 ## Workflow
 
+1. **Pick a town** — the empty map is a town picker; later, the select in the header.
+2. **Place the ego** and give it a path event (*Route zuweisen* or *Trajektorie folgen*). Without one it can only follow its spawn lane and will not turn at a junction.
+3. **Add the other actors** — vehicles, people and props from the toolbar, a ready-made actor from the Templates tab, or a whole generated conflict with „Konflikt hier erzeugen".
+4. **Give each actor its events** — an action and the trigger that starts it (WENN → DANN on the event card). A warning chip marks an event that would not export.
+5. **Set the surroundings** — traffic lights (click one on the map), weather and time of day, background traffic (Umgebung menu).
+6. **Preview** with Play: scrub the timeline, open „Ablauf" to see when each event fires and which never do.
+7. **Save and export** — **Speichern** for the `.json`, **Export .xosc** for ScenarioRunner, and the route XML if a planner needs one.
+
+## Output
+
+| File | What |
+|---|---|
+| `.xosc` | OpenSCENARIO 1.0 for ScenarioRunner: entities, Init poses and speeds, one Act per actor with events, traffic-signal events, weather, time of day. |
+| `.zip` | the `.xosc` plus `<name>.bgtraffic.json` when background traffic is on. |
+| `_route.xml` | the ego's route (from its path event) as a CARLA-style route file for a planner. |
+| `.json` | the full editor state; reopen it with **Laden**. `example/` has one. |
+
+## The sibling-repo dependency
+
+The `.xosc` and route XML are generated by `../llm-scenario-gen` (`generator/xml_builder.py`, `route_builder.py`), which is put on `sys.path` at export time. Nothing in `requirements.txt` says so, and a missing sibling only shows up as an HTTP 500 on export. A new action or trigger type needs a change there as well as here. Editing that repo requires restarting the editor — `--reload` only watches this one.
+
+## Layout
+
+```text
+scenario_editor/
+├── run.sh                 start the editor
+├── frontend/              the editor itself (plain JS, no build step)
+│   ├── index.html         app shell; its <script> order is load-bearing
+│   └── js/
+│       ├── core/          AppState, undo, dialogs, shared rules
+│       ├── map/           SVG map, markers, paths, pan/zoom
+│       ├── objects/       placing, snapping and dragging actors; drawing paths
+│       ├── events/        event cards (actions and triggers)
+│       ├── properties/    right-hand panel
+│       ├── sim/           preview simulation and timeline
+│       ├── templates/     built-in and user templates
+│       ├── props/         static prop catalogue
+│       ├── generator/     random scenario generator
+│       └── scenarioIO.js  save, load and the export payload
+├── backend/               FastAPI server
+│   ├── main.py            routes and static files
+│   ├── xodr/              OpenDRIVE parsing → render JSON
+│   ├── lane_graph/        CARLA-equivalent routing graph from the .xodr
+│   ├── scenario/          validation and .xosc / route / batch export
+│   └── traffic/           SUMO background traffic
+├── maps/<Town>/           bundled .xodr and aerial tiles (lane graphs, SUMO nets generated)
+├── tests/                 fast checks, Playwright (e2e/), CARLA runners (carla/)
+├── tools/                 lint, traffic player, CARLA probes
+└── docs/                  working notes, the project slide deck
 ```
-1. Select Map        →  Choose a CARLA town from the dropdown
-2. Place Ego         →  Click "Ego" tool, then click on the map
-3. Draw Ego Route    →  Select ego → "Draw Path" → click waypoints → "Done"
-4. Add NPCs          →  Click actor tool (car/pedestrian/...) → click on map
-5. Configure NPCs    →  Add events (actions + triggers), draw trajectories
-6. Set Environment   →  Adjust weather sliders and time-of-day
-7. Preview           →  Hit Play to animate all actors along their paths
-8. Export            →  "Export .xosc" / "Export Route" / "Save" as JSON
+
+## Development
+
+```bash
+.venv/bin/pip install -r requirements-dev.txt && bash tools/install_biome.sh   # once
+bash tools/lint.sh                  # ruff, pylint (sizes), Biome, shared-scope names
+git config core.hooksPath tools/hooks   # once: run lint.sh before every commit
+bash tests/run_tests.sh --quick     # ~40 s, against a running editor
+bash tests/run_tests.sh             # everything; EDITOR_URL picks the server
 ```
 
----
+There is no CI. While editing tests, run the suites against a server without `--reload` (`.venv/bin/uvicorn backend.main:app --port 9091` and `EDITOR_URL=http://localhost:9091`): a reload under a running suite has wedged the server. `tests/README.md` describes the suites; `CLAUDE.md` is the developer orientation — data flow, conventions, and the CARLA/ScenarioRunner behaviour the code mirrors.
 
-## Export Formats
-
-### OpenSCENARIO `.xosc`
-Complete scenario definition following the [ASAM OpenSCENARIO 1.0](https://www.asam.net/standards/detail/openscenario/) standard. Includes ego spawn, NPC entities with `FollowTrajectoryAction`, distance-based triggers, weather, and time-of-day. Ready for CARLA ScenarioRunner.
-
-### Route `.xml`
-Waypoint-based route file compatible with CARLA's route format and Autoware planners. Each waypoint carries position and heading computed from the trajectory direction.
-
-### Scenario `.json`
-Internal format for saving and reloading the full editor state — map, actors, trajectories, weather, and all configuration. Load it back into the editor to continue editing.
-
----
-
-## Supported Maps
-
-Town01, Town02, Town03, Town04, Town05, Town06, Town07, Town10, Town10HD
-
-Maps are auto-discovered from the CARLA OpenDRIVE directory and pre-cached at server startup for fast rendering. You can also **import any other CARLA `.xodr`** at runtime — drag it onto the canvas or use the import button in the header.
-
----
-
-## Technology Stack
+## Technology stack
 
 | Layer | Technology |
 |---|---|
-| Backend | Python, FastAPI, uvicorn |
-| Frontend | Vanilla JavaScript (ES6 IIFEs), SVG, CSS |
-| Map Format | OpenDRIVE (`.xodr`) |
-| Export Format | OpenSCENARIO 1.0 (`.xosc`) |
-| Simulator | CARLA |
-
----
+| Backend | Python 3.11, FastAPI, uvicorn |
+| Frontend | Vanilla JavaScript (one IIFE per file, no build step), SVG, CSS |
+| Map input | OpenDRIVE `.xodr` |
+| Scenario output | OpenSCENARIO 1.0 `.xosc`, CARLA route `.xml` |
+| Background traffic | SUMO 1.24 (`eclipse-sumo` wheel) |
+| Simulator target | CARLA 0.9.15 + ScenarioRunner (locally patched) |
+| Development | ruff, pylint, Biome, Playwright |
 
 ## License
 

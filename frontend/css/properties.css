@@ -1,0 +1,364 @@
+/* properties.css — the right properties panel: sections, Spawnpunkt grid, waypoint list. */
+
+/* ── Right properties panel ──────────────────────────────── */
+#properties-panel {
+  width: var(--props-w);
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 10px;
+  flex-shrink: 0;
+}
+.props-placeholder {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  color: var(--text-dim);
+  line-height: 1.6;
+  padding-top: 8px;
+}
+.props-info-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.props-info-tab {
+  min-width: 0;
+  height: 28px;
+  background: var(--panel2);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.props-info-tab:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.props-info-tab.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.props-info-tab-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.props-info-tab-panel > p {
+  margin: 8px 0 0;
+  text-align: center;
+}
+.templates-panel {
+  min-height: 1px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.props-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+#props-title {
+  font-weight: 700;
+  font-size: 14px;
+}
+.icon-btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.icon-btn-danger svg {
+  width: 16px;
+  height: 16px;
+}
+.icon-btn-danger:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: rgba(192, 57, 43, 0.08);
+}
+
+.props-group {
+  display: grid;
+  grid-template-columns: 72px 1fr; /* 60 wrapped "Abstand (m)" */
+  row-gap: 6px;
+  column-gap: 8px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+.props-group label {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.props-group input[type="number"],
+.props-group select {
+  background: var(--panel2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 6px;
+  width: 100%;
+}
+/* Spawnpunkt only: two label/input pairs per row. The label columns are
+   max-content so 'Start (m/s)' sizes column 1 and 'Gier (°)' column 3. */
+.props-group.spawn-grid {
+  grid-template-columns: max-content minmax(0, 1fr) max-content minmax(0, 1fr);
+  margin-bottom: 6px;
+}
+.spawn-grid #prop-init-speed {
+  grid-column: 2 / -1;
+}
+.spawn-z-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.icon-btn-quiet {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.icon-btn-quiet:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.props-hint {
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.35;
+  margin-bottom: 12px;
+}
+.obey-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: -4px 0 12px;
+}
+.dynamics-row {
+  margin-top: -6px;
+}
+.obey-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+.obey-toggle input {
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+/* The panel is dense enough that a browser default focus ring gets lost in it. */
+#properties-panel :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: 3px;
+}
+.collapsible-section {
+  margin-bottom: 8px;
+}
+.collapsible-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: transparent;
+  color: var(--text-dim);
+  border: 0;
+  border-top: 1px solid var(--border);
+  padding: 8px 0 6px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  cursor: pointer;
+  text-align: left;
+}
+.collapsible-header:hover {
+  color: var(--text);
+}
+.collapse-indicator {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0;
+  line-height: 1;
+  color: var(--text-dim);
+}
+/* A chevron drawn in CSS, so the JS that still writes '-' / '+' into these
+   spans (font-size 0 hides it) needs no change. It points down when open and
+   right when shut, keyed on whichever of the two collapsed signals the
+   container carries. */
+.collapse-indicator::before,
+.event-collapse::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-1px) rotate(45deg);
+  transition: transform 0.15s;
+}
+.collapsible-section.collapsed .collapse-indicator::before,
+.scene-section.collapsed .collapse-indicator::before,
+[aria-expanded="false"] > .collapse-indicator::before,
+.event-collapse[aria-expanded="false"]::before {
+  transform: rotate(-45deg);
+}
+.collapsible-header:hover .collapse-indicator,
+.scene-section-head:hover .collapse-indicator {
+  color: var(--text);
+  background: var(--panel2);
+}
+.collapsible-section.collapsed .collapsible-body {
+  display: none;
+}
+/* 11px is the floor for panel content text. Uppercase section eyebrows stay at
+   10px — bold and letter-spaced, they read fine and act as structure, not copy. */
+.props-group-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  margin: 10px 0 6px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+
+/* Trajectory controls */
+.traj-controls {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.traj-controls .btn {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* Waypoint list */
+.waypoint-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.waypoint-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--panel2);
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 11px;
+  border: 1px solid var(--border);
+}
+.waypoint-item {
+  cursor: pointer;
+}
+.waypoint-item:hover {
+  border-color: var(--text-dim);
+}
+/* Marked from either side — a click on the row, or on the marker out on the
+   map. The accent edge is what makes a row findable after the map put the mark
+   there; the list scrolls it into view but does not otherwise announce it. */
+.waypoint-item.waypoint-selected {
+  border-color: var(--accent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.waypoint-item.waypoint-selected .wp-num {
+  color: var(--text);
+  font-weight: 700;
+}
+.waypoint-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.waypoint-item .wp-num {
+  color: var(--text-dim);
+  width: 18px;
+  flex-shrink: 0;
+}
+.waypoint-item .wp-coords {
+  flex: 1;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.waypoint-item input[type="number"] {
+  width: 52px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 2px 4px;
+  font-size: 11px;
+}
+.waypoint-item .wp-delete {
+  background: none;
+  border: none;
+  color: var(--danger);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+}
+/* Waypoint 1 keeps the column open without offering the action — it is the
+   vehicle's own position and cannot be deleted. */
+.waypoint-item .wp-delete-spacer {
+  visibility: hidden;
+}
+/* A route waypoint's strategy, for the leg that ENDS at it: 'Spur' routes it
+   through the lane graph, 'Gerade' drives the straight line as drawn. Orange is
+   --accent2, the same colour the map draws a 'Gerade' leg in. */
+.waypoint-item .wp-strategy {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 1px 5px;
+  flex-shrink: 0;
+}
+.waypoint-item .wp-strategy:hover {
+  border-color: var(--text-dim);
+  color: var(--text);
+}
+.waypoint-item .wp-strategy.is-shortest {
+  color: var(--accent2);
+  border-color: var(--accent2);
+}

@@ -1,0 +1,197 @@
+/* toolbar.css — the left toolbar: tabs, actor tiles, prop search and sections. */
+
+/* ── Left toolbar ────────────────────────────────────────── */
+#toolbar {
+  width: var(--toolbar-w);
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6px 0;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.toolbar-section-label {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  padding: 6px 0 2px;
+  text-align: center;
+  width: 100%;
+}
+.tool-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+  padding: 6px 1px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 0.15s;
+  font-size: 10px;
+}
+.tool-btn svg {
+  width: 32px;
+  height: 32px;
+}
+.tool-btn:hover {
+  background: var(--panel2);
+  color: var(--text);
+  border-color: var(--border);
+}
+.tool-btn.active {
+  background: var(--panel2);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.tool-btn span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Two-column tile grid inside each toolbar section */
+.tool-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px;
+  width: 100%;
+  padding: 0 2px;
+  justify-items: center;
+}
+
+/* Toolbar tabs: AKTEURE | REQUISITEN */
+.toolbar-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px;
+  width: 100%;
+  padding: 0 4px 4px;
+  flex-shrink: 0;
+}
+.toolbar-tab {
+  padding: 5px 0;
+  font-size: 10px;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: -0.1px;
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.toolbar-tab:hover {
+  background: var(--panel2);
+  color: var(--text);
+}
+.toolbar-tab.active {
+  background: var(--panel2);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.toolbar-tab-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  gap: 2px;
+}
+.toolbar-tab-panel.hidden {
+  display: none;
+}
+.toolbar-note {
+  font-size: 9px;
+  line-height: 1.4;
+  color: var(--text-dim);
+  padding: 8px 6px 4px;
+  text-align: center;
+}
+
+/* Requisiten: search + foldable group sections (propCatalog.renderPanel) */
+.prop-search {
+  width: calc(100% - 8px);
+  margin: 2px 4px 4px;
+  padding: 4px 6px;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text);
+}
+.prop-search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.prop-section {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.prop-section-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  border-left: 3px solid var(--group-color, var(--border));
+  background: transparent;
+  cursor: pointer;
+  padding: 6px 6px 3px;
+  text-align: left;
+  font-family: inherit;
+  box-sizing: border-box;
+  width: 100%;
+}
+.prop-section-head:hover {
+  color: var(--text);
+  background: var(--panel2);
+}
+.prop-section-name {
+  flex: 1;
+  line-height: 1.25;
+}
+/* Prop labels are longer than the actor ones ("Kettensperre", "Pappe geknickt")
+   and the toolbar is two 64px tiles wide, so they wrap to two lines instead of
+   ellipsising — a truncated name is useless when the glyphs look alike. */
+.prop-section .tool-btn span {
+  white-space: normal;
+  line-height: 1.15;
+  text-align: center;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+  hyphens: auto;
+}
+.prop-section .tool-grid {
+  align-items: start;
+}
+.prop-section-count {
+  font-weight: 600;
+  letter-spacing: 0;
+  padding: 0 4px;
+  border-radius: 6px;
+  background: var(--panel2);
+}
+.prop-section-caret {
+  display: inline-block;
+  transition: transform 0.15s;
+}
+.prop-section.collapsed:not(.searching) .prop-section-caret {
+  transform: rotate(-90deg);
+}
+.prop-section.collapsed:not(.searching) .tool-grid {
+  display: none;
+}

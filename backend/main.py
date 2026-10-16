@@ -1,45 +1,33 @@
-"""
-main.py — FastAPI backend for the OpenSCENARIO GUI Scenario Editor.
-
-Endpoints:
-  GET  /                           → serve index.html
-  GET  /static/{path}              → serve frontend static files
-  GET  /api/maps                   → list available towns
-  GET  /api/maps/{town}/render     → road polygon + spawn point JSON (MAP_CACHE)
-  GET  /api/maps/{town}/lane_graph → cached CARLA routing graph, if probed (LANE_GRAPH_CACHE)
-  GET  /api/maps/{town}/preview    → serve town thumbnail image
-  GET  /api/maps/{town}/aerial     → aerial pyramid meta.json (404 if never captured)
-  GET  /api/maps/{town}/aerial/{level}/{col}_{row}.jpg → one aerial tile
-  GET  /api/special_buildings      → landmark reference points, all towns (maps/special_buildings.csv)
-  POST /api/export                 → generate .xosc and return as download
-"""
+"""FastAPI backend of the scenario editor: map data, exports, background traffic, static files."""
 
 import csv
 import json
 import os
 from pathlib import Path
+from typing import Annotated
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
-from backend.map_renderer import (
+from backend.lane_graph.lane_graph_builder import build_lane_graph_from_xodr
+from backend.scenario.batch_export import export_batch_zip
+from backend.scenario.scenario_io import export_route_xml, export_to_xosc
+from backend.traffic import bg_traffic
+from backend.xodr.map_renderer import (
+    THUMBNAIL_PATHS,
+    XODR_PATHS,
     build_map_render_data,
     build_map_render_data_from_path,
     list_available_towns,
-    XODR_PATHS,
-    THUMBNAIL_PATHS,
 )
-from backend.lane_graph_builder import build_lane_graph_from_xodr
-from backend.scenario_io import export_batch_zip, export_to_xosc, export_route_xml
-from backend import bg_traffic
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 
-_HERE        = Path(__file__).resolve().parent
-_FRONTEND    = _HERE.parent / "frontend"
-_UPLOADS_DIR = _HERE.parent / "maps" / "_uploaded"   # persisted user maps
+_HERE = Path(__file__).resolve().parent
+_FRONTEND = _HERE.parent / "frontend"
+_UPLOADS_DIR = _HERE.parent / "maps" / "_uploaded"  # persisted user maps
 _BUILDINGS_CSV = _HERE.parent / "maps" / "special_buildings.csv"
 
 # ── App ────────────────────────────────────────────────────────────────────────
@@ -50,17 +38,8 @@ app = FastAPI(title="OpenSCENARIO Editor", version="1.0.0")
 
 MAP_CACHE: dict[str, dict] = {}
 
-# LANE_GRAPH_CACHE: routing topology per town, from one of two sources —
-# tests/probe_carla_lane_graph.py's live-CARLA output (maps/<Town>/
-# lane_graph.json on disk, source-less in the JSON, treated by the frontend
-# as "carla") when it exists, or backend/lane_graph_builder.py's from-.xodr
-# derivation (source: "xodr") for every town that has no such file: Town10
-# (no CARLA counterpart to probe) and every uploaded map. A from-.xodr graph
-# makes no attempt to rank a fork the way live CARLA next() does — see
-# lane_graph_builder.py's module docstring — frontend/js/simulate.js knows
-# to refuse to guess there rather than pick an arbitrary branch. Loaded once
-# at startup (or once at upload time for a freshly uploaded map); a re-probe
-# needs a restart, same caveat as everything else in this dict's family.
+# LANE_GRAPH_CACHE: per town, a CARLA-probed maps/<Town>/lane_graph.json when present, else one
+# derived from the .xodr (source "xodr", which ranks no fork). Built at startup or upload.
 LANE_GRAPH_CACHE: dict[str, dict] = {}
 
 
@@ -76,10 +55,7 @@ def _build_lane_graph_safely(town: str, xodr_path: Path) -> dict | None:
 async def preload_maps():
     _UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 
-    # A map whose elevation range is far off zero is almost certainly using an
-    # absolute geoid datum (maps/Town10 sits at +50..+103 m). Actors placed there
-    # get those heights verbatim — flag it at startup rather than silently
-    # shifting the map, which would put them back under the road.
+    # A range far off zero suggests an absolute datum (maps/Town10: +50…+103 m); flagged, not shifted.
     def _elev_note(data: dict) -> str:
         ev = data.get('elevation') or {}
         lo, hi = ev.get('min', 0.0), ev.get('max', 0.0)
@@ -88,7 +64,6 @@ async def preload_maps():
         note = f"z {lo:+.1f}..{hi:+.1f} m"
         return note + "  ⚠ absolute datum?" if lo > 5.0 else note
 
-    # Pre-load bundled towns
     towns = list_available_towns()
     print(f"[startup] Pre-loading map geometry for {len(towns)} towns …")
     for town in towns:
@@ -98,14 +73,16 @@ async def preload_maps():
         except Exception as exc:
             print(f"  ✗ {town}: {exc}")
 
-    # Re-load any previously uploaded maps
+    # Uploaded maps, re-parsed on every startup.
     for xodr_file in sorted(_UPLOADS_DIR.glob("*.xodr")):
         town_name = xodr_file.stem
         if town_name not in MAP_CACHE:
             try:
                 MAP_CACHE[town_name] = build_map_render_data_from_path(xodr_file, town_name)
-                print(f"  ✓ (uploaded) {town_name}  "
-                      f"({len(MAP_CACHE[town_name]['roads'])} roads, {_elev_note(MAP_CACHE[town_name])})")
+                print(
+                    f"  ✓ (uploaded) {town_name}  "
+                    f"({len(MAP_CACHE[town_name]['roads'])} roads, {_elev_note(MAP_CACHE[town_name])})"
+                )
             except Exception as exc:
                 print(f"  ✗ (uploaded) {town_name}: {exc}")
 
@@ -120,9 +97,7 @@ async def preload_maps():
             except Exception as exc:
                 print(f"  ✗ lane_graph for {town}: {exc}")
                 continue
-        # No probed file — derive one from the .xodr directly (Town10, or any
-        # uploaded map re-discovered above) rather than leaving this town
-        # without routing.
+        # No probed file: derive one from the .xodr.
         xodr_path = XODR_PATHS.get(town) or (_UPLOADS_DIR / f"{town}.xodr")
         if xodr_path.exists():
             graph = _build_lane_graph_safely(town, xodr_path)
@@ -130,8 +105,10 @@ async def preload_maps():
                 LANE_GRAPH_CACHE[town] = graph
     carla_count = sum(1 for g in LANE_GRAPH_CACHE.values() if g.get('source') != 'xodr')
     xodr_count = len(LANE_GRAPH_CACHE) - carla_count
-    print(f"[startup] Lane graph cache ready. {len(LANE_GRAPH_CACHE)}/{len(MAP_CACHE)} towns have one "
-          f"({carla_count} CARLA-probed, {xodr_count} xodr-derived).")
+    print(
+        f"[startup] Lane graph cache ready. {len(LANE_GRAPH_CACHE)}/{len(MAP_CACHE)} towns have one "
+        f"({carla_count} CARLA-probed, {xodr_count} xodr-derived)."
+    )
 
 
 # ── Static file serving ────────────────────────────────────────────────────────
@@ -146,11 +123,10 @@ async def index():
 
 # ── Map API ────────────────────────────────────────────────────────────────────
 
+
 @app.get("/api/maps")
 async def get_maps():
-    # laneGraphs lets the frontend skip the /lane_graph request (and its
-    # console-logged 404) for a town it already knows has no cache, rather
-    # than discovering that by asking.
+    # laneGraphs: the towns with a graph (nearly all; the frontend fetches regardless).
     return {"maps": list(MAP_CACHE.keys()), "laneGraphs": list(LANE_GRAPH_CACHE.keys())}
 
 
@@ -164,13 +140,12 @@ async def get_map_render(town: str):
 @app.get("/api/maps/{town}/lane_graph")
 async def get_lane_graph(town: str):
     if town not in LANE_GRAPH_CACHE:
-        # A town in MAP_CACHE always gets an attempt at a lane graph (a probed
-        # file, or an xodr-derived one built at startup/upload) — reaching
-        # this branch means that attempt itself failed (see the startup/
-        # upload logs), not simply "never probed".
-        detail = (f"Town '{town}' not found" if town not in MAP_CACHE
-                  else f"No lane graph available for '{town}' — building one from "
-                       f"its .xodr failed (see server logs)")
+        # Every cached town gets a graph attempt, so this means the attempt failed (see the logs).
+        detail = (
+            f"Town '{town}' not found"
+            if town not in MAP_CACHE
+            else f"No lane graph available for '{town}' — building one from its .xodr failed (see server logs)"
+        )
         raise HTTPException(status_code=404, detail=detail)
     return JSONResponse(content=LANE_GRAPH_CACHE[town])
 
@@ -183,9 +158,8 @@ async def get_map_preview(town: str):
     raise HTTPException(status_code=404, detail=f"No preview image for '{town}'")
 
 
-# Aerial image pyramid written by tests/capture_carla_aerial.py. Read from disk
-# per request rather than cached at startup, like special_buildings: a re-capture
-# shows up on a browser reload, not only after a server restart.
+# The aerial pyramid (tools/probes/capture_carla_aerial.py), read per request: a re-capture
+# shows on a browser reload.
 def _aerial_dir(town: str) -> Path:
     if town not in MAP_CACHE:
         raise HTTPException(status_code=404, detail=f"Town '{town}' not found")
@@ -196,12 +170,9 @@ def _aerial_dir(town: str) -> Path:
 async def get_aerial_meta(town: str):
     meta = _aerial_dir(town) / "meta.json"
     if not meta.exists():
-        # Normal for Town10 and uploaded maps — there is no CARLA asset to photograph.
         raise HTTPException(status_code=404, detail=f"No aerial image for '{town}'")
     data = json.loads(meta.read_text())
-    # Tiles are served with a 1 h max-age, so a re-capture would otherwise be
-    # invisible until the browser cache expires. The frontend appends this to
-    # every tile URL; the capture rewrites meta.json, which moves it.
+    # Busts the tiles' 1 h browser cache after a re-capture (the frontend appends it to tile URLs).
     data["version"] = int(meta.stat().st_mtime)
     return JSONResponse(content=data, headers={"Cache-Control": "no-cache"})
 
@@ -211,25 +182,14 @@ async def get_aerial_tile(town: str, level: int, col: int, row: int):
     tile = _aerial_dir(town) / str(level) / f"{col}_{row}.jpg"
     if not tile.exists():
         raise HTTPException(status_code=404, detail="No such tile")
-    return FileResponse(str(tile), media_type="image/jpeg",
-                        headers={"Cache-Control": "public, max-age=3600"})
+    return FileResponse(str(tile), media_type="image/jpeg", headers={"Cache-Control": "public, max-age=3600"})
 
 
 @app.get("/api/special_buildings")
 async def get_special_buildings():
-    """
-    Landmark reference points for the bundled towns, from maps/special_buildings.csv.
+    """Landmarks for all towns from maps/special_buildings.csv, read per request (edit, reload).
 
-    Read per request rather than cached at startup on purpose: the file is ~130
-    rows, and caching it would add one more "edit takes effect only after a
-    restart" trap next to MAP_CACHE and LANE_GRAPH_CACHE. Edit the CSV, reload
-    the browser tab.
-
-    Coordinates are CARLA world coordinates — the same frame the render JSON and
-    every actor pose already use — so the frontend plots x/y verbatim with no
-    Y-flip of its own. A missing or unreadable file yields an empty list rather
-    than a 404: the overlay is reference decoration, and the editor works fine
-    without it.
+    CARLA coordinates, plotted verbatim. A missing or broken file yields an empty list.
     """
     return {"buildings": _read_special_buildings()}
 
@@ -254,12 +214,16 @@ def _read_special_buildings() -> list[dict]:
                     z = float(row.get("z") or 0.0)
                 except ValueError:
                     z = 0.0
-                out.append({
-                    "town": town,
-                    "type": btype,
-                    "name": (row.get("carla_name") or "").strip(),
-                    "x": x, "y": y, "z": z,
-                })
+                out.append(
+                    {
+                        "town": town,
+                        "type": btype,
+                        "name": (row.get("carla_name") or "").strip(),
+                        "x": x,
+                        "y": y,
+                        "z": z,
+                    }
+                )
     except OSError as exc:
         print(f"[buildings] {_BUILDINGS_CSV}: {exc}")
         return []
@@ -267,48 +231,41 @@ def _read_special_buildings() -> list[dict]:
 
 
 @app.post("/api/maps/upload")
-async def upload_map(file: UploadFile = File(...)):
-    """
-    Accept a .xodr file, parse it, cache it, and return the town name.
-    The file is persisted in maps/_uploaded/ so it survives server restarts.
-    """
+async def upload_map(file: Annotated[UploadFile, File()]):
+    """Accept a .xodr upload, persist it in maps/_uploaded/, parse and cache it; returns the town name."""
     if not file.filename or not file.filename.lower().endswith(".xodr"):
         raise HTTPException(status_code=400, detail="Only .xodr files are accepted.")
 
-    # Derive a clean town name from the filename
     raw_stem = Path(file.filename).stem
     town_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in raw_stem)
     if not town_name:
         town_name = "CustomMap"
 
-    # Save to the persistent uploads directory
     dest_path = _UPLOADS_DIR / f"{town_name}.xodr"
     try:
         content = await file.read()
         dest_path.write_bytes(content)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to save file: {exc}")
+        raise HTTPException(status_code=500, detail=f"Failed to save file: {exc}") from exc
 
-    # Parse and cache
     try:
         MAP_CACHE[town_name] = build_map_render_data_from_path(dest_path, town_name)
     except Exception as exc:
         dest_path.unlink(missing_ok=True)
-        raise HTTPException(status_code=422, detail=f"Failed to parse .xodr: {exc}")
+        raise HTTPException(status_code=422, detail=f"Failed to parse .xodr: {exc}") from exc
 
-    # Best-effort — a failure here degrades to "no lane graph" (the existing
-    # null-safe frontend path) rather than failing the upload itself.
+    # Best-effort: a failure leaves the town without a lane graph, not the upload failed.
     graph = _build_lane_graph_safely(town_name, dest_path)
     if graph:
         LANE_GRAPH_CACHE[town_name] = graph
 
     road_count = len(MAP_CACHE[town_name]["roads"])
-    print(f"[upload] Imported '{town_name}' ({road_count} roads, "
-          f"lane graph: {'yes' if graph else 'no'})")
+    print(f"[upload] Imported '{town_name}' ({road_count} roads, lane graph: {'yes' if graph else 'no'})")
     return {"town": town_name, "roads": road_count}
 
 
 # ── Export API ─────────────────────────────────────────────────────────────────
+
 
 @app.post("/api/export")
 async def export_scenario(request: Request):
@@ -318,9 +275,9 @@ async def export_scenario(request: Request):
     try:
         tmp_path = export_to_xosc(params)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Export failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Export failed: {e}") from e
 
     filename = f"{map_name}_scenario.xosc"
 
@@ -334,15 +291,14 @@ async def export_scenario(request: Request):
 
 @app.post("/api/export/batch")
 async def export_batch(request: Request):
-    """Zip of many generated scenarios (.xosc + .json + route XML each) plus a
-    manifest — the generator's "Mehrere generieren". See export_batch_zip."""
+    """Zip of many generated scenarios plus a manifest (Mehrere generieren); see export_batch_zip."""
     body = await request.json()
     try:
         zip_path, n_ok, n_failed = export_batch_zip(body.get("scenarios"))
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Batch export failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Batch export failed: {e}") from e
     return FileResponse(
         zip_path,
         media_type="application/zip",
@@ -353,6 +309,7 @@ async def export_batch(request: Request):
 
 
 # ── Background traffic (SUMO trajectories replayed as CARLA puppets) ─────────
+
 
 def _xodr_for(town: str) -> Path:
     path = XODR_PATHS.get(town)
@@ -368,24 +325,26 @@ def _bg_traffic_or_http(town: str, request_body: dict) -> dict:
     try:
         return bg_traffic.generate(town, _xodr_for(town), request_body)
     except bg_traffic.BgTrafficError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @app.post("/api/bg_traffic")
 def generate_bg_traffic(body: dict):
-    """Background traffic for the preview: {town, seed, count, clearance,
-    keepout: [{w, pts}]} → trajectories (see backend/bg_traffic.py). A plain
-    `def`, so FastAPI runs the SUMO subprocesses in its thread pool."""
+    """Background traffic for the preview (backend/traffic/bg_traffic.py).
+
+    A plain `def`, so FastAPI runs the SUMO subprocesses in its thread pool.
+    """
     return _bg_traffic_or_http(body.get("town") or "", body)
 
 
 @app.post("/api/export/bundle")
 def export_bundle(body: dict):
-    """The .xosc plus the background traffic it is run with, zipped:
-    <map>_scenario.xosc and <map>_scenario.bgtraffic.json. run.sh picks the
-    traffic file up by that name, beside the .xosc. The traffic comes from the
-    same cache the preview filled, so the export is the traffic it showed."""
+    """The .xosc and its background traffic, zipped as <map>_scenario.xosc / .bgtraffic.json.
+
+    run.sh picks the traffic up by that name; it comes from the same cache the preview used.
+    """
     import zipfile
+
     params = body.get("params") or {}
     traffic_req = body.get("bg_traffic") or {}
     map_name = params.get("map", "scenario")
@@ -393,10 +352,10 @@ def export_bundle(body: dict):
     try:
         xosc_path = export_to_xosc(params)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Export failed: {e}")
-    zip_path = xosc_path[:-len(".xosc")] + ".zip"
+        raise HTTPException(status_code=500, detail=f"Export failed: {e}") from e
+    zip_path = xosc_path[: -len(".xosc")] + ".zip"
     stem = f"{map_name}_scenario"
     try:
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -413,17 +372,6 @@ def export_bundle(body: dict):
     )
 
 
-@app.get("/api/presentation.pptx")
-async def download_presentation():
-    """Generate and serve the PowerPoint presentation."""
-    import subprocess, sys
-    script = _HERE.parent / "generate_pptx.py"
-    out    = _HERE.parent / "OpenSCENARIO_Editor_Praesentation.pptx"
-    subprocess.run([sys.executable, str(script)], cwd=str(_HERE.parent), check=True)
-    return FileResponse(str(out), media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                        filename="OpenSCENARIO_Editor_Praesentation.pptx")
-
-
 @app.post("/api/export/route")
 async def export_route(request: Request):
     """Export ego route as a separate route XML file."""
@@ -433,9 +381,9 @@ async def export_route(request: Request):
     try:
         tmp_path = export_route_xml(params)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Route export failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Route export failed: {e}") from e
 
     filename = f"{map_name}_route.xml"
     return FileResponse(

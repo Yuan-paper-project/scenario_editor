@@ -7,5 +7,7 @@ __pycache__/
 maps/*/lane_graph.json
 NOTES.md
 PROGRESS_SUMMARY.txt
-# SUMO nets built on demand from each .xodr (backend/bg_traffic.py)
+# SUMO nets built on demand from each .xodr (backend/traffic/bg_traffic.py)
 maps/**/sumo/
+# Pinned tool binaries (tools/install_biome.sh)
+.tools/

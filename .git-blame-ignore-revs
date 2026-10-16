@@ -1,0 +1,15 @@
+# Comment-only commits (phase 5 of the cleanup). Use with: git config blame.ignoreRevsFile .git-blame-ignore-revs
+# Shorten the event panel's comments
+cde79f23f319bcddc73348f67b950f3dc8b444ac
+# Shorten the comments in core/ and map/
+da70ed993acea270464c24fe9b43dff66040b3df
+# Shorten the preview's comments (sim/)
+4506410c1319bf11e9765fc28a5a3a7eef9909a7
+# Shorten the comments in objects/, properties/, templates/ and props/
+2f0ae719316791297d9328f4a4ff00f1d4044262
+# Shorten the generator's comments
+edc22a79d25f7beff3e59a35ec11cdddea07b948
+# Shorten the comments in the top-level frontend files
+639877c3866a4a36715e6fb6051532153d3c31f5
+# Shorten the comments and docstrings in backend/ and tools/
+a67558ca7e777ccc8fa8facdf44ce9b14ccc56e2

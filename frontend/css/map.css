@@ -1,0 +1,410 @@
+/* map.css — map area: view controls, base-map switch, road furniture, scale ruler, bottom-centre stack, import overlay. */
+
+/* ── Main area ───────────────────────────────────────────── */
+#main-area {
+  display: flex;
+  height: calc(100vh - var(--header-h));
+  overflow: hidden;
+}
+
+/* ── Map view controls (zoom in / out / fit) ─────────────── */
+/* Top-right of the map: the scale ruler owns bottom-left and
+   #map-bottom-stack owns bottom-centre. */
+.map-view-controls {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.map-view-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  cursor: pointer;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  box-shadow: 0 1px 3px rgba(26, 30, 46, 0.14);
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+}
+.map-view-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.map-view-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.map-view-btn svg {
+  width: 14px;
+  height: 14px;
+  display: block;
+}
+
+/* ── Base-map switch (Vektor | Luftbild | Beides) ────────── */
+/* Top-left of the map, mirroring the zoom cluster top-right. */
+.map-base-toggle {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 6;
+  display: flex;
+  padding: 2px;
+  gap: 2px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(26, 30, 46, 0.14);
+}
+.map-base-toggle.hidden {
+  display: none;
+}
+.map-base-btn {
+  font: inherit;
+  font-size: 11px;
+  padding: 4px 9px;
+  cursor: pointer;
+  color: var(--text-dim);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+}
+.map-base-btn:hover:not(:disabled):not(.active) {
+  color: var(--accent);
+}
+.map-base-btn.active {
+  color: #fff;
+  background: var(--accent);
+}
+.map-base-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.map-base-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* The modes are classes on #map-svg rather than style.display, so they never
+   fight the Ebenen checkboxes, which write style.display on these same layers.
+   Luftbild: the photo replaces everything the vector map paints for the road
+   itself. Beides: lane outlines over the photo, fills nearly clear. */
+#map-svg.base-aerial #layer-roads,
+#map-svg.base-aerial #layer-markings,
+#map-svg.base-aerial #layer-overpass .ovp-shadow,
+#map-svg.base-aerial #layer-overpass .ovp-roads,
+#map-svg.base-aerial #layer-overpass .ovp-marks,
+#map-svg.base-both #layer-overpass .ovp-shadow,
+#map-svg.base-aerial #layer-crosswalks,
+#map-svg.base-aerial #layer-intersections,
+#map-svg.base-both #layer-crosswalks,
+#map-svg.base-both #layer-intersections {
+  display: none;
+}
+#map-svg.base-both #layer-roads polygon,
+#map-svg.base-both #layer-overpass .ovp-roads polygon {
+  fill-opacity: 0.08;
+  stroke: rgba(255, 255, 255, 0.75);
+  stroke-width: 0.15;
+}
+/* A median/border is a separator, not a lane: no white lane outline over the
+   photo, only the hatching (amber, so it survives both concrete and asphalt). */
+#map-svg.base-both #layer-roads polygon.lane-median,
+#map-svg.base-both #layer-roads polygon.lane-border,
+#map-svg.base-both #layer-roads polygon.lane-restricted,
+#map-svg.base-both #layer-roads polygon.lane-bidirectional,
+#map-svg.base-both #layer-overpass polygon.lane-median,
+#map-svg.base-both #layer-overpass polygon.lane-border,
+#map-svg.base-both #layer-overpass polygon.lane-restricted,
+#map-svg.base-both #layer-overpass polygon.lane-bidirectional {
+  stroke: none;
+  fill-opacity: 0;
+}
+#map-svg.base-both #layer-roads polygon.lane-hatch,
+#map-svg.base-both #layer-overpass polygon.lane-hatch {
+  fill-opacity: 1;
+  stroke: none;
+}
+#map-svg.base-both #hatch-blocked rect {
+  fill: rgba(255, 170, 40, 0.7);
+}
+#layer-roads .lane-hatch {
+  pointer-events: none;
+}
+/* Roads passing over another road (mapRoadDetail.js _roadOverpassLevels): a dark
+   casing under the deck so the bridge reads as being above, not crossing. */
+#layer-overpass {
+  pointer-events: none;
+}
+#layer-overpass .ovp-casing {
+  fill: none;
+  stroke: rgba(10, 14, 22, 0.55);
+  stroke-width: 2.2;
+  stroke-linejoin: round;
+}
+#layer-aerial {
+  pointer-events: none;
+}
+
+/* Road furniture from the .xodr (mapRoadDetail.js _renderRoadMarks & co). */
+#layer-markings,
+#layer-signs,
+#layer-speeds {
+  pointer-events: none;
+}
+.road-mark {
+  stroke-linecap: butt;
+  stroke-linejoin: round;
+}
+.parking-glyph {
+  fill: rgba(170, 200, 255, 0.75);
+  font-weight: 700;
+  font-family: sans-serif;
+}
+.sign-stop-body {
+  fill: #d42020;
+  stroke: #fff;
+  stroke-width: 0.1;
+}
+.sign-stop-text {
+  fill: #fff;
+  font-weight: 800;
+  font-family: sans-serif;
+}
+.sign-yield-body {
+  fill: #fff;
+  stroke: #d42020;
+  stroke-width: 0.22;
+  stroke-linejoin: round;
+}
+.speed-limit-ring {
+  fill: #fff;
+  stroke: #d42020;
+  stroke-width: 0.35;
+}
+.speed-limit-text {
+  fill: #111;
+  font-weight: 700;
+  font-family: sans-serif;
+}
+/* Roundels are read, not seen: gone with the labels at town zoom. */
+#map-svg.map-labels-hidden #layer-speeds {
+  opacity: 0;
+} /* no native image drag; clicks belong to the map */
+
+/* ── Map container ───────────────────────────────────────── */
+#map-container {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: #e8edf2;
+}
+#map-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: default;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+#map-svg.placing,
+#map-svg.placing *,
+#map-svg.trajectory-mode,
+#map-svg.trajectory-mode * {
+  cursor: crosshair !important;
+}
+
+#map-overlay-msg {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--text-dim);
+  font-size: 16px;
+  text-align: center;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  max-width: min(560px, calc(100% - 32px));
+}
+.map-empty-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+.map-empty-sub {
+  font-size: 12px;
+}
+.map-quick-pick {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  pointer-events: auto;
+}
+.map-quick-btn {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 12px;
+  cursor: pointer;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(26, 30, 46, 0.08);
+  transition:
+    color 0.15s,
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.map-quick-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px rgba(42, 111, 219, 0.18);
+}
+.map-quick-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Scale ruler */
+.scale-ruler {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+  user-select: none;
+  /* A backing pill: the ruler sits over whatever the map draws there, which is
+     as often a near-black carriageway as the light verge. */
+  padding: 4px 8px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 1px 3px rgba(26, 30, 46, 0.14);
+}
+.scale-bar {
+  height: 6px;
+  background: rgba(0, 0, 0, 0.12);
+  border-radius: 1px;
+  position: relative;
+  border-left: 2px solid rgba(0, 0, 0, 0.5);
+  border-right: 2px solid rgba(0, 0, 0, 0.5);
+}
+.scale-bar-fill {
+  height: 100%;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 1px;
+}
+.scale-label {
+  font-size: 11px;
+  color: #333;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.8);
+}
+
+/* Trajectory drawing banner */
+/* Bottom-centre overlay stack: draw banner above, sim controls below. The
+   wrapper is click-through so it never eats a map click; each child opts back
+   in. Children are stacked, so either can be hidden without the other moving. */
+/* Centred in the strip to the RIGHT of the scale ruler, not on the map's 50%:
+   the preview bar (560 px) used to slide over the ruler when it was ~690. 272 px =
+   the ruler's 16 px inset + its widest pill (a bar ≤ ~170 px, mapCore.js
+   _NICE_DISTS, plus label and padding) + a gap. On a map too narrow for the
+   bar, .sim-controls shrinks (max-width) and the timeline takes the loss. */
+.map-bottom-stack {
+  position: absolute;
+  bottom: 12px;
+  left: 272px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+  z-index: 20;
+}
+.map-bottom-stack > * {
+  pointer-events: auto;
+}
+/* Below 1340 px the strip right of the ruler (window − toolbar − panel − 284)
+   is under ~560 px, and the bar's fixed-width top row spilled out of the card
+   and under the properties panel (at 1100 px „Ablauf" was cut off). There the
+   stack takes the whole map width and the ruler moves up above the card. */
+@media (max-width: 1339px) {
+  .map-bottom-stack {
+    left: 12px;
+  }
+  .scale-ruler {
+    bottom: 84px;
+  }
+}
+
+.traj-banner {
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 8px 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+.traj-banner.hidden {
+  display: none;
+}
+
+/* ── Karten-Import Drag-and-drop Overlay ─────────────────── */
+.map-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 500;
+  background: rgba(42, 111, 219, 0.18);
+  border: 3px dashed var(--accent);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+.map-drop-overlay.hidden {
+  display: none !important;
+}
+.map-drop-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  background: white;
+  border-radius: 12px;
+  padding: 24px 36px;
+  box-shadow: 0 4px 24px rgba(42, 111, 219, 0.25);
+}
+.map-drop-icon {
+  font-size: 40px;
+  color: var(--accent);
+  line-height: 1;
+}
+.map-drop-text {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+.map-drop-sub {
+  font-size: 12px;
+  color: var(--text-dim);
+}

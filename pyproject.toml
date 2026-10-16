@@ -1,0 +1,46 @@
+# Tool configuration only. This is not a package; nothing here is installed.
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["maps", "tests/artifacts", ".tools"]
+
+[tool.ruff.format]
+# The code mixes ' and "; preserving them keeps the formatting diff about layout.
+quote-style = "preserve"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = [
+    "E501",  # the formatter owns code line length; long comments and URLs are fine
+    "E741",  # `l` for a lane is idiomatic in the geometry code
+    "B905",  # zip(strict=...) on every call is noise here
+    "E731",  # a one-line lambda for a local key/filter function reads better than a def
+    "UP031", # %-formatting in test output strings; rewriting them changes nothing
+]
+
+[tool.pylint.main]
+score = false
+ignore-paths = ["^\\.venv/.*", "^maps/.*", "^tests/artifacts/.*", "^\\.tools/.*"]
+# ../llm-scenario-gen is put on sys.path at runtime; pylint cannot see it.
+disable = "all"
+# Ruff does style and correctness. Pylint is here for the structural limits ruff lacks.
+enable = [
+    "too-many-lines",
+    "too-many-statements",
+    "too-many-branches",
+    "too-many-nested-blocks",
+    "duplicate-code",
+]
+
+[tool.pylint.format]
+max-module-lines = 400
+
+[tool.pylint.design]
+max-statements = 60
+max-branches = 15
+max-nested-blocks = 6
+
+[tool.pylint.similarities]
+min-similarity-lines = 8
+ignore-imports = true

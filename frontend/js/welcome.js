@@ -1,14 +1,13 @@
 /**
- * welcome.js — Willkommens-Modal und Hilfe-Schaltfläche.
- * Zeigt das Einführungs-Modal beim ersten Laden und auf Anfrage.
+ * welcome.js — the Schnellstart modal (first load and Hilfe → Schnellstart) and Hilfe → Tastenkürzel.
  */
-(function () {
+(() => {
   'use strict';
 
-  const overlay    = document.getElementById('welcome-overlay');
-  const closeBtn   = document.getElementById('welcome-close');
-  const dontShow   = document.getElementById('welcome-dont-show');
-  const helpBtn    = document.getElementById('btn-help');
+  const overlay = document.getElementById('welcome-overlay');
+  const closeBtn = document.getElementById('welcome-close');
+  const dontShow = document.getElementById('welcome-dont-show');
+  const helpBtn = document.getElementById('btn-help');
 
   const STORAGE_KEY = 'openscenario_hide_welcome';
 
@@ -25,23 +24,22 @@
 
   closeBtn.addEventListener('click', close);
 
-  // Schließen durch Klick außerhalb der Karte
-  overlay.addEventListener('click', e => {
+  // Close on a click outside the card.
+  overlay.addEventListener('click', (e) => {
     if (e.target === overlay) close();
   });
 
-  // Hilfe-Schaltfläche öffnet das Modal erneut
   helpBtn.addEventListener('click', () => {
     dontShow.checked = false;
     open();
   });
 
-  // Hilfe → Tastenkürzel: dieselbe Übersicht wie die Taste „?".
+  // Hilfe → Tastenkürzel: the same overlay as the „?" key.
   document.getElementById('btn-shortcuts')?.addEventListener('click', () => {
     document.getElementById('shortcuts-overlay')?.classList.remove('hidden');
   });
 
-  // Beim Laden prüfen, ob Modal angezeigt werden soll
+  // Shown once per viewer.
   if (!localStorage.getItem(STORAGE_KEY)) {
     open();
   }

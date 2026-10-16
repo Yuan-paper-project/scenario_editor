@@ -1,8 +1,8 @@
 """
-compare_xodr_lane_graph.py — validate backend/lane_graph_builder.py (the
+compare_xodr_lane_graph.py — validate backend/lane_graph/lane_graph_builder.py (the
 from-.xodr topology builder) against the CARLA-probed maps/<Town>/lane_graph.json
 files, without needing a live CARLA connection. Those files are gitignored —
-regenerate them with tests/probe_carla_lane_graph.py; a town without one is
+regenerate them with tools/probes/probe_carla_lane_graph.py; a town without one is
 skipped.
 
 Besides the per-lane table below, the ROUTING graph is compared, since that is
@@ -10,7 +10,7 @@ what assign_route previews are drawn from: the LANEFOLLOW edge set (exact),
 edge lengths (GlobalRoutePlanner's sample counts), lane-change edges, and the
 lane sequence A* returns for random lane pairs on each graph. A* here is a
 port of networkx.astar_path including its tie-breaking (.venv has no
-networkx), the same algorithm frontend/js/laneGraph.js runs. Route agreement
+networkx), the same algorithm frontend/js/sim/laneGraph.js runs. Route agreement
 is not 100% and is not expected to be: at a fork CARLA's next()[0] order,
 which a .xodr does not carry, decides which connector a lane-change edge
 lands on (Town03's junction 1206 → 1100/1122 accounts for most of its
@@ -20,7 +20,7 @@ Ground truth for `left`/`right` is compared exactly (both are structural
 adjacency facts, independent of how the graph was produced). `successors` is
 compared as a SET, not in order — the xodr builder makes no attempt to rank a
 genuine fork's candidates the way a live CARLA probe's next() does (see
-backend/lane_graph_builder.py's module docstring), so index-0 equality is not
+backend/lane_graph/lane_graph_builder.py's module docstring), so index-0 equality is not
 a meaningful signal here.
 
 Two things a raw set-equality check would wrongly flag as bugs, confirmed by
@@ -29,7 +29,7 @@ hand-tracing real examples in maps/Town05/Town05.xodr before writing this:
   1. Ground truth uses a SELF-reference ({roadId, sectionId, laneId} equal to
      the record's own key) as a dead-end marker — the probe's bounded
      fork-walk (`_walk_to_fork`) gives up after max_hops without the lane
-     identity changing. frontend/js/laneGraph.js's own realSuccessors()
+     identity changing. frontend/js/sim/laneGraph.js's own realSuccessors()
      already filters this out before use, so this script does too.
   2. Ground truth's successors are the result of CARLA's probe walking
      forward through a chain of single-choice lanes UNTIL the next real fork
@@ -38,7 +38,7 @@ hand-tracing real examples in maps/Town05/Town05.xodr before writing this:
      walked through by the probe and never appears as its own successor
      entry, whereas this builder's `lanes[].successors` is deliberately
      one hop at a time (see lane_graph_builder.py). Both describe the same
-     real topology at a different granularity — frontend/js/simulate.js's
+     real topology at a different granularity — frontend/js/sim/simulate.js's
      path-less continuation calls _nextLaneCursor repeatedly as an actor's
      lane runs out, so extra, correct, finer hops cost nothing functionally.
      This script credits a "mismatch" as OK when every ground-truth
@@ -47,6 +47,7 @@ hand-tracing real examples in maps/Town05/Town05.xodr before writing this:
 
     .venv/bin/python3 tests/compare_xodr_lane_graph.py
 """
+
 import heapq
 import itertools
 import json
@@ -57,8 +58,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from backend.map_renderer import build_map_render_data, XODR_PATHS  # noqa: E402
-from backend.lane_graph_builder import build_lane_graph_from_xodr  # noqa: E402
+from backend.lane_graph.lane_graph_builder import build_lane_graph_from_xodr  # noqa: E402
+from backend.xodr.map_renderer import XODR_PATHS, build_map_render_data  # noqa: E402
 
 _MAPS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "maps")
 
@@ -73,7 +74,7 @@ def _ref_key(ref):
 
 def _succ_set(lane, key):
     """Successors minus the self-referencing dead-end marker — mirrors
-    frontend/js/laneGraph.js's realSuccessors()."""
+    frontend/js/sim/laneGraph.js's realSuccessors()."""
     return frozenset(k for s in lane['successors'] if (k := _ref_key(s)) != key)
 
 
@@ -157,14 +158,10 @@ def compare_routing(gt, built, n_routes=300):
 
     def lc(g):
         vert = {n['id']: (n['x'], n['y'], n['z']) for n in g['nodes']}
-        return {(vert[e['from']], e['type'], _lane_key(e['exit']))
-                for e in g['edges'] if e['type'].startswith('CHANGE')}
-    junction_roads = {e['entry']['roadId'] for e in built['edges']
-                      if e['type'] == 'LANEFOLLOW' and e['intersection']}
-    junction_lc = [e for e in built['edges'] if e['type'].startswith('CHANGE')
-                   and e['entry']['roadId'] in junction_roads
-                   and e['exit']['roadId'] in junction_roads
-                   and built['roadIdToEdge'][str(e['entry']['roadId'])]]
+        return {
+            (vert[e['from']], e['type'], _lane_key(e['exit'])) for e in g['edges'] if e['type'].startswith('CHANGE')
+        }
+
     gt_lc, b_lc = lc(gt), lc(built)
 
     common = sorted(set(gt_lf) & set(b_lf))
@@ -181,7 +178,9 @@ def compare_routing(gt, built, n_routes=300):
         'lf_equal': set(gt_lf) == set(b_lf),
         'len_off': sum(gt_lf[k]['length'] != b_lf[k]['length'] for k in common),
         'len_n': len(common),
-        'lc_missing': len(gt_lc - b_lc), 'lc_extra': len(b_lc - gt_lc), 'lc_n': len(gt_lc),
+        'lc_missing': len(gt_lc - b_lc),
+        'lc_extra': len(b_lc - gt_lc),
+        'lc_n': len(gt_lc),
         'route_pct': 100.0 * agree / (total or 1),
     }
 
@@ -232,40 +231,50 @@ def compare_town(town: str) -> dict:
     return {
         **routing,
         'town': town,
-        'gt_lanes': len(gt_by_key), 'built_lanes': len(built_by_key),
-        'common': len(common), 'missing': len(missing), 'extra': len(extra),
-        'left_pct': 100.0 * left_match / n, 'right_pct': 100.0 * right_match / n,
-        'succ_exact_pct': 100.0 * succ_exact / n, 'succ_reachable_pct': 100.0 * succ_reachable / n,
-        'gt_forks': gt_fork_count, 'built_forks': built_fork_count,
+        'gt_lanes': len(gt_by_key),
+        'built_lanes': len(built_by_key),
+        'common': len(common),
+        'missing': len(missing),
+        'extra': len(extra),
+        'left_pct': 100.0 * left_match / n,
+        'right_pct': 100.0 * right_match / n,
+        'succ_exact_pct': 100.0 * succ_exact / n,
+        'succ_reachable_pct': 100.0 * succ_reachable / n,
+        'gt_forks': gt_fork_count,
+        'built_forks': built_fork_count,
         'succ_unreachable': succ_unreachable,
-        'missing_keys': sorted(missing)[:5], 'extra_keys': sorted(extra)[:5],
+        'missing_keys': sorted(missing)[:5],
+        'extra_keys': sorted(extra)[:5],
     }
 
 
 def main():
-    towns = sorted(
-        t for t in os.listdir(_MAPS_DIR)
-        if os.path.isfile(os.path.join(_MAPS_DIR, t, "lane_graph.json"))
-    )
+    towns = sorted(t for t in os.listdir(_MAPS_DIR) if os.path.isfile(os.path.join(_MAPS_DIR, t, "lane_graph.json")))
     print(f"Comparing xodr-derived lane graphs against {len(towns)} CARLA-probed ground-truth files\n")
     overall_ok = True
     for town in towns:
         r = compare_town(town)
         print(f"── {town} ──")
-        print(f"  lanes: ground-truth={r['gt_lanes']}  built={r['built_lanes']}  "
-              f"common={r['common']}  missing={r['missing']}  extra={r['extra']}")
+        print(
+            f"  lanes: ground-truth={r['gt_lanes']}  built={r['built_lanes']}  "
+            f"common={r['common']}  missing={r['missing']}  extra={r['extra']}"
+        )
         print(f"  left match:  {r['left_pct']:5.1f}%")
         print(f"  right match: {r['right_pct']:5.1f}%")
         print(f"  successor-set exact match:       {r['succ_exact_pct']:5.1f}%")
-        print(f"  successor reachable-within-8hop: {r['succ_reachable_pct']:5.1f}%  "
-              f"(ground-truth forks: {r['gt_forks']}, built forks: {r['built_forks']})")
+        print(
+            f"  successor reachable-within-8hop: {r['succ_reachable_pct']:5.1f}%  "
+            f"(ground-truth forks: {r['gt_forks']}, built forks: {r['built_forks']})"
+        )
         if r['missing_keys']:
             print(f"  sample missing (in ground truth, not built): {r['missing_keys']}")
         if r['extra_keys']:
             print(f"  sample extra (built, not in ground truth): {r['extra_keys']}")
-        print(f"  routing: LANEFOLLOW edges {'identical' if r['lf_equal'] else 'DIFFER'}; "
-              f"lengths off {r['len_off']}/{r['len_n']}; lane-change edges missing {r['lc_missing']} "
-              f"extra {r['lc_extra']} of {r['lc_n']}; A* lane sequence agrees {r['route_pct']:5.1f}%")
+        print(
+            f"  routing: LANEFOLLOW edges {'identical' if r['lf_equal'] else 'DIFFER'}; "
+            f"lengths off {r['len_off']}/{r['len_n']}; lane-change edges missing {r['lc_missing']} "
+            f"extra {r['lc_extra']} of {r['lc_n']}; A* lane sequence agrees {r['route_pct']:5.1f}%"
+        )
         for key, unreached, bset in r['succ_unreachable']:
             print(f"  GENUINE mismatch {key}: unreachable ground-truth targets={unreached} (built 1-hop={bset})")
         print()
@@ -276,9 +285,12 @@ def main():
         # 72% and Town07 on 54%; Town03 stays lowest because its misses are the
         # fork-order cases the module docstring describes.
         route_floor = 70 if town == 'Town03' else 95
-        if (not r['lf_equal'] or r['len_off'] > 0.07 * r['len_n']
-                or r['lc_missing'] + r['lc_extra'] > max(4, 0.12 * r['lc_n'])
-                or r['route_pct'] < route_floor):
+        if (
+            not r['lf_equal']
+            or r['len_off'] > 0.07 * r['len_n']
+            or r['lc_missing'] + r['lc_extra'] > max(4, 0.12 * r['lc_n'])
+            or r['route_pct'] < route_floor
+        ):
             overall_ok = False
     print("OVERALL:", "look reasonable" if overall_ok else "below threshold — needs investigation")
     return 0 if overall_ok else 1
