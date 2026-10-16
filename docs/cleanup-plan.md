@@ -77,13 +77,13 @@ Ordered by how safe the merge is. Check each pair's bodies before merging; sever
 
 | What | Where | Notes |
 |---|---|---|
-| Point-in-polygon (ray casting) | `mapRoadDetail.js` `_pointInPoly`, `templates.js:822`, `generatorCore.js` `_inPoly` | Byte-identical. Move to `UIUtils` (or a small `geom.js`). |
-| `_wrapDeg` | `objects.js:163`, `generatorCore.js` `_wrapDeg` | Identical. |
-| `_dist3` | `simCore.js` `_dist3`, `laneGraph.js:92` | Differ: `?? 0` vs `\|\| 0` (same result for numbers, differs for `NaN`). |
-| HTML escaping | `dialogs.js` `_escHtml`, `properties.js:69` `_esc` (DOM-based), `eventTimeline.js:46` `_esc`, `templates.js:832` `_attr`, `scenarioGenerator.js` `_escHtml` (regex) | **Not equivalent**: the DOM-based two do not escape `"`, so they are unsafe in attributes. A shared helper must be the regex version. |
-| `_el(tag, attrs)` SVG element builder | `aerialMap.js:238`; the prop and map files use `UIUtils.svgEl` | Same behaviour (`for…in` vs `Object.entries` over plain objects). Point `aerialMap.js` at `UIUtils.svgEl`. |
+| ~~Point-in-polygon (ray casting)~~ | | **Done**: `UIUtils.pointInPoly`. |
+| ~~`_wrapDeg`~~ | | **Done**: `UIUtils.wrapDeg`. |
+| ~~`_dist3`~~ | | **Done**: `UIUtils.dist3` (`?? 0`). |
+| ~~HTML escaping~~ | | **Done**: `UIUtils.escapeHtml`, the regex version, replacing all five. |
+| ~~`_el(tag, attrs)` SVG element builder~~ | | **Done**: `aerialMap.js` uses `UIUtils.svgEl`. |
 | Walker type sets | `mapMarkers.js` `WALKER_TYPES`, `scenarioRules.js` `WALKER_ACTION_TYPES`, `properties.js:172` `_isWalker` (includes `cyclist`!), `templates.js:818`, `objects.js:90` `ROAD_FACING_TYPES` (includes `cyclist`, `bicycle`) | Some differences are deliberate (CLAUDE.md, "Actor types"). Within the frontend, the pedestrian/child pair could come from one constant in `ScenarioRules`. The backend/emitter copies are cross-repo; leave them. |
-| Weather presets | `weather.js:19` `PRESETS`, `generatorBatch.js` `WEATHER_PRESETS` | CLAUDE.md says "keep the two in step". Make one the source. |
+| ~~Weather presets~~ | | **Done**: `AppState.WEATHER_PRESETS`, read by `weather.js` and `generatorBatch.js`. |
 | Road `<link>` parsing | `xodr_lanes._get_road_link`, `xodr_links._parse_road_links` | **Not identical**: the builder casts `elementId` to `int` and defaults `contactPoint` to `'start'`. It was copied on purpose to keep the module independent. Could share a parser and keep the differences in the callers. |
 | Road-mark parsing | `xodr_lanes._get_road_marks` / `_get_center_marks`, `xodr_links._parse_lane_change_marks` / `_parse_mark_records` | Same XML read twice for different fields. Investigate before merging. |
 | Nearest-point-on-lane | `objects._nearestLaneProjection` (251), `generatorCore._projectOnLane`, `simLanes._nearestPointOnDirLine` | Different inputs and outputs; probably a shared segment-projection kernel underneath. Investigate. |
