@@ -29,7 +29,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "e2e"))
 import _harness as H  # noqa: E402
 import carla_analysis as A  # noqa: E402
-import run_carla_cases as R  # noqa: E402
+import carla_run as R  # noqa: E402
 
 # Town03 road 6: lane -2 (y ~ -5.6) runs towards -x, with a parking lane
 # (y ~ -9.1), a shoulder and a sidewalk (y ~ -12.6) on its right.

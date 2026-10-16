@@ -32,7 +32,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "e2e"))
 import _harness as H  # noqa: E402
 import carla_analysis as A  # noqa: E402
-import run_carla_cases as R  # noqa: E402
+import carla_run as R  # noqa: E402
 
 LANE = {3: 26.5, 4: 30.0, 5: 33.5, 6: 37.0}
 

@@ -36,7 +36,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "e2e"))
 import _harness as H  # noqa: E402
 import carla_analysis as A  # noqa: E402
-import run_carla_cases as R  # noqa: E402
+import carla_run as R  # noqa: E402
 
 TYPES = ["lead_brake", "cut_in", "vru_crossing", "junction_conflict", "obstacle", "slow_lead", "turn_vru", "pull_out"]
 
