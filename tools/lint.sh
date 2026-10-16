@@ -25,5 +25,7 @@ echo "════ pylint (module size, function size, duplicate code)"
 "$VENV/pylint" --recursive=y backend tools || status=1
 echo "════ biome (frontend JS/CSS)"
 .tools/biome ci --reporter=summary || status=1
+echo "════ shared-scope names (frontend split modules)"
+"$VENV/python" tools/check_shared_scopes.py || status=1
 
 exit "$status"
