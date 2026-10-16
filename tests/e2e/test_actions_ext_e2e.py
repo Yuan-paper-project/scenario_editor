@@ -15,7 +15,7 @@ Covers, end to end (panel → state → export payload → .xosc → preview):
     a non-blocking warning chip and moves nothing in the preview.
 
     bash run.sh 9090            # terminal 1
-    .venv/bin/python3 tests/test_actions_ext_e2e.py
+    .venv/bin/python3 tests/e2e/test_actions_ext_e2e.py
 """
 
 import os

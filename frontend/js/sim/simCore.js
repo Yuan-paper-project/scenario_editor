@@ -159,7 +159,7 @@
   // within this many metres.
   const LANE_OFFSET_THRESHOLD_M = 0.1;
   // How fast the displaced aim point pulls the actor sideways. Measured in CARLA
-  // (Town04 road 40, 8 m/s, 1.75 m, tests/run_actions_ext_carla.py): the
+  // (Town04 road 40, 8 m/s, 1.75 m, tests/carla/run_actions_ext_carla.py): the
   // remaining lateral gap decays exponentially with distance driven — it halves
   // every ~2 m, out and back alike — because SimpleVehicleControl steers
   // straight at a waypoint a few metres ahead. So the gap shrinks by

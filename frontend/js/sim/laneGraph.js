@@ -1,6 +1,6 @@
 /**
  * laneGraph.js — CARLA-verified routing + lane topology, cached per town by
- * tests/probe_carla_lane_graph.py (phase 2 of the "in-editor preview
+ * tools/probes/probe_carla_lane_graph.py (phase 2 of the "in-editor preview
  * fidelity" plan). Loaded once per map into AppState.laneGraph by
  * toolbar.js/mapImport.js; every lookup here degrades to null when the
  * cache is absent (Town10, any uploaded map), and simulate.js falls back to

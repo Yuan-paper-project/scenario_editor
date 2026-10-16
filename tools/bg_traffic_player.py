@@ -6,7 +6,7 @@
 Runs beside ScenarioRunner (scenario_runner/scripts/run_selfref_video_test.py
 starts it when run.sh finds a `<scenario>.bgtraffic.json` next to the .xosc).
 It never ticks the world — ScenarioRunner owns the clock in synchronous mode,
-the same rule as tests/carla_telemetry.py. On every tick it reads where each
+the same rule as tests/carla/carla_telemetry.py. On every tick it reads where each
 car actually is and commands the velocity that takes it to where the file has
 it one tick later — a closed loop, so the physics step lands it there: CARLA
 decides nothing about the car's path, and the preview and the run show the
@@ -42,7 +42,7 @@ logged: from then on that car is not where the preview showed it.
 
 The ego's and every NPC's obstacle sensor (`sensor.other.obstacle`,
 only_dynamics=True) sees these cars — measured with
-tests/probe_puppet_obstacle.py.
+tools/probes/probe_puppet_obstacle.py.
 """
 
 import argparse

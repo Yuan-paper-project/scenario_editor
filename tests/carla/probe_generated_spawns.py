@@ -1,7 +1,7 @@
 """Spawn every actor of many generated scenarios in CARLA, all at once per scenario.
 
-    .venv/bin/python3 tests/probe_generated_spawns.py --count 120 --seed 9
-    .venv/bin/python3 tests/probe_generated_spawns.py --zip szenarien.zip --out szenarien_ok.zip
+    .venv/bin/python3 tests/carla/probe_generated_spawns.py --count 120 --seed 9
+    .venv/bin/python3 tests/carla/probe_generated_spawns.py --zip szenarien.zip --out szenarien_ok.zip
 
 A scenario whose actors cannot all spawn fails before its first tick
 ("Error: Unable to add actors") — the whole run is lost, and nothing about the

@@ -807,7 +807,7 @@ check("npc gets no trigger_distance key", "trigger_distance" not in npc, str(npc
 
 # initial_speed — the Init SpeedAction. The default is 0 and NOT the editor's
 # placement default of 10: this function also normalises hand-written payloads,
-# LLM output and every tests/carla_cases.py case, none of which mention the
+# LLM output and every tests/carla/carla_cases.py case, none of which mention the
 # field, and defaulting those to 10 would put every previously stationary actor
 # into motion at t=0.
 check("npc defaults initial_speed to 0", npc["initial_speed"] == 0.0, str(npc.get("initial_speed")))
@@ -1718,7 +1718,7 @@ check(
 # A signal event names its light by position ("pos=x,y"); ScenarioRunner
 # resolves that to the CARLA actor within 2 m and aborts the whole run when
 # there is none. maps/Town10HD/carla_traffic_lights.json (from
-# tests/probe_carla_traffic_lights.py) says which .xodr lights CARLA lacks.
+# tools/probes/probe_carla_traffic_lights.py) says which .xodr lights CARLA lacks.
 
 _HIGH_TL = (95.6, -124.7, 8.0)
 

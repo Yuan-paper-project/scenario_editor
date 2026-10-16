@@ -12,13 +12,20 @@ one goes red tells you where the problem is:
 | Layer | Needs | Catches | Cannot catch |
 |---|---|---|---|
 | `test_normalization.py` | nothing | backend coercions, clamps, entity-ref mapping | anything about the UI or the emitted XML |
-| `test_*_e2e.py` | editor on :9090 | UI wiring, the payload the frontend sends, the `.xosc` structure | whether CARLA honours the file |
-| `run_carla_cases.py` | CARLA on :2010 (run.sh's) | whether triggers fire and actors actually move | anything it has no assertion for |
-| `probe_*.py` | CARLA on :3000 | measurements, not assertions | — |
-| `run_generated_carla.py` | CARLA on :2010 (run.sh's) + editor | whether a generated scenario's triggers fire and the actors meet in CARLA | nothing is asserted; it reports |
-| `run_template_carla.py` | CARLA on :2010 (run.sh's) + editor | the templates with a DRIVING ego (route + start speed): triggers fire, the actor does what the template says, the ego reacts; printed beside the preview's prediction | nothing is asserted; it reports |
-| `probe_generated_spawns.py` | CARLA on :2010 + editor | generated actors CARLA refuses to spawn (scenery the `.xodr` lacks); `--zip/--out` filters a batch | anything after the spawn |
-| `run_bg_traffic_carla.py` | CARLA on :2010 (run.sh's) + editor | background traffic in a real run: each puppet's CARLA pose against the file the preview plays, the closest any comes to the ego/NPCs, and (`--baseline`) the scenario's events and closest approach with and without traffic | nothing is asserted; it reports |
+| `e2e/test_*_e2e.py` | editor on :9090 | UI wiring, the payload the frontend sends, the `.xosc` structure | whether CARLA honours the file |
+| `carla/run_carla_cases.py` | CARLA on :2010 (run.sh's) | whether triggers fire and actors actually move | anything it has no assertion for |
+| `../tools/probes/probe_*.py` | CARLA on :3000 | measurements, not assertions | — |
+| `carla/run_generated_carla.py` | CARLA on :2010 (run.sh's) + editor | whether a generated scenario's triggers fire and the actors meet in CARLA | nothing is asserted; it reports |
+| `carla/run_template_carla.py` | CARLA on :2010 (run.sh's) + editor | the templates with a DRIVING ego (route + start speed): triggers fire, the actor does what the template says, the ego reacts; printed beside the preview's prediction | nothing is asserted; it reports |
+| `carla/probe_generated_spawns.py` | CARLA on :2010 + editor | generated actors CARLA refuses to spawn (scenery the `.xodr` lacks); `--zip/--out` filters a batch | anything after the spawn |
+| `carla/run_bg_traffic_carla.py` | CARLA on :2010 (run.sh's) + editor | background traffic in a real run: each puppet's CARLA pose against the file the preview plays, the closest any comes to the ego/NPCs, and (`--baseline`) the scenario's events and closest approach with and without traffic | nothing is asserted; it reports |
+
+## Layout
+
+- `tests/` — the fast checks that need no browser (`test_normalization.py`, `check_render_geometry.py`, `compare_xodr_lane_graph.py`), `run_tests.sh`, `bench/` and `artifacts/` (CARLA run output, gitignored).
+- `tests/e2e/` — the Playwright suites and `_harness.py`, which they import from their own folder.
+- `tests/carla/` — the CARLA runners and their helpers (`run_*`, `carla_cases.py`, `carla_analysis.py`, `carla_telemetry.py`, `probe_generated_spawns.py`). They put `../e2e` on `sys.path` for `_harness`, and write to `tests/artifacts/`.
+- `tools/probes/` — one-off CARLA measurements (`probe_carla_*`, `probe_puppet_obstacle.py`, `capture_carla_aerial.py`). They assert nothing; their output feeds the catalogue, `maps/` and CLAUDE.md.
 
 ## Running
 
@@ -175,8 +182,8 @@ motion, timing, or turning can be trusted again.
 
 ```bash
 bash run.sh 9090                                    # terminal 1: the editor
-.venv/bin/python3 tests/run_carla_cases.py          # all 28 cases, ~12 min
-.venv/bin/python3 tests/run_carla_cases.py tpl-stopping evt-assign-route
+.venv/bin/python3 tests/carla/run_carla_cases.py          # all 28 cases, ~12 min
+.venv/bin/python3 tests/carla/run_carla_cases.py tpl-stopping evt-assign-route
 ```
 
 Four families, by prefix:
@@ -382,7 +389,7 @@ the world at 0). It calls `load_world`, so it targets a private CARLA on
 
 ```bash
 cd ~/yungloon/fail2drive/f2d_carla && ./CarlaUE4.sh -carla-port=2050 -RenderOffScreen -nosound &
-/home/dellpro2/Antonio/carla-venv/bin/python tests/probe_carla_props.py
+/home/dellpro2/Antonio/carla-venv/bin/python tools/probes/probe_carla_props.py
 ```
 
 `probe_puppet_obstacle.py` answers the question background traffic rests on:
@@ -395,7 +402,7 @@ seen for physics on / off / moved):
 
 ```bash
 PYTHONPATH=/home/dellpro2/yungloon/fail2drive/f2d_carla/PythonAPI/carla \
-  /home/dellpro2/Antonio/carla-venv/bin/python tests/probe_puppet_obstacle.py --port 2010
+  /home/dellpro2/Antonio/carla-venv/bin/python tools/probes/probe_puppet_obstacle.py --port 2010
 ```
 
 `probe_carla_mesh_facing.py` and `probe_carla_mesh_dims.py` are one-off
@@ -405,8 +412,8 @@ the `carla-venv` environment:
 ```bash
 source /home/dellpro2/Antonio/carla-venv/bin/activate
 export PYTHONPATH="/home/dellpro2/CC/carla_0.9.15/PythonAPI/carla/dist/carla-0.9.15-cp310-cp310-linux_x86_64.egg:/home/dellpro2/CC/carla_0.9.15/PythonAPI/carla:/home/dellpro2/CC/carla_0.9.15/PythonAPI"
-python tests/probe_carla_mesh_dims.py       # bounding-box extents -> catalogue dims
-python tests/probe_carla_mesh_facing.py     # two axis-aligned views per prop
+python tools/probes/probe_carla_mesh_dims.py       # bounding-box extents -> catalogue dims
+python tools/probes/probe_carla_mesh_facing.py     # two axis-aligned views per prop
 ```
 
 `probe_carla_actor_blueprints.py` checks every id in `vehicle_catalog.yaml`
@@ -439,8 +446,8 @@ original map in a `finally` block:
 ```bash
 source /home/dellpro2/Antonio/carla-venv/bin/activate
 export PYTHONPATH="/home/dellpro2/CC/carla_0.9.15/PythonAPI/carla/dist/carla-0.9.15-cp310-cp310-linux_x86_64.egg:/home/dellpro2/CC/carla_0.9.15/PythonAPI/carla:/home/dellpro2/CC/carla_0.9.15/PythonAPI"
-python tests/probe_carla_lane_graph.py              # every bundled town with a CARLA counterpart (~30s total)
-python tests/probe_carla_lane_graph.py Town03 Town05 # just these
+python tools/probes/probe_carla_lane_graph.py              # every bundled town with a CARLA counterpart (~30s total)
+python tools/probes/probe_carla_lane_graph.py Town03 Town05 # just these
 ```
 
 Re-run it whenever a bundled `.xodr` changes or the CARLA build is upgraded —
@@ -454,8 +461,8 @@ there is no staleness check, the backend just loads whatever
 
 ```bash
 cd ~/yungloon/fail2drive/f2d_carla && ./CarlaUE4.sh -carla-port=2050 -RenderOffScreen -nosound &
-/home/dellpro2/Antonio/carla-venv/bin/python tests/capture_carla_aerial.py              # all 8 CARLA towns, ~2 min
-/home/dellpro2/Antonio/carla-venv/bin/python tests/capture_carla_aerial.py Town03       # just this one
+/home/dellpro2/Antonio/carla-venv/bin/python tools/probes/capture_carla_aerial.py              # all 8 CARLA towns, ~2 min
+/home/dellpro2/Antonio/carla-venv/bin/python tools/probes/capture_carla_aerial.py Town03       # just this one
 ```
 
 Re-run it after a CARLA build upgrade or a `.xodr` change; the backend reads

@@ -6,7 +6,7 @@ shared rules (ScenarioRules in scenarioRules.js), the export payload (scenarioIO
 backend (scenario_io.py, via a real /api/export), the emitted .xosc
 (event_builders.py / xml_builder.py) and the preview (simulate.js).
 
-    bash run.sh 9090 && .venv/bin/python3 tests/test_triggers_e2e.py
+    bash run.sh 9090 && .venv/bin/python3 tests/e2e/test_triggers_e2e.py
 """
 
 import sys

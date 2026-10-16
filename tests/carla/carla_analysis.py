@@ -163,7 +163,7 @@ class Run:
         hero's included, now starts on SimulationTime > 0. This still gives a
         usable time origin, but it is no longer the exact instant NPC Acts
         begin — CLAUDE.md already flags that every expect_* assertion in
-        tests/run_carla_cases.py needs re-baselining post-ego-authoring, and
+        tests/carla/run_carla_cases.py needs re-baselining post-ego-authoring, and
         this is part of that same deferred work, not a new gap.
         """
         hero = self.tracks.get("hero")

@@ -13,7 +13,7 @@ comparing the exporter against its own configuration would pass no matter what
 either said.
 
     bash run.sh 9090            # terminal 1  (RESTART it if ../llm-scenario-gen
-    .venv/bin/python3 tests/test_actor_types_e2e.py     changed — --reload does
+    .venv/bin/python3 tests/e2e/test_actor_types_e2e.py     changed — --reload does
                                                         not watch that repo)
 """
 

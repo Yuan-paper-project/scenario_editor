@@ -14,7 +14,7 @@ named gap) is unaffected and remains genuinely missing.
 
 **2026-10-14:** the generator gained types and pins aimed at benchmark cases (junction layouts,
 `turn_vru`, `slow_lead`, `pull_out`, `rear_approach`, standing/queued/curve obstacles, drift around a
-parked car — see CLAUDE.md "Benchmark-driven types and pins"). `tests/test_benchmark_e2e.py` rebuilds
+parked car — see CLAUDE.md "Benchmark-driven types and pins"). `tests/e2e/test_benchmark_e2e.py` rebuilds
 ten Loop2Scenic entries with them (VVM left-turn and cross-traffic cases, CCFtap, CPTA, CPNCO,
 EncroachingOncomingVehicle, CARLA_Leaderboard_16) — another reason the rollup below is stale. The
 Chat2Scenic benchmark has its own per-line table, `chat2scenic_coverage.csv`.
@@ -25,13 +25,13 @@ scenario descriptions across five query modalities, tagged with a 50-type
 Bench2Drive-derived taxonomy.
 
 Sixteen benchmark entries were selected, rebuilt as runnable CARLA cases in
-`tests/carla_cases.py`, and judged against ScenarioRunner's OSC log **and** the
+`tests/carla/carla_cases.py`, and judged against ScenarioRunner's OSC log **and** the
 telemetry CSV. **168 of 174 checks passed; the six failures are all marked
 EXPECTED TO FAIL** and are the point of the exercise.
 
 ```bash
 bash run.sh 9090                                              # terminal 1
-.venv/bin/python3 tests/run_carla_cases.py bench-hard-brake-lead
+.venv/bin/python3 tests/carla/run_carla_cases.py bench-hard-brake-lead
 ```
 
 ## 1. Provenance
@@ -123,7 +123,7 @@ express; and deliberately include cases the editor **cannot** fully express.
 
 ## 3. Per-case results
 
-From `tests/run_carla_cases.py <all sixteen>`. Artifacts (reloadable
+From `tests/carla/run_carla_cases.py <all sixteen>`. Artifacts (reloadable
 `scenario.json`, `telemetry.csv`, `run.log`, the exact `.xosc`) are in
 `tests/artifacts/bench-*/`.
 

@@ -1,7 +1,7 @@
 """Run the speed/offset/trigger extensions in real CARLA, beside the preview.
 
-    .venv/bin/python3 tests/run_actions_ext_carla.py            # every case
-    .venv/bin/python3 tests/run_actions_ext_carla.py accel      # names containing these
+    .venv/bin/python3 tests/carla/run_actions_ext_carla.py            # every case
+    .venv/bin/python3 tests/carla/run_actions_ext_carla.py accel      # names containing these
 
 Each case is seeded straight into AppState on Town04 road 40 (237 m dead
 straight, lanes 3..6 at y 26.5/30.0/33.5/37.0, travelling +x from x = -357),

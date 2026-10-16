@@ -12,7 +12,7 @@ in its lane, a target vehicle in three variants:
     moving       physics off, moved 0.5 m per tick by set_transform
 
     PYTHONPATH=$CARLA_ROOT/PythonAPI/carla /home/dellpro2/Antonio/carla-venv/bin/python \
-        tests/probe_puppet_obstacle.py [--port 2010]
+        tools/probes/probe_puppet_obstacle.py [--port 2010]
 
 Uses whatever town is loaded; switches the world to synchronous mode for the
 probe and restores the previous settings afterwards. Run it against an idle CARLA.

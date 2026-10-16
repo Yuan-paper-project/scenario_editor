@@ -15,7 +15,7 @@ Nothing is spawned, so it is safe against a live session.
 
     source /home/dellpro2/Antonio/carla-venv/bin/activate
     export PYTHONPATH="/home/dellpro2/CC/carla_0.9.15/PythonAPI/carla/dist/carla-0.9.15-cp310-cp310-linux_x86_64.egg:/home/dellpro2/CC/carla_0.9.15/PythonAPI/carla:/home/dellpro2/CC/carla_0.9.15/PythonAPI"
-    python tests/probe_carla_actor_blueprints.py
+    python tools/probes/probe_carla_actor_blueprints.py
 """
 
 import os

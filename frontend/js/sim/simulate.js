@@ -272,7 +272,7 @@
     onTime(fn) {
       _timeListeners.push(fn);
     },
-    // routeForTesting exists purely for tests/test_route_fidelity_e2e.py: it
+    // routeForTesting exists purely for tests/e2e/test_route_fidelity_e2e.py: it
     // returns the route without running the animation. Asserting on the route
     // directly is deterministic, whereas sampling a moving actor can only ever
     // catch a reversal that happens to straddle two samples.

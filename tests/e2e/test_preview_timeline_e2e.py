@@ -11,7 +11,7 @@ Two features that only exist in the browser:
      above the ground-level markings, so a bridge hides what it crosses.
 
     bash run.sh 9090            # terminal 1
-    .venv/bin/python3 tests/test_preview_timeline_e2e.py
+    .venv/bin/python3 tests/e2e/test_preview_timeline_e2e.py
 """
 
 import os

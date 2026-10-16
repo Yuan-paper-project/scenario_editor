@@ -150,7 +150,7 @@
         // A cyclist starts at the road edge, not on the sidewalk: it is a 1.8 m
         // <Vehicle> set across the road, and from 1.2 m onto a narrow sidewalk
         // its back end reached the wall behind it — CARLA refused 3 of 160
-        // crossing cyclists that way (tests/probe_generated_spawns.py). The
+        // crossing cyclists that way (tests/carla/probe_generated_spawns.py). The
         // sidewalk is still required: without it the site was a guardrailed
         // Town07 bridge, where the guardrail refused the spawn instead.
         return type === 'cyclist' ? edgeOff - sign * 0.8 : edgeOff + sign * k;
@@ -188,7 +188,7 @@
       // The start is on the sidewalk, which the elevation profile does not
       // model: Town02's is 0.32 m above the road there, the walker's capsule
       // reached into it at the editor's usual 0.6 m and CARLA refused the
-      // spawn (tests/probe_generated_spawns.py). High is free — it settles.
+      // spawn (tests/carla/probe_generated_spawns.py). High is free — it settles.
       // Height from the corridor at the crossing, not from the nearest lane:
       // next to an overpass the nearest lane is the wrong level (a cyclist on
       // Town03 came out at z 5.8 and could not spawn).

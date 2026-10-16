@@ -52,7 +52,7 @@ app = FastAPI(title="OpenSCENARIO Editor", version="1.0.0")
 MAP_CACHE: dict[str, dict] = {}
 
 # LANE_GRAPH_CACHE: routing topology per town, from one of two sources —
-# tests/probe_carla_lane_graph.py's live-CARLA output (maps/<Town>/
+# tools/probes/probe_carla_lane_graph.py's live-CARLA output (maps/<Town>/
 # lane_graph.json on disk, source-less in the JSON, treated by the frontend
 # as "carla") when it exists, or backend/lane_graph/lane_graph_builder.py's from-.xodr
 # derivation (source: "xodr") for every town that has no such file: Town10
@@ -191,7 +191,7 @@ async def get_map_preview(town: str):
     raise HTTPException(status_code=404, detail=f"No preview image for '{town}'")
 
 
-# Aerial image pyramid written by tests/capture_carla_aerial.py. Read from disk
+# Aerial image pyramid written by tools/probes/capture_carla_aerial.py. Read from disk
 # per request rather than cached at startup, like special_buildings: a re-capture
 # shows up on a browser reload, not only after a server restart.
 def _aerial_dir(town: str) -> Path:

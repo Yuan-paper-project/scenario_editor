@@ -1,6 +1,6 @@
 """
 lane_graph_builder.py — derive a lane_graph.json-shaped routing graph directly
-from a town's .xodr file, for towns tests/probe_carla_lane_graph.py has never
+from a town's .xodr file, for towns tools/probes/probe_carla_lane_graph.py has never
 run against: every uploaded map, and Town10 (no CARLA counterpart to probe).
 
 Produces the exact JSON shape frontend/js/sim/laneGraph.js already consumes (see

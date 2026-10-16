@@ -6,8 +6,8 @@ for the general CARLA-probe pattern). Needs a running CARLA and the
 
   source /home/dellpro2/Antonio/carla-venv/bin/activate
   export PYTHONPATH="/home/dellpro2/CC/carla_0.9.15/PythonAPI/carla/dist/carla-0.9.15-cp310-cp310-linux_x86_64.egg:/home/dellpro2/CC/carla_0.9.15/PythonAPI/carla:/home/dellpro2/CC/carla_0.9.15/PythonAPI"
-  python tests/probe_carla_lane_graph.py              # every bundled town with a CARLA counterpart
-  python tests/probe_carla_lane_graph.py Town03 Town05 # just these
+  python tools/probes/probe_carla_lane_graph.py              # every bundled town with a CARLA counterpart
+  python tools/probes/probe_carla_lane_graph.py Town03 Town05 # just these
 
 CARLA_HOST / CARLA_PORT override the target (default localhost:2010, matching
 run.sh's port — NOT the port 3000 the older mesh/prop probes use, which was a

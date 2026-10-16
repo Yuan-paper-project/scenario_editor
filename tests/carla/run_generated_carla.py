@@ -1,7 +1,7 @@
 """Run generator-built scenarios in real CARLA and report what happened.
 
-    .venv/bin/python3 tests/run_generated_carla.py Town03:cut_in:3 Town05:vru_crossing:7
-    .venv/bin/python3 tests/run_generated_carla.py --sample 6 --towns Town03,Town05
+    .venv/bin/python3 tests/carla/run_generated_carla.py Town03:cut_in:3 Town05:vru_crossing:7
+    .venv/bin/python3 tests/carla/run_generated_carla.py --sample 6 --towns Town03,Town05
 
 Each spec is town:type:seed, optionally followed by @{json} with pinned
 recipe values (Town03:junction_conflict:2@{"layout":"ego_left_oncoming"}),

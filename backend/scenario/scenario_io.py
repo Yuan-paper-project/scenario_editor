@@ -94,7 +94,7 @@ _MAPS_DIR = Path(__file__).resolve().parents[2] / "maps"
 
 def _carla_light_positions(town: str):
     """CARLA's traffic-light actor positions for a bundled town, or None when
-    the town was never probed (tests/probe_carla_traffic_lights.py)."""
+    the town was never probed (tools/probes/probe_carla_traffic_lights.py)."""
     import json
 
     probe = _MAPS_DIR / str(town) / "carla_traffic_lights.json"

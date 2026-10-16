@@ -26,6 +26,7 @@ Line counts are `wc -l`. The sibling repo `../llm-scenario-gen` is out of scope 
 | `backend/lane_graph/lane_graph_builder.py` | done (`66c3fa9` split, docs after) |
 | `frontend/js/` folders | done (`7abe0ab` move, docs after): nine group folders, file names unchanged |
 | `backend/` packages | done (`12110a3` move, docs after): `xodr/`, `lane_graph/`, `traffic/`, `scenario/`, module names unchanged |
+| `tests/` folders | done (`eb6cd79` move, docs after): `tests/e2e/`, `tests/carla/`, `tools/probes/` |
 | `frontend/js/bgTraffic.js` (561), `backend/main.py` (463) | kept, by decision: each is one cohesive module somewhat over the target; `bgTraffic.js`'s only seam (the keep-out) would not justify a shared scope, and `main.py` is a flat route list that routers would only add indirection to |
 
 How each split was done, and the checks to repeat: propose → approve → (1) any wiring change needed to make the move possible, alone, inside the old file; (2) the move itself, by script, asserting every original line lands in exactly one new file; (3) docs. After each: `bash tools/lint.sh` (no new findings), `bash tests/run_tests.sh --quick`, and the export/generator fingerprint must be byte-identical; a deliberately wrong load order must fail `test_smoke_e2e.py`. Test against a server without `--reload` (port 9091). For a stylesheet, the fingerprint is `tools/css_fingerprint.py` (computed styles, see CLAUDE.md).
@@ -62,7 +63,7 @@ How each split was done, and the checks to repeat: propose → approve → (1) a
 
 ### Tests (lower priority — split only where it helps)
 
-`tests/carla_cases.py` 2378 (mostly case data), `test_normalization.py` 1302, `test_events_e2e.py` 662, `_harness.py` 631, `test_actor_types_e2e.py` 573, `test_benchmark_e2e.py` 563, `test_generator_e2e.py` 487, `test_actions_ext_e2e.py` 487, `test_templates_e2e.py` 484, `run_carla_cases.py` 474, `test_ego_events_e2e.py` 460, `test_waypoints_e2e.py` 448, `carla_analysis.py` 447.
+`tests/carla/carla_cases.py` 2378 (mostly case data), `test_normalization.py` 1302, `test_events_e2e.py` 662, `_harness.py` 631, `test_actor_types_e2e.py` 573, `test_benchmark_e2e.py` 563, `test_generator_e2e.py` 487, `test_actions_ext_e2e.py` 487, `test_templates_e2e.py` 484, `run_carla_cases.py` 474, `test_ego_events_e2e.py` 460, `test_waypoints_e2e.py` 448, `carla_analysis.py` 447.
 
 ### Over-long functions (≥ 90 lines)
 
@@ -104,8 +105,8 @@ Found by searching each definition's name across the frontend, `index.html`, `he
 
 Also check:
 
-- `tests/probe_carla_mesh_dims.py`: superseded by `probe_carla_props.py` (per CLAUDE.md).
-- `tests/probe_carla_mesh_facing.py`: CLAUDE.md calls it untrustworthy for `yaw_offset`.
+- `tools/probes/probe_carla_mesh_dims.py`: superseded by `probe_carla_props.py` (per CLAUDE.md).
+- `tools/probes/probe_carla_mesh_facing.py`: CLAUDE.md calls it untrustworthy for `yaw_offset`.
 - `Simulate.routeForTesting` and `ScenarioIO.buildParamsForTesting`: test hooks only. Keep them.
 
 ## 4. Messy areas
@@ -114,8 +115,9 @@ Also check:
 - **"phase 1/2/3" in code and headers** (`// ── Batch generation (phase 2) and coverage sampling (phase 3)`, `Cached CARLA lane graph (phase 2)`). These refer to past project plans and mean nothing to a reader now.
 - **Two READMEs.** `README.md` and `README_UPDATED.md` overlap. Merge them into one.
 - **Presentation material in the app repo.** `generate_pptx.py` (680 lines), `frontend/presentation.html` (758), the committed `OpenSCENARIO_Editor_Praesentation.pptx`, and the `/api/presentation.pptx` route in `main.py`. Unrelated to the editor. Candidate to move to `docs/` or a separate repo (your decision).
-- **`tests/` mixes four kinds of thing.** Fast tests, Playwright e2e suites, CARLA runners (`run_*_carla.py`) and one-off CARLA probes (`probe_*.py`, `capture_carla_aerial.py`) sit in one flat directory. Suggest subfolders such as `tests/e2e/`, `tests/carla/` and `tools/probes/`. This changes paths that `run_tests.sh`, `tests/README.md` and CLAUDE.md cite, so it needs its own commit.
-- **`tests/carla_cases.py` and `run_carla_cases.py` are stale by their own admission** (CLAUDE.md "CARLA behavioural tests": not re-baselined, `SCENARIO_GOAL` is dead). Decide whether to re-baseline or delete.
+- ~~**`tests/` mixes four kinds of thing.**~~ Done: `tests/e2e/`, `tests/carla/`, `tools/probes/`.
+- **`test_bg_traffic_e2e.py`'s shortfall check races the traffic cache**: it reads `#bg-status` the moment 200-car data arrives, which is instant once the server has cached that request, while a debounced regeneration from the preceding `loadJSON` still shows „Wird erzeugt …". Passes on a fresh server, fails on every re-run against the same one (seen 2026-10-16). Fix the test's wait, not the module.
+- **`tests/carla/carla_cases.py` and `run_carla_cases.py` are stale by their own admission** (CLAUDE.md "CARLA behavioural tests": not re-baselined, `SCENARIO_GOAL` is dead). Decide whether to re-baseline or delete.
 - **CLAUDE.md is 2300 lines.** It is the main orientation document, and much of it is history ("used to…", dated measurements). It is exempt from the 400-line rule, but trimming history out of it follows the same spirit. Do this last, so it describes the cleaned code.
 - **`map_renderer.py` header comment** says the colours are "matched to SafetyPool Studio dark palette". Check it is still true.
 

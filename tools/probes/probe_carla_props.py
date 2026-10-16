@@ -19,8 +19,8 @@ default, like capture_carla_aerial.py), never run.sh's 2010. Every actor it
 spawns is destroyed before the next one.
 
     cd ~/yungloon/fail2drive/f2d_carla && ./CarlaUE4.sh -carla-port=2050 -RenderOffScreen -nosound &
-    /home/dellpro2/Antonio/carla-venv/bin/python tests/probe_carla_props.py            # catalogue
-    /home/dellpro2/Antonio/carla-venv/bin/python tests/probe_carla_props.py --all      # every static.prop.* in the build
+    /home/dellpro2/Antonio/carla-venv/bin/python tools/probes/probe_carla_props.py            # catalogue
+    /home/dellpro2/Antonio/carla-venv/bin/python tools/probes/probe_carla_props.py --all      # every static.prop.* in the build
 """
 
 import math

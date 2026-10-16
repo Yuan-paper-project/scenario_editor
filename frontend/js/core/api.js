@@ -27,7 +27,7 @@
       return res.json();
     },
 
-    // Aerial image pyramid meta (tests/capture_carla_aerial.py). 404 is the
+    // Aerial image pyramid meta (tools/probes/capture_carla_aerial.py). 404 is the
     // normal answer for Town10 and uploaded maps, so it resolves to null.
     async getAerialMeta(town) {
       const res = await fetch(`/api/maps/${encodeURIComponent(town)}/aerial`);

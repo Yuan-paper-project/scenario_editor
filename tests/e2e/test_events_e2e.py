@@ -7,7 +7,7 @@ set_distance, assign_route, follow_trajectory — plus the editing rules and the
 failure modes where an event silently disappears from the export.
 
     bash run.sh 9090            # terminal 1
-    .venv/bin/python3 tests/test_events_e2e.py
+    .venv/bin/python3 tests/e2e/test_events_e2e.py
 """
 
 import os

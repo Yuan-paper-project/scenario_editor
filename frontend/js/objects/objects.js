@@ -234,7 +234,7 @@
     nearestLaneProjection: _nearestLaneProjection,
     // The vehicle placement/drag snap: {x, y, z, yaw} on the nearest driving or
     // parking lane centre within 12 m, or null. `prevYaw` breaks ties between
-    // overlapping junction connectors (tests/test_vehicle_snap_e2e.py).
+    // overlapping junction connectors (tests/e2e/test_vehicle_snap_e2e.py).
     vehicleLaneSnap: _vehicleLaneSnap,
   };
 })();

@@ -1,7 +1,7 @@
 """Drive assign_route scenarios in real CARLA and compare each route actor's
 track with the route the editor draws and the preview drives.
 
-    .venv/bin/python3 tests/run_route_carla.py scenario.json [more.json …]
+    .venv/bin/python3 tests/carla/run_route_carla.py scenario.json [more.json …]
 
 Each argument is an editor save file (the Speichern/Laden format). It is loaded
 into the editor, every actor with an assign_route event has its drawn route

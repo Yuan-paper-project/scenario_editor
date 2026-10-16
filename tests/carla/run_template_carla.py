@@ -1,7 +1,7 @@
 """Run scenario templates in real CARLA, with an ego that actually drives.
 
-    .venv/bin/python3 tests/run_template_carla.py                 # every case
-    .venv/bin/python3 tests/run_template_carla.py pull-out ped     # names containing these
+    .venv/bin/python3 tests/carla/run_template_carla.py                 # every case
+    .venv/bin/python3 tests/carla/run_template_carla.py pull-out ped     # names containing these
 
 The tpl-* cases in run_carla_cases.py predate ego authoring: their ego has no
 events and no start speed, so it stands still and every distance_to_ego

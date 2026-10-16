@@ -9,7 +9,7 @@ records one CSV row per actor per tick, and exits on SIGINT/SIGTERM.
 
     source /home/dellpro2/Antonio/carla-venv/bin/activate
     export PYTHONPATH="/home/dellpro2/CC/carla_0.9.15/PythonAPI/carla/dist/carla-0.9.15-cp310-cp310-linux_x86_64.egg:/home/dellpro2/CC/carla_0.9.15/PythonAPI/carla:/home/dellpro2/CC/carla_0.9.15/PythonAPI"
-    python tests/carla_telemetry.py --out /tmp/probe.csv --seconds 10
+    python tests/carla/carla_telemetry.py --out /tmp/probe.csv --seconds 10
 
 THE ONE RULE: never call world.tick(). ScenarioRunner owns the clock in
 synchronous mode; a second ticking client advances the world underneath it and

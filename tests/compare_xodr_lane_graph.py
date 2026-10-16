@@ -2,7 +2,7 @@
 compare_xodr_lane_graph.py — validate backend/lane_graph/lane_graph_builder.py (the
 from-.xodr topology builder) against the CARLA-probed maps/<Town>/lane_graph.json
 files, without needing a live CARLA connection. Those files are gitignored —
-regenerate them with tests/probe_carla_lane_graph.py; a town without one is
+regenerate them with tools/probes/probe_carla_lane_graph.py; a town without one is
 skipped.
 
 Besides the per-lane table below, the ROUTING graph is compared, since that is

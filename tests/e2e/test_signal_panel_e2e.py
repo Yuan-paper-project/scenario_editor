@@ -5,7 +5,7 @@ show must be hidden again when a light is selected — the type picker was not,
 and a light clicked after a car showed „Typ: Auto". Also covers the signal's
 own card: add, switch state, change distance, delete, undo, export.
 
-    bash run.sh 9090 && .venv/bin/python3 tests/test_signal_panel_e2e.py
+    bash run.sh 9090 && .venv/bin/python3 tests/e2e/test_signal_panel_e2e.py
 """
 
 import sys
@@ -113,7 +113,7 @@ with sync_playwright() as p:
 
     # ── A light the .xodr has but CARLA does not (Town10HD) ─────────────────
     # A Schaltung on one aborts the run with "Unknown traffic light"
-    # (maps/<town>/carla_traffic_lights.json, tests/probe_carla_traffic_lights.py).
+    # (maps/<town>/carla_traffic_lights.json, tools/probes/probe_carla_traffic_lights.py).
     H.select_map(page, "Town10HD")
     ghost = page.evaluate("AppState.mapData.trafficLights.find(l => l.inCarla === false)")
     real = page.evaluate("AppState.mapData.trafficLights.find(l => l.inCarla === true)")

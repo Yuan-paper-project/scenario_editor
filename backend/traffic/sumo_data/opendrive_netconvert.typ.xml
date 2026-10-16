@@ -1,6 +1,6 @@
 <!-- Copied from CARLA 0.9.15 Co-Simulation/Sumo/util/data/opendrive_netconvert.typ.xml
      (MIT License, Copyright (c) 2017 Computer Vision Center (CVC) at the Universitat Autonoma de Barcelona).
-     One change for background traffic (backend/bg_traffic.py): `parking` lanes disallow all vehicles,
+     One change for background traffic (backend/traffic/bg_traffic.py): `parking` lanes disallow all vehicles,
      so SUMO never routes a background car through a parking bay. -->
 <types xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/types_file.xsd">
     <type id="driving"       priority="1"  speed="13.89" width="3.65" disallow="pedestrian rail rail_urban rail_electric rail_fast tram ship"/>

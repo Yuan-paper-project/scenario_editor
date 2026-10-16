@@ -19,7 +19,7 @@ def _extract_traffic_lights(root: ET.Element, xodr_path: Path | None = None) -> 
     Each carries `signalId` (the .xodr id), `roads` — the junction connector
     roads whose `<signalReference>` names it, i.e. the lanes it governs (every
     connector in the bundled towns references at most one light) — and, when
-    `maps/<town>/carla_traffic_lights.json` exists (tests/probe_carla_traffic_lights.py),
+    `maps/<town>/carla_traffic_lights.json` exists (tools/probes/probe_carla_traffic_lights.py),
     `inCarla`: whether the CARLA build has an actor within 2 m. A signal event
     on a light without one makes ScenarioRunner raise "Unknown traffic light"
     and abort the run (Town10HD's traffic_light_10/11).

@@ -1,7 +1,7 @@
 """Record where CARLA actually has traffic-light actors, per bundled town.
 
     PYTHONPATH=<carla egg>:<PythonAPI/carla> /home/dellpro2/Antonio/carla-venv/bin/python \
-        tests/probe_carla_traffic_lights.py [--port 2010] [Town01 Town05 ...]
+        tools/probes/probe_carla_traffic_lights.py [--port 2010] [Town01 Town05 ...]
 
 Writes maps/<Town>/carla_traffic_lights.json: [{id, x, y, z}] in the editor's
 frame (CARLA world coordinates, no flip). backend/xodr/map_renderer.py reads it to

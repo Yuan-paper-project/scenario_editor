@@ -15,7 +15,7 @@ an NPC; and a legacy save file with an actor-level `ego.trajectory` still
 loads, migrated into a follow_trajectory event.
 
     bash run.sh 9090            # terminal 1
-    .venv/bin/python3 tests/test_ego_events_e2e.py
+    .venv/bin/python3 tests/e2e/test_ego_events_e2e.py
 """
 
 import json
@@ -428,7 +428,7 @@ with sync_playwright() as p:
     # ── Initial speed: the Storyboard Init SpeedAction ───────────────────────
     # Split default by design. Placing an actor in the editor gives it 10 m/s
     # (ObjectsManager.DEFAULT_INIT_SPEED); a payload that simply omits the field
-    # — a legacy save, an LLM payload, every tests/carla_cases.py case — gets 0
+    # — a legacy save, an LLM payload, every tests/carla/carla_cases.py case — gets 0
     # and exports exactly as it did before the feature existed.
     # Clear first: the seeds above left an NPC on the spawn point this places on.
     page.evaluate("""() => AppState.loadJSON({

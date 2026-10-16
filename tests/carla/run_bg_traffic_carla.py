@@ -1,6 +1,6 @@
 """Background traffic in real CARLA: exact replay, and the scenario untouched.
 
-    .venv/bin/python3 tests/run_bg_traffic_carla.py Town03:lead_brake:5:40 [--baseline]
+    .venv/bin/python3 tests/carla/run_bg_traffic_carla.py Town03:lead_brake:5:40 [--baseline]
 
 Each spec is town:type:seed:count — a generator scenario plus `count`
 background cars. The scenario is built through the real editor (generator,

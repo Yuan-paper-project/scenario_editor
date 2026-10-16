@@ -3,8 +3,8 @@
 Not a test: a one-off tool, like probe_carla_lane_graph.py. Needs a running
 CARLA and the `carla-venv` environment (this repo's own .venv has no `carla`):
 
-  /home/dellpro2/Antonio/carla-venv/bin/python tests/capture_carla_aerial.py              # every bundled CARLA town
-  /home/dellpro2/Antonio/carla-venv/bin/python tests/capture_carla_aerial.py Town03 Town05
+  /home/dellpro2/Antonio/carla-venv/bin/python tools/probes/capture_carla_aerial.py              # every bundled CARLA town
+  /home/dellpro2/Antonio/carla-venv/bin/python tools/probes/capture_carla_aerial.py Town03 Town05
 
 **It calls `load_world` once per town**, so point it at a CARLA nobody else is
 using — CARLA_PORT defaults to 2050, NOT run.sh's 2010. Start a private one with

@@ -181,7 +181,7 @@ def _process_root_to_render_data(root: ET.Element, town_name: str, xodr_path: Pa
                     # of the same road (road.lanes is otherwise flattened with
                     # no section marker) — assumes CARLA's waypoint.section_id
                     # numbers sections the same way, 0-based in s-order, which
-                    # tests/probe_carla_lane_graph.py cross-checks.
+                    # tools/probes/probe_carla_lane_graph.py cross-checks.
                     'sectionId': section_id,
                     'sStart': round(s_start, 2),
                     'sEnd': round(s_end, 2),

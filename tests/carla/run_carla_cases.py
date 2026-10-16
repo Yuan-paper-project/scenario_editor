@@ -1,8 +1,8 @@
 """Run the CARLA cases end to end and report what actually happened.
 
     bash run.sh 9090                      # terminal 1: the editor
-    .venv/bin/python3 tests/run_carla_cases.py            # all cases
-    .venv/bin/python3 tests/run_carla_cases.py tpl-stopping evt-assign-route
+    .venv/bin/python3 tests/carla/run_carla_cases.py            # all cases
+    .venv/bin/python3 tests/carla/run_carla_cases.py tpl-stopping evt-assign-route
 
 Per case: build the .xosc through the real editor, start the telemetry sidecar,
 run /home/dellpro2/Antonio/run.sh against it, then judge the result against

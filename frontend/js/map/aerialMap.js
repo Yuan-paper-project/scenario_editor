@@ -1,7 +1,7 @@
 /* ══════════════════════════════════════════════════════════════════
    aerialMap.js — CARLA aerial image under the map, and the base-map switch
 
-   The image is a JPEG tile pyramid rendered by tests/capture_carla_aerial.py
+   The image is a JPEG tile pyramid rendered by tools/probes/capture_carla_aerial.py
    (maps/<Town>/aerial/), already in CARLA world coordinates: level-0 pixel
    (0,0) sits at world (meta.x0, meta.y0) and there are meta.ppm pixels per
    metre, y pointing down — the editor's own frame, so tiles are placed with

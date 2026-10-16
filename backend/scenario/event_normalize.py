@@ -183,7 +183,7 @@ def _normalize_structured_event(
         #
         # Rejected rather than coerced, the same policy as an unknown prop id or
         # a dangling entity_ref: a payload the editor did not build (LLM,
-        # hand-written, tests/carla_cases.py) may have no waypoint on the actor
+        # hand-written, tests/carla/carla_cases.py) may have no waypoint on the actor
         # at all, and silently rewriting its first leg from a straight line into
         # a routed one would hand back a different scenario than the one asked
         # for.
@@ -327,7 +327,7 @@ def _normalize_actor(
     #
     # Defaults to 0, NOT to the editor's placement default of 10. This function
     # also normalises hand-written and LLM-generated payloads and every
-    # tests/carla_cases.py case, none of which mention the field — defaulting
+    # tests/carla/carla_cases.py case, none of which mention the field — defaulting
     # those to 10 would put every previously stationary actor into motion.
     actor.setdefault("initial_speed", 0.0)
     actor["initial_speed"] = max(0.0, min(100.0, float(actor["initial_speed"])))
@@ -335,7 +335,7 @@ def _normalize_actor(
     # simple_vehicle_control's consider_trafficlights / consider_obstacles.
     # Default True, which is what every export did before the per-actor
     # toggles existed — so a payload that never mentions them (LLM, hand-
-    # written, tests/carla_cases.py) is unchanged. Only a literal False turns
+    # written, tests/carla/carla_cases.py) is unchanged. Only a literal False turns
     # one off; a walker's are carried through and ignored by the emitter.
     for key in ("obey_traffic_lights", "obey_obstacles"):
         actor[key] = actor.get(key) is not False
