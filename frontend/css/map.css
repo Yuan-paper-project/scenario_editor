@@ -320,7 +320,7 @@
    wrapper is click-through so it never eats a map click; each child opts back
    in. Children are stacked, so either can be hidden without the other moving. */
 /* Centred in the strip to the RIGHT of the scale ruler, not on the map's 50%:
-   the preview bar (560 px) used to slide over the ruler when it was ~690. 272 px =
+   centred on the map, the 560 px preview bar slides over the ruler. 272 px =
    the ruler's 16 px inset + its widest pill (a bar ≤ ~170 px, mapCore.js
    _NICE_DISTS, plus label and padding) + a gap. On a map too narrow for the
    bar, .sim-controls shrinks (max-width) and the timeline takes the loss. */

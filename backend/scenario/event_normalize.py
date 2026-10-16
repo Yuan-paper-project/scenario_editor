@@ -264,7 +264,7 @@ def _normalize_actor(
 ) -> None:
     """Defaults and event normalisation for one scenario actor, ego or NPC.
 
-    `entity_name` is its own OpenSCENARIO name, used to reject or rewrite self-references.
+    `entity_name` is its own OpenSCENARIO name, against which self-references are rejected or rewritten.
     """
     actor.setdefault("z", 0.2)
     actor.setdefault("yaw", 0.0)

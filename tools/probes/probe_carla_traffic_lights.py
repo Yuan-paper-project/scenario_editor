@@ -10,9 +10,8 @@ mark each .xodr light `inCarla`.
 Why it is needed: a signal event is emitted as TrafficSignalStateAction
 name="pos=x,y", and ScenarioRunner looks the actor up within 2 m of that point
 (get_traffic_light_from_osc_name). A light the .xodr has but the CARLA build
-does not raises "Unknown traffic light" and aborts the whole run. Measured
-2026-10-09: Town01–07 match within 0.85 m; Town10HD's traffic_light_10/11 have
-no actor within 10 m.
+does not raises "Unknown traffic light" and aborts the whole run. Town01–07 match within 0.85 m; Town10HD's
+traffic_light_10/11 have no actor within 10 m.
 
 `load_world`s each town, so run it against an idle CARLA.
 """

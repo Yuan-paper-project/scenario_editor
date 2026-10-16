@@ -63,9 +63,8 @@
      is painted UNDER the glyphs (paint-order), so it reads as an outline rather
      than thickening the letterform. Default is white text over a dark casing;
      a variant with dark text inverts the stroke colour and nothing else.
-     This is not cosmetic at the current size — the labels are bigger and hold
-     further out than they used to, i.e. they now spend real time over the
-     light-coloured verges where plain white text disappeared. */
+     This is not cosmetic: labels hold far enough out to spend real time over
+     the light-coloured verges, where plain white text disappears. */
   stroke: rgba(20, 24, 40, 0.85);
   stroke-width: 0.8;
   paint-order: stroke;
@@ -265,7 +264,7 @@
 }
 
 /* Shaft: decoration. It runs from the body's edge to the handle, and hit-testing
-   it is what used to make a drag across the marker rotate instead of move. */
+   it would make a drag across the marker rotate instead of move. */
 .yaw-shaft {
   pointer-events: none;
 }

@@ -27,5 +27,7 @@ echo "════ biome (frontend JS/CSS)"
 .tools/biome ci --reporter=summary || status=1
 echo "════ shared-scope names (frontend split modules)"
 "$VENV/python" tools/check_shared_scopes.py || status=1
+echo "════ hygiene (frontend file size, change-log comments, dated CLAUDE.md)"
+"$VENV/python" tools/check_hygiene.py || status=1
 
 exit "$status"
