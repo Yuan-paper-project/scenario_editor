@@ -372,22 +372,6 @@ def export_bundle(body: dict):
     )
 
 
-@app.get("/api/presentation.pptx")
-async def download_presentation():
-    """Generate and serve the PowerPoint presentation."""
-    import subprocess
-    import sys
-
-    script = _HERE.parent / "generate_pptx.py"
-    out = _HERE.parent / "OpenSCENARIO_Editor_Praesentation.pptx"
-    subprocess.run([sys.executable, str(script)], cwd=str(_HERE.parent), check=True)
-    return FileResponse(
-        str(out),
-        media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        filename="OpenSCENARIO_Editor_Praesentation.pptx",
-    )
-
-
 @app.post("/api/export/route")
 async def export_route(request: Request):
     """Export ego route as a separate route XML file."""
