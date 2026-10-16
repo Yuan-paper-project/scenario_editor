@@ -157,62 +157,27 @@ def _process_root_to_render_data(root: ET.Element, town_name: str, xodr_path: Pa
             for ld in lane_defs:
                 if ld['type'] == 'none':
                     continue
-
-                poly = _build_lane_polygon_dynamic(sec_samples, ld, lane_defs, s_start, offsets, geom_segs)
-                color = LANE_COLORS.get(ld['type'], DEFAULT_LANE_COLOR)
-                # Connectors carry the kerb-side parking lane across junctions: paint it as carriageway.
-                if is_junction and ld['type'] == 'parking':
-                    color = LANE_COLORS['driving']
-
-                lane_entry = {
-                    'laneId': ld['id'],
-                    'type': ld['type'],
-                    'color': color,
-                    'polygon': poly,
-                    # Disambiguates a laneId recurring across sections; assumed to match CARLA's
-                    # section_id (0-based in s order, cross-checked by probe_carla_lane_graph.py).
-                    'sectionId': section_id,
-                    'sStart': round(s_start, 2),
-                    'sEnd': round(s_end, 2),
-                }
-
-                if ld['type'] in ('driving', 'bidirectional', 'parking', 'shoulder'):
-                    sign = +1.0 if ld['side'] == 'L' else -1.0
-                    lane_cl = []
-                    lane_widths = []
-                    side_lanes = [l for l in lane_defs if l['side'] == ld['side']]
-
-                    for sample, s_eval in zip(sec_samples, _section_eval_s(sec_samples, s_start)):
-                        cx, cy, cz, this_w = _lane_centre(
-                            sample, s_eval, ld, side_lanes, s_start, offsets, elevations, geom_segs
-                        )
-                        # A trailing s: consumers destructure positionally and ignore it.
-                        lane_cl.append([round(cx, 2), round(cy, 2), round(cz, 2), round(sample[3], 2)])
-                        lane_widths.append(round(this_w, 2))
-
-                    if ld['side'] == 'L':
-                        lane_cl.reverse()
-                        lane_widths.reverse()
-                    lane_entry['directionLine'] = lane_cl
-                    lane_entry['widths'] = lane_widths
-
-                lanes_out.append(lane_entry)
+                lanes_out.append(
+                    _lane_entry(
+                        ld,
+                        lane_defs,
+                        sec_samples,
+                        section_id,
+                        s_start,
+                        s_end,
+                        offsets,
+                        elevations,
+                        geom_segs,
+                        is_junction,
+                    )
+                )
 
         if not lanes_out:
             continue
 
-        centreline = []
-        for px, py, ph, s in samples:
-            cz = _eval_elevation(elevations, s)
-            elev_min = cz if elev_min is None else min(elev_min, cz)
-            elev_max = cz if elev_max is None else max(elev_max, cz)
-            # At a laneOffset step emit the left limit too, so the marking jogs instead of slanting.
-            s_evals = [s]
-            if s > 0.0 and abs(_eval_lane_offset(offsets, s - 1e-6) - _eval_lane_offset(offsets, s)) > 1e-3:
-                s_evals = [s - 1e-6, s]
-            for s_eval in s_evals:
-                cx, cy = _lateral_point(px, py, ph, _eval_lane_offset(offsets, s_eval), 0.0)
-                centreline.append([round(cx, 2), round(cy, 2), round(cz, 2), round(s, 2)])
+        centreline, (lo, hi) = _road_centreline(samples, elevations, offsets)
+        elev_min = lo if elev_min is None else min(elev_min, lo)
+        elev_max = hi if elev_max is None else max(elev_max, hi)
 
         roads_out.append(
             {
@@ -247,6 +212,65 @@ def _process_root_to_render_data(root: ET.Element, town_name: str, xodr_path: Pa
         'speedSigns': speed_signs,
         'grassColor': GRASS_COLOR,
     }
+
+
+def _lane_entry(ld, lane_defs, sec_samples, section_id, s_start, s_end, offsets, elevations, geom_segs, is_junction):
+    """One lane of one section: polygon and colour, plus directionLine and widths for a drivable type."""
+    poly = _build_lane_polygon_dynamic(sec_samples, ld, lane_defs, s_start, offsets, geom_segs)
+    color = LANE_COLORS.get(ld['type'], DEFAULT_LANE_COLOR)
+    # Connectors carry the kerb-side parking lane across junctions: paint it as carriageway.
+    if is_junction and ld['type'] == 'parking':
+        color = LANE_COLORS['driving']
+
+    lane_entry = {
+        'laneId': ld['id'],
+        'type': ld['type'],
+        'color': color,
+        'polygon': poly,
+        # Disambiguates a laneId recurring across sections; assumed to match CARLA's
+        # section_id (0-based in s order, cross-checked by probe_carla_lane_graph.py).
+        'sectionId': section_id,
+        'sStart': round(s_start, 2),
+        'sEnd': round(s_end, 2),
+    }
+
+    if ld['type'] in ('driving', 'bidirectional', 'parking', 'shoulder'):
+        sign = +1.0 if ld['side'] == 'L' else -1.0
+        lane_cl = []
+        lane_widths = []
+        side_lanes = [l for l in lane_defs if l['side'] == ld['side']]
+
+        for sample, s_eval in zip(sec_samples, _section_eval_s(sec_samples, s_start)):
+            cx, cy, cz, this_w = _lane_centre(sample, s_eval, ld, side_lanes, s_start, offsets, elevations, geom_segs)
+            # A trailing s: consumers destructure positionally and ignore it.
+            lane_cl.append([round(cx, 2), round(cy, 2), round(cz, 2), round(sample[3], 2)])
+            lane_widths.append(round(this_w, 2))
+
+        if ld['side'] == 'L':
+            lane_cl.reverse()
+            lane_widths.reverse()
+        lane_entry['directionLine'] = lane_cl
+        lane_entry['widths'] = lane_widths
+
+    return lane_entry
+
+
+def _road_centreline(samples, elevations, offsets) -> tuple[list, tuple[float, float]]:
+    """The road's reference line as [x, y, z, s] points, and its (min, max) height."""
+    centreline = []
+    elev_min = elev_max = None
+    for px, py, ph, s in samples:
+        cz = _eval_elevation(elevations, s)
+        elev_min = cz if elev_min is None else min(elev_min, cz)
+        elev_max = cz if elev_max is None else max(elev_max, cz)
+        # At a laneOffset step emit the left limit too, so the marking jogs instead of slanting.
+        s_evals = [s]
+        if s > 0.0 and abs(_eval_lane_offset(offsets, s - 1e-6) - _eval_lane_offset(offsets, s)) > 1e-3:
+            s_evals = [s - 1e-6, s]
+        for s_eval in s_evals:
+            cx, cy = _lateral_point(px, py, ph, _eval_lane_offset(offsets, s_eval), 0.0)
+            centreline.append([round(cx, 2), round(cy, 2), round(cz, 2), round(s, 2)])
+    return centreline, (elev_min, elev_max)
 
 
 # ── Public API ─────────────────────────────────────────────────────────────────
