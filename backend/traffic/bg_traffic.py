@@ -132,7 +132,6 @@ def generate(town: str, xodr: Path, body: dict) -> dict:
     off, diag = _net_info(net)
     keepout = _KeepOut(req["keepout"], req["clearance"], KEEPOUT_TIME_S)
     focus = req["focus"]
-    zone = _KeepOut([{"w": 0.0, "pts": pts} for pts in focus["paths"]], focus["radius"]) if focus else None
     rng = random.Random(req["seed"])
     result = {
         "version": FORMAT_VERSION,
