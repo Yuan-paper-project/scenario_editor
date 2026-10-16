@@ -22,7 +22,7 @@ echo "════ ruff check";   "$VENV/ruff" check . || status=1
 echo "════ pylint (module size, function size, duplicate code)"
 # Not tests/: a suite is long check sequences and spelled-out fixtures by design (ruff still covers it).
 # --recursive: tools/ has no __init__.py, so pylint could not load it as a package.
-"$VENV/pylint" --recursive=y backend tools generate_pptx.py || status=1
+"$VENV/pylint" --recursive=y backend tools || status=1
 echo "════ biome (frontend JS/CSS)"
 .tools/biome ci --reporter=summary || status=1
 
