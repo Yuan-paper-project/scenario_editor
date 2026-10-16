@@ -23,11 +23,8 @@
   } = GeneratorCore.shared;
 
   // ── Editable parameters per type (the recipe panel) ──────────────────────────
-  //
-  // `key` is both the _p() override key and the key in the build's `params`,
-  // which is where the panel reads the value the build actually used. Ranges
-  // are the generator's own draw ranges: outside them a site check or the
-  // trigger solve fails more often than it builds.
+  // `key` is the _p() pin key and the key in the build's `params`. Ranges are the generator's
+  // own draw ranges; outside them the site checks fail more often than not.
   const num = (key, label, unit, min, max, step) => ({ key, label, unit, kind: 'num', min, max, step });
   const bool = (key, label) => ({ key, label, kind: 'bool' });
   const choice = (key, label, options) => ({ key, label, kind: 'choice', options });
@@ -202,8 +199,7 @@
     ],
   };
 
-  /** Keep only overrides that name a parameter of this type, coerced and
-   * clamped to it. A save file or a stale recipe can carry anything. */
+  /** Only pins naming one of this type's parameters, coerced and clamped (files may carry anything). */
   function _cleanOverrides(typeKey, raw) {
     if (!raw || !typeKey || !PARAMS[typeKey]) return null;
     const out = {};

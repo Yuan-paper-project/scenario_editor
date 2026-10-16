@@ -1,36 +1,11 @@
 /**
- * scenarioGenerator.js — one-click random scenarios on the loaded map.
+ * scenarioGenerator.js — random test scenarios on the loaded map (ScenarioGenerator).
  *
- * Random events on their own almost never make a test: the other actor drives
- * off somewhere and never meets the ego. So nothing here is random at the
- * level of "pick an action". A generator is a SCENARIO TYPE (lead vehicle
- * brakes, cut-in, crossing pedestrian, junction cross traffic, obstacle) with
- * three parts:
- *
- *   1. a site query against the map — the lane graph's same-direction
- *      neighbours for a cut-in, crossing connector lanes for a junction
- *      conflict, the carriageway edge for a crossing pedestrian;
- *   2. parameter ranges (speeds, gaps, decelerations, timing offsets) drawn
- *      from one seeded RNG, so a seed reproduces the scenario exactly;
- *   3. timing that is relative to the EGO, never to the clock.
- *
- * Point 3 is what keeps a generated scenario meaningful when an AV under test
- * drives the ego instead of simple_vehicle_control: every NPC event starts on
- * `distance_to_ego`, with the radius solved from a target time-to-conflict, so
- * the conflict happens wherever and whenever the ego actually arrives. The ego
- * still gets an `assign_route` and a start speed, so the same file also runs
- * with the scripted controller.
- *
- * Everything starts from an ego CORRIDOR: a lane-centre polyline walked
- * forward through the lane graph from a random start, picking a random
- * successor at each fork. The ego's route waypoints are placed on the lane
- * just past each junction, which pins the turn the corridor took; the
- * computed route (Simulate.routeGeometry, i.e. what the preview and CARLA's
- * router would drive) is then checked against the corridor and the attempt is
- * thrown away if they disagree.
- *
- * Needs AppState.laneGraph, which every town has (a probed one or the
- * from-.xodr build in backend/lane_graph/lane_graph_builder.py).
+ * Random actions rarely make a test, so a generator is a scenario TYPE: a site query on the map,
+ * parameter ranges drawn from a seeded RNG (a seed reproduces it), and timing relative to the
+ * ego, never the clock — every NPC event starts on distance_to_ego, so the conflict happens
+ * wherever an AV-driven ego actually arrives. Each starts from an ego corridor walked through
+ * the lane graph; the ego's computed route must follow it or the attempt is dropped.
  */
 (() => {
   'use strict';
@@ -59,18 +34,13 @@
   } = GeneratorCore.shared;
 
   // ── Recipe panel (Übersicht tab) ─────────────────────────────────────────────
-  //
-  // The generated scenario's parameters as editable fields. Changing one pins
-  // it and rebuilds the scenario on the same site and seed; „Variante würfeln"
-  // keeps the pins and draws everything else afresh. Rendered by propertiesOverview.js
-  // (recipeHtml / bindRecipe), like the template panel.
+  // Changing a field pins it and rebuilds on the same site and seed; „Variante würfeln" redraws
+  // the rest. Rendered by propertiesOverview.js.
 
   const _escHtml = (v) =>
     String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
-  /** The value the build actually used — not the pin, which the site may
-   * not have allowed (an occluder needs a parking lane; a lead faster than
-   * the ego is capped). _recipeMismatch says when the two differ. */
+  /** The value the build used, not the pin, which the site may not have allowed. */
   function _recipeValue(r, spec) {
     const v = r.params?.[spec.key];
     if (spec.kind === 'bool') return !!v;
@@ -107,10 +77,7 @@
     const r = AppState.generated;
     if (!r || !PARAMS[r.type]) return '';
     const pins = r.overrides || {};
-    // A parameter this build never used (the person type of a breakdown, the
-    // vehicle of a standing pedestrian) is left out unless it is pinned: a
-    // select with no matching option would show its first one as if it had
-    // been chosen.
+    // Hide parameters this build never used, unless pinned: a select would show its first option.
     const used = (spec) => spec === EGO_SPEED || r.params?.[spec.key] !== undefined || Object.hasOwn(pins, spec.key);
     const rows = [EGO_SPEED, ...PARAMS[r.type]]
       .filter(used)
@@ -151,7 +118,6 @@
     </div>`;
   }
 
-  // Remembered across re-renders: the overview rebuilds its innerHTML wholesale.
   const _sweepUi = { open: false, key: null, from: null, to: null, steps: 5, weathers: false };
 
   function _sweepHtml(r) {
@@ -191,8 +157,7 @@
     return Confirm.show('Von Hand gemachte Änderungen am Szenario verwerfen und neu bauen?', 'Neu bauen');
   }
 
-  /** Wire the block recipeHtml() rendered. `rerender` redraws the panel, so
-   * a rebuild that failed shows the old values again. */
+  /** Wire the recipe block; `rerender` redraws it, so a failed rebuild shows the old values. */
   function bindRecipe(root, rerender) {
     const box = root.querySelector('[data-recipe]');
     if (!box) return;
@@ -228,8 +193,7 @@
 
     const sweep = box.querySelector('[data-sweep]');
     if (!sweep) return;
-    // Recorded on the summary click, not on 'toggle': toggle is dispatched as a
-    // later task, and a panel re-render in between draws the box closed again.
+    // On the summary click, not 'toggle', which fires after a re-render may have closed it.
     sweep.querySelector('summary').addEventListener('click', () => {
       _sweepUi.open = !sweep.open;
     });
@@ -261,9 +225,7 @@
     return !!(AppState.ego || AppState.npcs.length || AppState.staticObjects.length);
   }
 
-  /** Generating replaces the whole scenario. It is one undo step, but a
-   * scenario that took an hour to author deserves a question first —
-   * Strg/Cmd skips it, the app-wide "skip the confirm" modifier. */
+  /** Generating replaces the scenario: ask first (Strg/Cmd skips). */
   async function _confirmReplace(e) {
     if (!_hasScenario() || e.ctrlKey || e.metaKey) return true;
     return Confirm.show('Aktuelles Szenario durch ein generiertes ersetzen?', 'Ersetzen');
@@ -274,8 +236,7 @@
     return seedField?.value ? Number(seedField.value) : null;
   }
 
-  /** A used seed is cleared so the next click makes a new scenario; the seed
-   * that was used is in the toast and on the menu button's tooltip. */
+  /** Clear a used seed, so the next click makes a new scenario; the toast names it. */
   function _noteUsedSeed(info) {
     const seedField = document.getElementById('gen-seed');
     if (!info || !seedField) return;
@@ -284,8 +245,7 @@
       `Zufälliges Szenario erzeugen — zuletzt: ${info.label}, Seed ${info.seed}`;
   }
 
-  /** Arm "Generate here": the next map click builds `typeKey` (null = any
-   * type) at that spot. Esc disarms, like every other placement mode. */
+  /** Arm „Konflikt hier erzeugen" for `typeKey` (null = any); Esc disarms. */
   function armAt(typeKey = null) {
     if (!AppState.mapData) {
       Toast.error('Zuerst eine Karte laden');

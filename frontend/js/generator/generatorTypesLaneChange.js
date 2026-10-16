@@ -52,14 +52,9 @@
     return net.parking;
   }
 
-  /* Pull-out from a parallel parking bay (CARLA leaderboard "parked vehicle
-   * exiting a parallel parking bay cuts in front", NHTSA "leaving a parked
-   * position"). A car stands in a parking lane beside the ego's lane, ahead
-   * of it; when the ego approaches it pulls out into the ego's lane and drives
-   * on along the ego's road at a lower speed. Its route is seed -> a merge
-   * point on the ego's lane -> the ego's corridor, released by a set_speed on
-   * the ego's distance (a route alone does not move an actor). Needs a
-   * parking lane, so Town01/02/04 have no site. */
+  /* Pull-out from a parallel parking bay (CARLA leaderboard, NHTSA): routes seed → merge
+   * on the ego's lane → the ego's corridor, released by a set_speed on the ego's distance.
+   * No site on towns without parking lanes. */
   function _pullOut(rng, net, vEgo) {
     const parking = _parkingLanes(net);
     if (!parking.length) return null;
@@ -81,7 +76,6 @@
           )
             continue;
           const q = _projectOnLane(P, probe.x, probe.y);
-          // Beside the ego's lane, facing its way, not at a bay's very end.
           if (!q || q.d > 1.3 || q.s < 4 || q.s > P.length - 4) continue;
           if (Math.abs(_wrapDeg(q.yaw - pose.yaw)) > 20) continue;
           sites.push({ d, q, side });
@@ -101,16 +95,13 @@
     const vNpc = _p('npc_speed', vEgo * rng.range(0.45, 0.75));
     const mergeAhead = rng.range(9, 14);
     const dMerge = d + mergeAhead;
-    // dt > 0: the car is in the lane that long before the ego reaches the
-    // merge point; it then drives on slower, so the ego closes in on it.
+    // It is in the lane dt s before the ego reaches the merge, then slower.
     const dt = _p('arrival_offset_s', rng.range(0.3, 2.0));
     const npc = _vehicle(type, { x: q.x, y: q.y, yaw: q.yaw }, 0);
-    // The z of the parking lane itself, not of whatever lane is nearest.
     npc.z = r2(q.z + 0.5);
     const tMerge = _timeFromRest(mergeAhead + 2, vNpc);
     const sol = _solveTrigger(c, dMerge, tMerge + dt, vEgo, npc);
     if (!sol) return null;
-    // It reaches each light before the ego switches it green (_greenWave).
     npc.obey_traffic_lights = false;
     npc.events = [
       _routeEvent(npc, [_routeWp(_corridorAt(c, dMerge)), ..._corridorWaypoints(c, dMerge + 2)]),
@@ -134,12 +125,9 @@
     };
   }
 
-  /* Cut-in. A slower car in a same-direction neighbour lane, ahead of the ego,
-   * changes into the ego's lane once the ego has closed in on it. */
+  /* Cut-in: a slower car in a neighbour lane ahead changes into the ego's once it closes in. */
   function _cutIn(rng, net, vEgo) {
-    // Start on a lane that has a neighbour to cut in from, near enough its
-    // beginning that the NPC fits ahead of the ego on the same stretch. A
-    // uniformly random start finds one only on multi-lane towns, and rarely.
+    // Start on a lane with a neighbour, near its beginning; a random start rarely finds one.
     if (!net.multiLane) {
       net.multiLane = net.startable.filter(
         (L) =>
@@ -162,10 +150,8 @@
       rng.range(0, Math.max(0.5, start.length - 90)),
     );
     if (!c) return null;
-    // A lane on the corridor that has a same-direction driving neighbour —
-    // the lane graph's left/right are exactly that (get_left_lane() /
-    // get_right_lane() ground truth), which is the only legal lane-change
-    // target ChangeActorLateralMotion can reach.
+    // A corridor lane with a same-direction neighbour per the graph's left/right: the only
+    // targets ChangeActorLateralMotion can reach.
     const candidates = [];
     for (const sg of c.segs) {
       if (sg.L.junction || !sg.L.record) continue;
@@ -178,32 +164,24 @@
     if (!candidates.length) return null;
     const { sg, N, egoSide } = rng.pick(candidates);
 
-    // A clear speed difference and a short initial gap, so the ego closes in
-    // within one multi-lane stretch (Town10HD's are ~90-130 m long).
+    // Clear speed difference and short gap, so the ego closes in within one stretch.
     const vNpc = Math.min(_p('npc_speed', vEgo * rng.range(0.45, 0.7)), vEgo * 0.9);
     const lcDist = _p('lane_change_m', rng.range(10, 22)); // lateral move spread over this many metres
     const trigger = _p('trigger_m', rng.range(8, 26)); // cut in when the ego is this close
-    // The NPC spawns beside corridor distance dNpc, i.e. dNpc ahead of the ego,
-    // somewhere in this lane visit and far enough ahead that the ego has to
-    // close in before the trigger fires.
+    // Spawned dNpc ahead in this lane visit, far enough that the ego must close in first.
     const lo = Math.max(sg.startD + 3, trigger + 8);
     const hi = Math.min(sg.endD - 5, trigger + 35);
     if (lo > hi) return null;
     const dNpc = rng.range(lo, hi);
     const gap0 = dNpc;
     const tTrigger = (gap0 - trigger) / (vEgo - vNpc);
-    // Corridor distance at which the lateral move is done. It has to happen on
-    // N before N ends, and land in the ego's lane before THAT ends:
-    // ChangeActorLateralMotion only succeeds after 10 m driven in the target
-    // lane, and never fails otherwise, so a change that runs out of lane hangs
-    // the run (CLAUDE.md, CARLA behavioural tests).
+    // The change must finish on N and land with 10 m of the ego's lane left, or it hangs.
     const npcTravel = vNpc * tTrigger + lcDist;
     if (dNpc + npcTravel + 20 > sg.endD) return null;
     const egoPose = _corridorAt(c, dNpc);
     const onN = _projectOnLane(N, egoPose.x, egoPose.y);
     if (!onN || onN.d > 6 || onN.s + npcTravel + 15 > N.length) return null;
-    // The NPC changes TOWARD the ego lane: N is on the ego's `egoSide`, so the
-    // ego lane is on N's opposite side — and the graph must agree.
+    // Toward the ego's lane, i.e. away from `egoSide` — and the graph must agree.
     const npcDir = egoSide === 'left' ? 'right' : 'left';
     const back = N.record && N.record[npcDir];
     if (!back || net.refKey(back) !== sg.key) return null;
@@ -239,27 +217,16 @@
     };
   }
 
-  /** Corridor-distance the closer gains on the ego in `t` seconds when it
-   * ramps at `a` from the ego's speed to `dv` faster. */
+  /** Distance the closer gains on the ego in `t` s, ramping at `a` to `dv` faster. */
   function _closing(t, dv, a = VEHICLE_ACCEL) {
     const tr = dv / a;
     return t <= tr ? (a * t * t) / 2 : (dv * dv) / (2 * a) + dv * (t - tr);
   }
 
-  /* Lane change into a car approaching from behind (UN R171: "must detect and
-   * yield to a high-speed vehicle approaching from the rear in the target
-   * lane", the blind-spot and filtering-motorcycle cases; NHTSA "misjudged the
-   * distance and speed of vehicle B"). The ego's own events say it changes
-   * lanes at a point; a car in the target lane behind it, at the ego's speed,
-   * surges as the ego nears that point and is beside or just behind it when
-   * the ego moves over. An ego that changes regardless is hit; the system
-   * under test has to wait until it has passed.
-   *
-   * Both cars start at the same speed, so they keep their gap through the
-   * spawn ramp (the same acceleration limit), and the surge is released by the
-   * ego reaching a point (distance_to_point naming the ego), so the timing
-   * follows the ego wherever it is. The ego starts `g0` up the corridor and
-   * the car beside the corridor's start, on the same lane pair. */
+  /* Lane change into a car from behind (UN R171, NHTSA): the ego's own events change lanes at
+   * a point; a car in the target lane behind it surges as the ego nears that point. Both start
+   * at the same speed, so the spawn ramp keeps their gap; the surge is released by the ego
+   * reaching a point, so it follows the ego wherever it is. */
   function _rearApproach(rng, net, vEgo) {
     if (!net.multiLane) {
       net.multiLane = net.startable.filter(
@@ -309,9 +276,7 @@
     const gap = _p('gap_at_change_m', rng.range(2, 12)); // centre behind the ego's then
     const lcDist = _p('lane_change_m', rng.range(12, 20));
     const g0 = gap + _closing(tRel, dv);
-    // The surge needs the ego at cruise speed, and the change room on both
-    // lanes: 6 m same-lane run-in, the move, 10 m driven in the target lane
-    // (ChangeActorLateralMotion hangs without it), and a margin.
+    // The ego at cruise, plus room on both lanes: 6 m run-in, the move, 10 m in the target lane.
     const dRel = g0 + (vEgo * vEgo) / (2 * VEHICLE_ACCEL) + rng.range(5, 20);
     const dLc = dRel + vEgo * tRel;
     if (dLc + 6 + lcDist + 25 > sg.endD) return null;

@@ -12,22 +12,14 @@
   // ── Ego corridor ─────────────────────────────────────────────────────────────
 
   /**
-   * Walk forward from a random lane through random successors until
-   * `targetLen` metres are covered. Returns {pts, segs, length} or null when
-   * the walk dead-ends short of `minLen`.
-   *
-   * pts:  [{x, y, z, d, key, junction}] — d is arc length along the corridor
-   * segs: [{key, L, startD, endD, s0}]  — one per lane visited, s0 being where
-   *       on that lane the corridor entered it
+   * Walk from a lane through random successors for `targetLen` m; null if it dead-ends
+   * short of `minLen`. pts: [{x, y, z, d, key, junction}]; segs: [{key, L, startD, endD, s0}].
    */
   function _buildCorridor(rng, net, targetLen, minLen = targetLen * 0.75, startLane = null, startS = null) {
     if (!net.startable.length) return null;
     let L = startLane || rng.pick(net.startable);
     let s = startS ?? rng.range(2, Math.max(2.5, L.length - 15));
-    // "Generate here": the corridor is walked BACK from a lane at the click
-    // and then forced along that same path, so it passes the clicked spot. A
-    // type's own start lane (a multi-lane or two-way stretch) is a bias for a
-    // random draw, not a requirement — its site search runs on the corridor.
+    // Under a focus the corridor is forced along the path walked back from the click.
     let forced = null;
     if (_ctx.focus) {
       const start = _focusStart(rng, net, targetLen);
@@ -43,7 +35,6 @@
     while (L) {
       visited.add(L.key);
       const startD = total;
-      // First point is the exact entry pose, then every lane vertex past it.
       const entry = _laneAt(L, s);
       const lanePts = [{ ...entry }];
       for (let i = 0; i < L.pts.length; i++) {
@@ -95,8 +86,7 @@
     return !c.pts.some((p) => p.d >= d0 && p.d <= d1 && p.junction);
   }
 
-  /** A point `off` metres to the right of travel (negative = left). The map is
-   * y-down, so heading +x has its right-hand side at +y. */
+  /** A point `off` m right of travel (negative = left); y-down, so right of +x is +y. */
   function _lateral(pose, off) {
     const rad = pose.yaw / DEG;
     return { x: pose.x - Math.sin(rad) * off, y: pose.y + Math.cos(rad) * off };
@@ -108,8 +98,7 @@
     return { x: r1(p.x), y: r1(p.y), z: r2(p.z + WAYPOINT_CLEARANCE), strategy };
   }
 
-  /** Waypoints that pin the corridor's path from `dFrom` on: one just past
-   * every junction and one at the corridor's end. */
+  /** Waypoints pinning the corridor from `dFrom`: one past each junction, one at the end. */
   function _corridorWaypoints(c, dFrom, dTo = c.length) {
     const wps = [];
     for (const sg of c.segs) {
@@ -136,19 +125,14 @@
     };
   }
 
-  /** A conflict vehicle that must not defuse its own conflict: it runs reds
-   * and does not brake for what is ahead (simple_vehicle_control's
-   * consider_trafficlights / consider_obstacles, exported per actor). A
-   * crossing car that stops for the ego's car in front of it, or at a light
-   * the ego has green, is not cross traffic any more. */
+  /** A conflict vehicle ignores lights and obstacles, or it would brake and defuse its own conflict. */
   function _ignoresTraffic(actor) {
     actor.obey_traffic_lights = false;
     actor.obey_obstacles = false;
     return actor;
   }
 
-  /** An assign_route event whose waypoint 0 is the actor's own pose — the
-   * seed objectsPaths.js places and the backend requires to be 'fastest'. */
+  /** An assign_route whose waypoint 0 is the actor's pose ('fastest', as the backend requires). */
   function _routeEvent(actor, waypoints, id = 'evt-1') {
     const seed = ObjectsManager.routeWaypointAt(actor.x, actor.y);
     return {
@@ -168,8 +152,7 @@
       trigger,
       action: {
         type: 'set_speed',
-        // 'step' + 'rate' is self-contradictory; the backend forces 'linear'
-        // for a rate event, so say so here too (same as templates.js).
+        // 'step' + 'rate' contradict each other; the backend forces 'linear' anyway.
         dynamics: { shape: dimension === 'rate' ? 'linear' : 'step', dimension, value: r1(value) },
         target: { mode: 'absolute', value: r1(speed) },
       },
@@ -178,13 +161,8 @@
 
   const nearEgo = (value) => ({ type: 'distance_to_ego', value: r1(Math.max(4, value)) });
 
-  /** Centre-to-centre distance for a bumper-to-bumper `gap` between the ego
-   * and an actor of `type` straight ahead of it. distance_to_ego is measured
-   * between actor CENTRES (RelativeDistanceCondition, cartesian, freespace
-   * false), while a headway is a gap. Using the gap as the radius made the
-   * lead's brake unreachable: simple_vehicle_control follows at a 5 m
-   * bumper gap (DEFAULT_STANDOFF_DISTANCE), ~9.5 m centre to centre for two
-   * cars, so any radius below that never fired before the 60 s fallback. */
+  /** Centre distance for a bumper `gap` to an actor of `type` ahead: distance_to_ego is centre to
+   *  centre, and a follower keeps a 5 m bumper gap, so a gap-sized radius never fired. */
   function _centreDistance(gap, type) {
     return gap + (MapView.actorSize('ego').w + MapView.actorSize(type).w) / 2;
   }
@@ -197,20 +175,14 @@
     return v / accel + (dist - rampDist) / v;
   }
 
-  /** Corridor distance the ego needs before it is at cruise speed, plus a
-   * margin. A conflict placed earlier than this is solved against a speed the
-   * ego has not reached yet. */
+  /** Distance the ego needs to reach cruise speed, plus a margin. */
   function _egoRunUp(vEgo) {
     return (vEgo * vEgo) / (2 * VEHICLE_ACCEL) + 15;
   }
 
   /**
-   * The distance_to_ego radius that puts the ego `leadTime` seconds (at cruise
-   * speed) before corridor distance `dConflict` when it fires, measured from
-   * the triggering actor's spawn — RelativeDistanceCondition is plain
-   * cartesian distance between the two actors. Returns null when the ego
-   * would already be inside the radius at spawn (the event would fire on tick
-   * 1 and the timing would be meaningless).
+   * The distance_to_ego radius that fires `leadTime` s (at cruise) before the ego reaches
+   * `dConflict`, measured from the triggering actor's spawn; null if the ego would start inside it.
    */
   function _solveTrigger(c, dConflict, leadTime, vEgo, from) {
     const dEgo = dConflict - vEgo * leadTime;
@@ -258,9 +230,7 @@
     return null;
   }
 
-  /** Walk `dist` metres back from the start of lane `key` through
-   * predecessors, ending on an ordinary road lane. Returns {L, s, walked} or
-   * null. */
+  /** Walk `dist` m back from lane `key` through predecessors to an ordinary lane: {L, s, walked} or null. */
   function _walkBack(rng, net, key, dist) {
     let walked = 0;
     let cur = key;
@@ -274,34 +244,27 @@
       }
       walked += P.length;
       cur = P.key;
-      // Ran out on a short road lane: spawning at its start is fine as long
-      // as there is a usable run-up.
+      // Ran out on a short road lane: its start will do, given enough run-up.
       if (!P.junction && walked >= dist * 0.6 && P.length >= 6) return { L: P, s: 1, walked: walked - 1 };
     }
     return null;
   }
 
-  /** 'left' | 'right' | 'straight' for a junction connector, from the change
-   * of heading across it. The map is y-down, so a left turn is a NEGATIVE
-   * change of yaw. 45° either way is a turn; a slight bend is still straight. */
+  /** 'left' | 'right' | 'straight' from the heading change across a connector (left is negative, y-down). */
   function _turnKind(L) {
     const d = _wrapDeg(_laneAt(L, L.length).yaw - _laneAt(L, 0).yaw);
     return d < -45 ? 'left' : d > 45 ? 'right' : 'straight';
   }
 
-  /** The innermost opposite-direction lane beside the ego's lane at this lane
-   * visit — lane 1 opposite lane -1 on the same road section — or null when
-   * the ego is not in the innermost lane or the road is one-way. */
+  /** The innermost oncoming lane beside the ego's (lane 1 vs -1), or null if not innermost or one-way. */
   function _oncomingLane(net, sg) {
     const id = sg.L.lane.laneId;
     if (Math.abs(id) !== 1) return null;
     return net.lanes.get(`${sg.L.road.id}:${sg.L.lane.sectionId}:${-id}`) || null;
   }
 
-  /** Walk `dist` metres forward from (lane `key`, arc length `s`) through
-   * successors, ending on an ordinary road lane: a landing inside a junction
-   * is carried on to POST_JUNCTION_WP_M past its exit, where a route waypoint
-   * is unambiguous. Returns {L, s} or null at a dead end. */
+  /** Walk `dist` m forward through successors to an ordinary lane; a junction landing carries on to
+   *  POST_JUNCTION_WP_M past the exit. {L, s} or null. */
   function _walkForward(rng, net, key, s, dist) {
     let L = net.lanes.get(key);
     let left = dist;

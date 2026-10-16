@@ -28,9 +28,7 @@
     _turnKind,
   } = GeneratorCore.shared;
 
-  /** Lateral offsets (right positive) at which a line across the road at
-   * `pose` leaves the carriageway on each side — or null where it does not
-   * within `maxM`. */
+  /** Lateral offsets (right positive) where a line across the road at `pose` leaves the carriageway; null beyond `maxM`. */
   function _carriagewayEdges(net, pose, maxM = 25) {
     const near = net.polys.filter(
       (p) =>
@@ -58,9 +56,7 @@
     return { right: edge(1), left: edge(-1) };
   }
 
-  // Sidewalk only. A shoulder or parking lane looks walkable but on Town04's
-  // highways the shoulder ends at a guardrail, and CARLA refused a pedestrian
-  // spawned against it; nobody crosses a road from there anyway.
+  // Sidewalk only: a shoulder can end at a guardrail (Town04), where CARLA refuses the spawn.
   const WALKABLE_TYPES = new Set(['sidewalk']);
   const KERB_ALLOWANCE = 0.4; // extra spawn height for an actor starting off the carriageway
   function _onWalkable(net, q) {
@@ -81,10 +77,8 @@
     cyclist: { speed: [3.0, 5.5], maxCross: 30 },
   };
 
-  /* Crossing VRU. A pedestrian, child or cyclist crosses the ego's lane,
-   * released so that it enters the ego's path a chosen time before or after
-   * the ego reaches it. Pedestrians may step out from behind a parked
-   * vehicle. */
+  /* Crossing VRU: a pedestrian, child or cyclist crosses the ego's lane, entering its path a
+   * chosen time before or after the ego; pedestrians may step out from behind a parked van. */
   function _vruCrossing(rng, net, vEgo) {
     const c = _buildCorridor(rng, net, rng.range(160, 260));
     if (!c) return null;
@@ -115,44 +109,31 @@
     const onCrosswalk = crosswalks.length > 0 && rng.chance(0.6);
     if (onCrosswalk) dConflict = rng.pick(crosswalks).d;
     else dConflict = rng.range(dMin, c.length - 20);
-    // The crossing runs perpendicular to the corridor, which only means
-    // "across the road" on a straight lane — inside a junction connector the
-    // corridor is turning and the line would cut the corner diagonally.
+    // Perpendicular to the corridor is only "across" on a straight lane, not in a connector.
     const clearance = onCrosswalk ? 3 : 12;
     if (!_junctionFree(c, dConflict - clearance, dConflict + clearance)) return null;
     return _vruCrossingAt(rng, net, vEgo, c, dConflict, type, v, { onCrosswalk });
   }
 
-  /** The crossing itself, across the corridor at `dConflict`: kerb to kerb
-   * perpendicular to the corridor there, released on the ego's distance so the
-   * VRU enters the ego's path `arrival_offset_s` before it does. Shared by the
-   * straight-road crossing and the one on the road the ego turns into; the
-   * draws are in the order _vruCrossing always made them, so its seeds are
-   * unchanged. `opts.occluder` false skips the parked-van option (no draw). */
+  /** The crossing at `dConflict`, kerb to kerb, released on the ego's distance. Shared with the
+   *  turn crossing; the draw order is _vruCrossing's, so its seeds are unchanged. `opts.occluder`
+   *  false skips the parked van (no draw). */
   function _vruCrossingAt(rng, net, vEgo, c, dConflict, type, v, opts = {}) {
     const prof = VRU_PROFILES[type];
     const onCrosswalk = !!opts.onCrosswalk;
-    // A caller may give the crossing line itself (a crosswalk at a turn,
-    // which need not be square to the ego's path there): `pose` is where it
-    // meets the ego's lane, and its yaw the road direction along it.
+    // A caller may give the crossing line (a crosswalk at a turn): `pose` where it meets the
+    // ego's lane, its yaw the road direction.
     const pose = opts.pose || _corridorAt(c, dConflict);
     const edges = _carriagewayEdges(net, pose);
     if (edges.right === null || edges.left === null) return null;
     const fromRight = _p('from', rng.chance(0.65) ? 'right' : 'left') === 'right';
-    // Start and finish on something walkable just past the carriageway edge.
-    // "Past the edge" alone is not enough: on Town10HD it was a building
-    // wall, CARLA refused to spawn the cyclist there, and the whole run
-    // failed with "Unable to add actors".
+    // Start and finish on a sidewalk past the edge: "just past" was a building wall on Town10HD.
     const kerbOff = (edgeOff) => {
       const sign = Math.sign(edgeOff);
       for (const k of [1.2, 0.8, 1.6, 0.5, 2.0]) {
         if (!_onWalkable(net, _lateral(pose, edgeOff + sign * k))) continue;
-        // A cyclist starts at the road edge, not on the sidewalk: it is a 1.8 m
-        // <Vehicle> set across the road, and from 1.2 m onto a narrow sidewalk
-        // its back end reached the wall behind it — CARLA refused 3 of 160
-        // crossing cyclists that way (tests/carla/probe_generated_spawns.py). The
-        // sidewalk is still required: without it the site was a guardrailed
-        // Town07 bridge, where the guardrail refused the spawn instead.
+        // A cyclist starts 0.8 m inside the edge: from the sidewalk its back end reached the wall
+        // behind it. The sidewalk is still required (else a guardrailed bridge was picked).
         return type === 'cyclist' ? edgeOff - sign * 0.8 : edgeOff + sign * k;
       }
       return null;
@@ -166,11 +147,9 @@
     const end = _lateral(pose, endOff);
     const kerbEdge = _lateral(pose, fromRight ? edges.right : edges.left);
 
-    // dt > 0: the VRU is already in the lane when the ego arrives (must brake);
-    // dt < 0: the ego arrives first and the VRU steps out just behind/in front.
+    // dt > 0: the VRU is in the lane when the ego arrives; dt < 0: the ego is first.
     const tVru = Math.abs(startOff) / v;
-    // A walker clears a 2 m-wide car's path in ~1.3 s, so an offset much past
-    // +0.8 s is mostly a near miss rather than a conflict.
+    // A walker clears a car's path in ~1.3 s, so beyond +0.8 s it is mostly a near miss.
     const dt = _p('arrival_offset_s', rng.range(-0.5, 0.8));
     const sol = _solveTrigger(c, dConflict, tVru + dt, vEgo, start);
     if (!sol) return null;
@@ -185,21 +164,14 @@
       type,
       x: sx,
       y: sy,
-      // The start is on the sidewalk, which the elevation profile does not
-      // model: Town02's is 0.32 m above the road there, the walker's capsule
-      // reached into it at the editor's usual 0.6 m and CARLA refused the
-      // spawn (tests/carla/probe_generated_spawns.py). High is free — it settles.
-      // Height from the corridor at the crossing, not from the nearest lane:
-      // next to an overpass the nearest lane is the wrong level (a cyclist on
-      // Town03 came out at z 5.8 and could not spawn).
+      // From the corridor at the crossing (not the nearest lane, which may be an overpass),
+      // raised for the unmodelled kerb (Town02's is 0.32 m) — high is free, it settles.
       z: r2(pose.z + 0.6 + KERB_ALLOWANCE),
       yaw: Math.round(heading),
       initial_speed: 0,
       events: [],
     };
-    // follow_trajectory, not set_speed: a cyclist is a <Vehicle>, and
-    // SimpleVehicleControl ignores heading and lane-follows, so a set_speed
-    // cyclist rides along the road instead of across it (CLAUDE.md).
+    // A trajectory, since a set_speed cyclist would ride along the lane.
     const vertex = (x, y) => ({ x, y, z: r2(pose.z + WAYPOINT_CLEARANCE), velocity: r1(v) });
     vru.events = [
       {
@@ -208,13 +180,9 @@
         action: { type: 'follow_trajectory', trajectory: [vertex(sx, sy), vertex(ex, ey)] },
       },
     ];
-    // A walker that stops dead in the ego's lane, then carries on. A set_speed
-    // changes only the target speed; the trajectory's waypoints keep running
-    // underneath it, so speed 0 then speed v resumes the same path (measured
-    // in CARLA: stopped 3 s at mid-road, then walked on to the far kerb). The
-    // stop is triggered by the walker reaching the ego lane's centre itself —
-    // distance_to_point on its own entity. 1.5 m because the condition is 3-D
-    // and the walker's centre sits ~0.9 m above the point.
+    // A walker that stops in the ego's lane, then walks on: set_speed only changes the target, so
+    // the trajectory resumes (CARLA). Triggered on its own entity at the lane centre; 1.5 m
+    // because the condition is 3-D and the walker's centre is ~0.9 m up.
     const isWalker = MapView.isWalkerType(type);
     const hesitDraw = isWalker && rng.chance(0.3);
     const holdDraw = hesitDraw ? rng.range(1.5, 4) : 0;
@@ -242,10 +210,8 @@
     }
     vru.events.push(_speedEvent(hesitates ? 'evt-4' : 'evt-2', after('evt-1'), 0, 'time', 5));
 
-    // Occluder: a parked van or truck just upstream on the VRU's side, so the
-    // VRU is hidden until it steps out. Only where there is a parking lane to
-    // stand it in: a shoulder is often under a metre wide, and a van centred
-    // on one sticks into the ego's lane.
+    // Occluder: a van just upstream on the VRU's side, only in a real parking lane (a shoulder
+    // is too narrow; the van would stick into the ego's lane).
     const npcs = [vru];
     const sceneryIds = new Set();
     let occluded = false;
@@ -290,12 +256,8 @@
     };
   }
 
-  /* VRU crossing where the ego turns. The ego turns left or right at a
-   * junction, and a pedestrian or cyclist crosses the road it turns into just
-   * past the junction exit — on the crosswalk there when the map paints one —
-   * released so it is in the ego's path as the ego comes out of the turn.
-   * Euro NCAP CPTA / CBTA, NHTSA pre-crash "turning, encounters a pedestrian /
-   * pedalcyclist", the CARLA leaderboard's "turn yielding to bicycles". */
+  /* A pedestrian or cyclist crossing the road the ego turns into, just past the exit (on its
+   * crosswalk when painted). Euro NCAP CPTA / CBTA, NHTSA, the CARLA leaderboard. */
   function _turnVru(rng, net, vEgo) {
     const c = _buildCorridor(rng, net, rng.range(200, 300));
     if (!c) return null;
@@ -320,11 +282,8 @@
     );
     if (!turns.length) return null;
     const sg = rng.pick(turns);
-    // The crosswalk across the exit road, when the map paints one: that is
-    // where people cross at a corner, and where the kerb has no railing. A
-    // crossing moved a few metres off it (onto the exit road proper) put a
-    // walker against a Town05 corner barrier the .xodr does not have, and in
-    // CARLA it never moved.
+    // The exit road's crosswalk when painted: a few metres off it a Town05 walker stood
+    // against corner scenery the .xodr lacks and never moved in CARLA.
     const crosswalks = (AppState.mapData.crosswalks || [])
       .map((cw) => {
         let best = null;
@@ -342,24 +301,19 @@
     if (onCrosswalk) {
       const { d, cw } = rng.pick(crosswalks);
       dConflict = d;
-      // The crossing runs along the crosswalk. Its `heading` is either the
-      // walking or the stripe direction; the road direction is whichever of
-      // the two axes is closer to the exit road's, signed like it.
+      // Along the crosswalk: of its two axes, the one closer to the exit road's direction.
       const roadYaw = _corridorAt(c, Math.max(d, sg.endD + 3)).yaw;
       const yaw = [cw.heading, cw.heading + 90, cw.heading + 180, cw.heading + 270].reduce((b, y) =>
         Math.abs(_wrapDeg(y - roadYaw)) < Math.abs(_wrapDeg(b - roadYaw)) ? y : b,
       );
       if (Math.abs(_wrapDeg(yaw - roadYaw)) > 30) return null;
-      // Where the crosswalk's axis meets the ego's lane: nearest point on it
-      // to the corridor at d.
       const at = _corridorAt(c, d);
       const ux = -Math.sin(yaw / DEG),
         uy = Math.cos(yaw / DEG); // across the road
       const t = (at.x - cw.x) * ux + (at.y - cw.y) * uy;
       pose = { x: cw.x + t * ux, y: cw.y + t * uy, z: at.z, yaw: _wrapDeg(yaw) };
     } else {
-      // Kerb to kerb is perpendicular to the corridor, so the exit road has to
-      // be out of the junction and straight across the crossing.
+      // Without a crosswalk the exit must be clear of the junction and straight.
       dConflict = sg.endD + rng.range(3, 9);
       if (!_junctionFree(c, dConflict - 2, dConflict + 8)) return null;
       const a = _corridorAt(c, dConflict - 2),

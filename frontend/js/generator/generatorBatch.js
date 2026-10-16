@@ -12,8 +12,7 @@
 
   const SWEEP_MAX = 200;
 
-  /** The values a sweep over `spec` visits: every option of a choice or a
-   * bool, else `steps` evenly spaced from..to, rounded to the field's step. */
+  /** A sweep's values: every option of a choice or bool, else `steps` from..to rounded to the step. */
   function _sweepValues(spec, from, to, steps) {
     if (spec.kind === 'bool') return [false, true];
     if (spec.kind === 'choice') return spec.options.map(([k]) => k);
@@ -31,10 +30,9 @@
   }
 
   /**
-   * One scenario per value of `key` (× every weather preset when `weathers`),
-   * built from the open recipe on its site, as batch-export entries. The
-   * editor's own scenario is swapped out and put back exactly as
-   * generateBatch does it: plain assignment, undo suspended, `change {}`.
+   * One scenario per value of `key` (× every weather preset with `weathers`), built from the
+   * open recipe on its site, as batch-export entries; the editor's scenario is swapped out and
+   * restored as in generateBatch.
    */
   async function sweepFromRecipe({
     key,
@@ -156,11 +154,9 @@
     }
   }
 
-  // ── Batch generation (phase 2) and coverage sampling (phase 3) ──────────────
-
-  // Physically consistent conditions, rather than independent sliders: rain
-  // without a wet road, or fog with a clear sky, is not a condition anyone
-  // drives in. Snow and dust are left out — CARLA 0.9.15 renders neither.
+  // ── Batch generation and coverage sampling ──────────────────────────────────
+  // Consistent presets rather than independent sliders (rain needs a wet road). No snow or dust:
+  // CARLA 0.9.15 renders neither. weather.js's PRESETS carry the same values.
   const WEATHER_PRESETS = {
     klar: {},
     bewoelkt: { cloudy: 0.8 },
@@ -170,8 +166,7 @@
     nass: { cloudy: 0.3, wet_road: 0.7 },
   };
   const TIMES = ['daytime', 'morning', 'dusk', 'nighttime'];
-  // The towns the CARLA build run.sh starts actually ships (Town10 is a
-  // georeferenced map with no CARLA asset; uploaded maps have none either).
+  // The towns run.sh's CARLA build ships (not Town10, not uploaded maps).
   const CARLA_TOWNS = ['Town01', 'Town02', 'Town03', 'Town04', 'Town05', 'Town06', 'Town07', 'Town10HD'];
 
   function _weatherOf(preset) {
@@ -180,12 +175,8 @@
   }
 
   /**
-   * N combinations of the given dimensions ({name: [values]}) chosen greedily
-   * so every PAIR of values across two dimensions appears as early as
-   * possible (AETG-style pairwise coverage). Most interactions that break a
-   * system involve two factors — "cut-in at night", "pedestrian in fog" — so
-   * covering pairs is the cheap substitute for the full cross product, which
-   * here would be 5 × 8 × 6 × 4 = 960 scenarios.
+   * N combinations of `dims` ({name: [values]}) chosen greedily so every pair of values across two
+   * dimensions appears early (AETG-style pairwise coverage), instead of the full product.
    */
   function coveragePlan(n, dims, rng) {
     const names = Object.keys(dims);
@@ -199,10 +190,7 @@
       }
       return keys;
     };
-    // Ties on new pairs go to the combination whose values have been used
-    // least so far. Without it the plan covered pairs but not values: with
-    // eight scenario types a 9-item all-maps batch landed on only 6 of the 8
-    // towns, three of them twice.
+    // Ties go to the least-used values, or a plan covers pairs but skips values (towns).
     const used = new Map();
     const usage = (combo) => names.reduce((sum, nm) => sum + (used.get(`${nm}=${combo[nm]}`) || 0), 0);
     const plan = [];
@@ -225,9 +213,7 @@
     return plan;
   }
 
-  /** Switch the editor's map through the real selector and wait for both the
-   * render data and the lane graph — the same path a user's pick takes, so
-   * nothing about the map is set up differently for a batch. */
+  /** Switch maps through the real selector and wait for render data and lane graph. */
   async function _loadMap(town) {
     if (AppState.map === town && AppState.mapData && AppState.laneGraph) return true;
     const select = document.getElementById('map-select');
@@ -245,13 +231,9 @@
   const _tick = () => new Promise((r) => setTimeout(r, 0));
 
   /**
-   * Generate `count` scenarios and return {entries, skipped}: one export entry
-   * per scenario, {name, params, scenario, meta}, ready for /api/export/batch.
-   *
-   * The editor's own scenario (actors, weather, time, map) is put back exactly
-   * at the end, and nothing here records an undo entry. Each candidate is
-   * swapped into AppState by plain assignment, not set(): buildScenarioParams
-   * and toJSON read AppState, but nothing needs to render or record them.
+   * Generate `count` scenarios: {entries: [{name, params, scenario, meta}], skipped}, ready for
+   * /api/export/batch. Candidates are swapped into AppState by plain assignment (nothing renders
+   * or records undo) and the editor's own scenario is restored at the end.
    */
   async function generateBatch({
     count = 50,
@@ -266,8 +248,7 @@
   } = {}) {
     const baseSeed = Number(seed) > 0 ? Math.floor(Number(seed)) : _randomSeed();
     const rng = new Rng(baseSeed);
-    // `maps`: 'current', 'carla', or an array of town names (the dialog's
-    // selection). Towns missing from #map-select are dropped.
+    // `maps`: 'current', 'carla' or town names; towns missing from #map-select are dropped.
     const available = new Set([...document.getElementById('map-select').options].map((o) => o.value));
     const towns = Array.isArray(maps)
       ? maps.filter((t) => available.has(t))
@@ -275,7 +256,7 @@
         ? CARLA_TOWNS.filter((t) => available.has(t))
         : [AppState.map];
     if (!towns.length) towns.push(AppState.map);
-    // `typeKeys`: the selected subset; `typeKey` (one type) is the older form.
+    // `typeKeys`: the selected subset; `typeKey`, one type, still works.
     const allTypes = Object.keys(TYPES);
     let types = (typeKeys || (typeKey ? [typeKey] : allTypes)).filter((k) => TYPES[k]);
     if (!types.length) types = allTypes;
@@ -287,8 +268,7 @@
       time: varyWeather ? TIMES : ['__keep'],
     };
     let plan = coveragePlan(count, dims, rng);
-    // Without balancing the type is the generator's own random pick instead,
-    // from the selected subset (one selected type stays that type).
+    // Unbalanced: the generator picks from the subset.
     if (!balance && types.length > 1) plan = plan.map((p) => ({ ...p, type: subset }));
     // One map load per town, not one per scenario.
     plan = plan.map((p, i) => ({ ...p, i })).sort((a, b) => towns.indexOf(a.town) - towns.indexOf(b.town) || a.i - b.i);
@@ -321,9 +301,7 @@
           continue;
         }
         const s = baseSeed + item.i;
-        // A type this map cannot host (cut-in on single-lane Town01) falls
-        // back to another SELECTED type rather than leaving a hole in the
-        // batch; with a single type selected there is nothing to fall back to.
+        // A type this map cannot host falls back to another selected type.
         let r = build(item.type, s);
         let fellBack = false;
         if (!r && typeof item.type === 'string' && types.length > 1) {
@@ -384,9 +362,7 @@
       if (saved.map && saved.map !== AppState.map) await _loadMap(saved.map);
       Object.assign(AppState, saved.state);
       UndoStack.resume();
-      // emit, not set(): no undo entry. NOT 'stateLoaded' — undo.js clears the
-      // undo history on that. The weather sliders need no resync either: only
-      // AppState.weather was swapped, never the DOM, and it is back as it was.
+      // emit, not set(): no undo entry. Never 'stateLoaded', on which undo.js clears its history.
       AppState.emit('change', {});
       MapView.renderAllActors();
     }

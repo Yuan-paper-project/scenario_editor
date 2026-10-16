@@ -15,16 +15,12 @@
     return ev ? Simulate.routeGeometry(actor, ev) : null;
   }
 
-  /** The route the preview (and CARLA's router) would drive stays on the
-   * corridor from dFrom to its end. */
+  /** The route CARLA's router would drive stays on the corridor from dFrom on. */
   function _routeFollowsCorridor(actor, c, dFrom, dTo = c.length) {
     const route = _routeOf(actor);
     if (!route || route.length < 2) return false;
-    // ...and does not leave it. Every corridor point being near the route
-    // does not rule out a detour: a last waypoint just short of a junction can
-    // project onto a connector the router only reaches by driving round the
-    // block (Town03 slow_lead seed 2: a ~300 m corridor, a 1 km route), and
-    // that loop then runs past other actors' route ends.
+    // ...and does not detour: a last waypoint short of a junction can make the router drive
+    // round the block (Town03 slow_lead seed 2: a 1 km route for a 300 m corridor).
     let len = 0;
     for (let i = 1; i < route.length; i++) len += Math.hypot(route[i].x - route[i - 1].x, route[i].y - route[i - 1].y);
     if (len > dTo - dFrom + 40) return false;
@@ -35,10 +31,8 @@
     return true;
   }
 
-  /** No two actors spawn inside each other — CARLA refuses the second one
-   * ("collision at spawn position") and the whole run fails — and the ego does
-   * not start on top of an obstacle. Measured centre to centre against a
-   * radius per actor kind, which is conservative for a 4.5 m car. */
+  /** No two actors spawn inside each other (CARLA refuses, and the run fails) and the ego does not
+   *  start on an obstacle. Centre distances against a radius per kind. */
   const SPAWN_RADIUS = { walker: 0.8, vehicle: 2.6, prop: 1.0 };
   function _spawnsClear(ego, npcs, props) {
     const r = (a) =>
@@ -51,8 +45,7 @@
         if (Math.hypot(a.x - b.x, a.y - b.y) < r(a) + r(b) + 0.5) return false;
       }
       for (const p of props) {
-        // Props cluster on purpose (a cone taper), so only actor-vs-prop counts;
-        // the ego gets a run-up on top, so it does not spawn staring at one.
+        // Props cluster on purpose (a taper), so only actor-vs-prop; the ego gets a run-up too.
         const clear = actors[i] === ego ? 15 : r(actors[i]) + SPAWN_RADIUS.prop + 0.5;
         if (Math.hypot(actors[i].x - p.x, actors[i].y - p.y) < clear) return false;
       }
@@ -61,28 +54,16 @@
   }
 
   // ── Conflict check (internal) ────────────────────────────────────────────────
-  //
-  // Every candidate is run through the preview headlessly, with an ego that
-  // does NOT react: "what happens if the system under test does nothing".
-  // Only used to drop candidates where nothing happens or nothing could be
-  // avoided, and to locate the conflict (`at`) for a map-click build — it is
-  // never shown, graded or exported. From that run:
-  //
-  //   ttc_s        seconds from the NPC's trigger to first contact. The time
-  //                the system under test has to notice and act.
-  //   decel_mps2   constant deceleration the ego would need, starting at the
-  //                trigger, to stop short of the contact point. Upper bound for
-  //                a moving NPC (it ignores the NPC's own escape).
-  //   min_gap_m    smallest footprint-to-footprint distance when there is no
-  //                contact at all (a near miss even without reacting).
-  //
-  // An obstacle has no trigger; it is "triggered" at t = 0, so its numbers
-  // are about having seen it from the start.
+  // Each candidate runs through the headless preview with an ego that does not react. Used only
+  // to drop trivial/unavoidable candidates and to locate the conflict (`at`); never shown.
+  //   ttc_s       trigger to first contact (s)
+  //   decel_mps2  braking needed from the trigger to stop short (upper bound for a moving NPC)
+  //   min_gap_m   smallest footprint gap without contact
+  // A static obstacle counts as triggered at t = 0.
 
   // No contact and never closer than this: nothing to test.
   const TRIVIAL_GAP_M = 2.0;
-  // Contact sooner than this after the trigger, or needing more than this
-  // braking: no system could avoid it, so it tests nothing either.
+  // Contact sooner than this after the trigger, or more braking than this: unavoidable.
   const UNAVOIDABLE_TTC_S = 1.0;
   const UNAVOIDABLE_DECEL = 9.0;
 
@@ -152,11 +133,7 @@
     return out;
   }
 
-  /**
-   * Score a candidate {ego, npcs, props}. Returns
-   * {verdict, ttc_s, decel_mps2, min_gap_m, conflict_with, at}
-   * where verdict is 'ok' | 'trivial' | 'unavoidable' | 'no_run'.
-   */
+  /** Score a candidate {ego, npcs, props}: {verdict: 'ok'|'trivial'|'unavoidable'|'no_run', ttc_s, decel_mps2, min_gap_m, conflict_with, at}. */
   function assess(cand) {
     cand = { props: [], ...cand };
     const run = Simulate.runHeadless({ dt: 0.05, maxTime: 45, ego: cand.ego, npcs: cand.npcs, props: cand.props });
@@ -165,10 +142,7 @@
     const egoH = _headings(egoTr, cand.ego.yaw);
     const egoFp = _footprint(cand.ego);
 
-    // What the ego can hit: every NPC (moving or parked) and every prop.
-    // Scenery (the van a pedestrian steps out from behind) is part of the
-    // set-up, not the conflict: a parked car beside the ego's lane would
-    // otherwise score as a near miss.
+    // Every NPC and prop, except scenery (the occluding van), which would score as a near miss.
     const scenery = cand.sceneryIds || new Set();
     const others = [
       ...cand.npcs.filter((n) => !scenery.has(n.id)).map((n) => ({ a: n, tr: run.tracks[n.id] })),
@@ -178,14 +152,10 @@
     for (const o of others) {
       const fp = _footprint(o.a);
       const h = o.tr ? _headings(o.tr, o.a.yaw) : null;
-      // Trigger = the first ego-relative event this actor fired; a static
-      // thing (prop, parked car) is in view from the start.
-      // A type can name the event that IS the threat (the cyclist's swerve,
-      // not its riding at the kerb from t = 0); otherwise the first one.
+      // Trigger: the event the type names as the threat, else the first ego-relative one;
+      // a static thing is in view from the start.
       const threatId = cand.threats && cand.threats.get(o.a.id);
-      // Or another actor's event is what exposes it: the stopped car a lead
-      // cuts out from in front of is a threat from the cut, not from t = 0
-      // and not from its own (much later) drive-off.
+      // Or another actor's event exposes it (the car a lead cuts out from in front of).
       const rev = cand.revealedBy && cand.revealedBy.get(o.a.id);
       const trig = rev
         ? [run.fired[rev.actorId]?.[rev.eventId]].filter((t) => t != null)
@@ -196,9 +166,8 @@
       const hasEvents = !!rev || (o.a.events || []).length > 0;
       if (hasEvents && !trig.length) continue; // never released: not this actor's conflict
       let t0 = trig.length ? Math.min(...trig) : 0;
-      // Threat onset, where the type knows a better moment than the release:
-      // the crossing car passing the line into the junction, the pedestrian
-      // stepping off the kerb. Until then nothing says it will not stop.
+      // Onset, where the type knows better than the release (the car entering the junction, the
+      // walker leaving the kerb).
       const onset = cand.onsets && cand.onsets.get(o.a.id);
       if (onset && o.tr) {
         const k = o.tr.findIndex((p, i) => run.times[i] >= t0 && Math.hypot(p.x - onset.x, p.y - onset.y) < 1.5);
@@ -228,7 +197,6 @@
           break;
         }
       }
-      // Where it happens: the ego at contact, or at its closest approach.
       const atI = contact ?? minAt;
       const at = atI != null ? { x: r1(egoTr[atI].x), y: r1(egoTr[atI].y) } : null;
       let entry;
@@ -243,7 +211,6 @@
       } else {
         entry = { contact: false, ttc_s: null, decel_mps2: 0, min_gap_m: r1(Math.max(0, minGap)), with: o.a.type, at };
       }
-      // The worst conflict is the one that leaves the least time.
       const key = (e) => (e.contact ? e.ttc_s : 1000 + e.min_gap_m);
       if (!worst || key(entry) < key(worst)) worst = entry;
     }

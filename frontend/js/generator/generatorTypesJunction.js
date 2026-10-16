@@ -34,25 +34,10 @@
   } = GeneratorCore.shared;
 
   // ── Traffic lights: a green wave for the ego ─────────────────────────────────
-  //
-  // The ego obeys reds, and a four-way cycle holds one for up to ~40 s: in
-  // CARLA the ego sat 44 s at a red and reached the crossing pedestrian only as
-  // every Act's 60 s stop trigger ended the run. The preview models no lights,
-  // so it predicted a clean conflict. An AV under test waits there too.
-  //
-  // So every light the ego meets before the conflict is forced GREEN as it
-  // approaches, with the editor's own signal events (a Schaltung: ego within N m
-  // of the pole -> state). The light governing a connector lane comes straight
-  // from the .xodr — each junction connector carries a <signalReference> to
-  // exactly one light (map_renderer._extract_traffic_lights, `roads`).
-  //
-  // One forced state is not enough: TrafficLightStateSetter is a bare
-  // set_state, and the light's group controller overwrites it at its next
-  // phase change (a forced red lasted ~13 s in a Town05 run). simple_vehicle_
-  // control stops only for RED and only inside the light's trigger volume, just
-  // before the stop line — so the green is re-asserted at several distances,
-  // the last a few metres short of the line, leaving no window for a phase
-  // change to catch the ego there.
+  // The ego obeys reds (it once sat 44 s at one until the 60 s stop) and the preview models no
+  // lights, so every light before the conflict is forced green by Schaltungen on the ego's
+  // approach. Re-asserted at several distances, the last just short of the line: the group
+  // controller overwrites a forced state at its next phase change.
   const GREEN_WAVE_BEFORE_M = [55, 38, 24, 13, 5];
 
   /** Lights by the connector road they govern (CARLA lights only). */
@@ -66,10 +51,8 @@
     return net.lightByRoad;
   }
 
-  /** The lights an actor entering junction lane J has to obey: the one on J's
-   * own road, plus any on a connector sharing J's entry point. A light's
-   * trigger volume covers the approach lane, so a turn that is not itself
-   * referenced still stops at its neighbour's red. */
+  /** Lights governing junction lane J: its own road's, plus any on a connector sharing its entry
+   *  (a trigger volume covers the approach lane). */
   function _lightsFor(net, J) {
     const idx = _lightIndex(net);
     const entry = _laneAt(J, 0);
@@ -89,11 +72,7 @@
     return (net.byJunction.get(junctionId) || []).some((C) => idx.has(String(C.road.id)));
   }
 
-  /** trafficSignals entries forcing every light on the corridor before
-   * `dLimit` green as the ego approaches. Each Schaltung's radius is the 3-D
-   * distance from the pole (at road height, z from the map) to the corridor
-   * point that many metres before the stop line: ReachPositionCondition is a
-   * plain location.distance(). */
+  /** trafficSignals forcing every light before `dLimit` green; radii are 3-D pole-to-point distances. */
   function _greenWave(net, c, dLimit) {
     const signals = new Map();
     for (const sg of c.segs) {
@@ -111,7 +90,6 @@
             trigger_distance: r1(r + 0.3),
           });
         }
-        // An entry at the very start of the corridor gets at least one.
         if (!sig.events.length) {
           sig.events.push({ id: 'traffic-event-1', state: 'green', trigger_distance: 1000 });
         }
@@ -121,10 +99,8 @@
     return [...signals.values()];
   }
 
-  // The conflict shapes the regulations and crash typologies name (Euro NCAP
-  // CCFtap / CCFhol, NHTSA LTAP/OD and SCP, UN R171's turn-across-path and
-  // crossing cases). `ego`/`npc` are the turn each one makes; `approach` is
-  // where the NPC comes from relative to the ego.
+  // Conflict shapes from the regulations and crash typologies (Euro NCAP CCFtap/CCFhol, NHTSA
+  // LTAP/OD and SCP, UN R171); `ego`/`npc` are their turns, `approach` where the NPC comes from.
   const JUNCTION_LAYOUTS = {
     crossing: { label: 'Querverkehr, beide geradeaus', ego: 'straight', npc: 'straight', approach: 'side' },
     ego_left_oncoming: {
@@ -138,9 +114,7 @@
     ego_right_crossing: { label: 'Ego biegt rechts ab, Querverkehr', ego: 'right', npc: 'straight', approach: 'side' },
   };
 
-  /** Where the NPC comes from, seen from the ego approaching the junction:
-   * 'left' | 'right' | 'oncoming' | 'behind'. One coming from the ego's left
-   * travels toward its right, i.e. a heading +90° from the ego's (y-down). */
+  /** Where the NPC comes from, seen by the ego: 'left' | 'right' | 'oncoming' | 'behind' (y-down). */
   function _npcFrom(J, C) {
     const d = _wrapDeg(_laneAt(C, 0).yaw - _laneAt(J, 0).yaw);
     if (Math.abs(d) >= 135) return 'oncoming';
@@ -148,8 +122,7 @@
     return d > 0 ? 'left' : 'right';
   }
 
-  /** Which JUNCTION_LAYOUTS entry an ego connector J and an NPC connector C
-   * make, or 'other'. */
+  /** The JUNCTION_LAYOUTS entry connectors J (ego) and C (NPC) make, or 'other'. */
   function _junctionLayout(J, C, approachDiff) {
     const e = _turnKind(J),
       n = _turnKind(C);
@@ -160,20 +133,14 @@
     return 'other';
   }
 
-  /* Junction cross traffic. The ego's corridor crosses a junction; another
-   * vehicle approaches on a connector that crosses the ego's, released so both
-   * reach the crossing point at about the same time. The NPC ignores lights
-   * and obstacles (_ignoresTraffic), so it neither waits at a red nor brakes
-   * for the ego crossing in front of it; the ego's own light is forced green
-   * by build() (_greenWave), so at a signalized junction a perpendicular
-   * conflict is a red-light runner. */
+  /* Junction cross traffic: an NPC on a connector crossing the ego's, timed to meet it. It ignores
+   * lights and obstacles; with the ego's light forced green, a perpendicular conflict at a
+   * signalized junction is a red-light runner. */
   function _junctionConflict(rng, net, vEgo) {
     const c = _buildCorridor(rng, net, rng.range(200, 300));
     if (!c) return null;
     const dMin = _egoRunUp(vEgo) + vEgo * 3;
-    // A pinned layout narrows the junctions to ones where the ego makes the
-    // turn it needs. Unpinned, nothing is filtered and no extra draw is made,
-    // so every seed still builds what it built before the layout existed.
+    // A pinned layout filters junctions to the needed turn; unpinned, no filter and no draw.
     const wantLayout = _p('layout', null);
     const egoNeeds = JUNCTION_LAYOUTS[wantLayout]?.ego;
     const wantFrom = _p('npc_from', null);
@@ -203,13 +170,9 @@
     }
     if (!options.length) return null;
     const { C, X, oncoming, layout, from } = rng.pick(options);
-    // At a signalized junction the ego gets a forced green (_greenWave) and
-    // the NPC ignores lights, so a perpendicular conflict there is a
-    // red-light runner — a real case, not an artefact.
     const signalized = _junctionSignalized(net, J.junctionId);
 
-    // From "waiting at the line, pulls out" (6 m) to "approaching from well
-    // back" (55 m): the shorter the run-up, the less warning the ego gets.
+    // From waiting at the line (6 m) to approaching from well back (55 m).
     const back = _walkBack(rng, net, C.key, rng.range(6, 55));
     if (!back) return null;
     const npcPose = _laneAt(back.L, back.s);
@@ -221,25 +184,17 @@
     const sol = _solveTrigger(c, dX, tNpc + dt, vEgo, npcPose);
     if (!sol) return null;
 
-    // Route: past the junction onto C's successor, so A* reproduces C.
     const exitKey = (net.succ.get(C.key) || [])[0];
     const exitL = exitKey && net.lanes.get(exitKey);
     if (!exitL) return null;
     const exitS = Math.min(POST_JUNCTION_WP_M, exitL.length - 0.5);
     const exitPose = _laneAt(exitL, exitS);
-    // ...and well on past it. The route's end is where SimpleVehicleControl
-    // stops dead (_reached_goal), and right after the exit is often the road
-    // the ego turns onto: measured in CARLA (Town03 junction 238) the NPC
-    // parked 5 m past the junction, the ego stopped 8.7 m behind it and sat
-    // there until every Act's 60 s stop trigger, its own route never complete.
+    // ...and well on: the route's end is a dead stop, and just past the exit it blocked the
+    // ego until 60 s (CARLA, Town03).
     const runOn = _walkForward(rng, net, exitL.key, exitS, rng.range(60, 90));
     const runOnPose = runOn && _laneAt(runOn.L, runOn.s);
-    // ...unless "on past it" is the ego's own road. An NPC that turns into the
-    // ego's lane runs ahead of it, and 60–90 m on it parks on the ego's route:
-    // measured in CARLA (Town03 junction 655, seed 24) the scripted ego stopped
-    // 5.3 m behind it and waited out the 60 s stop trigger. Then it follows the
-    // corridor to its end and the ego's route ends 60 m short of that, as with
-    // the lead car; a run-on that merges into the ego's path later is refused.
+    // ...unless that is the ego's own road: then it follows the corridor to its end and the
+    // ego's route stops 60 m short (it parked on the ego's route in CARLA); a later merge is refused.
     let npcWps = runOnPose ? [_routeWp(exitPose), _routeWp(runOnPose)] : [_routeWp(exitPose)];
     let egoEndD;
     const endPose = runOnPose || exitPose; // the walk can dead-end: then the route stops at the exit
@@ -266,9 +221,7 @@
     _ignoresTraffic(npc);
     npc.events = [
       _routeEvent(npc, npcWps),
-      // A rate ramp at the controller's own acceleration, so the preview's
-      // timing and CARLA's agree (a 'time' step is instant in the preview but
-      // ramps at 3 m/s² in CARLA).
+      // A rate ramp at the default acceleration, as the controller would ramp anyway.
       _speedEvent('evt-2', nearEgo(sol.radius), vNpc, 'rate', VEHICLE_ACCEL),
     ];
     return {

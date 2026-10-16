@@ -60,24 +60,20 @@
     };
   }
 
-  /** 'curve' where the corridor turns by more than 12° over the 30 m around
-   * `d`, else 'straight'. */
+  /** 'curve' where the corridor turns > 12° over the 30 m around `d`, else 'straight'. */
   function _siteKind(c, d) {
     const a = _corridorAt(c, d - 15),
       b = _corridorAt(c, d + 15);
     return Math.abs(_wrapDeg(b.yaw - a.yaw)) > 12 ? 'curve' : 'straight';
   }
 
-  /* Obstacle in the lane: lost cargo, a work-zone taper narrowing the lane,
-   * or a broken-down vehicle with a warning triangle. Static, so it needs no
-   * trigger at all. */
+  /* Static obstacle in the lane: lost cargo, a work-zone taper, a broken-down vehicle, a standing
+   * VRU or a queue. Needs no trigger. */
   function _obstacle(rng, net, vEgo) {
     const c = _buildCorridor(rng, net, rng.range(180, 280));
     if (!c) return null;
     let dObs = rng.range(_egoRunUp(vEgo) + 25, c.length - 30);
-    // A pinned site (UN R171 / R157 put targets in a curve) moves the obstacle
-    // to a stretch of that shape; unpinned nothing extra is drawn and the
-    // site is only reported.
+    // A pinned site (UN R171/R157: in a curve) moves it to such a stretch; unpinned no extra draw.
     const siteWant = _p('site', null);
     if (siteWant) {
       const fits = [];
@@ -89,8 +85,7 @@
     }
     if (!_junctionFree(c, dObs - 30, dObs + 15)) return null;
     const pose = _corridorAt(c, dObs);
-    // The last three weights add up to the old 'breakdown' weight, so a seed
-    // that drew cargo or a work zone before still does.
+    // The last three weights sum to the old 'breakdown' weight, so older seeds are unchanged.
     const variant = _p(
       'variant',
       rng.weighted([
@@ -101,7 +96,6 @@
         ['queue', 0.2],
       ]),
     );
-    // which edge of the lane it sits toward
     const side = _p('side', rng.chance(0.7) ? 'right' : 'left') === 'right' ? 1 : -1;
     const props = [];
     const npcs = [];
@@ -116,8 +110,7 @@
       }
       params.items = props.length;
     } else if (variant === 'workzone') {
-      // Cones run diagonally from the lane edge to `intrusion` metres into the
-      // lane over the taper length, then hold, with a sign at the head.
+      // Cones run diagonally from the edge to `intrusion` m into the lane, then hold; sign at the head.
       const taper = rng.range(12, 24);
       const intrusion = rng.range(0.8, 2.2);
       const cone = rng.pick(CONE_PROPS);
@@ -147,18 +140,14 @@
       );
       const skew = rng.range(-8, 8);
       const triAt = _lateral(_corridorAt(c, dObs - rng.range(15, 30)), side * 1.2);
-      // Last draw of the attempt, so every draw above is what it always was.
-      // A car facing the ego (UN R171: "stationary vehicle facing toward the
-      // VUT") shows its front, not its tail lights, to a camera.
+      // Drawn last (earlier draws unchanged). Facing the ego (UN R171) it shows its front.
       const facing = _p('facing', rng.chance(0.15) ? 'oncoming' : 'same');
       npcs.push(_vehicle(type, { x: at.x, y: at.y, yaw: pose.yaw + skew + (facing === 'oncoming' ? 180 : 0) }, 0));
       const tri = _prop('static.prop.warningaccident', triAt.x, triAt.y, pose.yaw + 180);
       if (tri) props.push(tri);
       Object.assign(params, { vehicle_type: type, lateral_m: r1(Math.abs(off)), facing });
     } else if (variant === 'stationary_vru') {
-      // A pedestrian standing in the lane with its back to the ego, or a bike
-      // stopped in it (UN R171 stationary-target cases). No events: no Act,
-      // start speed 0, so it stands for the whole run.
+      // A VRU standing in the lane, back to the ego (UN R171); no events, so it stands all run.
       const type = _p(
         'vru_type',
         rng.weighted([
@@ -173,10 +162,7 @@
       npcs.push(vru);
       Object.assign(params, { vru_type: type, lateral_m: r1(Math.abs(off)) });
     } else {
-      // A queue: a motorcycle and, a few metres beyond it, a car, both stopped
-      // in the lane (UN R157: "stopped sequentially within the same lane").
-      // The motorcycle is the one the ego meets first, and the one a sensor
-      // tuned to cars misses.
+      // A queue (UN R157): a motorcycle, then a car beyond it, both stopped.
       const gap = rng.range(6, 10);
       const first = _p('vehicle_type', 'motorcycle');
       const off = side * _p('lateral_m', rng.range(0, 0.5));
@@ -194,29 +180,14 @@
     return { corridor: c, npcs, props, params, routedNpcs: [], conflictD: dObs };
   }
 
-  /* Oncoming drift. A car in the opposite lane drifts over the centre line
-   * into the ego's lane and back — an inattentive or overtaking driver.
-   *
-   * The drift is a ROUTE, not a lane_offset: fastest legs along its own lane,
-   * then a run of 'shortest' waypoints tracing a smooth (half-cosine) swing
-   * out, a short hold, and a swing back, then fastest again. A shortest leg is
-   * driven verbatim, so the swing is as gradual as its samples — where a
-   * lane_offset jumps the controller's aim point sideways in one tick. The
-   * swing ends ON its own lane's centre before the next fastest waypoint,
-   * because that waypoint's leg is routed from the previous point and an
-   * off-lane seed projects onto whatever lane is nearest (CLAUDE.md,
-   * per-waypoint routeStrategy) — here, the ego's lane, the wrong way.
-   *
-   * A route is fixed in space, so the timing comes from the release: the car
-   * waits at 0 m/s on its lane and a set_speed ramp fires on distance_to_ego,
-   * solved so it reaches the swing's peak as the ego does (the junction
-   * conflict's pattern). Ego-relative, so an AV-driven ego still meets it.
-   * It ignores lights and obstacles: its obstacle sensor would otherwise see
-   * the ego head-on in the lane it is swinging into and brake out of the
-   * conflict it exists to create. */
+  /* Oncoming drift: a car swings over the centre line into the ego's lane and back. A route,
+   * not a lane_offset (which jumps the aim point in one tick): fastest legs on its own lane,
+   * 'shortest' samples tracing a half-cosine swing, then fastest again. The swing must end ON
+   * its lane centre, because the next leg is routed from there. It waits at rest and is
+   * released by a ramp on distance_to_ego; it ignores lights and obstacles, or it would brake
+   * for the ego in the lane it swings into. */
   function _oncomingDrift(rng, net, vEgo) {
-    // Start on an innermost lane of a two-way road, as cut-in starts on a
-    // multi-lane one: a random corridor rarely puts the ego there.
+    // Start on an innermost lane of a two-way road; a random corridor rarely does.
     if (!net.twoWay) {
       net.twoWay = net.startable.filter(
         (L) => L.length >= 60 && Math.abs(L.lane.laneId) === 1 && _oncomingLane(net, { L }),
@@ -233,10 +204,8 @@
       rng.range(0, Math.max(0.5, start.length - 60)),
     );
     if (!c) return null;
-    // The oncoming lane beside corridor distance d: the segment's own
-    // opposite lane, projected. The swing may run across several lane
-    // sections — Town10HD splits its two-way roads into short ones, and
-    // requiring the whole swing on one lane found no site there at all.
+    // The oncoming lane at corridor distance d, per segment: the swing may cross lane sections
+    // (Town10HD's are short).
     const oncAt = (d) => {
       const sg = c.segs.find((g) => d >= g.startD && d <= g.endD);
       if (!sg || sg.L.junction) return null;
@@ -249,20 +218,14 @@
     };
 
     const vNpc = _p('npc_speed', rng.range(8, 14));
-    // The swing, in metres of travel.
     const lenIn = vNpc * rng.range(1.0, 2.2); // centre line -> peak
     const lenHold = _p('hold_m', rng.range(0, 6)); // at the peak
     const lenOut = vNpc * rng.range(0.8, 1.8); // back to its own lane
-    // Metres toward the ego's lane. Under ~1.4 m (lane 3.5 m minus a 2.1 m
-    // car) the two only brush past; most draws cross that.
+    // Under ~1.4 m (3.5 m lane − 2.1 m car) the two only brush past.
     const offset = _p('offset_m', rng.range(1.2, 2.8));
 
-    // dX is the corridor distance of the peak. The oncoming car travels toward
-    // the ego, i.e. DOWN the corridor: it meets the swing's start at dX + lenIn
-    // and is back on its lane at dEnd. The whole swing (+5 m each end) has to
-    // sit on one junction-free two-way stretch, so dX is drawn only from where
-    // it fits — a uniform draw along the corridor landed next to a junction
-    // on most of Town03's attempts.
+    // dX is the peak. The car travels DOWN the corridor (swing start at dX + lenIn); the whole
+    // swing ±5 m must fit one junction-free two-way stretch, so dX is drawn from those only.
     const stretches = [];
     for (const sg of c.segs) {
       const twoWay = !sg.L.junction && !!_oncomingLane(net, sg);
@@ -279,7 +242,6 @@
     const dX = rng.range(fit.lo, fit.hi);
     const dEnd = dX - lenHold - lenOut;
     if (!_junctionFree(c, dEnd - 5, dX + lenIn + 5)) return null;
-    // Every sample has to find an oncoming lane, not just the ends.
     const samples = [];
     const nIn = Math.max(2, Math.round(lenIn / 3));
     const nOut = Math.max(2, Math.round(lenOut / 3));
@@ -293,7 +255,7 @@
     }
     if (lenHold > 1) samples.push({ d: dX - lenHold, off: offset, strategy: 'shortest' });
     for (let i = 1; i <= nOut; i++) {
-      // Ends at exactly 0: the next leg is routed from this point.
+      // Ends at exactly 0: the next leg is routed from here.
       samples.push({
         d: dX - lenHold - (lenOut * i) / nOut,
         off: (offset * (1 + Math.cos((Math.PI * i) / nOut))) / 2,
@@ -305,9 +267,7 @@
     const swingStart = onc[0],
       swingEnd = onc[onc.length - 1];
 
-    // Spawn far enough back to reach cruise speed before the swing starts —
-    // and no further: the car waits at rest, so every metre here pushes the
-    // conflict further down the corridor.
+    // Back far enough to reach cruise before the swing, and no further (it waits at rest).
     const runUp = (vNpc * vNpc) / (2 * VEHICLE_ACCEL) + rng.range(5, 25);
     let spawn;
     if (swingStart.s - runUp >= 1) {
@@ -319,20 +279,16 @@
     }
     const toPeak = runUp + lenIn;
 
-    // Continue well past the swing, so the route's end — where the controller
-    // stops dead (_reached_goal) — is behind the ego, not in its lane.
+    // On past the swing, so the route's end (a dead stop) is behind the ego.
     const exit = _walkForward(rng, net, swingEnd.O.key, swingEnd.s, rng.range(30, 50));
     if (!exit) return null;
 
-    // Ego arrives at the peak this much after the car does (negative: before).
     const dt = _p('arrival_offset_s', rng.range(-0.4, 0.6));
     const tNpc = _timeFromRest(toPeak, vNpc);
     const sol = _solveTrigger(c, dX, tNpc + dt, vEgo, spawn);
     if (!sol) return null;
 
-    // Left of the car's travel is negative in _lateral (right positive). The
-    // first sample is the swing's start on the lane centre and stays
-    // 'fastest' — its leg is the routed run from the spawn.
+    // Left is negative in _lateral. The first sample stays 'fastest': its leg is the routed run-up.
     const swing = samples.map((sm, i) => {
       const q = _lateral(onc[i].pose, -sm.off);
       return _routeWp({ x: q.x, y: q.y, z: onc[i].pose.z }, sm.strategy);
@@ -355,13 +311,8 @@
       _speedEvent('evt-2', nearEgo(sol.radius), vNpc, 'rate', VEHICLE_ACCEL),
     ];
 
-    // Why it swings out: a car parked at the kerb of its own lane, which it
-    // goes round (CARLA leaderboard "oncoming vehicle invading the lane due to
-    // an obstacle"). Drawn last, so every draw above is what it always was.
-    // Pushed toward the kerb just far enough that the swing clears it by
-    // 0.4 m — at 80% of the peak offset, which is what the half-cosine still
-    // gives a car length either side of it — or left out where that would
-    // put it off the lane.
+    // Optionally a car parked at the kerb of its lane that it goes round (CARLA leaderboard),
+    // drawn last; pushed out just enough that the swing clears it by 0.4 m, or left out.
     const npcs = [npc];
     const sceneryIds = new Set();
     const causeDraw = rng.chance(0.4);
@@ -401,10 +352,8 @@
         arrival_offset_s: r2(dt),
         trigger_m: r1(sol.radius),
       },
-      // The routed leg up to the swing must actually reach it.
       routedNpcs: [{ actor: npc, passes: swingStart.pose }],
-      // The threat starts when the car leaves its lane, not when it is
-      // released ~100 m away.
+      // The threat starts when it leaves its lane, not at its release ~100 m away.
       onsets: new Map([[npc.id, swingStart.pose]]),
     };
   }

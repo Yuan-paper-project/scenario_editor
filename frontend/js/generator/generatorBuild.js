@@ -45,15 +45,9 @@
   }
 
   /**
-   * Build a scenario without touching AppState. Returns
-   * {ego, npcs, props, info} or null when no attempt fit this map.
-   *
-   * Every candidate is scored (assess) and dropped when it is trivial or
-   * unavoidable.
-   *
-   * `opts.near` = {x, y} builds it at that spot ("Generate here"): the ego's
-   * corridor runs through a lane at the click and the conflict must happen
-   * within FOCUS_RADIUS_M of it. Null when no driving lane is near the point.
+   * Build a scenario without touching AppState: {ego, npcs, props, info}, or null when nothing
+   * fits this map. Trivial and unavoidable candidates are dropped. `opts.near` = {x, y} builds it
+   * at that spot, with the conflict within FOCUS_RADIUS_M.
    */
   function build(typeKey = null, seed = null, opts = {}) {
     const net = _network();
@@ -74,18 +68,12 @@
 
   function _build(net, typeKey, seed, opts) {
     seed = Number.isFinite(Number(seed)) && Number(seed) > 0 ? Math.floor(Number(seed)) : _randomSeed();
-    // An array is a subset to pick from (the batch dialog's type selection).
     const keys = Array.isArray(typeKey) ? typeKey : typeKey ? [typeKey] : Object.keys(TYPES);
 
-    // A focus throws away every candidate whose conflict lands elsewhere, so
-    // it gets more tries; each costs one headless run (~20 ms) once built.
+    // A focus discards candidates whose conflict lands elsewhere, so it gets more tries.
     const maxAttempts = MAX_ATTEMPTS + (_ctx.focus ? 150 : 0);
-    // Every attempt draws from its OWN generator, seeded from (seed, attempt):
-    // attempt k is then the same corridor and draws whatever happened in
-    // attempts 0..k-1. That is what lets the recipe panel rebuild a scenario
-    // with one value pinned on the very site it was on — it retries the
-    // original attempt first (opts.firstAttempt). With one shared generator a
-    // pin that changed how far an earlier attempt got shifted every later one.
+    // Each attempt has its own RNG from (seed, attempt), so attempt k is the same corridor
+    // whatever earlier attempts drew — which lets a pinned rebuild stay on the same site.
     const first = Number.isInteger(opts.firstAttempt) && opts.firstAttempt >= 0 ? opts.firstAttempt : null;
     const order = first !== null ? [first] : [];
     if (!opts.onlyFirst || first === null) {
@@ -100,13 +88,9 @@
       const trafficSignals = _greenWave(net, res.corridor, res.conflictD ?? res.corridor.length);
 
       const c = res.corridor;
-      // A type may end the ego's route short of the corridor, so an NPC that
-      // follows the same corridor (the lead car) is not parked on the ego's
-      // own goal when both routes run out.
+      // A type may end the ego's route short, so a lead on the same corridor does not park on its goal.
       const egoEnd = res.egoEndD ?? c.length;
-      // A type may start the ego further up its corridor, with another actor
-      // behind it (rear_approach), and give it events of its own after the
-      // route. '$ego' in a trigger names the ego, whose id exists only now.
+      // ...or start the ego up the corridor and give it events; '$ego' resolves now its id exists.
       const egoStart = res.egoStartD ?? 0;
       const ego = _vehicle('ego', _corridorAt(c, egoStart), vEgo);
       ego.events = [_routeEvent(ego, _corridorWaypoints(c, egoStart, egoEnd)), ...(res.egoEvents || [])];
@@ -138,8 +122,7 @@
         threats: res.threats,
         revealedBy: res.revealedBy,
       });
-      // Pinned values are the user's call: build what they give rather than
-      // moving on to another site.
+      // With pins, build what they give rather than moving on to another site.
       if (criticality.verdict === 'no_run') continue;
       if (criticality.verdict !== 'ok' && !_ctx.overrides) continue;
       if (
@@ -195,10 +178,8 @@
       );
       return null;
     }
-    // The recipe: enough to rebuild this scenario with one parameter changed
-    // on the same site (recipe panel). A first build that was not anchored to
-    // a click is anchored to its own conflict point from now on, so repeated
-    // rebuilds cannot drift across the map.
+    // The recipe, to rebuild with a parameter changed on the same site; an unanchored first build
+    // is anchored to its own conflict point so rebuilds cannot drift.
     const info = result.info;
     const recipe = {
       type: info.type,
@@ -206,9 +187,7 @@
       seed: info.seed,
       town: info.town,
       near: info.near || opts.near || (info.criticality?.at ? { ...info.criticality.at } : null),
-      // Built focused (a click, or a rebuild that needed the focus): `attempt`
-      // indexes the focused attempts, so rebuilds stay focused. Otherwise it
-      // indexes the plain ones, and the plain attempt is retried first.
+      // Focused builds index the focused attempts; otherwise the plain attempt is retried first.
       anchored: !!info.near,
       attempt: info.attempt,
       overrides: info.overrides || {},
@@ -225,9 +204,7 @@
         generated: recipe,
       });
       recipe.signature = sceneSignature();
-      // The overview panel re-renders off an allow-list that does not include
-      // ego/npcs; an empty patch is the codebase's "arrays changed" signal it
-      // does listen for (properties.js). Inside the group, so still one undo.
+      // The empty patch is the overview's "arrays changed" signal; inside the group, one undo.
       AppState.set({});
     });
     MapView.renderAllActors();
@@ -244,10 +221,7 @@
     return result.info;
   }
 
-  /** A short hash of the scenario objects, to tell whether the open scenario
-   * is still the one a recipe built (the panel warns before a rebuild would
-   * throw hand edits away). Editor-only flags (a collapsed event card) are
-   * edits too as far as this knows; it only decides whether to ask. */
+  /** A short hash of the scenario objects, to tell whether it was edited since the recipe built it. */
   function sceneSignature() {
     const str = JSON.stringify([AppState.ego, AppState.npcs, AppState.staticObjects]);
     let h = 5381;
@@ -262,10 +236,8 @@
   }
 
   /**
-   * Rebuild the open recipe with `changes` merged into its pinned values
-   * (null removes a pin), on the same site and seed. `newSeed` makes a
-   * variant instead: everything not pinned is drawn afresh. One undo step;
-   * on failure the open scenario is left alone and a toast says so.
+   * Rebuild the recipe with `changes` merged into its pins (null unpins), same site and seed;
+   * `newSeed` draws a variant. One undo step; on failure the scenario stays and a toast says so.
    */
   function rebuild(changes = {}, { newSeed = false } = {}) {
     const r = AppState.generated;
@@ -294,12 +266,9 @@
   }
 
   /**
-   * Build `r`'s scenario again with `overrides`, without touching AppState.
-   * Same seed: an unanchored recipe retries its original plain attempt first
-   * (pins never shift the per-attempt RNG, so that is the very same corridor)
-   * and keeps it only if the conflict stays within FOCUS_RADIUS_M of where it
-   * was; otherwise, and for an anchored recipe, it builds focused on the
-   * recipe's spot, original attempt first. `newSeed`: a variant, focused.
+   * Build `r` again with `overrides`, without touching AppState. Unanchored: the original plain
+   * attempt first, kept if the conflict stays within FOCUS_RADIUS_M; otherwise (and when
+   * anchored) focused on the recipe's spot. `newSeed`: a focused variant.
    */
   function _buildFromRecipe(r, overrides, newSeed = null) {
     if (newSeed) return build(r.type, newSeed, { near: r.near, overrides });

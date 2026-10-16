@@ -13,10 +13,8 @@
   let _batchRunning = false;
   let _batchCancel = false;
 
-  // Typ and Karten are checkbox dropdowns built like the Ebenen menu: the
-  // button shows the selection and an n/N pill, the panel Alle/Keine and one
-  // .layer-toggle row per option. The checkboxes ARE the state; they persist
-  // between openings because the panel is only rebuilt when its options change.
+  // Typ and Karten are checkbox dropdowns like Ebenen; the checkboxes are the state, kept between
+  // openings (the panel is rebuilt only when its options change).
   const _multiSelects = {};
 
   function _multiSelect(id, opts) {
@@ -108,7 +106,6 @@
       items: towns.map((t) => ({ value: t, label: t, note: CARLA_TOWNS.includes(t) ? '' : 'nicht in CARLA' })),
       checked: (t) => t === AppState.map,
     });
-    // A fresh dialog on another town starts on that town if nothing is chosen.
     if (!maps.values().length) maps.set((t) => t === AppState.map);
     document.getElementById('gen-batch-progress').classList.add('hidden');
     document.getElementById('gen-batch-overlay').classList.remove('hidden');
@@ -159,7 +156,7 @@
         },
         isCancelled: () => _batchCancel,
       });
-      // Abbrechen means abort: nothing is downloaded, not a partial batch.
+      // Abbrechen aborts: no download, not even a partial batch.
       if (res.cancelled) {
         Toast.info('Stapel-Generierung abgebrochen — nichts heruntergeladen');
         document.getElementById('gen-batch-overlay').classList.add('hidden');
@@ -197,13 +194,11 @@
     if (!form) return;
     form.addEventListener('submit', _runBatch);
     document.getElementById('gen-batch-cancel').addEventListener('click', _closeBatch);
-    // Capture + stopPropagation, like the confirm dialog: Esc closes this and
-    // must not also cancel a tool or a path being drawn behind it.
+    // Capture + stopPropagation: Esc closes this, not also a tool behind it.
     document.addEventListener(
       'keydown',
       (e) => {
         if (e.key !== 'Escape' || document.getElementById('gen-batch-overlay').classList.contains('hidden')) return;
-        // An open Typ/Karten dropdown takes this Esc (its own capture handler).
         if (Object.values(_multiSelects).some((ms) => ms.dd.isOpen())) return;
         e.stopPropagation();
         _closeBatch();

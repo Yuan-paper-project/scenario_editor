@@ -10,27 +10,18 @@
 
   // ── Physical constants the timing is solved against ──────────────────────────
 
-  // simple_vehicle_control's hardcoded max_acceleration (xml_builder.py / the
-  // car.xosc template). A vehicle reaches any commanded speed at this rate, so
-  // the ego is NOT at its start speed on tick 1 in CARLA.
+  // The default max_acceleration every vehicle is exported with: in CARLA the ego ramps up.
   const VEHICLE_ACCEL = 3.0;
-  // Same clearance objectsCore.js gives a waypoint: the router projects it anyway,
-  // and DistanceCondition is 3-D, so a point under the road would never fire.
+  // As objectsCore.js gives a waypoint; DistanceCondition is 3-D.
   const WAYPOINT_CLEARANCE = 0.5;
-  // How far the computed route may stray from the corridor before the attempt
-  // is rejected. A lane is ~3.5 m wide; anything past half of that is a
-  // different lane or a different turn.
+  // Max stray of the computed route from the corridor: half a ~3.5 m lane.
   const ROUTE_TOLERANCE_M = 2.0;
-  // Put the route waypoint this far onto the lane after a junction. Inside the
-  // junction connector lanes overlap, and a waypoint there could project onto
-  // the wrong one; just past the exit the lane is unambiguous.
+  // Route waypoints go this far past a junction exit: connectors overlap inside it.
   const POST_JUNCTION_WP_M = 8;
-  // Attempts per scenario. Most fail cheaply (no site on this corridor); the
-  // expensive part, the headless preview run, only happens to the survivors.
+  // Attempts per scenario; most fail cheaply before the headless run.
   const MAX_ATTEMPTS = 150;
 
-  // Lane types a pedestrian is "off the road" from. Sidewalks are not in here,
-  // so the crossing start lands on the kerb rather than in a parking lane.
+  // Lane types a crossing walker must clear; sidewalks are not in here.
   const CARRIAGEWAY_TYPES = new Set([
     'driving',
     'parking',
@@ -49,8 +40,7 @@
 
   // ── Seeded RNG ───────────────────────────────────────────────────────────────
 
-  /** mulberry32 — tiny, fast, and identical in every browser, which is all a
-   * reproducible seed needs. */
+  /** mulberry32: small, fast, identical in every browser. */
   class Rng {
     constructor(seed) {
       this._s = seed >>> 0 || 1;
@@ -96,11 +86,7 @@
 
   const _netCache = new WeakMap(); // mapData -> {graph, net}
 
-  /**
-   * Every driving lane with geometry, keyed by CARLA's (road, section, lane)
-   * triple — the same join key the lane graph and simulate.js use — plus the
-   * graph's successors resolved to keys and inverted into predecessors.
-   */
+  /** Every driving lane with geometry, keyed by (road, section, lane), with successors and predecessors. */
   function _network() {
     const md = AppState.mapData;
     const graph = AppState.laneGraph;
@@ -168,7 +154,6 @@
       pred,
       byJunction,
       refKey,
-      // Ordinary road lanes long enough to start a corridor on.
       startable: [...lanes.values()].filter((L) => !L.junction && L.length >= 25),
     };
     _netCache.set(md, { graph, net });
@@ -246,32 +231,25 @@
 
   // ── "Generate here" focus ────────────────────────────────────────────────────
 
-  // Mutable generator state, in one object so every generator file sees the
-  // same values.
+  // Mutable generator state, one object so every generator file sees the same values.
   const _ctx = {
-    // Set by build() for one call when the user picked a spot on the map:
-    // {x, y, radius, lanes: [{L, s}]}. Every corridor then runs through one of
-    // `lanes`, and a candidate is kept only when its conflict happens within
-    // `radius` of the click (assess's `at`).
+    // „Konflikt hier erzeugen", for one build() call: {x, y, radius, lanes}. Corridors pass one of
+    // `lanes`, and a candidate counts only with its conflict within `radius` of the click.
     focus: null,
-    // Set by build() for one call: {key: value} the user pinned in the recipe
-    // panel (already validated against PARAMS by _cleanOverrides). _p() hands
-    // a pinned value back in place of the random draw.
+    // The recipe panel's pins, for one build() call; _p() returns them in place of a draw.
     overrides: null,
     // The info of the last scenario generate() loaded (ScenarioGenerator.lastInfo).
     lastInfo: null,
   };
 
-  /** The random `drawn` value, unless the user pinned `key`. The draw is made
-   * either way, so pinning one parameter does not shift every later draw. */
+  /** `drawn`, unless `key` is pinned. The draw is made either way, so later draws do not shift. */
   function _p(key, drawn) {
     return _ctx.overrides && Object.hasOwn(_ctx.overrides, key) ? _ctx.overrides[key] : drawn;
   }
   const FOCUS_RADIUS_M = 40;
   const FOCUS_LANE_REACH_M = [6, 12]; // driving lanes this close to the click; a wider retry from a kerb
 
-  /** Driving lanes (either direction, junction connectors included) passing
-   * near (x, y), each with the arc length of its nearest point. */
+  /** Driving lanes near (x, y), either direction, connectors included, with each nearest s. */
   function _focusLanes(net, x, y) {
     for (const reach of FOCUS_LANE_REACH_M) {
       const out = [];
@@ -284,12 +262,10 @@
     return [];
   }
 
-  /** A corridor start `back` metres upstream of a focus lane, and the lane
-   * keys from there to that lane — the path _buildCorridor is forced along. */
+  /** A start `back` metres upstream of a focus lane, and the lane path to it (the forced route). */
   function _focusStart(rng, net, targetLen) {
     const { L: F, s: sF } = rng.pick(_ctx.focus.lanes);
-    // Far enough back for a run-up and the conflict's own lead-in, short
-    // enough that the corridor still runs on well past the click.
+    // Room for a run-up and lead-in, while the corridor still runs on past the click.
     const back = rng.range(50, Math.max(60, Math.min(220, targetLen - 60)));
     const path = [F.key];
     if (!F.junction && sF >= back + 2) return { L: F, s: sF - back, path };
@@ -300,8 +276,7 @@
         .map((k) => net.lanes.get(k))
         .filter((P) => P && !path.includes(P.key));
       if (!preds.length) {
-        // A dead end upstream: start at the top of what was walked, if that is
-        // an ordinary lane and leaves some run-up.
+        // Dead end upstream: start at the top if it is an ordinary lane with run-up.
         return !cur.junction && back - remaining >= 40 ? { L: cur, s: 1, path } : null;
       }
       const P = rng.pick(preds);
