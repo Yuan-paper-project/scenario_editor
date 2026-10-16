@@ -52,8 +52,10 @@
   // Scene-list state. Both live here rather than in the DOM because
   // _renderOverviewPanel rebuilds its innerHTML wholesale on every change — a
   // collapsed section would spring back open the moment a prop was placed.
+  // `locatedId` is on an object rather than a reassigned let because the
+  // state subscriptions clear it too.
   const _sceneCollapsed = { npcs: false, props: false };
-  let _locatedId = null;
+  const scene = { locatedId: null };
   // Which instance each prop type's stepper is pointing at, keyed by blueprint
   // id. Clamped at render time rather than on delete: props are also added and
   // removed from the map and the toolbar, which never touch this.
@@ -154,7 +156,7 @@
         : '';
     const label = AppState.actorLabel(actor, { short: true });
     return `
-      <div class="scene-row${_locatedId === actor.id ? ' located' : ''}"
+      <div class="scene-row${scene.locatedId === actor.id ? ' located' : ''}"
            role="option" tabindex="0" aria-selected="false"
            data-scene-id="${_esc(actor.id)}"
            title="Klick: auf der Karte zeigen · Doppelklick: bearbeiten">
@@ -227,7 +229,7 @@
                  aria-label="${_esc(currentLabel)} löschen">${TRASH_SVG}</button>`;
 
     return `
-      <div class="scene-prop-row${_locatedId === current.id ? ' located' : ''}"
+      <div class="scene-prop-row${scene.locatedId === current.id ? ' located' : ''}"
            role="option" tabindex="0" aria-selected="false"
            data-scene-id="${_esc(current.id)}" data-prop-bp="${_esc(blueprint)}"
            title="Klick: ${_esc(currentLabel)} auf der Karte zeigen · Doppelklick: bearbeiten">
@@ -296,7 +298,7 @@
   /** Fly the map to an object without selecting it, and mark its row. */
   function _locateScene(root, id) {
     if (!id || !MapView.focusActor(id)) return;
-    _locatedId = id;
+    scene.locatedId = id;
     root.querySelectorAll(SCENE_ROW_SEL).forEach((r) => {
       r.classList.toggle('located', r.dataset.sceneId === id);
     });
@@ -308,9 +310,9 @@
     if (items.length < 2) return;
     const next = ((_propCursor[blueprint] ?? 0) + delta + items.length) % items.length;
     _propCursor[blueprint] = next;
-    _locatedId = items[next].id;
+    scene.locatedId = items[next].id;
     _renderOverviewPanel(); // the row prints "n/N", so it has to redraw
-    MapView.focusActor(_locatedId);
+    MapView.focusActor(scene.locatedId);
     // Keep the keyboard on the row that was just stepped.
     propsOverview.querySelector(`.scene-prop-row[data-prop-bp="${CSS.escape(blueprint)}"]`)?.focus();
   }
@@ -321,7 +323,7 @@
     const label = AppState.actorLabel(actor, { ego: 'Ego-Fahrzeug' });
     if (!skipConfirm && !(await Confirm.show(`${label} löschen?`, 'Löschen'))) return;
     AppState.removeById(id);
-    if (_locatedId === id) _locatedId = null;
+    if (scene.locatedId === id) scene.locatedId = null;
     MapView.renderAllActors();
     render();
     Toast.info(`${label} gelöscht — Strg+Z zum Rückgängigmachen`);
@@ -333,7 +335,7 @@
     const name = window.PropCatalog?.label(blueprint) || blueprint;
     if (!skipConfirm && !(await Confirm.show(`Alle ${items.length} × ${name} löschen?`, 'Löschen'))) return;
     items.forEach((p) => {
-      if (_locatedId === p.id) _locatedId = null;
+      if (scene.locatedId === p.id) scene.locatedId = null;
     });
     // One entry for the whole bulk delete. It used to push one per prop, so a
     // taper of twelve cones took twelve presses of Strg+Z to put back; the
@@ -949,13 +951,13 @@
     else if (!AppState.selectedId) _renderOverviewPanel();
   });
   AppState.on('actorRemoved', (id) => {
-    if (_locatedId === id) _locatedId = null;
+    if (scene.locatedId === id) scene.locatedId = null;
     render();
   });
-  // Ids restart at obj-1 in every save file, so a stale _locatedId would mark
+  // Ids restart at obj-1 in every save file, so a stale scene.locatedId would mark
   // some unrelated actor's row in the newly loaded scenario.
   AppState.on('stateLoaded', () => {
-    _locatedId = null;
+    scene.locatedId = null;
     render();
   });
   AppState.on('change', (patch) => {
