@@ -1,8 +1,7 @@
 /**
  * templatesUser.js — user templates („Eigene Vorlagen"): storage, import/export, their panel section, and the actor-relative transform.
  *
- * Part of ScenarioTemplates; see templates.js. ScenarioTemplateManager is a
- * chain of classes, one per file, each adding its methods to the one before.
+ * Part of ScenarioTemplates; see templates.js (one class per file, each extending the last).
  */
 (() => {
   'use strict';
@@ -11,14 +10,9 @@
 
   class TemplatesUser extends TemplatesGeometry {
     // ── User templates („Eigene Vorlagen") ───────────────────────────────────
-    //
-    // An actor's event chain saved by the user, with every position in it
-    // stored relative to the actor's pose (x along its heading, y to its
-    // right) and every actor reference as '$self' / '$ego'. Stored in this
-    // table under `user:N` ids with a build() that maps the chain back onto a
-    // new actor's pose, so placement, the „Ablauf aus Template" picker and
-    // applyTo() handle them exactly like the built-in templates. Persisted per
-    // viewer in localStorage (USER_KEY), shared as a JSON file.
+    // A saved chain with positions relative to the actor and references as '$self'/'$ego',
+    // stored as `user:N` entries with a build(), so everything else treats them as built-ins.
+    // Per viewer, in localStorage (USER_KEY).
 
     _loadUserTemplates() {
       let list = [];
@@ -67,11 +61,7 @@
       return `user:${n}`;
     }
 
-    /**
-     * Save `actor`'s chain as a user template. Refuses (and says why) when an
-     * event names another NPC: that actor will not exist where the template is
-     * used. Returns the new id or null.
-     */
+    /** Save `actor`'s chain as a template; refused if it names another NPC. New id or null. */
     saveFromActor(actor, label = null) {
       if (!actor || actor.type === 'ego' || actor.type === 'prop') return null;
       if (!(actor.events || []).length) {
@@ -184,9 +174,7 @@
   const _r1 = (v) => Math.round(v * 10) / 10;
   const _r2 = (v) => Math.round(v * 100) / 100;
 
-  /** (x, y) in the actor's frame: +u along its heading, +v to its right (the
-   * map is y-down, so heading +x has its right at +y — the same convention
-   * generatorCorridor.js's _lateral uses). */
+  /** (x, y) in the actor's frame: +u along its heading, +v to its right (y-down). */
   function _toFrame(a, x, y) {
     const r = ((a.yaw || 0) * Math.PI) / 180,
       dx = x - a.x,
@@ -198,11 +186,7 @@
     return { x: _r1(a.x + u * Math.cos(r) - v * Math.sin(r)), y: _r1(a.y + u * Math.sin(r) + v * Math.cos(r)) };
   }
 
-  /**
-   * An actor's events with positions in its own frame and actor references
-   * as '$self' / '$ego'. `foreign` names the events that reference another
-   * NPC, which a template cannot carry.
-   */
+  /** Events in the actor's frame with '$self'/'$ego' references; `foreign` lists those naming another NPC. */
   function _toRelative(actor, egoId) {
     const foreign = [];
     const ref = (id, ev) => {
@@ -242,10 +226,7 @@
     return { events, foreign: [...new Set(foreign)] };
   }
 
-  /** The stored relative chain on `actor`'s pose: positions back in the world
-   * (a `fastest` route waypoint re-snapped to a lane, waypoint 0 on the actor
-   * like a freshly drawn route's seed), heights from the surface, '$self' /
-   * '$ego' back to ids. */
+  /** A stored chain on `actor`'s pose: 'fastest' waypoints re-snapped, waypoint 0 on the actor, z re-derived. */
   function _fromRelative(events, actor) {
     const egoId = AppState.ego?.id || null;
     const deref = (id) => (id === '$self' ? actor.id : id === '$ego' ? egoId : id);

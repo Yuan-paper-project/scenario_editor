@@ -8,7 +8,6 @@
 
   window.PropertiesCore = UIUtils.sharedScope('PropertiesCore');
 
-  // Elements
   const propsOverview = document.getElementById('props-overview');
   const propsContent = document.getElementById('props-content');
   const propsTitle = document.getElementById('props-title');
@@ -16,20 +15,12 @@
   const trafficSignalPanel = document.getElementById('traffic-signal-panel');
   const npcSection = document.getElementById('props-npc-section');
 
-  // Scene-list state. Both live here rather than in the DOM because
-  // _renderOverviewPanel rebuilds its innerHTML wholesale on every change — a
-  // collapsed section would spring back open the moment a prop was placed.
-  // `locatedId` is on an object rather than a reassigned let because the
-  // state subscriptions clear it too.
+  // Scene-list state lives here, not in the DOM: the overview rebuilds its innerHTML on every change.
   const _sceneCollapsed = { npcs: false, props: false };
   const scene = { locatedId: null };
-  // The scene list's deletes re-render the whole panel, and render() is
-  // defined in properties.js, which loads last and sets this beside the event
-  // panel's refresh handler.
+  // Set by properties.js, which loads last, so the scene list's deletes can re-render the panel.
   const panel = { render: null };
-  // Which instance each prop type's stepper is pointing at, keyed by blueprint
-  // id. Clamped at render time rather than on delete: props are also added and
-  // removed from the map and the toolbar, which never touch this.
+  // Each prop type's stepper position, by blueprint; clamped at render time.
   const _propCursor = {};
 
   function _bindCollapsibleHeaders(root) {

@@ -1,14 +1,10 @@
-/* propPlanShapes.js — top-down footprints for the map markers (PropCatalog.planShapes).
- * Pure drawing: (kind, size, colour) in, SVG elements out; no catalogue lookups.
+/**
+ * propPlanShapes.js — top-down footprints for the map markers (PropCatalog.planShapes).
  */
 (() => {
   'use strict';
 
-  /* ── Plan view (top-down) — map markers ──────────────────────────────────────
-   * Real footprints, drawn in the actor convention: `len` along local +X (the
-   * yaw direction), `wid` across it, centred on the origin. These rotate with
-   * prop.yaw exactly like vehicle footprints do in _renderActor.
-   */
+  /* `len` along local +X (the yaw direction), `wid` across, centred; rotates with yaw like a vehicle. */
   function planShapes(kind, len, wid, color) {
     const out = [];
     const hl = len / 2,

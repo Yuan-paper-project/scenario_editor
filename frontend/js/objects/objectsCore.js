@@ -9,9 +9,7 @@
   window.ObjectsCore = UIUtils.sharedScope('ObjectsCore');
 
   const svg = MapView.svg;
-  // Set by the drag handlers and read by the click handler: the click that ends
-  // a drag is not a placement. An object rather than a reassigned let, so both
-  // sides see one copy.
+  // Set by the drags, read by the click handler: the click ending a drag places nothing.
   const drag = { wasDragging: false };
 
   const ROAD_FACING_TYPES = new Set(['pedestrian', 'child', 'cyclist', 'bicycle']);
@@ -21,15 +19,8 @@
     return ((((deg + 180) % 360) + 360) % 360) - 180;
   }
 
-  /* Placement orientation for a prop, from the OpenDRIVE direction of the
-   * specific lane nearest the click. `near.laneYaw` is true lane *travel*
-   * direction — map_renderer reverses directionLine for left-side lanes — so
-   * on a two-way road the two carriageways give yaws 180° apart and an
-   * 'oncoming' prop on each side faces its own lane's traffic.
-   *
-   * wx/wy must be the ORIGINAL click point, not a snapped position: Shift puts
-   * the prop on the lane centreline, where "which side of the lane" degenerates.
-   */
+  /* A prop's placement yaw from the nearest lane's travel direction (left lanes' directionLines
+   * are reversed). wx/wy is the original click, not the snapped point, so the side is known. */
   function _propYawFor(blueprint, wx, wy, near) {
     const rule = PropCatalog.facing(blueprint);
     if (rule === 'none' || !near) return 0;
@@ -44,8 +35,7 @@
       case 'toward-road':
         return Math.round(_wrapDeg(toRoad));
       case 'alongside': {
-        // Long axis stays parallel to the kerb; pick the flip that turns the
-        // object's open side (local +Y, i.e. yaw + 90) toward the carriageway.
+        // Long axis along the kerb; flip so the open side (local +Y) faces the carriageway.
         const openAt = _wrapDeg(near.laneYaw + 90);
         const flip = Math.abs(_wrapDeg(openAt - toRoad)) > 90;
         return Math.round(_wrapDeg(near.laneYaw + (flip ? 180 : 0)));
@@ -56,10 +46,7 @@
   }
 
   function _roadFacingYaw(wx, wy) {
-    // Face the nearest DRIVING lane when there is one in reach: from a
-    // shoulder, parking bay or kerb the nearest lane of any type is often the
-    // one under the walker's feet, and "perpendicular to that" faced half of
-    // all crossings away from the road.
+    // Face the nearest DRIVING lane in reach; the nearest lane of any type is often underfoot.
     const nearest = _nearestLaneProjection(wx, wy, new Set(['driving']), 30) || _nearestLaneProjection(wx, wy);
     if (!nearest) return 0;
     const towardRoad = (Math.atan2(nearest.y - wy, nearest.x - wx) * 180) / Math.PI;
@@ -72,9 +59,7 @@
     return nearest ? Math.round(nearest.laneYaw) : 0;
   }
 
-  /** `wz`, when given, makes the distance 3-D — what CARLA's get_waypoint()
-   * does, and the only way to tell a deck from the street under it. Placement
-   * height deliberately stays 2-D (see groundZAt); route projection does not. */
+  /** With `wz` the distance is 3-D, like get_waypoint (deck vs street below); placement height stays 2-D. */
   function _nearestLaneProjection(wx, wy, laneTypes = null, maxDistance = Infinity, wz = null) {
     let best = null;
     for (const road of AppState.mapData?.roads || []) {
@@ -100,9 +85,7 @@
               x,
               y,
               dist,
-              // Road-surface height, lerped along the same segment the position
-              // came from. The `= 0` destructuring defaults keep this working
-              // against 2-element points, i.e. a cached older render payload.
+              // Height lerped along the same segment; the destructuring defaults allow 2-element points.
               z: z0 + t * (z1 - z0),
               laneYaw: (Math.atan2(dy, dx) * 180) / Math.PI,
               laneId: lane.laneId,
@@ -119,23 +102,9 @@
   }
 
   /* Vehicle lane snap ─────────────────────────────────────────────────────────
-   *
-   * A vehicle (ego included) is placed and dragged onto the nearest driving or
-   * parking lane centreline, facing that lane's travel direction; Shift places
-   * or drags it freely and leaves its yaw alone. Walkers and props are never
-   * snapped — they belong on kerbs and crossings.
-   *
-   * Placement used to snap to the nearest *spawn point* within 12 m — a
-   * discrete sample, so a car could land metres from the click — and a drag did
-   * not snap at all: the car kept its old yaw wherever it was dropped, across
-   * lanes and onto the verge.
-   *
-   * Inside a junction several connectors overlap, and "nearest" flips between
-   * them from one mousemove to the next. So among the lanes within
-   * VEHICLE_SNAP_TIE_M of the nearest one, the one whose heading is closest to
-   * `prevYaw` (the vehicle's current yaw on a drag) wins: dragging a car through
-   * a junction keeps it on the connector it is already following.
-   */
+   * Vehicles (ego included) snap to the nearest driving/parking lane centre facing its
+   * travel direction; Shift is free. Overlapping junction connectors tie-break on
+   * `prevYaw`, so a drag stays on the connector it follows. */
   const VEHICLE_SNAP_LANE_TYPES = new Set(['driving', 'parking']); // not 'bidirectional', a wall
   const VEHICLE_SNAP_MAX_DIST = 12;
   const VEHICLE_SNAP_TIE_M = 1.0;
@@ -150,8 +119,7 @@
         for (let i = 1; i < line.length; i++) {
           const [x0, y0, z0 = 0] = line[i - 1];
           const [x1, y1, z1 = 0] = line[i];
-          // Cheap reject before the projection: the segment's box, grown by
-          // the snap radius, must contain the point.
+          // Cheap reject: the segment's box, grown by the snap radius, must contain the point.
           if (
             wx < Math.min(x0, x1) - VEHICLE_SNAP_MAX_DIST ||
             wx > Math.max(x0, x1) + VEHICLE_SNAP_MAX_DIST ||
@@ -191,25 +159,9 @@
   }
 
   /* Ground height ─────────────────────────────────────────────────────────────
-   *
-   * Every z the editor writes is the OpenDRIVE road surface at (x, y) plus a
-   * per-category clearance. A fixed z (this used to be 0.2 for actors) puts an
-   * object metres under the road on any map with a gradient — Town03 road 67
-   * climbs to 2.7 m and back to 0 within its own length.
-   *
-   * Clearance always errs HIGH. Spawning below the surface fails hard in CARLA
-   * ("collision at spawn position"); spawning above it is free, because actors
-   * spawn with physics and settle within a tick.
-   *
-   * VRUs get more than vehicles because <elevationProfile> is the *reference
-   * line* surface — it models neither kerb height nor sidewalk elevation, and
-   * sidewalk lanes carry no directionLine, so a pedestrian standing on a kerb
-   * takes its z from the carriageway roughly 0.15 m below it. A pedestrian at
-   * z=0.2 clipping geometry and failing to spawn is what this margin is for.
-   *
-   * Props are NOT given clearance: a <MiscObject> has no settle behaviour, and
-   * the catalogue's per-prop z is already a surface-relative offset.
-   */
+   * z = road surface + a clearance that errs HIGH: below the surface CARLA refuses the
+   * spawn, above it the actor settles. VRUs get more (the profile models no kerbs);
+   * props get none — the catalogue's z is their own offset. */
   const SPAWN_CLEARANCE = { vehicle: 0.5, vru: 0.6, waypoint: 0.5 };
   const GROUND_Z_MAX_DIST = 60; // how far to reach for a lane to take height from
 
@@ -217,45 +169,25 @@
     return ROAD_FACING_TYPES.has(type) ? SPAWN_CLEARANCE.vru : SPAWN_CLEARANCE.vehicle;
   }
 
-  /** Round to cm — z is derived, so it should not carry float noise into saves. */
+  /** Round to cm, so derived z carries no float noise into saves. */
   function _roundZ(z) {
     return Math.round(z * 100) / 100;
   }
 
-  /* Road-surface height at (wx, wy), or 0 when nothing is within reach.
-   *
-   * A generous radius is safe here in a way it is not for yaw: z has no side or
-   * direction semantics, so the nearest lane is always a defensible answer. */
+  /* Road-surface height at (wx, wy), or 0 out of reach. */
   function groundZAt(wx, wy) {
     const near = _nearestLaneProjection(wx, wy, null, GROUND_Z_MAX_DIST);
     return near ? near.z : 0;
   }
 
   /* Route waypoints snap to the lane centreline ────────────────────────────
-   *
-   * A route waypoint is never driven to as authored: AssignRouteAction hands
-   * each one to GlobalRoutePlanner, which projects it with map.get_waypoint()
-   * and routes to whichever lane centre came out. So a point dropped between
-   * two lanes is not "between two lanes" — it silently becomes one of them, and
-   * when that is the oncoming carriageway the vehicle drives away from the
-   * route and loops back to reach it (weirdLooping.xosc). Snapping at authoring
-   * time makes the map show the point CARLA will actually use.
-   *
-   * follow_trajectory is deliberately NOT snapped: a trajectory is driven
-   * literally, vertex by vertex, and its whole purpose is going where lanes do
-   * not — a pedestrian crossing, a cyclist bending out, a reversing curve.
-   */
+   * The route planner projects a 'fastest' waypoint onto a lane anyway (possibly the
+   * oncoming one), so the map shows the point CARLA will use. Trajectories are driven
+   * literally and never snapped. */
   const ROUTE_SNAP_LANE_TYPES = new Set(['driving']); // CARLA's get_waypoint default; Town03's 'bidirectional' is a wall
   const ROUTE_SNAP_MAX_DIST = 25; // how far to reach for a lane to snap onto
 
-  /**
-   * A route waypoint for the click at (wx, wy): the nearest driving-lane
-   * centreline point, or the raw click when no lane is within reach.
-   *
-   * Returns {x, y, z, snapped}. The snapped case takes its z from the same
-   * lane segment the position came from, so no separate elevation lookup is
-   * needed; the unsnapped case falls back to the ordinary surface query.
-   */
+  /** A route waypoint for a click: the nearest driving-lane centre, or the raw point. Returns {x, y, z, snapped}. */
   function _routeWaypointAt(wx, wy) {
     const near = _nearestLaneProjection(wx, wy, ROUTE_SNAP_LANE_TYPES, ROUTE_SNAP_MAX_DIST);
     if (!near) {
@@ -271,9 +203,7 @@
     };
   }
 
-  /* Height for an object of `type` standing at (x, y): road surface plus the
-   * category's clearance, or plus the catalogue offset for a prop. The single
-   * entry point for anything that moves an already-placed object. */
+  /* Surface height plus clearance (or a prop's catalogue offset): for anything that moves an object. */
   function _surfaceZFor(type, x, y, propBlueprint = null) {
     const base = type === 'prop' ? PropCatalog.defaultZ(propBlueprint) : _clearanceFor(type);
     return _roundZ(groundZAt(x, y) + base);
@@ -305,17 +235,11 @@
             : { ...action, type: 'follow_trajectory', trajectory: points },
       };
     });
-    // Through updateById, not `actor.events = …` directly. This used to be the
-    // one scenario mutation in the app that reached neither of AppState's
-    // mutators, which put it outside the undo history in the worst possible
-    // way: not merely un-undoable, but *destroyed* by the next undo, because
-    // the entry pushed after it described a world where the path was never
-    // drawn. Undoing an unrelated rotate wiped a five-point trajectory.
+    // Through updateById, so the path is in the undo history (outside it, the next undo wiped it).
     AppState.updateById(actor.id, { events });
   }
 
-  /* One warning per drawing run, not one per click: building a path across a
-   * car park would otherwise stack a toast per waypoint. */
+  /* One warning per drawing run, not one per click. */
   let _unsnappedWarned = false;
   function _warnUnsnapped() {
     if (_unsnappedWarned) return;

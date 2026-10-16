@@ -1,8 +1,7 @@
 /**
  * templatesGeometry.js — the builders that read the road at the click: crossings, the cut-in, the pull-out.
  *
- * Part of ScenarioTemplates; see templates.js. ScenarioTemplateManager is a
- * chain of classes, one per file, each adding its methods to the one before.
+ * Part of ScenarioTemplates; see templates.js (one class per file, each extending the last).
  */
 (() => {
   'use strict';
@@ -23,10 +22,8 @@
     // ── Geometry: what is in front of / beside the placed actor ──────────────
 
     /**
-     * Walks from (x, y) along `yawDeg` and reports where the carriageway
-     * starts and ends — every lane polygon but sidewalk/verge counts — plus
-     * the middle of the first driving lane crossed. Distances in metres from
-     * the start. Null when no carriageway lies within CROSSING_SEARCH_M.
+     * Walk from (x, y) along `yawDeg`: where the carriageway (anything but sidewalk/verge)
+     * starts and ends, and the middle of the first driving lane, in metres. Null if none in reach.
      */
     _crossingProfile(x, y, yawDeg) {
       const roads = AppState.mapData?.roads || [];
@@ -74,8 +71,7 @@
         if (lane) {
           if (entry == null) entry = s;
           lastInside = s;
-          // The first driving LANE, by identity: two adjacent driving lanes
-          // are one span by type, and its middle is the line between them.
+          // The first driving lane by identity: two adjacent ones are one span by type.
           if (drivingTo == null) {
             if (lane.type === 'driving' && drivingFrom == null) {
               drivingFrom = s;
@@ -87,8 +83,7 @@
           if (entry != null && s - lastInside > KERB_STEP_M) break; // across and onto the kerb
         }
       }
-      // No road, or still on it at the end of the search — heading along the
-      // carriageway rather than across it. Neither is a crossing.
+      // No road, or still on it at the search end (heading along it): not a crossing.
       if (entry == null || lastInside >= CROSSING_SEARCH_M - STEP) return null;
       return {
         entry,
@@ -135,7 +130,7 @@
         const z = Math.round((ObjectsManager.groundZAt(x, y) + WAYPOINT_CLEARANCE) * 100) / 100;
         return { x, y, z, velocity: CYCLE_SPEED };
       };
-      // Waypoint 1 is the actor's own pose, exactly as startPathMode seeds it.
+      // Waypoint 1 on the actor's own pose, like startPathMode's seed.
       const trajectory = [{ x: actor.x, y: actor.y, z: actor.z ?? 0, velocity: CYCLE_SPEED }];
       const mid = (prof.entry + prof.end) / 2;
       if (mid > 2) trajectory.push(at(mid));
@@ -157,7 +152,7 @@
         Toast.info('Einscheren: noch kein Ego platziert — Spurwechsel nach rechts angenommen');
         return events;
       }
-      // CARLA's frame is left-handed with y down: facing +x, +y is to the RIGHT.
+      // y-down frame: facing +x, +y is to the right.
       const yaw = ((actor.yaw || 0) * Math.PI) / 180;
       const cross = Math.cos(yaw) * (ego.y - actor.y) - Math.sin(yaw) * (ego.x - actor.x);
       events[1].action.direction = cross >= 0 ? 'right' : 'left';
@@ -167,8 +162,7 @@
     /** Route out of the parking spot onto the driving lane beside it. */
     _buildPullOut(actor) {
       const driving = new Set(['driving']);
-      // Travel direction from the lane the car stands on, not from its yaw: a
-      // hand-placed car need not face the right way, and the lane does.
+      // Direction from the lane the car stands on, not its yaw.
       const here = ObjectsManager.nearestLaneProjection(
         actor.x,
         actor.y,
@@ -181,7 +175,6 @@
       const ay = here.y + Math.sin(yaw) * PULL_OUT_AHEAD_M;
       const merge = ObjectsManager.nearestLaneProjection(ax, ay, driving, 8);
       if (!merge) return null;
-      // Same direction of travel, or the "lane beside it" is the oncoming one.
       const dYaw = Math.abs(((merge.laneYaw - here.laneYaw + 540) % 360) - 180);
       if (dYaw > 60) return null;
       const seed = ObjectsManager.routeWaypointAt(actor.x, actor.y);
@@ -192,11 +185,8 @@
         strategy: 'fastest',
       });
       const waypoints = [{ x: seed.x, y: seed.y, z: seed.z, strategy: 'fastest' }, wp(merge.x, merge.y, merge.z)];
-      // On along the road, so the route's end — where the controller stops
-      // dead — is not in the middle of the merge. Probed straight ahead and
-      // projected back onto a same-direction driving lane, farthest first:
-      // a lane's own directionLine ends at its section boundary, often only a
-      // few metres on, while the 'fastest' leg in between is routed anyway.
+      // Run on so the route's end (a dead stop) is past the merge: probed straight ahead,
+      // farthest first, onto a same-direction driving lane.
       const mYaw = (merge.laneYaw * Math.PI) / 180;
       for (const ahead of [PULL_OUT_RUN_M, 60, 40, 30, 20]) {
         const c = ObjectsManager.nearestLaneProjection(

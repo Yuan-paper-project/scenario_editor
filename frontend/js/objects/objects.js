@@ -1,15 +1,6 @@
 /**
- * objects.js — Actor placement, selection, dragging, yaw-arrow rotation,
- *              and path waypoint drawing.
- *
- * Interactions:
- *   - Click on map with active tool → place a vehicle on the nearest lane centre,
- *     facing the lane (Shift: at the cursor). Pedestrians/cyclists stay at the
- *     clicked point and face the nearest road.
- *   - Click on existing actor → select it
- *   - Drag actor body → move actor (vehicles snap to a lane; Shift: free)
- *   - Drag yaw arrow head → rotate actor
- *   - In path drawing mode → click on map to add waypoint
+ * objects.js — the map click handler (place, select, deselect), actor and prop placement,
+ * and the public ObjectsManager.
  */
 (() => {
   'use strict';
@@ -39,15 +30,8 @@
     clearPath,
   } = ObjectsCore.shared;
 
-  // Speed a newly placed actor starts with, emitted as a SpeedAction in the
-  // Storyboard Init. An actor with no events gets no Act at all, so this is the
-  // only speed it ever has — placing one at the default means it drives, rather
-  // than spawning into a scenario as an invisible obstacle.
-  //
-  // This is the *placement* default only. An actor loaded from a save file or
-  // seeded straight into AppState without the field defaults to 0 instead
-  // (AppState._hydrateActor, backend _normalize_actor) — a legacy scenario must
-  // not have its stationary actors quietly set in motion.
+  // A placed vehicle's start speed (the Init SpeedAction). Placement only: an actor loaded
+  // without the field gets 0, so an old scenario's parked actors stay parked.
   const DEFAULT_INIT_SPEED = 10.0;
 
   // ── SVG click handler ─────────────────────────────────────────────────────────
@@ -68,22 +52,16 @@
       return;
     }
 
-    // "Generate here": the click is the spot the generator builds a conflict
-    // at, wherever it lands — on an actor too, since the scenario is replaced.
+    // „Konflikt hier erzeugen": the click is the spot, even on an actor (the scenario is replaced).
     if (AppState.pendingGenerate) {
       ScenarioGenerator.generateAtClick(world.x, world.y, e);
       return;
     }
 
-    // A waypoint marker owns its own click: mousedown already marked it (and
-    // may have dragged it). Without this the click falls through to the
-    // deselect branch at the bottom, which drops the actor whose waypoints are
-    // the only reason the marker was reachable in the first place.
+    // A waypoint owns its click (mousedown marked it); falling through would deselect its actor.
     if (e.target.closest('.path-waypoint')) return;
 
-    // ── Check for actor click first (even with tool active — clicking existing actor selects it) ──
-    // Exception: the prop tool is sticky, so it keeps placing over existing
-    // objects rather than selecting them — you build a cone line by clicking.
+    // An actor click selects, even with a tool armed — except the sticky prop tool, which places.
     const actorGroup = e.target.closest('.actor-group');
     if (actorGroup && AppState.activeTool !== 'prop') {
       const id = actorGroup.dataset.id;
@@ -93,13 +71,11 @@
       return;
     }
 
-    // ── Tool active: place actor on empty space (skip non-placement tools) ──
     if (AppState.activeTool && AppState.activeTool !== 'ruler') {
       _placeActor(AppState.activeTool, world.x, world.y, e.shiftKey);
       return;
     }
 
-    // Click on empty space with no tool: deselect
     AppState.select(null);
   });
 
@@ -122,21 +98,14 @@
     const snap = laneSnap || vehicleSnap;
     const x = snap ? snap.x : Math.round(wx * 10) / 10;
     const y = snap ? snap.y : Math.round(wy * 10) / 10;
-    // Shift on a vehicle: the position is the click, but it still faces along
-    // the nearest lane rather than due east.
+    // Shift on a vehicle: at the click, but facing along the nearest lane.
     let yaw = roadFacing ? _roadFacingYaw(wx, wy) : shiftKey ? _roadAlongYaw(wx, wy) : 0;
     if (templatePlacement?.orientation === 'along-lane') yaw = _roadAlongYaw(wx, wy);
     if (snap) yaw = snap.yaw ?? snap.laneYaw;
-    // A snap already carries the surface height of the exact point it snapped
-    // to; free placement has to look it up at the final position.
     const z = _roundZ((snap?.z ?? groundZAt(x, y)) + _clearanceFor(type));
 
-    // Ego and NPCs share the same actor shape — initial_speed and events both
-    // mean the same thing for both. Only the storage differs.
-    // A walker or cyclist starts still: an Init <SpeedAction> lands on tick 1,
-    // so a pedestrian placed at 10 m/s used to sprint off at 36 km/h along its
-    // heading before any trigger had a chance to fire. A template may state
-    // its own (a parked car's is 0); vehicles keep DEFAULT_INIT_SPEED.
+    // Walkers start still: the Init speed lands on tick 1, before any trigger could fire.
+    // A template may state its own; vehicles get DEFAULT_INIT_SPEED.
     const tplSpeed = ScenarioTemplates.initialSpeedFor(pendingTemplate);
     const actor = {
       id: AppState.nextId(),
@@ -148,8 +117,6 @@
       initial_speed: tplSpeed ?? (ROAD_FACING_TYPES.has(type) ? 0 : DEFAULT_INIT_SPEED),
       events: [],
     };
-    // No template targets 'ego' (ScenarioTemplates.eventsForActor requires
-    // actor.type === template.actorType), so this is a no-op [] for the ego.
     actor.events = ScenarioTemplates.eventsForActor(actor, pendingTemplate);
     if (type === 'ego') {
       AppState.set({ ego: actor });
@@ -159,7 +126,6 @@
     }
     const newId = actor.id;
 
-    // Deactivate tool after placing so user can immediately drag/select
     AppState.set({ activeTool: null, pendingTemplate: null, pendingProp: null });
     AppState.select(newId);
     MapView.renderAllActors();
@@ -169,13 +135,8 @@
     }
   }
 
-  /* Static props: free placement by default — cones, barriers and containers
-   * belong on shoulders, tapers and sidewalks, not on lane centres. Shift snaps
-   * to the nearest lane centreline and aligns yaw to lane direction.
-   *
-   * Unlike actors this is sticky (the tool stays armed) and does not select the
-   * new prop, so a cone line is one click per cone.
-   */
+  /* Props are placed freely (Shift snaps to a lane centre); the tool stays armed and the new
+   * prop is not selected, so a cone line is one click per cone. */
   const PROP_SNAP_MAX_DIST = 20; // Shift: how far to reach for a lane to snap onto
   const PROP_YAW_MAX_DIST = 25; // how far to reach for a lane to orient against
   function _placeProp(wx, wy, shiftKey) {
@@ -186,7 +147,6 @@
       return;
     }
 
-    // Orientation always applies; Shift only controls POSITION.
     const near = _nearestLaneProjection(wx, wy, null, PROP_YAW_MAX_DIST);
     const snap = shiftKey && near && near.dist <= PROP_SNAP_MAX_DIST ? near : null;
     const x = snap ? Math.round(snap.x * 10) / 10 : Math.round(wx * 10) / 10;
@@ -197,7 +157,6 @@
       prop: blueprint,
       x,
       y,
-      // Catalogue z is an offset from the road surface, not an absolute height.
       z: _roundZ(groundZAt(x, y) + PropCatalog.defaultZ(blueprint)),
       yaw: _propYawFor(blueprint, wx, wy, near),
     };
@@ -219,22 +178,12 @@
     clearPath,
     groundZAt,
     surfaceZFor: _surfaceZFor,
-    // AppState.updateById snaps a moving actor's seed waypoint with this, for
-    // the same reason placement does: waypoint 0 is a routing seed and an
-    // off-centre one gets projected onto a lane nobody chose.
+    // Also used by AppState.updateById to snap a moving actor's seed waypoint.
     routeWaypointAt: _routeWaypointAt,
-    // Exposed for simulate.js's lane-follow preview: same projection used for
-    // placement/yaw, now also needed to snap an actor onto its spawn lane and
-    // to test for a same-direction neighbour lane (lane_change feasibility).
-    // Returns {x, y, dist, z, laneYaw, laneId, laneType, road, lane} or null;
-    // `road`/`lane` are the actual render-JSON objects, by reference — the
-    // caller can walk `lane.directionLine` directly rather than re-querying,
-    // which sidesteps the fact that road.lanes is flattened across lane
-    // sections with no section marker (see CLAUDE.md).
+    // {x, y, dist, z, laneYaw, laneId, laneType, road, lane} or null; road/lane are the
+    // render-JSON objects themselves, so callers can walk lane.directionLine directly.
     nearestLaneProjection: _nearestLaneProjection,
-    // The vehicle placement/drag snap: {x, y, z, yaw} on the nearest driving or
-    // parking lane centre within 12 m, or null. `prevYaw` breaks ties between
-    // overlapping junction connectors (tests/e2e/test_vehicle_snap_e2e.py).
+    // {x, y, z, yaw} on the nearest driving/parking lane within 12 m, or null; `prevYaw` breaks ties.
     vehicleLaneSnap: _vehicleLaneSnap,
   };
 })();

@@ -1,19 +1,10 @@
 /**
- * templates.js — Scenario template definitions and placement flow.
+ * templates.js — the template panel, placement and applying a chain (ScenarioTemplates).
  *
- * A template is one actor plus a pre-filled event chain. Most chains are
- * fixed data (`events`); the ones whose shape depends on WHERE the actor was
- * dropped — how wide the road is that a pedestrian crosses, which driving lane
- * a parked car pulls out into — carry a `build(actor)` instead, which
- * objects.js runs at the click with the actor's final pose. A builder that
- * cannot make sense of the spot (no road to cross, no lane to pull out into)
- * falls back to its `events`, and says so with a toast.
- *
- * `initialSpeed` is the actor's Start (m/s). It defaults to the first
- * set_speed's target for a vehicle and to 0 for everything that must wait for
- * its trigger: an Init <SpeedAction> lands on tick 1, long before any
- * distance trigger, so a crossing pedestrian with a start speed is across the
- * road before the ego is anywhere near it.
+ * A template is one actor plus an event chain: fixed `events`, or a `build(actor)` run at
+ * the click for chains that depend on the road there (falling back to `events` with a
+ * toast). `initialSpeed` defaults to the first set_speed's target for a vehicle and 0 for
+ * anything that must wait for its trigger.
  */
 (() => {
   'use strict';
@@ -87,13 +78,7 @@
       });
     }
 
-    /**
-     * The generator's conflict types as place-able templates ("Generate
-     * here"): unlike the one-actor templates below, each builds a whole
-     * scenario — ego, route, conflict actors, green wave — around the clicked
-     * spot, with its timing solved against the ego and scored. It REPLACES the
-     * scenario, which the button titles say.
-     */
+    /** The generator's conflict types as place-able buttons; each REPLACES the scenario. */
     _generatorSectionHtml() {
       const types = (window.ScenarioGenerator && ScenarioGenerator.TYPES) || {};
       const btn = (label, key, title) =>
@@ -148,20 +133,15 @@
       const template = this.templates[templateId];
       if (!template) return null;
       if (template.initialSpeed != null) return template.initialSpeed;
-      // Vehicles start at the speed their first event sets anyway, so the
-      // chain does not open with a jump; walkers and cyclists wait.
+      // Vehicles start at their first event's speed (no jump); walkers and cyclists wait.
       if (MapView.isWalkerType(template.actorType) || template.actorType === 'cyclist') return 0;
       const first = template.events.find((ev) => ev.action.type === 'set_speed');
       return first ? first.action.target.value : 0;
     }
 
     /**
-     * Templates whose chain makes sense on an already-placed actor of this
-     * type, for the event panel's "Ablauf aus Template" picker. Vehicle chains
-     * go on any vehicle; walker chains (set_speed along the spawn heading) on
-     * walkers only — a cyclist is a <Vehicle> and rides along the lane under
-     * set_speed — and cyclist chains on cyclists. Never the ego: every chain
-     * here waits on distance_to_ego, which on the ego itself is coerced to t=0.
+     * Templates whose chain fits an already-placed actor of this type: vehicle chains on
+     * vehicles, walker chains on walkers, cyclist chains on cyclists, nothing on the ego.
      */
     compatibleWith(actorType) {
       if (!actorType || actorType === 'ego' || actorType === 'prop') return [];
@@ -171,11 +151,7 @@
         .map(([id, t]) => ({ id, label: t.label, hint: t.hint || '' }));
     }
 
-    /**
-     * Replaces `actor`'s events with the template's chain, built for its
-     * current pose, and sets the template's start speed — one updateById, so
-     * one undo entry. Asks first when the actor already has events.
-     */
+    /** Replace `actor`'s events with the template's chain and start speed; one undo entry, confirms first. */
     async applyTo(actor, templateId) {
       const template = this.templates[templateId];
       if (!actor || !template) return false;
@@ -189,7 +165,7 @@
         return false;
       }
       const current = AppState.findById(actor.id) || actor;
-      // eventsForActor matches the template's own type; a van takes a car chain.
+      // eventsForActor matches the template's own type, so a van takes a car chain.
       const events = this.eventsForActor({ ...current, type: template.actorType }, templateId);
       const patch = { events };
       const v0 = this.initialSpeedFor(templateId);

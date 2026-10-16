@@ -1,22 +1,10 @@
-/* propCatalog.js — CARLA static prop catalogue (presentation side).
+/**
+ * propCatalog.js — the prop catalogue's API and the Requisiten panel (PropCatalog).
  *
- * Mirrors the split already used for vehicles: this file owns everything the
- * editor needs to *show* a prop (label, group, shapes, dimensions), while
- * ../llm-scenario-gen/config/prop_catalog.yaml owns everything the exporter
- * needs to *emit* one (miscObjectCategory, mass, 3D bounding box). The only
- * shared column is the blueprint id; a mismatch fails loudly as a 400 at
- * export, never silently.
- *
- * TWO VIEWS, deliberately:
- *   side — elevation silhouette, used for the palette tiles. A picker icon
- *          should look like the object, and there is no projection to clash
- *          with in a toolbar.
- *   plan — top-down footprint, used for the map marker. The map is a plan
- *          view throughout (roads, lane markings, and vehicle footprints in
- *          mapMarkers._renderActor), and props rotate with yaw the same way
- *          actors do, so their marker has to be plan view too.
- *
- * The data is in propData.js, the drawings in propSideShapes.js and propPlanShapes.js.
+ * The presentation side only; ../llm-scenario-gen/config/prop_catalog.yaml owns what
+ * the exporter emits, joined on the blueprint id (a mismatch is a 400 at export).
+ * Two views: `side` silhouettes for the palette tiles, `plan` footprints for the map,
+ * which is plan view throughout. Data in propData.js, drawings in prop*Shapes.js.
  */
 (() => {
   'use strict';
@@ -24,13 +12,8 @@
   const { GROUPS, PROPS } = PropData;
   const { side: sideShapes, plan: planShapes, MIN_SIDE_RATIO } = PropShapes;
 
-  /* Scale a footprint up uniformly when it is too small to see on a map
-   * spanning hundreds of metres. Aspect ratio is preserved, so a barrier stays
-   * elongated and a cone stays round; large props are untouched.
-   *
-   * Known consequence: every prop under the floor is drawn at the floor, so the
-   * three cones (0.88 / 0.46 / 0.34 m) all render at the same diameter and
-   * their real size difference is not visible on the map. */
+  /* Footprints under this are scaled up (aspect kept) so they stay visible; the cost is
+   * that all three cones draw at the same size. */
   const MIN_PLAN_EXTENT = 1.2;
 
   function planSize(id) {
@@ -66,17 +49,13 @@
       return !!PROPS[id]?.oriented;
     },
 
-    /** Placement facing rule — see the header. Independent of `oriented`:
-     *  a 'none' prop may still carry a yaw handle for manual rotation. */
+    /** Placement facing rule (see propData.js); independent of `oriented`. */
     facing(id) {
       return PROPS[id]?.facing || 'none';
     },
 
-    /** MAP GLYPH ONLY: extra rotation of the drawn body, in degrees.
-     *  For props whose yaw means "the way the face points", the body has to sit
-     *  across that direction — a barrier blocks the lane, it does not lie along
-     *  it. Purely cosmetic: the exported h is untouched, and the yaw arrow keeps
-     *  pointing at the true facing. */
+    /** Map glyph only: extra rotation of the drawn body (a barrier lies across its facing);
+     *  the exported h and the yaw arrow are untouched. */
     planRotate(id) {
       return PROPS[id]?.planRotate || 0;
     },
@@ -88,9 +67,7 @@
     /** Top-down footprint in metres, clamped for visibility. */
     planSize,
 
-    /** Where the mesh actually sits relative to the prop's pivot, in the
-     *  prop's own frame (+X = yaw), in metres. [0, 0] for most props. Not
-     *  scaled by planSize's visibility clamp: it is a real position. */
+    /** The mesh centre relative to the pivot, in the prop's frame (+X = yaw), metres; never clamped. */
     planOffset(id) {
       const o = PROPS[id]?.plan?.off;
       return o ? { x: o[0], y: o[1] } : { x: 0, y: 0 };
@@ -112,8 +89,7 @@
     /** An <svg> element for a palette tile: side-view silhouette. */
     tileIcon(id, size = 30) {
       const s = PROPS[id]?.side || { kind: 'box', w: 1, h: 1 };
-      // Silhouettes stand on y=0 rising to -h, so a flat prop would otherwise
-      // hug the tile floor and leave dead space above. Centre it instead.
+      // Centre the silhouette, or a flat prop hugs the tile floor.
       const long = Math.max(s.w, s.h);
       const k = (size * 0.86) / long; // fit the tile, keep aspect
       const drawnH = Math.max(s.h, long * MIN_SIDE_RATIO) * k;
@@ -126,13 +102,8 @@
       return svg;
     },
 
-    /** Render the REQUISITEN tab body: a search field, then one collapsible
-     *  section per group. With ~80 props a flat tile list is a long scroll, so
-     *  sections fold (per-viewer, remembered in localStorage — UI preference,
-     *  not scenario state) and the search filters across all of them,
-     *  matching the German label or the blueprint id. While a search is
-     *  active every section with a hit is shown open regardless of its fold
-     *  state, and the fold state itself is left untouched. */
+    /** The Requisiten tab: a search field over foldable group sections (fold state per viewer,
+     *  in localStorage). A search shows every section with a hit open, leaving the fold state. */
     renderPanel(container) {
       container.textContent = '';
       const collapsed = _loadCollapsed();
@@ -222,8 +193,7 @@
         empty.classList.toggle('hidden', hits > 0);
       };
       search.addEventListener('input', applyFilter);
-      // Esc clears the field and stops there: without stopPropagation it would
-      // also reach mapKeys.js's Esc and disarm the prop tool the user just picked.
+      // Esc clears the field and stops: it must not also disarm the prop tool just picked.
       search.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && search.value) {
           search.value = '';
@@ -240,10 +210,7 @@
     },
   };
 
-  /* Folded sections, per viewer. Every accessor can throw (private window,
-   * blocked storage), and the panel must work without it. Default: everything
-   * past the first two groups starts folded, so the work-zone and road-hazard
-   * props — the ones scenarios mostly use — are visible without a scroll. */
+  /* Folded sections, per viewer (storage may throw). Default: all but the first two groups folded. */
   const COLLAPSE_KEY = 'scenarioEditor.propSections';
   function _loadCollapsed() {
     try {

@@ -25,10 +25,8 @@
 
   // ── Path drawing mode ─────────────────────────────────────────────────────────
 
-  // What the banner is currently announcing, so leaving a mode can be detected
-  // and acted on. A path event that never got 2 waypoints is discarded here
-  // rather than in _finishPathMode(): Esc clears the mode flags directly
-  // (mapKeys.js), so hanging the check off the *button* would miss it.
+  // What the banner announces, so leaving the mode is detected here — Esc clears the flags
+  // directly, so the incomplete-path check cannot hang off the button.
   let _drawContext = null; // { actorId, eventId, type }
 
   AppState.on('change', (patch) => {
@@ -70,15 +68,7 @@
     trajBannerText.querySelector('strong').textContent = name;
   });
 
-  /**
-   * Drop a path event that was left with fewer than 2 waypoints.
-   *
-   * Such an event is dropped by the emitter anyway (_add_follow_trajectory_action
-   * / _add_assign_route_action return False under 2 points) and takes any
-   * after_event chained onto it down with it, so the editor removes it at the
-   * moment it becomes clear the user is not going to finish drawing.
-   * EventPanel.deleteEvent does the re-pointing of those chains.
-   */
+  /** Drop a path event left under 2 waypoints (the emitter would drop it); deleteEvent re-points chains. */
   function _discardIncompletePath(context) {
     const actor = _findActor(context.actorId);
     if (!actor) return;
@@ -99,11 +89,7 @@
     MapView.renderAllActors();
   }
 
-  // loadJSON clears every mode flag by direct assignment and emits 'stateLoaded'
-  // rather than 'change', so the handler above never sees it. Without this the
-  // banner would survive a load started mid-draw, and _drawContext would keep
-  // pointing at an id from the scenario that was just replaced — ids restart at
-  // obj-1/evt-1 in every file, so that is a real collision, not a theoretical one.
+  // loadJSON clears the flags without a 'change', so reset the banner and context here (ids recur).
   AppState.on('stateLoaded', () => {
     _drawContext = null;
     trajBanner.classList.add('hidden');
@@ -114,10 +100,7 @@
     _finishPathMode();
   });
 
-  // Enter finishes a path, so drawing one never needs the mouse to leave the
-  // map: click the waypoints, press Enter. Esc still cancels (mapKeys.js).
-  // Bound here rather than in mapKeys.js's keydown because _finishPathMode and the
-  // banner both live in this module.
+  // Enter finishes a path (Esc cancels, in mapKeys.js); here because the banner lives here.
   window.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     if (!AppState.trajectoryMode && !AppState.routeMode) return;
@@ -153,24 +136,13 @@
   function startPathMode(actorId, type, eventId = null) {
     const actor = _findActor(actorId);
     if (!actor || !eventId) return;
-    // Waypoint 1 is the actor's own pose, so it inherits the actor's height too
-    // and the first map click already completes a usable 2-point path.
-    //
-    // On its own that seed is what used to make a forgotten path event silently
-    // wrong: one waypoint is below the 2 the emitter needs and draws nothing on
-    // the map (mapPaths.js skips a path under 2 points), while the card claimed
-    // "Pfad gezeichnet". The seed is fine; leaving it *alone* is what is not, so
-    // the event is discarded on leaving draw mode instead
-    // (_discardIncompletePath), and the card counts against 2 rather than 0.
+    // Waypoint 1 is the actor's own pose and height, so the first click completes a 2-point path.
     let path = _eventPath(actor, eventId, type);
     if (!path || path.length === 0) {
       if (type === 'trajectory') {
         path = [{ x: actor.x, y: actor.y, z: actor.z ?? 0, velocity: 10.0 }];
       } else {
-        // Snapped like every other route waypoint. A vehicle sits on a spawn
-        // point, which is a lane centre already, so this normally moves the
-        // seed by centimetres — but a hand-typed or dragged pose need not be
-        // on a lane at all, and leg 0 would then start off the network.
+        // Snapped like every route waypoint: a typed or dragged pose need not be on a lane.
         const snap = _routeWaypointAt(actor.x, actor.y);
         path = [
           {
@@ -183,9 +155,7 @@
       }
       _setEventPath(actor, eventId, type, path);
     }
-    // Drawing into a hidden path would put every click somewhere invisible, so
-    // starting a draw un-hides it for good (MapView.showPath flips the stored
-    // toggle rather than overriding it, so the card's button stays truthful).
+    // Drawing un-hides the path (MapView.showPath flips the stored toggle).
     MapView.showPath(actorId, eventId, type);
     AppState.set({
       activeTool: null,
@@ -204,19 +174,10 @@
     if (!actor) return;
     let path = _eventPath(actor, eventId, type);
     if (!path) path = [];
-    // Waypoints used to carry no z at all and picked up a flat 0.2 downstream,
-    // which drags a trajectory across an elevated road straight under it.
     let point;
     if (type === 'route') {
-      // Shift places a 'shortest' waypoint. Same modifier and the same meaning
-      // it already has for prop placement: do not snap to the lane. That is not
-      // a convenience here, it is the semantics — a 'shortest' leg is appended
-      // to the route verbatim and driven as the straight line it is drawn as,
-      // so going where lanes do not is the whole point of choosing it. A plain
-      // click stays snapped, because a 'fastest' leg is handed to the
-      // GlobalRoutePlanner, which projects the point with map.get_waypoint()
-      // and routes to whichever lane came out — off-centre that can silently be
-      // the oncoming carriageway.
+      // Shift places a 'shortest' waypoint, driven literally and so not snapped; a plain click
+      // snaps, because a 'fastest' one is projected onto a lane by the planner anyway.
       if (shortest) {
         const x = Math.round(wx * 10) / 10;
         const y = Math.round(wy * 10) / 10;
@@ -239,11 +200,7 @@
     if (type === 'trajectory') {
       point.velocity = path.length > 0 ? path[path.length - 1].velocity : 10.0;
     }
-    // A NEW array, not path.push(). _eventPath returns the live
-    // action.trajectory/waypoints, so mutating it in place would change the
-    // actor before updateById is told about it — the patch would then be
-    // identical to the state it is patching, the undo history would score it a
-    // no-op, and the waypoint would not be undoable.
+    // A new array: _eventPath returns the live one, and mutating it would make the patch a no-op to undo.
     _setEventPath(actor, eventId, type, [...path, point]);
   }
 

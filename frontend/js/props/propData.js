@@ -1,20 +1,15 @@
-/* propData.js — the prop catalogue itself; PropCatalog (propCatalog.js) is the API over it.
+/**
+ * propData.js — the prop catalogue data; PropCatalog (propCatalog.js) is the API over it.
  *
- * Dimensions are real metres. `plan.len` runs along local +X (the yaw
- * direction, matching ACTOR_SIZES.w); `plan.wid` runs across it.
- * oriented:false props are rotationally symmetric and get no yaw handle.
- *
- * `facing` is the placement rule, resolved against the OpenDRIVE direction of
- * the SPECIFIC lane nearest the click (objectsCore.js `_propYawFor`). Because
- * map_renderer reverses directionLine for left-side lanes, adjacent lanes of a
- * two-way road yield opposite laneYaw, so an 'oncoming' prop on each side
- * correctly faces its own lane's traffic.
+ * Real metres: `plan.len` along local +X (the yaw direction), `plan.wid` across it.
+ * oriented:false props are symmetric and get no yaw handle. `facing` is the placement
+ * rule against the nearest lane's travel direction (objectsCore.js _propYawFor):
  *   oncoming    — laneYaw + 180, confronts approaching traffic
  *   along       — laneYaw, long axis follows the lane
  *   alongside   — laneYaw or +180, whichever turns the open side toward the road
  *   toward-road — bearing from the prop to the nearest lane point
- *   none        — no rule; yaw 0, still rotatable by hand
- * Independent of `oriented`: a 'none' prop can still have a yaw handle.
+ *   none        — yaw 0, still rotatable by hand
+ * tools/probes/probe_carla_props.py reads the `z` values by regex: keep one key per line.
  */
 (() => {
   'use strict';
@@ -28,15 +23,9 @@
     { id: 'garden', label: 'Garten & Freizeit', color: '#7c9a2a' },
   ];
 
-  /* GENERATED from live CARLA measurements — every number below is measured,
-   * not estimated: footprints and heights from bounding_box.extent, `z` from
-   * spawning each prop on a road and reading where its mesh actually ends up.
-   * ScenarioRunner runs every prop with physics ON, so a mesh whose pivot is
-   * not at its base would start with its collision below the road and fall
-   * through the world; `z` is the lift that puts its base on the surface.
-   * `plan.off` is the mesh centre relative to its pivot in the editor's own
-   * frame (+X = yaw) — the container's sits 1.1 m to one side, and drawing it
-   * centred put the marker beside the real skip. */
+  /* Measured in CARLA, not estimated: footprints from bounding_box.extent; `z` is the lift
+   * that keeps a mesh with an off-base pivot from falling through the road (props run with
+   * physics on); `plan.off` is the mesh centre relative to the pivot. */
   const PROPS = {
     // ── Baustelle ────────────────────────────────────────
     'static.prop.trafficcone01': {

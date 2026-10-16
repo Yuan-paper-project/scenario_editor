@@ -22,7 +22,7 @@
     return d.innerHTML;
   }
 
-  // ── Render panel for selected actor ─────────────────────────────────────────
+  // ── The no-selection panel ──────────────────────────────────────────────────
 
   function _renderOverviewPanel() {
     const activeTab = _overviewPanelTab === 'templates' ? 'templates' : 'overview';
@@ -56,13 +56,10 @@
     let html = '<div class="scenario-summary">';
     html += '<h3>Szenario-Übersicht</h3>';
     html += `<div class="summary-row"><span class="label">Karte</span><span class="value">${_esc(mapName)}</span></div>`;
-    // The ego/NPC/prop counts that used to sit here are in the scene list below,
-    // which shows the same numbers and lets you reach the objects behind them.
     html += `<div class="summary-row"><span class="label">Akteure mit Pfad</span><span class="value">${withTraj}</span></div>`;
 
     html += _sceneListHtml();
 
-    // The generated scenario's parameters (scenarioGenerator.js), when there is one.
     if (window.ScenarioGenerator) html += ScenarioGenerator.recipeHtml();
 
     html += `<div class="summary-section">Wetter</div>`;
@@ -87,12 +84,9 @@
   }
 
   // ── Scene list ──────────────────────────────────────────────────────────────
-  //
-  // The map draws actors at true world size, so at the town view a car is a
-  // handful of pixels and there is no practical way to click one — this list is
-  // the way to reach an actor, and MapView.focusActor is the way to see it.
+  // At the town view a true-size car is a few pixels; this list is how to reach one.
 
-  /** One clickable row per scenario actor. */
+  /** One row per scenario actor. */
   function _sceneRowHtml(actor) {
     const col = MapView.actorColor(actor.type);
     const round = _isWalker(actor.type); // matches how the map draws it
@@ -118,32 +112,23 @@
       </div>`;
   }
 
-  // Mirrors mapMarkers.js WALKER_TYPES — only to pick a round swatch over a square
-  // one, so a drift here is cosmetic rather than the usual two-tables trap.
+  // Like mapMarkers.js WALKER_TYPES, only for the swatch shape (a drift is cosmetic).
   function _isWalker(type) {
     return type === 'pedestrian' || type === 'child' || type === 'cyclist';
   }
 
   /**
-   * One row per prop TYPE, with a stepper that walks its instances.
-   *
-   * Two deletes with different blast radii live on this row, so they are kept
-   * visually and positionally distinct: `✕` sits with the stepper and takes the
-   * instance the stepper points at, the trash stays rightmost — where every
-   * other row's trash is — and takes the whole type. Both confirm, and the
-   * confirm text names the exact target, which is what actually makes the
-   * difference safe rather than the icons.
+   * One row per prop type with a stepper over its instances. `✕` takes the instance, the
+   * trash (rightmost) the whole type; both confirm naming their target.
    */
   function _propRowHtml(blueprint, items) {
     const name = window.PropCatalog?.label(blueprint) || blueprint;
     const count = items.length;
-    // Props are added and removed by the map and the toolbar too, so the cursor
-    // is clamped here rather than trusted.
+    // Clamped here: the map and the toolbar add and remove props too.
     const cursor = Math.min(Math.max(_propCursor[blueprint] ?? 0, 0), count - 1);
     _propCursor[blueprint] = cursor;
     const current = items[cursor];
 
-    // At one instance a stepper is a control that can only ever say "1/1".
     const stepper =
       count > 1
         ? `<span class="scene-step">
@@ -159,10 +144,7 @@
 
     const currentLabel = AppState.actorLabel(current, { short: true });
 
-    // At one instance the two deletes would do the same thing and the bulk one
-    // would have to say "Alle 1 × …". So the row collapses to a single trash
-    // that takes that instance — exactly like an actor row. The spacer keeps
-    // the trash in the same grid column as every other row's.
+    // At one instance a single trash takes it; the spacer keeps the column aligned.
     const deletes =
       count > 1
         ? `<button type="button" class="scene-del scene-del-one" data-scene-del="${_esc(current.id)}"
@@ -205,8 +187,7 @@
   function _sceneListHtml() {
     let html = '<div class="scene-list" role="listbox" aria-label="Szene">';
 
-    // Ego — one object, so a collapsible section around it would be a control
-    // that can only ever hide a single row.
+    // The ego is one row, no collapsible section.
     html +=
       '<div class="scene-section"><div class="scene-section-head">' +
       '<span class="scene-head-label">Ego</span></div>' +
@@ -222,10 +203,7 @@
       npcs.length ? npcs.map(_sceneRowHtml).join('') : '<div class="scene-empty">Keine NPCs</div>',
     );
 
-    // Props are counted per type, never listed per object: a cone taper is a
-    // dozen entries that differ only in position, and they would push the
-    // actors — the things you actually navigate to — off the panel. The stepper
-    // is how you still reach one particular cone.
+    // Props per type, not per object: a cone taper would push the actors off the panel.
     const props = AppState.staticObjects || [];
     const byType = new Map();
     props.forEach((p) => {
@@ -261,7 +239,6 @@
     scene.locatedId = items[next].id;
     _renderOverviewPanel(); // the row prints "n/N", so it has to redraw
     MapView.focusActor(scene.locatedId);
-    // Keep the keyboard on the row that was just stepped.
     propsOverview.querySelector(`.scene-prop-row[data-prop-bp="${CSS.escape(blueprint)}"]`)?.focus();
   }
 
@@ -285,9 +262,7 @@
     items.forEach((p) => {
       if (scene.locatedId === p.id) scene.locatedId = null;
     });
-    // One entry for the whole bulk delete. It used to push one per prop, so a
-    // taper of twelve cones took twelve presses of Strg+Z to put back; the
-    // history holds whole scenario states now, so the group can be atomic.
+    // One undo entry for the whole bulk delete.
     UndoStack.group(`${items.length} × ${name} löschen`, () => {
       AppState.staticObjects = AppState.staticObjects.filter((p) => p.prop !== blueprint);
       if (AppState.selectedId && !AppState.findById(AppState.selectedId)) AppState.selectedId = null;
@@ -315,9 +290,7 @@
         if (ind) ind.textContent = _sceneCollapsed[key] ? '+' : '-';
         return;
       }
-      // Every control below sits inside a row whose own click means "locate",
-      // so each one has to claim the event before it gets there. Strg (Cmd on a
-      // Mac) is the app-wide "I meant it" modifier: it skips the confirm dialog.
+      // Every control sits inside a row whose click locates, so each claims the event. Strg/Cmd skips the confirm.
       const skip = e.ctrlKey || e.metaKey;
       const delAll = e.target.closest('[data-prop-del-all]');
       if (delAll) {
@@ -339,8 +312,7 @@
       if (row) _locateScene(root, row.dataset.sceneId);
     });
 
-    // Selecting swaps this whole panel out for the object's properties, so it is
-    // the deliberate gesture: double click, or Enter on a focused row.
+    // Selecting swaps this panel out, so it is the deliberate gesture: double click or Enter.
     list.addEventListener('dblclick', (e) => {
       if (e.target.closest('[data-scene-del], [data-prop-del-all], [data-prop-step]')) return;
       const row = e.target.closest(SCENE_ROW_SEL);
@@ -355,16 +327,12 @@
         e.preventDefault();
         AppState.select(row.dataset.sceneId);
       } else if (e.key === ' ') {
-        // Only a row the user actually keyboard-focused owns Space; a row left
-        // focused by a click does not, or Space would re-locate what that click
-        // already located instead of starting the preview (simulate.js reads
-        // the same predicate, and defers to the preventDefault below).
+        // Only a keyboard-focused row owns Space (simPlayback.js defers to this preventDefault).
         if (!UIUtils.keyboardFocused(row)) return;
         e.preventDefault();
         _locateScene(root, row.dataset.sceneId);
       } else if (bp && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
-        // On a prop row the horizontal arrows are the stepper, matching the
-        // ◀ ▶ buttons sitting in the row itself.
+        // On a prop row ←/→ are the stepper.
         e.preventDefault();
         _stepProp(bp, e.key === 'ArrowRight' ? 1 : -1);
       } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {

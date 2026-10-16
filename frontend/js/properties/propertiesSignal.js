@@ -24,14 +24,10 @@
     const action = TrafficSignals.actionById(tl.id);
     propsOverview.classList.add('hidden');
     propsContent.classList.remove('hidden');
-    // 'traffic_light_2' is the map's id; the number is what tells two apart.
     const num = String(tl.id).match(/(\d+)$/);
     propsTitle.textContent = num ? `Ampel ${num[1]}` : `Ampel ${tl.id}`;
     if (propsDelete) propsDelete.classList.add('hidden');
-    // Every section an actor or a prop shows has to be hidden here explicitly:
-    // they share #props-content, and anything left out keeps whatever the
-    // previously selected object made visible (the type picker did exactly
-    // that — a light clicked after a car showed „Typ: Auto").
+    // Hide every actor/prop section explicitly: they share #props-content and would leak through.
     document.getElementById('spawn-panel')?.classList.add('hidden');
     document.getElementById('actor-type-row')?.classList.add('hidden');
     document.getElementById('prop-type-row')?.classList.add('hidden');
@@ -40,10 +36,8 @@
     if (trafficSignalMeta) {
       trafficSignalMeta.textContent = `${tl.id} · x ${UIUtils.fmt(tl.x)}, y ${UIUtils.fmt(tl.y)}`;
     }
-    // The .xodr has lights CARLA does not (Town10HD's traffic_light_10/11);
-    // a Schaltung on one aborts the run with "Unknown traffic light". Adding
-    // is disabled, and any already there (a save file) are chipped — the
-    // export gate and the backend refuse them too.
+    // A light CARLA lacks would abort the run ("Unknown traffic light"): adding is disabled,
+    // existing ones are chipped, and export refuses them.
     const ghost = tl.inCarla === false;
     if (btnAddTrafficEvent) {
       btnAddTrafficEvent.disabled = ghost;
@@ -89,8 +83,7 @@
       return;
     }
 
-    // Laid out like an actor's event card (eventPanel.js): header, then the
-    // WENN block, then the DANN row.
+    // Laid out like an event card: header, WENN, DANN.
     events.forEach((ev, i) => {
       const card = document.createElement('div');
       card.className = 'event-card traffic-event-card';
@@ -111,8 +104,7 @@
       header.appendChild(deleteBtn);
       card.appendChild(header);
 
-      // WENN: emitted as a ReachPositionCondition on hero with this tolerance
-      // around the signal's pole (xml_builder._append_traffic_signal_event).
+      // WENN: a ReachPositionCondition on hero with this tolerance around the pole.
       const trigger = document.createElement('div');
       trigger.className = 'event-trigger-block';
       const distanceInput = document.createElement('input');
@@ -126,8 +118,6 @@
           trigger_distance: Math.max(0, parseFloat(e.target.value) || 0),
         });
       });
-      // Same short accent eyebrow as an actor card's „Auslöser"; the
-      // condition itself reads as one inline phrase beside it.
       const whenRow = document.createElement('div');
       whenRow.className = 'event-row event-primary-row';
       const whenLabel = document.createElement('label');

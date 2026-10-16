@@ -1,18 +1,11 @@
-/* propSideShapes.js — side-view silhouettes for the palette tiles (PropCatalog.tileIcon).
- * Pure drawing: (kind, size, colour) in, SVG elements out; no catalogue lookups.
+/**
+ * propSideShapes.js — side-view silhouettes for the palette tiles (PropCatalog.tileIcon).
  */
 (() => {
   'use strict';
 
-  /* ── Side view (elevation) — palette tiles ───────────────────────────────────
-   * Flat silhouettes standing on the ground line y=0, centred on x=0, rising to
-   * y=-h. Fills use the group colour; white low-opacity accents only, matching
-   * the rest of the map's visual language. No gradients, no shading.
-   *
-   * Objects with an extreme aspect ratio (a 0.05 m road plate, a 0.3 m sign
-   * post) degenerate into a hairline at true proportion, so those shapes floor
-   * one dimension — see MIN_SIDE_RATIO.
-   */
+  /* Silhouettes stand on y=0, centred on x=0, rising to y=-h, in the group colour. Extreme
+   * aspect ratios are floored (MIN_SIDE_RATIO) so a road plate is not a hairline. */
   const MIN_SIDE_RATIO = 0.3; // no silhouette thinner than 30% of its long side
 
   function sideShapes(kind, w, h, color) {
