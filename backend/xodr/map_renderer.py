@@ -235,7 +235,6 @@ def _lane_entry(ld, lane_defs, sec_samples, section_id, s_start, s_end, offsets,
     }
 
     if ld['type'] in ('driving', 'bidirectional', 'parking', 'shoulder'):
-        sign = +1.0 if ld['side'] == 'L' else -1.0
         lane_cl = []
         lane_widths = []
         side_lanes = [l for l in lane_defs if l['side'] == ld['side']]

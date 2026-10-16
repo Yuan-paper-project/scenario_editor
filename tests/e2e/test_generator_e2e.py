@@ -212,7 +212,7 @@ def check_scenario(town, t, s, r, page):
         )
     C(f"{tag}: info counts the forced lights", r["info"].get("forced_green_lights") == len(r["signals"]))
     if t == "cut_out":
-        lead, stopped = r["npcs"][0], r["npcs"][1]
+        lead = r["npcs"][0]
         lc = lead["events"][0]
         C(
             f"{tag}: lead swerves on its own position",

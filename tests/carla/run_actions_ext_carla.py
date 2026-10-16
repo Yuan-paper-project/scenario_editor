@@ -245,7 +245,7 @@ def judge(b, result):
     timeline = A.event_timeline(A.parse_osc_log(result["log"]))
     out["events"] = {n: [t["start"], t["end"]] for n, t in sorted(timeline.items())}
     t0 = run.tracks["hero"].t[0] if "hero" in run.tracks else 0
-    for cid, role in ROLE.items():
+    for role in ROLE.values():
         tr = run.get(role)
         if not tr:
             continue

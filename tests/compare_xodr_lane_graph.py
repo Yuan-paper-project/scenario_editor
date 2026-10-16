@@ -162,15 +162,6 @@ def compare_routing(gt, built, n_routes=300):
             (vert[e['from']], e['type'], _lane_key(e['exit'])) for e in g['edges'] if e['type'].startswith('CHANGE')
         }
 
-    junction_roads = {e['entry']['roadId'] for e in built['edges'] if e['type'] == 'LANEFOLLOW' and e['intersection']}
-    junction_lc = [
-        e
-        for e in built['edges']
-        if e['type'].startswith('CHANGE')
-        and e['entry']['roadId'] in junction_roads
-        and e['exit']['roadId'] in junction_roads
-        and built['roadIdToEdge'][str(e['entry']['roadId'])]
-    ]
     gt_lc, b_lc = lc(gt), lc(built)
 
     common = sorted(set(gt_lf) & set(b_lf))

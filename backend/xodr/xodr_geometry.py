@@ -144,7 +144,7 @@ def _sample_geometry(
         return None
 
     s_vals: list[float] = []
-    for s0, x0, y0, hdg, ln, curv in geom_segs:
+    for s0, _x0, _y0, _hdg, ln, curv in geom_segs:
         step = interval
         if curv != 0.0:
             step = min(interval, max(ARC_SAMPLE_MIN_M, ARC_SAMPLE_ANGLE_RAD / abs(curv)))

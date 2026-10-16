@@ -80,7 +80,7 @@ def add_logos(slide):
     ly = LOGO_TOP
 
     # AUS LAB box
-    box = add_rect(slide, lx, ly, logo_w, logo_h, fill=None, line_color=TUM, line_width=Pt(1.2))
+    add_rect(slide, lx, ly, logo_w, logo_h, fill=None, line_color=TUM, line_width=Pt(1.2))
     txb = slide.shapes.add_textbox(lx, ly, logo_w, logo_h)
     tf = txb.text_frame
     tf.word_wrap = False
@@ -161,7 +161,7 @@ def add_footer(slide, slide_num):
 def add_step_box(slide, x, y, w, h, num, title, desc):
     """Numbered step box with circle + bold title + grey description."""
     # Box background
-    box = add_rect(slide, x, y, w, h, fill=WHITE, line_color=BORDER, line_width=Pt(0.75))
+    add_rect(slide, x, y, w, h, fill=WHITE, line_color=BORDER, line_width=Pt(0.75))
 
     # Circle
     cx, cy = x + Inches(0.12), y + Inches(0.10)
@@ -562,7 +562,7 @@ ab_tot = len(arch_boxes) * ab_w + (len(arch_boxes) - 1) * ab_gap + (len(arch_box
 ab_x0 = (W - ab_tot) / 2
 ab_y = BODY_TOP + Inches(0.08)
 
-for i, (icon, title, sub) in enumerate(arch_boxes):
+for i, (_icon, title, sub) in enumerate(arch_boxes):
     bx = MARGIN_L + i * (ab_w + ab_gap + Inches(0.24))
     add_rect(sl, bx, ab_y, ab_w, ab_h, fill=LIGHT, line_color=TUM, line_width=Pt(1.0))
     add_text_box(
