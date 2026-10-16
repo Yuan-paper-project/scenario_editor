@@ -36,7 +36,7 @@
   // end is where SimpleVehicleControl stops dead: at 40 m (measured in CARLA,
   // Town03 road 6) the car parked in the ego's lane and the ego closed to 3.5 m.
   const PULL_OUT_RUN_M = 80;
-  const WAYPOINT_CLEARANCE = 0.5; // objects.js SPAWN_CLEARANCE.waypoint
+  const WAYPOINT_CLEARANCE = 0.5; // objectsCore.js SPAWN_CLEARANCE.waypoint
   // SimpleVehicleControl counts a waypoint as reached within 4 m and stops dead
   // on the last one, so a trajectory ending AT the far kerb leaves a cyclist
   // standing 4 m short of it — measured in CARLA (Town01 road 1): stopped in

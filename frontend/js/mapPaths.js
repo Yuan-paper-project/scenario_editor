@@ -175,7 +175,7 @@
 
   /* ── Waypoint markers ───────────────────────────────────────────────────────
    *
-   * One group shape for both path kinds, so objects.js's drag matches a single
+   * One group shape for both path kinds, so objectsDrag.js's drag matches a single
    * class (`.path-waypoint`) and the four data attributes below are the whole
    * contract between the map and the event card's waypoint list.
    *

@@ -18,7 +18,7 @@ from playwright.sync_api import sync_playwright
 BASE = os.environ.get("EDITOR_URL", "http://localhost:9090")
 fails, checks = [], []
 
-# Kept in step with SPAWN_CLEARANCE in frontend/js/objects.js.
+# Kept in step with SPAWN_CLEARANCE in frontend/js/objectsCore.js.
 VEHICLE_CLEARANCE = 0.5
 VRU_CLEARANCE = 0.6
 

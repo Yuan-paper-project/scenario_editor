@@ -182,7 +182,7 @@ EXPECTED = {
 FOOTPRINT_DRIFT = {"truck", "bus", "motorcycle", "cyclist"}
 
 # Types placed free-hand facing the nearest road rather than snapped to a spawn
-# point (objects.js ROAD_FACING_TYPES). Asserted through yaw rather than
+# point (objectsCore.js ROAD_FACING_TYPES). Asserted through yaw rather than
 # position: Playwright clicks on integer pixels, which at map zoom is worth
 # several decimetres, so "did it move" cannot separate a snap from rounding.
 # Yaw can — a spawn-snapped actor inherits the lane's travel direction, while a

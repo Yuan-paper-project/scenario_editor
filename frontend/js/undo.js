@@ -346,7 +346,7 @@
      * Coming back out, the baseline is re-read: whatever ran under the
      * suspension changed the state without recording it, and the next edit's
      * "before" has to be where things actually stand. That is what makes the
-     * drag's mouseup z-fixup (objects.js) invisible to the history rather than
+     * drag's mouseup z-fixup (objectsDrag.js) invisible to the history rather than
      * merely unrecorded.
      */
     suspend() {

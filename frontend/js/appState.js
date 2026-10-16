@@ -14,7 +14,7 @@
    *
    * The split is load-bearing, not cosmetic: every 'vehicle' type is snapped to
    * a lane centre at placement while every 'vru' type is in ROAD_FACING_TYPES
-   * (objects.js) and placed freely, so a within-group swap can keep the existing
+   * (objectsCore.js) and placed freely, so a within-group swap can keep the existing
    * pose untouched. assign_route is likewise vehicle-only downstream
    * (_ROUTE_ACTION_TYPES in ../llm-scenario-gen/generator/event_builders.py), so
    * a within-group swap can never orphan a route event. Crossing the boundary
@@ -208,7 +208,7 @@
       if (scenario) UndoStack._recordSet();
       Object.assign(this, patch);
       this.emit('change', patch);
-      // After the listeners: one of them can mutate further (objects.js
+      // After the listeners: one of them can mutate further (objectsPaths.js
       // discards an incomplete path on a mode change), and the baseline has to
       // end up describing the state the user is actually looking at.
       if (scenario) UndoStack._settle();
@@ -510,7 +510,7 @@
      * copies of an eight-key literal before the third arrived (nine keys now,
      * with `pendingGenerate`). Clearing the draw
      * flags is also what discards a path that never reached two waypoints
-     * (objects.js `_discardIncompletePath` hangs off this change), so callers
+     * (objectsPaths.js `_discardIncompletePath` hangs off this change), so callers
      * that go on to read the actors must call this first.
      *
      * Records no undo entry: `_isScenarioPatch` does not count editor-only keys.

@@ -5,7 +5,7 @@
  * oriented:false props are rotationally symmetric and get no yaw handle.
  *
  * `facing` is the placement rule, resolved against the OpenDRIVE direction of
- * the SPECIFIC lane nearest the click (objects.js `_propYawFor`). Because
+ * the SPECIFIC lane nearest the click (objectsCore.js `_propYawFor`). Because
  * map_renderer reverses directionLine for left-side lanes, adjacent lanes of a
  * two-way road yield opposite laneYaw, so an 'oncoming' prop on each side
  * correctly faces its own lane's traffic.

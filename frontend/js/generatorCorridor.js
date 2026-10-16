@@ -148,7 +148,7 @@
   }
 
   /** An assign_route event whose waypoint 0 is the actor's own pose — the
-   * seed objects.js places and the backend requires to be 'fastest'. */
+   * seed objectsPaths.js places and the backend requires to be 'fastest'. */
   function _routeEvent(actor, waypoints, id = 'evt-1') {
     const seed = ObjectsManager.routeWaypointAt(actor.x, actor.y);
     return {

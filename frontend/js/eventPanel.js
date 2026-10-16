@@ -143,7 +143,7 @@
   window.EventPanel = {
     render,
     setRefreshHandler,
-    // objects.js discards a path event left under 2 waypoints and must go
+    // objectsPaths.js discards a path event left under 2 waypoints and must go
     // through this: it re-points any after_event chained onto the deleted
     // event and clears the draw-mode state, which a bare events.filter() would
     // leave dangling.

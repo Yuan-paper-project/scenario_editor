@@ -14,7 +14,7 @@
   // car.xosc template). A vehicle reaches any commanded speed at this rate, so
   // the ego is NOT at its start speed on tick 1 in CARLA.
   const VEHICLE_ACCEL = 3.0;
-  // Same clearance objects.js gives a waypoint: the router projects it anyway,
+  // Same clearance objectsCore.js gives a waypoint: the router projects it anyway,
   // and DistanceCondition is 3-D, so a point under the road would never fire.
   const WAYPOINT_CLEARANCE = 0.5;
   // How far the computed route may stray from the corridor before the attempt

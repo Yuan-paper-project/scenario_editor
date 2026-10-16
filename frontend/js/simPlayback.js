@@ -71,7 +71,7 @@
        * pan/zoom — so an armed tool survived Play, crosshair and all, and the
        * first click on the animating map placed an actor. Clearing the draw
        * flags is also what discards a path that never reached two waypoints
-       * (objects.js `_discardIncompletePath`), which is why this must run
+       * (objectsPaths.js `_discardIncompletePath`), which is why this must run
        * BEFORE _prepareSimulation() reads the actors: otherwise the preview
        * would simulate an event that no longer exists. It is also before
        * `run.running = true`, so the "user picked up a tool" handler below — which

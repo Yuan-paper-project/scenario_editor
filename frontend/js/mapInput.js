@@ -69,7 +69,7 @@
     'mousedown',
     (e) => {
       if (e.button !== 0) return;
-      // During a preview nothing on the map is draggable (objects.js stands
+      // During a preview nothing on the map is draggable (objectsDrag.js stands
       // down), so a grab on a marker pans like a grab anywhere else.
       if (
         !window.Simulate?.running &&
@@ -77,7 +77,7 @@
           e.target.closest('.yaw-arrow') ||
           e.target.closest('.trigger-radius-control') ||
           e.target.closest('.trigger-point-control') ||
-          // This handler is capture-phase on the same <svg> objects.js binds on
+          // This handler is capture-phase on the same <svg> objectsDrag.js binds on
           // the bubble phase, so it runs FIRST: without the waypoint here the pan
           // is already under way by the time the drag handler sees the mousedown.
           e.target.closest('.path-waypoint'))

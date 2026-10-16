@@ -328,7 +328,7 @@
    * edge rather than at its centre, where it used to hit-test as "rotate" right
    * across the marker.
    *
-   * `.yaw-handle` is the one selector objects.js's mousedown looks for; the
+   * `.yaw-handle` is the one selector objectsDrag.js's mousedown looks for; the
    * ring draws that same circle on hover so the zone is visible before you
    * commit to a drag.
    */
