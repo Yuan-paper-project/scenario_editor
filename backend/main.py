@@ -245,13 +245,13 @@ async def upload_map(file: UploadFile = File(...)):
         content = await file.read()
         dest_path.write_bytes(content)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to save file: {exc}")
+        raise HTTPException(status_code=500, detail=f"Failed to save file: {exc}") from exc
 
     try:
         MAP_CACHE[town_name] = build_map_render_data_from_path(dest_path, town_name)
     except Exception as exc:
         dest_path.unlink(missing_ok=True)
-        raise HTTPException(status_code=422, detail=f"Failed to parse .xodr: {exc}")
+        raise HTTPException(status_code=422, detail=f"Failed to parse .xodr: {exc}") from exc
 
     # Best-effort: a failure leaves the town without a lane graph, not the upload failed.
     graph = _build_lane_graph_safely(town_name, dest_path)
@@ -274,9 +274,9 @@ async def export_scenario(request: Request):
     try:
         tmp_path = export_to_xosc(params)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Export failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Export failed: {e}") from e
 
     filename = f"{map_name}_scenario.xosc"
 
@@ -295,9 +295,9 @@ async def export_batch(request: Request):
     try:
         zip_path, n_ok, n_failed = export_batch_zip(body.get("scenarios"))
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Batch export failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Batch export failed: {e}") from e
     return FileResponse(
         zip_path,
         media_type="application/zip",
@@ -324,7 +324,7 @@ def _bg_traffic_or_http(town: str, request_body: dict) -> dict:
     try:
         return bg_traffic.generate(town, _xodr_for(town), request_body)
     except bg_traffic.BgTrafficError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @app.post("/api/bg_traffic")
@@ -351,9 +351,9 @@ def export_bundle(body: dict):
     try:
         xosc_path = export_to_xosc(params)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Export failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Export failed: {e}") from e
     zip_path = xosc_path[: -len(".xosc")] + ".zip"
     stem = f"{map_name}_scenario"
     try:
@@ -396,9 +396,9 @@ async def export_route(request: Request):
     try:
         tmp_path = export_route_xml(params)
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Route export failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Route export failed: {e}") from e
 
     filename = f"{map_name}_route.xml"
     return FileResponse(
