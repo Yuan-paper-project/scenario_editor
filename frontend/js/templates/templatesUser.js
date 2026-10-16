@@ -140,10 +140,10 @@
         .map(
           (t) => `
         <div class="user-template-row" data-user-template="${t.id}">
-          <input type="text" class="user-template-name" value="${_attr(t.label)}" aria-label="Name der Vorlage"
+          <input type="text" class="user-template-name" value="${UIUtils.escapeHtml(t.label)}" aria-label="Name der Vorlage"
                  title="Umbenennen">
           <button class="template-action-button event-action-button user-template-place" type="button"
-                  data-template-action="${t.id}" title="${_attr(this.templates[t.id].hint)} — Akteur auf der Karte platzieren">Platzieren</button>
+                  data-template-action="${t.id}" title="${UIUtils.escapeHtml(this.templates[t.id].hint)} — Akteur auf der Karte platzieren">Platzieren</button>
           <button class="user-template-del" type="button" data-user-template-del="${t.id}" title="Vorlage löschen">✕</button>
         </div>`,
         )
@@ -169,8 +169,6 @@
   }
 
   const USER_KEY = 'scenarioEditor.userTemplates';
-  const _attr = (v) =>
-    String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
   const _r1 = (v) => Math.round(v * 10) / 10;
   const _r2 = (v) => Math.round(v * 100) / 100;
 

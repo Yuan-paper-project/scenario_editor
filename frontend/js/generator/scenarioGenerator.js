@@ -37,9 +37,6 @@
   // Changing a field pins it and rebuilds on the same site and seed; „Variante würfeln" redraws
   // the rest. Rendered by propertiesOverview.js.
 
-  const _escHtml = (v) =>
-    String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-
   /** The value the build used, not the pin, which the site may not have allowed. */
   function _recipeValue(r, spec) {
     const v = r.params?.[spec.key];
@@ -53,15 +50,15 @@
 
   function _recipeControl(r, spec) {
     const v = _recipeValue(r, spec);
-    const attr = `data-recipe-key="${spec.key}" aria-label="${_escHtml(spec.label)}"`;
+    const attr = `data-recipe-key="${spec.key}" aria-label="${UIUtils.escapeHtml(spec.label)}"`;
     if (spec.kind === 'bool') return `<input type="checkbox" ${attr}${v ? ' checked' : ''}>`;
     if (spec.kind === 'choice') {
       const opts = spec.options
-        .map(([k, l]) => `<option value="${k}"${k === v ? ' selected' : ''}>${_escHtml(l)}</option>`)
+        .map(([k, l]) => `<option value="${k}"${k === v ? ' selected' : ''}>${UIUtils.escapeHtml(l)}</option>`)
         .join('');
       return `<select ${attr}>${opts}</select>`;
     }
-    return `<input type="number" ${attr} min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${v === '' ? '' : _escHtml(v)}">`;
+    return `<input type="number" ${attr} min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${v === '' ? '' : UIUtils.escapeHtml(v)}">`;
   }
 
   function _recipeMismatch(r, spec) {
@@ -88,25 +85,25 @@
           : '<span></span>';
         const miss = _recipeMismatch(r, spec);
         const missTitle = miss
-          ? ` title="Festgelegt auf ${_escHtml(spec.kind === 'choice' ? (spec.options.find(([k]) => k === pins[spec.key]) || [, pins[spec.key]])[1] : pins[spec.key])}, an dieser Stelle nicht möglich"`
+          ? ` title="Festgelegt auf ${UIUtils.escapeHtml(spec.kind === 'choice' ? (spec.options.find(([k]) => k === pins[spec.key]) || [, pins[spec.key]])[1] : pins[spec.key])}, an dieser Stelle nicht möglich"`
           : '';
         return `<div class="gen-recipe-row${pinned ? ' pinned' : ''}${miss ? ' unmet' : ''}" data-recipe-row="${spec.key}">
-        <span class="gen-recipe-label"${missTitle}>${_escHtml(spec.label)}${miss ? ' ⚠' : ''}</span>
+        <span class="gen-recipe-label"${missTitle}>${UIUtils.escapeHtml(spec.label)}${miss ? ' ⚠' : ''}</span>
         ${_recipeControl(r, spec)}
-        <span class="gen-recipe-unit">${_escHtml(spec.unit || '')}</span>
+        <span class="gen-recipe-unit">${UIUtils.escapeHtml(spec.unit || '')}</span>
         ${unpin}
       </div>`;
       })
       .join('');
     const wrongTown = r.town && r.town !== AppState.map;
     const warn = wrongTown
-      ? `<div class="gen-recipe-warn">Gebaut auf ${_escHtml(r.town)} — Karte wechseln, um neu zu bauen.</div>`
+      ? `<div class="gen-recipe-warn">Gebaut auf ${UIUtils.escapeHtml(r.town)} — Karte wechseln, um neu zu bauen.</div>`
       : recipeEdited()
         ? '<div class="gen-recipe-warn">Seit dem Generieren von Hand bearbeitet — eine Änderung hier baut neu und verwirft das.</div>'
         : '';
     return `<div class="gen-recipe" data-recipe>
       <div class="summary-section">Generiert</div>
-      <div class="gen-recipe-head"><b>${_escHtml(r.label)}</b><span>Seed ${_escHtml(r.seed)}</span></div>
+      <div class="gen-recipe-head"><b>${UIUtils.escapeHtml(r.label)}</b><span>Seed ${UIUtils.escapeHtml(r.seed)}</span></div>
       ${warn}
       <div class="gen-recipe-grid">${rows}</div>
       <div class="gen-recipe-actions">
@@ -130,14 +127,17 @@
     const values = _sweepValues(spec, _sweepUi.from, _sweepUi.to, _sweepUi.steps);
     const total = Math.min(SWEEP_MAX, values.length * (_sweepUi.weathers ? Object.keys(WEATHER_PRESETS).length : 1));
     const opts = specs
-      .map((sp) => `<option value="${sp.key}"${sp.key === spec.key ? ' selected' : ''}>${_escHtml(sp.label)}</option>`)
+      .map(
+        (sp) =>
+          `<option value="${sp.key}"${sp.key === spec.key ? ' selected' : ''}>${UIUtils.escapeHtml(sp.label)}</option>`,
+      )
       .join('');
     const range =
       spec.kind === 'num'
         ? `<label>Von</label><input type="number" data-sweep-from min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${_sweepUi.from}">
          <label>Bis</label><input type="number" data-sweep-to min="${spec.min}" max="${spec.max}" step="${spec.step}" value="${_sweepUi.to}">
          <label>Werte</label><input type="number" data-sweep-steps min="2" max="25" step="1" value="${_sweepUi.steps}">`
-        : `<span class="gen-sweep-all">alle Werte: ${values.map((v) => _escHtml(spec.kind === 'bool' ? (v ? 'ja' : 'nein') : spec.options.find(([k]) => k === v)[1])).join(', ')}</span>`;
+        : `<span class="gen-sweep-all">alle Werte: ${values.map((v) => UIUtils.escapeHtml(spec.kind === 'bool' ? (v ? 'ja' : 'nein') : spec.options.find(([k]) => k === v)[1])).join(', ')}</span>`;
     return `<details class="gen-sweep" data-sweep${_sweepUi.open ? ' open' : ''}>
       <summary>Serie exportieren</summary>
       <div class="gen-sweep-grid">

@@ -14,7 +14,7 @@
     el.className = `toast toast-${type}`;
     el.innerHTML = `
       <span class="toast-icon">${TOAST_ICONS[type] || ''}</span>
-      <span class="toast-msg">${_escHtml(message)}</span>
+      <span class="toast-msg">${UIUtils.escapeHtml(message)}</span>
       <button class="toast-close">\u00D7</button>`;
     el.querySelector('.toast-close').addEventListener('click', () => _dismissToast(el));
     _toastContainer.appendChild(el);
@@ -26,12 +26,6 @@
     if (!el.parentNode) return;
     el.classList.add('toast-out');
     el.addEventListener('animationend', () => el.remove());
-  }
-
-  function _escHtml(s) {
-    const d = document.createElement('div');
-    d.textContent = s;
-    return d.innerHTML;
   }
 
   window.Toast = {

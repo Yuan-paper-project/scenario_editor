@@ -144,6 +144,11 @@
       return idx;
     },
 
+    /** Text made safe for HTML content and double-quoted attributes. */
+    escapeHtml(v) {
+      return String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+    },
+
     /** An SVG element with the given attributes. */
     svgEl(tag, attrs) {
       const e = document.createElementNS('http://www.w3.org/2000/svg', tag);

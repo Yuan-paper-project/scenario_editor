@@ -16,12 +16,6 @@
             stroke-linecap="round" stroke-linejoin="round"/>
     </svg>`;
 
-  function _esc(s) {
-    const d = document.createElement('div');
-    d.textContent = s == null ? '' : String(s);
-    return d.innerHTML;
-  }
-
   // ── The no-selection panel ──────────────────────────────────────────────────
 
   function _renderOverviewPanel() {
@@ -55,7 +49,7 @@
 
     let html = '<div class="scenario-summary">';
     html += '<h3>Szenario-Übersicht</h3>';
-    html += `<div class="summary-row"><span class="label">Karte</span><span class="value">${_esc(mapName)}</span></div>`;
+    html += `<div class="summary-row"><span class="label">Karte</span><span class="value">${UIUtils.escapeHtml(mapName)}</span></div>`;
     html += `<div class="summary-row"><span class="label">Akteure mit Pfad</span><span class="value">${withTraj}</span></div>`;
 
     html += _sceneListHtml();
@@ -63,11 +57,11 @@
     if (window.ScenarioGenerator) html += ScenarioGenerator.recipeHtml();
 
     html += `<div class="summary-section">Wetter</div>`;
-    html += `<div class="summary-row"><span class="label">Tageszeit</span><span class="value">${_esc(AppState.timeLabel(AppState.time))}</span></div>`;
+    html += `<div class="summary-row"><span class="label">Tageszeit</span><span class="value">${UIUtils.escapeHtml(AppState.timeLabel(AppState.time))}</span></div>`;
     const activeWeather = Object.entries(AppState.weather).filter(([, v]) => v > 0);
     if (activeWeather.length > 0) {
       activeWeather.forEach(([k, v]) => {
-        html += `<div class="summary-row"><span class="label">${_esc(AppState.weatherLabel(k))}</span><span class="value">${v.toFixed(2)}</span></div>`;
+        html += `<div class="summary-row"><span class="label">${UIUtils.escapeHtml(AppState.weatherLabel(k))}</span><span class="value">${v.toFixed(2)}</span></div>`;
       });
     } else {
       html += `<div class="summary-row"><span class="label">Bedingungen</span><span class="value">Klar</span></div>`;
@@ -100,15 +94,15 @@
     return `
       <div class="scene-row${scene.locatedId === actor.id ? ' located' : ''}"
            role="option" tabindex="0" aria-selected="false"
-           data-scene-id="${_esc(actor.id)}"
+           data-scene-id="${UIUtils.escapeHtml(actor.id)}"
            title="Klick: auf der Karte zeigen · Doppelklick: bearbeiten">
-        <span class="scene-swatch${round ? ' round' : ''}" style="background:${_esc(col.body)}"></span>
-        <span class="scene-name">${_esc(label)}</span>
+        <span class="scene-swatch${round ? ' round' : ''}" style="background:${UIUtils.escapeHtml(col.body)}"></span>
+        <span class="scene-name">${UIUtils.escapeHtml(label)}</span>
         <span class="scene-meta">${events} Event${events === 1 ? '' : 's'}</span>
         ${warn}
-        <button type="button" class="scene-del" data-scene-del="${_esc(actor.id)}"
-                title="${_esc(label)} löschen (Strg: ohne Rückfrage)"
-                aria-label="${_esc(label)} löschen">${TRASH_SVG}</button>
+        <button type="button" class="scene-del" data-scene-del="${UIUtils.escapeHtml(actor.id)}"
+                title="${UIUtils.escapeHtml(label)} löschen (Strg: ohne Rückfrage)"
+                aria-label="${UIUtils.escapeHtml(label)} löschen">${TRASH_SVG}</button>
       </div>`;
   }
 
@@ -133,12 +127,12 @@
       count > 1
         ? `<span class="scene-step">
            <button type="button" class="scene-step-btn" data-prop-step="-1"
-                   data-prop-bp="${_esc(blueprint)}"
-                   title="Vorherige ${_esc(name)}" aria-label="Vorherige ${_esc(name)}">&#9664;</button>
+                   data-prop-bp="${UIUtils.escapeHtml(blueprint)}"
+                   title="Vorherige ${UIUtils.escapeHtml(name)}" aria-label="Vorherige ${UIUtils.escapeHtml(name)}">&#9664;</button>
            <span class="scene-step-pos">${cursor + 1}/${count}</span>
            <button type="button" class="scene-step-btn" data-prop-step="1"
-                   data-prop-bp="${_esc(blueprint)}"
-                   title="Nächste ${_esc(name)}" aria-label="Nächste ${_esc(name)}">&#9654;</button>
+                   data-prop-bp="${UIUtils.escapeHtml(blueprint)}"
+                   title="Nächste ${UIUtils.escapeHtml(name)}" aria-label="Nächste ${UIUtils.escapeHtml(name)}">&#9654;</button>
          </span>`
         : `<span class="scene-step"><span class="scene-step-pos">${count}</span></span>`;
 
@@ -147,24 +141,24 @@
     // At one instance a single trash takes it; the spacer keeps the column aligned.
     const deletes =
       count > 1
-        ? `<button type="button" class="scene-del scene-del-one" data-scene-del="${_esc(current.id)}"
-                 title="${_esc(currentLabel)} löschen (Strg: ohne Rückfrage)"
-                 aria-label="${_esc(currentLabel)} löschen">&#10005;</button>
-         <button type="button" class="scene-del scene-del-all" data-prop-del-all="${_esc(blueprint)}"
-                 title="Alle ${count} × ${_esc(name)} löschen (Strg: ohne Rückfrage)"
-                 aria-label="Alle ${count} ${_esc(name)} löschen">${TRASH_SVG}</button>`
+        ? `<button type="button" class="scene-del scene-del-one" data-scene-del="${UIUtils.escapeHtml(current.id)}"
+                 title="${UIUtils.escapeHtml(currentLabel)} löschen (Strg: ohne Rückfrage)"
+                 aria-label="${UIUtils.escapeHtml(currentLabel)} löschen">&#10005;</button>
+         <button type="button" class="scene-del scene-del-all" data-prop-del-all="${UIUtils.escapeHtml(blueprint)}"
+                 title="Alle ${count} × ${UIUtils.escapeHtml(name)} löschen (Strg: ohne Rückfrage)"
+                 aria-label="Alle ${count} ${UIUtils.escapeHtml(name)} löschen">${TRASH_SVG}</button>`
         : `<span class="scene-del-spacer" aria-hidden="true"></span>
-         <button type="button" class="scene-del" data-scene-del="${_esc(current.id)}"
-                 title="${_esc(currentLabel)} löschen (Strg: ohne Rückfrage)"
-                 aria-label="${_esc(currentLabel)} löschen">${TRASH_SVG}</button>`;
+         <button type="button" class="scene-del" data-scene-del="${UIUtils.escapeHtml(current.id)}"
+                 title="${UIUtils.escapeHtml(currentLabel)} löschen (Strg: ohne Rückfrage)"
+                 aria-label="${UIUtils.escapeHtml(currentLabel)} löschen">${TRASH_SVG}</button>`;
 
     return `
       <div class="scene-prop-row${scene.locatedId === current.id ? ' located' : ''}"
            role="option" tabindex="0" aria-selected="false"
-           data-scene-id="${_esc(current.id)}" data-prop-bp="${_esc(blueprint)}"
-           title="Klick: ${_esc(currentLabel)} auf der Karte zeigen · Doppelklick: bearbeiten">
+           data-scene-id="${UIUtils.escapeHtml(current.id)}" data-prop-bp="${UIUtils.escapeHtml(blueprint)}"
+           title="Klick: ${UIUtils.escapeHtml(currentLabel)} auf der Karte zeigen · Doppelklick: bearbeiten">
         <span class="scene-swatch" style="background:var(--accent2)"></span>
-        <span class="scene-name">${_esc(name)}</span>
+        <span class="scene-name">${UIUtils.escapeHtml(name)}</span>
         ${stepper}
         ${deletes}
       </div>`;
@@ -176,7 +170,7 @@
       <div class="scene-section${collapsed ? ' collapsed' : ''}" data-scene-section="${key}">
         <button type="button" class="scene-section-head" data-scene-toggle="${key}"
                 aria-expanded="${!collapsed}">
-          <span class="scene-head-label">${_esc(label)}</span>
+          <span class="scene-head-label">${UIUtils.escapeHtml(label)}</span>
           <span class="scene-head-count">${count}</span>
           <span class="collapse-indicator" aria-hidden="true">${collapsed ? '+' : '-'}</span>
         </button>

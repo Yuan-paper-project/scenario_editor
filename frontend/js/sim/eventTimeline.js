@@ -34,8 +34,6 @@
   let _data = null; // { run, end, rows: [{actor, events: [...]}] }
   let _timer = null;
 
-  const _esc = (v) =>
-    String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
   const fmt = (t) => `${UIUtils.fmt(t)} s`;
 
   function _actors() {
@@ -82,16 +80,16 @@
               ' · Klick springt hierher';
             return `<div class="sim-lane-block${open ? ' open' : ''}"
                      style="left:${pct(e.firedAt)};width:${w}%"
-                     data-actor="${actor.id}" data-event="${e.ev.id}" data-t="${e.firedAt}" title="${_esc(title)}">
-                  <span>${_esc(e.name)}</span></div>`;
+                     data-actor="${actor.id}" data-event="${e.ev.id}" data-t="${e.firedAt}" title="${UIUtils.escapeHtml(title)}">
+                  <span>${UIUtils.escapeHtml(e.name)}</span></div>`;
           })
           .join('');
         const never = events.filter((e) => e.firedAt == null);
         const neverHtml = never.length
-          ? `<span class="sim-lane-never" title="${_esc(never.map((e) => e.name).join(', '))} feuert in diesem Lauf nie">nie: ${never.length}</span>`
+          ? `<span class="sim-lane-never" title="${UIUtils.escapeHtml(never.map((e) => e.name).join(', '))} feuert in diesem Lauf nie">nie: ${never.length}</span>`
           : '';
         return `<div class="sim-lane-row">
-        <button type="button" class="sim-lane-label" data-actor="${actor.id}" title="Akteur zeigen">${_esc(AppState.actorLabel(actor, { short: true }))}</button>
+        <button type="button" class="sim-lane-label" data-actor="${actor.id}" title="Akteur zeigen">${UIUtils.escapeHtml(AppState.actorLabel(actor, { short: true }))}</button>
         <div class="sim-lane-track">${blocks}</div>
         ${neverHtml || '<span></span>'}
       </div>`;
