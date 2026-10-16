@@ -26,7 +26,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from backend.map_renderer import XODR_PATHS, build_map_render_data  # noqa: E402
+from backend.xodr.map_renderer import XODR_PATHS, build_map_render_data  # noqa: E402
 
 TOWNS = ['Town01', 'Town02', 'Town03', 'Town04', 'Town05', 'Town06', 'Town07', 'Town10HD', 'Town10']
 

@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from _harness import Checks  # noqa: E402
 
-from backend.scenario_io import validate_scenario_params  # noqa: E402
+from backend.scenario.scenario_io import validate_scenario_params  # noqa: E402
 
 check = Checks()
 
@@ -1604,7 +1604,7 @@ def _xosc_event_refs(params):
     return waits, names
 
 
-from backend.scenario_io import _ensure_llmgen_on_path  # noqa: E402
+from backend.scenario.scenario_io import _ensure_llmgen_on_path  # noqa: E402
 
 _ensure_llmgen_on_path()
 

@@ -8,7 +8,7 @@ import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from backend.xodr_geometry import _eval_elevation, _eval_geometry_at_s, _get_elevations
+from backend.xodr.xodr_geometry import _eval_elevation, _eval_geometry_at_s, _get_elevations
 
 # ── Traffic lights & crosswalks from xodr ─────────────────────────────────────
 

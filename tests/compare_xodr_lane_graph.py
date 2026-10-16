@@ -58,8 +58,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from backend.lane_graph_builder import build_lane_graph_from_xodr  # noqa: E402
-from backend.map_renderer import XODR_PATHS, build_map_render_data  # noqa: E402
+from backend.lane_graph.lane_graph_builder import build_lane_graph_from_xodr  # noqa: E402
+from backend.xodr.map_renderer import XODR_PATHS, build_map_render_data  # noqa: E402
 
 _MAPS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "maps")
 

@@ -1,6 +1,6 @@
 """Per-event and per-actor normalisation of the editor's export payload: whitelists, clamps, defaults, entity refs."""
 
-from backend.event_rules import (
+from backend.scenario.event_rules import (
     _DYNAMICS_DEFAULTS,
     _EGO_SPEED_RULES,
     _EVENT_REF_TRIGGERS,

@@ -48,7 +48,7 @@ which is exactly what the sign convention above already encodes.
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from backend.lane_graph_parts import (
+from backend.lane_graph.lane_graph_parts import (
     _carla_path,
     _carla_round,
     _derive_left_right,
@@ -56,8 +56,8 @@ from backend.lane_graph_parts import (
     _resolve_lane_successors,
     _UnionFind,
 )
-from backend.xodr_lanes import _get_lane_sections, lane_centre_points
-from backend.xodr_links import (
+from backend.xodr.xodr_lanes import _get_lane_sections, lane_centre_points
+from backend.xodr.xodr_links import (
     _LC_LEFT,
     _LC_RIGHT,
     _mark_bits_at,

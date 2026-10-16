@@ -6,7 +6,7 @@ import math
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from backend.bg_sumo import _sumolib_net
+from backend.traffic.bg_sumo import _sumolib_net
 
 # ── Keep-out ───────────────────────────────────────────────────────────────
 

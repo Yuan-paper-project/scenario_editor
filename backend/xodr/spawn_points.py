@@ -7,16 +7,16 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from backend.xodr_geometry import (
+from backend.xodr.xodr_geometry import (
     _eval_elevation,
     _eval_lane_offset,
     _get_elevations,
     _get_lane_offsets,
     _sample_geometry,
 )
-from backend.xodr_lanes import _eval_lane_width, _get_lane_sections
+from backend.xodr.xodr_lanes import _eval_lane_width, _get_lane_sections
 
-_LLMGEN = Path(__file__).resolve().parent.parent.parent / "llm-scenario-gen"
+_LLMGEN = Path(__file__).resolve().parents[3] / "llm-scenario-gen"
 if not _LLMGEN.exists():
     _LLMGEN = Path("/home/dellpro2/CC/llm-scenario-gen")
 SPAWN_SAMPLE_INTERVAL_M = 25.0

@@ -62,8 +62,8 @@ import time
 from collections import OrderedDict
 from pathlib import Path
 
-from backend.bg_keepout import _drop_routes_using, _KeepOut, _write_trip_weights
-from backend.bg_sumo import (
+from backend.traffic.bg_keepout import _drop_routes_using, _KeepOut, _write_trip_weights
+from backend.traffic.bg_sumo import (
     _BP,
     DURATION_S,
     STEP_S,
@@ -75,7 +75,7 @@ from backend.bg_sumo import (
     _write_vtypes,
     sumo_net,
 )
-from backend.bg_trips import (
+from backend.traffic.bg_trips import (
     BUBBLE_INSERT_CLEAR_M,
     _bubble_segments,
     _bubble_trips,

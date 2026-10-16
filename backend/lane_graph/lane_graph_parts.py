@@ -2,7 +2,7 @@
 
 import struct
 
-from backend.xodr_links import _forward_side
+from backend.xodr.xodr_links import _forward_side
 
 
 def _carla_round(v: float) -> float:

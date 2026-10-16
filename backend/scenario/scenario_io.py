@@ -7,10 +7,10 @@ import sys
 import uuid
 from pathlib import Path
 
-from backend.event_normalize import _normalize_actor
-from backend.event_rules import _ROUTE_ACTOR_TYPES, _normalize_after_event_chains
+from backend.scenario.event_normalize import _normalize_actor
+from backend.scenario.event_rules import _ROUTE_ACTOR_TYPES, _normalize_after_event_chains
 
-_LLMGEN = Path(__file__).resolve().parent.parent.parent / "llm-scenario-gen"
+_LLMGEN = Path(__file__).resolve().parents[3] / "llm-scenario-gen"
 if not _LLMGEN.exists():
     _LLMGEN = Path("/home/dellpro2/CC/llm-scenario-gen")
 
@@ -89,7 +89,7 @@ def _normalize_static_objects(params: dict):
         )
 
 
-_MAPS_DIR = Path(__file__).resolve().parent.parent / "maps"
+_MAPS_DIR = Path(__file__).resolve().parents[2] / "maps"
 
 
 def _carla_light_positions(town: str):

@@ -4,7 +4,7 @@ Lane sections, widths and centres of an OpenDRIVE road, and the lane polygons an
 
 import xml.etree.ElementTree as ET
 
-from backend.xodr_geometry import (
+from backend.xodr.xodr_geometry import (
     _curvature_at,
     _eval_elevation,
     _eval_lane_offset,

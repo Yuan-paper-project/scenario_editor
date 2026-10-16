@@ -10,9 +10,14 @@ Coordinate convention:
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from backend.spawn_points import _load_spawn_points
-from backend.xodr_features import _extract_crosswalks, _extract_signs, _extract_speed_signs, _extract_traffic_lights
-from backend.xodr_geometry import (
+from backend.xodr.spawn_points import _load_spawn_points
+from backend.xodr.xodr_features import (
+    _extract_crosswalks,
+    _extract_signs,
+    _extract_speed_signs,
+    _extract_traffic_lights,
+)
+from backend.xodr.xodr_geometry import (
     _eval_elevation,
     _eval_lane_offset,
     _get_elevations,
@@ -22,7 +27,7 @@ from backend.xodr_geometry import (
     _sample_geometry,
     _section_eval_s,
 )
-from backend.xodr_lanes import (
+from backend.xodr.xodr_lanes import (
     _build_lane_polygon_dynamic,
     _build_mark_polylines,
     _get_center_marks,
@@ -33,7 +38,7 @@ from backend.xodr_lanes import (
 
 # ── Map file paths ─────────────────────────────────────────────────────────────
 
-_MAPS_DIR = Path(__file__).resolve().parent.parent / "maps"
+_MAPS_DIR = Path(__file__).resolve().parents[2] / "maps"
 
 
 def _scan_xodr_paths(maps_dir: Path) -> dict[str, Path]:

@@ -8,8 +8,8 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from backend.bg_keepout import _densify
-from backend.bg_sumo import DURATION_S, WARMUP_S, _run, _sumolib_net, sumo_home
+from backend.traffic.bg_keepout import _densify
+from backend.traffic.bg_sumo import DURATION_S, WARMUP_S, _run, _sumolib_net, sumo_home
 
 BUBBLE_INSERT_CLEAR_M = 30.0  # trips departing within radius + this of the ego are not generated
 # ── Generation ─────────────────────────────────────────────────────────────

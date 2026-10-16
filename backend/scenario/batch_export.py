@@ -2,7 +2,7 @@
 
 import uuid
 
-from backend.scenario_io import _ensure_llmgen_on_path, validate_scenario_params
+from backend.scenario.scenario_io import _ensure_llmgen_on_path, validate_scenario_params
 
 # ── Batch export (scenario generator, phase 2) ────────────────────────────────
 
