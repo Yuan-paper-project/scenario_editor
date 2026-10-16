@@ -62,7 +62,7 @@
   //
   // The generated scenario's parameters as editable fields. Changing one pins
   // it and rebuilds the scenario on the same site and seed; „Variante würfeln"
-  // keeps the pins and draws everything else afresh. Rendered by properties.js
+  // keeps the pins and draws everything else afresh. Rendered by propertiesOverview.js
   // (recipeHtml / bindRecipe), like the template panel.
 
   const _escHtml = (v) =>

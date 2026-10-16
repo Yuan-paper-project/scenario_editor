@@ -186,7 +186,7 @@ def place_template(page, template_id, wx, wy, tolerance=14.0):
     """Place an actor from a scenario template and return it.
 
     The template buttons live in the RIGHT panel's overview view, which only
-    renders when nothing is selected (properties.js `_renderOverviewPanel`).
+    renders when nothing is selected (propertiesOverview.js `_renderOverviewPanel`).
     `_placeActor` selects the actor it just created, so the panel must be
     reset to overview before each template.
 

@@ -24,7 +24,8 @@
   const _sceneCollapsed = { npcs: false, props: false };
   const scene = { locatedId: null };
   // The scene list's deletes re-render the whole panel, and render() is
-  // defined after it; set below, beside the event panel's refresh handler.
+  // defined in properties.js, which loads last and sets this beside the event
+  // panel's refresh handler.
   const panel = { render: null };
   // Which instance each prop type's stepper is pointing at, keyed by blueprint
   // id. Clamped at render time rather than on delete: props are also added and

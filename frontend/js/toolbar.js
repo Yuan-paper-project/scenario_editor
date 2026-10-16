@@ -21,7 +21,7 @@
   }
 
   // ── Tabs: Akteure | Requisiten ───────────────────────────────────────────────
-  // Pure UI state, kept module-local like properties.js `_overviewPanelTab`.
+  // Pure UI state, kept module-local like propertiesOverview.js `_overviewPanelTab`.
 
   const propsPanel = toolbar.querySelector('[data-toolbar-panel="props"]');
   if (propsPanel && window.PropCatalog) PropCatalog.renderPanel(propsPanel);

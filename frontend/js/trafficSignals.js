@@ -42,7 +42,7 @@
     // The one scenario mutation in the app that does not go through
     // AppState.set/updateById/removeById, so it is also the one the undo
     // history cannot capture on its own — and every signal-event edit in
-    // properties.js lands here, so this single call covers them all.
+    // propertiesSignal.js lands here, so this single call covers them all.
     //
     // Recorded unconditionally, like every other scenario edit: an edit that is
     // skipped is not merely un-undoable, it is destroyed by the next undo,
