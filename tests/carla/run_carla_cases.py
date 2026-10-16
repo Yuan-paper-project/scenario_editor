@@ -23,8 +23,9 @@ import sys
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.dirname(HERE)
+REPO = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.join(os.path.dirname(HERE), "e2e"))
 
 import _harness as H  # noqa: E402
 import carla_analysis as A  # noqa: E402
@@ -34,7 +35,7 @@ RUN_SH = "/home/dellpro2/Antonio/run.sh"
 SR_ROOT = "/home/dellpro2/Antonio/scenario_runner"
 SCENARIO_DIR = os.path.join(SR_ROOT, "srunner/examples/scenario_tester")
 RECORDINGS = "/home/dellpro2/Antonio/recordings"
-ARTIFACTS = os.path.join(HERE, "artifacts")
+ARTIFACTS = os.path.join(os.path.dirname(HERE), "artifacts")
 CARLA_PY = "/home/dellpro2/Antonio/carla-venv/bin/python"
 # The port run.sh starts (and reuses) CARLA on. The telemetry sidecar must
 # attach to the SAME server — its own default (3000) is a leftover from before

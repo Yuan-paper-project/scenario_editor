@@ -24,7 +24,7 @@ import os
 import carla
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-MAPS = os.path.join(HERE, "..", "maps")
+MAPS = os.path.join(HERE, "..", "..", "maps")
 TOWNS = ["Town01", "Town02", "Town03", "Town04", "Town05", "Town06", "Town07", "Town10HD"]
 
 

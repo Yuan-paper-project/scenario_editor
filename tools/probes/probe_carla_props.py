@@ -32,7 +32,7 @@ import time
 import carla
 
 PORT = int(os.environ.get("CARLA_PORT", "2050"))
-REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CATALOG_JS = os.path.join(REPO, "frontend", "js", "props", "propData.js")
 SETTLE_TICKS = 80  # 4 s at 0.05 s
 

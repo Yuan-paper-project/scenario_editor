@@ -42,7 +42,7 @@ if [ "${1:-}" = "--quick" ]; then
     for t in tests/test_normalization.py tests/check_render_geometry.py; do
         echo "════ $t"; "$PY" "$t" || status=1; echo
     done
-    for t in tests/test_smoke_e2e.py tests/test_events_e2e.py tests/test_undo_e2e.py; do
+    for t in tests/e2e/test_smoke_e2e.py tests/e2e/test_events_e2e.py tests/e2e/test_undo_e2e.py; do
         echo "════ $t"; EDITOR_URL="$URL" "$PY" "$t" || status=1; echo
     done
     exit "$status"
@@ -62,25 +62,25 @@ echo "════ tests/check_render_geometry.py"
 "$PY" tests/check_render_geometry.py || status=1
 echo
 
-for t in tests/test_smoke_e2e.py tests/test_props_e2e.py tests/test_prop_yaw_e2e.py \
-         tests/test_templates_e2e.py tests/test_events_e2e.py \
-         tests/test_ego_events_e2e.py tests/test_triggers_e2e.py \
-         tests/test_signal_panel_e2e.py \
-         tests/test_actor_types_e2e.py tests/test_elevation_e2e.py \
-         tests/test_route_fidelity_e2e.py tests/test_undo_e2e.py \
-         tests/test_waypoints_e2e.py tests/test_generator_e2e.py \
-         tests/test_preview_timeline_e2e.py tests/test_generate_here_e2e.py \
-         tests/test_recipe_e2e.py \
-         tests/test_user_templates_e2e.py tests/test_event_timeline_e2e.py \
-         tests/test_preview_lock_e2e.py tests/test_actions_ext_e2e.py \
-         tests/test_bg_traffic_e2e.py tests/test_vehicle_snap_e2e.py tests/test_ego_type_e2e.py tests/test_help_e2e.py \
-         tests/test_benchmark_e2e.py; do
+for t in tests/e2e/test_smoke_e2e.py tests/e2e/test_props_e2e.py tests/e2e/test_prop_yaw_e2e.py \
+         tests/e2e/test_templates_e2e.py tests/e2e/test_events_e2e.py \
+         tests/e2e/test_ego_events_e2e.py tests/e2e/test_triggers_e2e.py \
+         tests/e2e/test_signal_panel_e2e.py \
+         tests/e2e/test_actor_types_e2e.py tests/e2e/test_elevation_e2e.py \
+         tests/e2e/test_route_fidelity_e2e.py tests/e2e/test_undo_e2e.py \
+         tests/e2e/test_waypoints_e2e.py tests/e2e/test_generator_e2e.py \
+         tests/e2e/test_preview_timeline_e2e.py tests/e2e/test_generate_here_e2e.py \
+         tests/e2e/test_recipe_e2e.py \
+         tests/e2e/test_user_templates_e2e.py tests/e2e/test_event_timeline_e2e.py \
+         tests/e2e/test_preview_lock_e2e.py tests/e2e/test_actions_ext_e2e.py \
+         tests/e2e/test_bg_traffic_e2e.py tests/e2e/test_vehicle_snap_e2e.py tests/e2e/test_ego_type_e2e.py tests/e2e/test_help_e2e.py \
+         tests/e2e/test_benchmark_e2e.py; do
     echo "════ $t"
     EDITOR_URL="$URL" "$PY" "$t" || status=1
     echo
 done
 
-# tests/run_carla_cases.py is deliberately NOT run here: it needs CARLA on
+# tests/carla/run_carla_cases.py is deliberately NOT run here: it needs CARLA on
 # port 2010 (run.sh's), takes over the simulator, and takes minutes rather
 # than seconds.
 

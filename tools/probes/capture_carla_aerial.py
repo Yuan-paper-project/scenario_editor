@@ -69,7 +69,7 @@ EXPOSURE = dict(exposure_mode="manual", shutter_speed=60, iso=100, fstop=7.0, bl
 # the sparkles too but doubles the shadows.
 SUN_ALTITUDE = 80.0
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[2]
 MAPS_DIR = REPO_ROOT / "maps"
 sys.path.insert(0, str(REPO_ROOT))
 from backend.xodr.map_renderer import build_map_render_data  # stdlib-only, safe in carla-venv

@@ -34,6 +34,7 @@ from playwright.sync_api import sync_playwright
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.join(os.path.dirname(HERE), "e2e"))
 import _harness as H  # noqa: E402
 import carla_analysis as A  # noqa: E402
 import run_carla_cases as R  # noqa: E402
@@ -225,7 +226,7 @@ def main():
     ap.add_argument("specs", nargs="+", help="town:type:seed:count")
     ap.add_argument("--baseline", action="store_true", help="also run each scenario without traffic")
     ap.add_argument("--timeout", type=int, default=1200)
-    ap.add_argument("--out", default=os.path.join(HERE, "artifacts", "bg_traffic_carla.json"))
+    ap.add_argument("--out", default=os.path.join(os.path.dirname(HERE), "artifacts", "bg_traffic_carla.json"))
     args = ap.parse_args()
     specs = []
     for s in args.specs:

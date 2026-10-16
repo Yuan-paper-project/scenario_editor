@@ -25,7 +25,7 @@ import carla  # noqa: E402
 import yaml
 
 _CATALOG = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
     "..",
     "llm-scenario-gen",
     "config",

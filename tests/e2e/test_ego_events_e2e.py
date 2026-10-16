@@ -29,7 +29,7 @@ from playwright.sync_api import sync_playwright  # noqa: E402
 
 check = H.Checks()
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 EGO_BASE = {"id": "obj-1", "type": "ego", "x": 300.631, "y": -2.025, "z": 0.2, "yaw": 180, "events": []}
 NPC_BASE = {"id": "obj-2", "type": "car", "x": 265.364, "y": 1.967, "z": 0.2, "yaw": 0, "events": []}

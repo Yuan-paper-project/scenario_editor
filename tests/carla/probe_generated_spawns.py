@@ -38,6 +38,7 @@ import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.join(os.path.dirname(HERE), "e2e"))
 
 CARLA_SIDE = r'''
 import json, math, sys

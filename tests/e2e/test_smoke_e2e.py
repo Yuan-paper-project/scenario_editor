@@ -21,7 +21,7 @@ from _harness import Checks, open_editor  # noqa: E402
 
 check = Checks()
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 EXAMPLE = os.path.join(REPO_ROOT, "example", "Town01_scenario2.json")
 XSD = "/home/dellpro2/Antonio/scenario_runner/srunner/openscenario/OpenSCENARIO.xsd"
 

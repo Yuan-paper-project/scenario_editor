@@ -54,7 +54,7 @@ SAMPLING_RESOLUTION = 2.0  # matches atomic_behaviors.py's GlobalRoutePlanner(ma
 LANE_SAMPLE_STEP = 1.0  # generate_waypoints() step — fine enough not to miss short sections
 FORK_QUERY_DISTANCE = 1.0  # next() distance queried from each lane's end point
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parents[2]
 MAPS_DIR = REPO_ROOT / "maps"
 
 # Bundled folder name -> CARLA's loadable map name. Identity for everything

@@ -29,6 +29,7 @@ from playwright.sync_api import sync_playwright
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.join(os.path.dirname(HERE), "e2e"))
 import _harness as H  # noqa: E402
 import carla_analysis as A  # noqa: E402
 import run_carla_cases as R  # noqa: E402
@@ -284,7 +285,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("filters", nargs="*")
     ap.add_argument("--timeout", type=int, default=200)
-    ap.add_argument("--out", default=os.path.join(HERE, "artifacts", "actions_ext_carla.json"))
+    ap.add_argument("--out", default=os.path.join(os.path.dirname(HERE), "artifacts", "actions_ext_carla.json"))
     args = ap.parse_args()
     cases = [c for c in CASES if not args.filters or any(f in c["name"] for f in args.filters)]
     built = build(cases)
