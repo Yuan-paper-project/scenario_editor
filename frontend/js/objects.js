@@ -33,13 +33,17 @@
 
   // ── Drag state ───────────────────────────────────────────────────────────────
   let _dragState = null; // { type: 'actor'|'yaw'|'waypoint', actorId, ... }
+  // Set by the drag handlers and read by the click handler: the click that ends
+  // a drag is not a placement. An object rather than a reassigned let, so both
+  // sides see one copy.
+  const drag = { wasDragging: false };
 
   // ── SVG click handler ─────────────────────────────────────────────────────────
 
   svg.addEventListener('click', (e) => {
     if (e.defaultPrevented) return;
-    if (_wasDragging) {
-      _wasDragging = false;
+    if (drag.wasDragging) {
+      drag.wasDragging = false;
       return;
     }
 
@@ -459,8 +463,6 @@
 
   // ── Drag actors ───────────────────────────────────────────────────────────────
 
-  let _wasDragging = false;
-
   svg.addEventListener('mousedown', (e) => {
     if (e.button !== 0) return;
 
@@ -552,7 +554,7 @@
 
   window.addEventListener('mousemove', (e) => {
     if (!_dragState) return;
-    _wasDragging = true;
+    drag.wasDragging = true;
 
     const world = MapView.svgToWorld(e);
 
@@ -645,7 +647,7 @@
       _dragState = null;
       document.body.classList.remove('rotating', 'dragging-actor');
       setTimeout(() => {
-        _wasDragging = false;
+        drag.wasDragging = false;
       }, 50);
     }
   });
