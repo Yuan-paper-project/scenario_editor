@@ -72,7 +72,8 @@ SUN_ALTITUDE = 80.0
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MAPS_DIR = REPO_ROOT / "maps"
 sys.path.insert(0, str(REPO_ROOT))
-from backend.xodr.map_renderer import build_map_render_data  # stdlib-only, safe in carla-venv
+# After the sys.path line, which it needs; stdlib-only, so safe in carla-venv.
+from backend.xodr.map_renderer import build_map_render_data  # noqa: E402
 
 # Town10 is the georeferenced VectorZero map with no CARLA asset — nothing to photograph.
 TOWNS = ["Town01", "Town02", "Town03", "Town04", "Town05", "Town06", "Town07", "Town10HD"]
