@@ -429,7 +429,7 @@ block, so they are safe to run against a live session.
 
 `probe_carla_lane_graph.py` is different in kind from the two above: it does not
 measure a mesh, it caches CARLA's own routing/topology graph per bundled town so
-`frontend/js/simulate.js` can route `assign_route`/`lane_change`/path-less
+`frontend/js/sim/simulate.js` can route `assign_route`/`lane_change`/path-less
 driving exactly instead of approximating — see CLAUDE.md's "cached CARLA lane
 graph" section for the full picture. It targets `localhost:2010` by default (the
 `run.sh` instance, not the port-3000 convention above), and it **does** mutate

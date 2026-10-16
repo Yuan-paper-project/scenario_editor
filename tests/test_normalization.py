@@ -1437,7 +1437,7 @@ check(
 # The ego may be driven by the AV under test, whose run has no ego storyboard
 # events at all — an NPC chained onto one would never move. Both reference
 # kinds are refused; the ego may still wait on an NPC. Mirrors
-# ScenarioRules.mayWaitOnActor (frontend/js/scenarioRules.js).
+# ScenarioRules.mayWaitOnActor (frontend/js/core/scenarioRules.js).
 
 for kind in ("after_event", "event_started"):
     err = _cycle_error(

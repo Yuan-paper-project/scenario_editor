@@ -3,7 +3,7 @@ lane_graph_builder.py — derive a lane_graph.json-shaped routing graph directly
 from a town's .xodr file, for towns tests/probe_carla_lane_graph.py has never
 run against: every uploaded map, and Town10 (no CARLA counterpart to probe).
 
-Produces the exact JSON shape frontend/js/laneGraph.js already consumes (see
+Produces the exact JSON shape frontend/js/sim/laneGraph.js already consumes (see
 maps/Town01/lane_graph.json for a real probed example, and
 tests/compare_xodr_lane_graph.py, which validates this builder's output
 against all 8 committed probed files). The one deliberate semantic gap from a
@@ -12,7 +12,7 @@ all, which the frontend treats as "carla"), and a fork's `successors` list
 carries NO preferred order — CARLA's own next() picks one real successor, but
 nothing in a bare .xodr ranks the candidates at a junction with more than one
 <connection> for the same incoming lane, so none is invented here either.
-frontend/js/simulate.js's path-less fork-continuation logic already knows to
+frontend/js/sim/simulate.js's path-less fork-continuation logic already knows to
 refuse to guess when graph.source === 'xodr' and a lane has more than one
 successor, rather than pick index 0 the way it safely can for real CARLA data.
 

@@ -46,7 +46,7 @@ GOAL = "92,23,0,270"
 # 2.63 m rise while the goal 134 m west is at ground level. A Town01-style
 # z=0.2 puts the ego 2.4 m under the deck — the clipping this case used to show.
 # z is therefore stated explicitly here: road surface + the editor's 0.5 m
-# vehicle clearance (see SPAWN_CLEARANCE in frontend/js/objectsCore.js). Cases that
+# vehicle clearance (see SPAWN_CLEARANCE in frontend/js/objects/objectsCore.js). Cases that
 # omit z get it derived from the map, which is right for a flat town.
 EGO_T3 = {"x": 159.0, "y": 193.0, "z": 3.13, "yaw": 177.0}
 SPOT_T3_LANE = (135.0, 193.2)  # ~24 m ahead in lane -2, 123 m of straight left

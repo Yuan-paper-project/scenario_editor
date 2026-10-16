@@ -168,7 +168,7 @@ carriageway and ~4 s to clear it — so it is off the far kerb roughly 3.5 s
 cleanly, the ego never dropped below 7.18 m/s, closest approach 8.4 m. The
 template cannot produce the conflict its name implies at Town01 speeds.
 *Fix:* shorten the trigger radius to ~20 m or slow the walker, in
-`frontend/js/templates.js`. Editor repo only.
+`frontend/js/templates/templates.js`. Editor repo only.
 
 **`bench-reversing-vehicle` (1).** There is no reverse in the vocabulary. The
 five actions are `follow_trajectory`, `assign_route`, `set_speed`,

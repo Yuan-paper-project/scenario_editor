@@ -1,9 +1,9 @@
 """assign_route preview fidelity: the previewed path must never go backwards.
 
 The preview routes `assign_route` through the cached CARLA lane graph
-(frontend/js/laneGraph.js `route`, a port of GlobalRoutePlanner.trace_route)
+(frontend/js/sim/laneGraph.js `route`, a port of GlobalRoutePlanner.trace_route)
 and then filters the result exactly as the runtime's ChangeActorWaypoints does
-(frontend/js/simRoute.js `_exactRoute`). Both halves are needed: the router
+(frontend/js/sim/simRoute.js `_exactRoute`). Both halves are needed: the router
 genuinely emits points that double back — a lane change is a bare ~12 m chord,
 and a leg can overshoot its goal — and the real runtime drops them. Porting
 the routing without the filter made the previewed ego drive ~18 m, turn round,

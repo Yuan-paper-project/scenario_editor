@@ -1,6 +1,6 @@
 """Measure every catalogued CARLA static prop the way ScenarioRunner spawns it.
 
-Where the numbers in frontend/js/propData.js (footprint, `z` lift, `off`)
+Where the numbers in frontend/js/props/propData.js (footprint, `z` lift, `off`)
 and ../llm-scenario-gen/config/prop_catalog.yaml (bbox) came from. Re-run it
 after a CARLA build upgrade. Not a test: it prints, it asserts nothing.
 

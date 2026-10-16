@@ -10,7 +10,7 @@ what assign_route previews are drawn from: the LANEFOLLOW edge set (exact),
 edge lengths (GlobalRoutePlanner's sample counts), lane-change edges, and the
 lane sequence A* returns for random lane pairs on each graph. A* here is a
 port of networkx.astar_path including its tie-breaking (.venv has no
-networkx), the same algorithm frontend/js/laneGraph.js runs. Route agreement
+networkx), the same algorithm frontend/js/sim/laneGraph.js runs. Route agreement
 is not 100% and is not expected to be: at a fork CARLA's next()[0] order,
 which a .xodr does not carry, decides which connector a lane-change edge
 lands on (Town03's junction 1206 → 1100/1122 accounts for most of its
@@ -29,7 +29,7 @@ hand-tracing real examples in maps/Town05/Town05.xodr before writing this:
   1. Ground truth uses a SELF-reference ({roadId, sectionId, laneId} equal to
      the record's own key) as a dead-end marker — the probe's bounded
      fork-walk (`_walk_to_fork`) gives up after max_hops without the lane
-     identity changing. frontend/js/laneGraph.js's own realSuccessors()
+     identity changing. frontend/js/sim/laneGraph.js's own realSuccessors()
      already filters this out before use, so this script does too.
   2. Ground truth's successors are the result of CARLA's probe walking
      forward through a chain of single-choice lanes UNTIL the next real fork
@@ -38,7 +38,7 @@ hand-tracing real examples in maps/Town05/Town05.xodr before writing this:
      walked through by the probe and never appears as its own successor
      entry, whereas this builder's `lanes[].successors` is deliberately
      one hop at a time (see lane_graph_builder.py). Both describe the same
-     real topology at a different granularity — frontend/js/simulate.js's
+     real topology at a different granularity — frontend/js/sim/simulate.js's
      path-less continuation calls _nextLaneCursor repeatedly as an actor's
      lane runs out, so extra, correct, finer hops cost nothing functionally.
      This script credits a "mismatch" as OK when every ground-truth
@@ -74,7 +74,7 @@ def _ref_key(ref):
 
 def _succ_set(lane, key):
     """Successors minus the self-referencing dead-end marker — mirrors
-    frontend/js/laneGraph.js's realSuccessors()."""
+    frontend/js/sim/laneGraph.js's realSuccessors()."""
     return frozenset(k for s in lane['successors'] if (k := _ref_key(s)) != key)
 
 

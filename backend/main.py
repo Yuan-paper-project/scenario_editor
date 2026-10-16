@@ -58,7 +58,7 @@ MAP_CACHE: dict[str, dict] = {}
 # derivation (source: "xodr") for every town that has no such file: Town10
 # (no CARLA counterpart to probe) and every uploaded map. A from-.xodr graph
 # makes no attempt to rank a fork the way live CARLA next() does — see
-# lane_graph_builder.py's module docstring — frontend/js/simulate.js knows
+# lane_graph_builder.py's module docstring — frontend/js/sim/simulate.js knows
 # to refuse to guess there rather than pick an arbitrary branch. Loaded once
 # at startup (or once at upload time for a freshly uploaded map); a re-probe
 # needs a restart, same caveat as everything else in this dict's family.

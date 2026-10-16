@@ -1,4 +1,4 @@
-"""Random scenario generator suite (frontend/js/generator*.js, scenarioGenerator.js).
+"""Random scenario generator suite (frontend/js/generator/*.js, scenarioGenerator.js).
 
 A generated scenario is only worth having if the other actor actually meets
 the ego. So beyond "it exports", this suite runs every generated scenario
