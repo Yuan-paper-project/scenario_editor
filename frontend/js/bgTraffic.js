@@ -211,7 +211,11 @@
     const body = _requestBody() || _lastReq;
     if (!body) return Promise.resolve(null);
     const sig = JSON.stringify(body);
-    if (_data && _dataSig === sig) return Promise.resolve(_data);
+    if (_data && _dataSig === sig) {
+      // The debounce timer that got here was what kept the status on „Wird erzeugt …".
+      _renderStatus();
+      return Promise.resolve(_data);
+    }
     if (_pending && _pending.sig === sig) return _pending.promise;
     _lastReq = body;
     _error = null;
