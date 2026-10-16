@@ -55,7 +55,7 @@ def add_text_box(slide, x, y, w, h, text, font_size=12, bold=False, color=BLACK,
     return txb
 
 
-def add_rect(slide, x, y, w, h, fill=None, line_color=None, line_width=Pt(0.75)):
+def add_rect(slide, x, y, w, h, fill=None, line_color=None, line_width=None):
     shape = slide.shapes.add_shape(1, x, y, w, h)  # 1 = MSO_SHAPE_TYPE.RECTANGLE
     sp = shape.fill
     if fill:
@@ -66,7 +66,7 @@ def add_rect(slide, x, y, w, h, fill=None, line_color=None, line_width=Pt(0.75))
     line = shape.line
     if line_color:
         line.color.rgb = line_color
-        line.width = line_width
+        line.width = line_width if line_width is not None else Pt(0.75)
     else:
         line.fill.background()
     return shape

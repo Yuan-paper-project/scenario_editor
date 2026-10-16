@@ -4,6 +4,7 @@ import csv
 import json
 import os
 from pathlib import Path
+from typing import Annotated
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
@@ -230,7 +231,7 @@ def _read_special_buildings() -> list[dict]:
 
 
 @app.post("/api/maps/upload")
-async def upload_map(file: UploadFile = File(...)):
+async def upload_map(file: Annotated[UploadFile, File()]):
     """Accept a .xodr upload, persist it in maps/_uploaded/, parse and cache it; returns the town name."""
     if not file.filename or not file.filename.lower().endswith(".xodr"):
         raise HTTPException(status_code=400, detail="Only .xodr files are accepted.")
