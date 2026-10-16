@@ -201,7 +201,7 @@
     return line;
   }
 
-  /** „⚠ <Grund>" — why this card will not reach the exported file. */
+  /** „⚠ <Grund>" — why this card will not reach the exported file, or (soft) will not do what it says. */
   function _problemChip(problem, { soft = false } = {}) {
     const chip = document.createElement('div');
     chip.className = soft ? 'event-problem event-warning' : 'event-problem';
@@ -213,7 +213,7 @@
     const text = document.createElement('span');
     text.textContent = problem.short;
     chip.title = soft
-      ? `Wird exportiert, bewirkt in CARLA aber nichts: ${problem.message}.`
+      ? `Wird exportiert, verhält sich in CARLA aber anders als erwartet: ${problem.message}.`
       : `Dieses Event wird beim Export verworfen: ${problem.message}.`;
     chip.appendChild(icon);
     chip.appendChild(text);

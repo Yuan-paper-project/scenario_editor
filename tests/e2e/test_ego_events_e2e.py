@@ -567,6 +567,54 @@ with sync_playwright() as p:
     status = H.export_status(page, H.export_params(page))
     check("the migrated example file still exports successfully", status == 200, str(status))
 
+    # ── A lane change throws the rest of a path away (amber chip) ────────────
+    # ChangeActorLateralMotion replaces the controller's waypoints, so the
+    # route after it is never driven and is still all the route XML says.
+    seed(page, [])
+    page.evaluate("AppState.select('obj-1')")
+    page.click('#event-action-grid .event-action-button:has-text("Route zuweisen")')
+    for wx, wy in [(280.0, -2.0), (250.0, -2.0)]:
+        sx, sy = H.assert_on_screen(page, wx, wy)
+        page.mouse.click(sx, sy)
+    page.click("#traj-done-btn")
+    check(
+        "a route alone carries no lane-change warning",
+        page.locator("#props-content .event-warning").count() == 0,
+    )
+    page.click('#event-action-grid .event-action-button:has-text("Spurwechsel")')
+    chip = page.locator("#props-content .event-warning")
+    check(
+        "a lane change beside the ego's route is chipped",
+        chip.count() == 1 and "Verwirft den Rest der Route" in chip.inner_text(),
+        chip.all_inner_texts(),
+    )
+    check(
+        "...and the ego's chip points at a route waypoint instead",
+        chip.count() == 1 and "Routen-XML" in (chip.get_attribute("title") or ""),
+        chip.get_attribute("title") if chip.count() else None,
+    )
+    check("...a warning only: the export still goes through", H.export_status(page, H.export_params(page)) == 200)
+
+    lc = {"type": "lane_change", "direction": "left", "dynamics": {"value": 15}}
+    traj = [{"x": 300.6, "y": -2.0, "z": 0.5}, {"x": 280.0, "y": -2.0, "z": 0.5}]
+    seed(
+        page,
+        [
+            {"id": "evt-1", "trigger": {"type": "simulation_time", "value": 1}, "action": lc},
+            {
+                "id": "evt-2",
+                "trigger": {"type": "after_event", "event_id": "evt-1"},
+                "action": {"type": "follow_trajectory", "trajectory": traj},
+            },
+        ],
+    )
+    page.evaluate("AppState.select('obj-1')")
+    check(
+        "a trajectory that starts after the lane change is not chipped",
+        page.locator("#props-content .event-warning").count() == 0,
+        page.locator("#props-content .event-warning").all_inner_texts(),
+    )
+
     unexpected = [e for e in errors if "400 (Bad Request)" not in e]
     check("no unexpected JS errors during the run", not unexpected, str(unexpected[:3]))
     browser.close()

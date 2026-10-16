@@ -29,6 +29,30 @@
    * mapMarkers.js's WALKER_TYPES and xml_builder._PEDESTRIAN_TYPES. */
   const WALKER_ACTION_TYPES = new Set(['pedestrian', 'child']);
 
+  /* ChangeActorLateralMotion replaces the waypoint list: the rest of a route/trajectory is dropped,
+   * and the vehicle follows its new lane ~400 m, then stops. Exempt: a path started by it. */
+  function _laneChangeDropsPath(actor, ev, events) {
+    if ((ev.action || {}).type !== 'lane_change') return null;
+    const path = (events || actor.events || []).find((e) => {
+      const t = (e.action || {}).type;
+      return t === 'assign_route' || t === 'follow_trajectory';
+    });
+    if (!path) return null;
+    const pt = path.trigger || {};
+    if (_isEventRef(pt) && pt.event_id === ev.id && (!pt.actor_ref || pt.actor_ref === actor.id)) return null;
+    const kind = path.action.type === 'assign_route' ? 'Route' : 'Trajektorie';
+    return {
+      code: 'lane_change_drops_path',
+      short: `Verwirft den Rest der ${kind}`,
+      message:
+        `ein Spurwechsel ersetzt in CARLA die Wegpunkte: der Rest der ${kind} wird verworfen, ` +
+        'danach folgt das Fahrzeug nur seiner neuen Spur und bleibt nach ~400 m stehen' +
+        (actor.type === 'ego'
+          ? '. Besser einen Routenpunkt auf die Zielspur setzen — nur so steht der Wechsel auch in der Routen-XML'
+          : ''),
+    };
+  }
+
   /** A trigger point is only usable once it actually carries coordinates. */
   function _isTriggerPoint(point) {
     return !!point && Number.isFinite(Number(point.x)) && Number.isFinite(Number(point.y));
@@ -119,17 +143,17 @@
     eventWarning(actor, ev, events) {
       if (!actor || !ev || WALKER_ACTION_TYPES.has(actor.type)) return null;
       const trigger = ev.trigger || {};
-      if (trigger.type !== 'after_event') return null;
-      const target = _afterEventTarget(actor, trigger, events);
-      if (!target || target.actor.id !== actor.id) return null;
-      if ((target.event.action || {}).type !== 'follow_trajectory') return null;
-      return {
-        code: 'after_own_path_end',
-        short: 'Wirkungslos — steht nach Pfadende',
-        message:
-          'das Fahrzeug bleibt am Ende seiner Trajektorie endgültig stehen ' +
-          '(SimpleVehicleControl), ein danach startendes Event bewegt es nicht mehr',
-      };
+      const target = trigger.type === 'after_event' ? _afterEventTarget(actor, trigger, events) : null;
+      if (target && target.actor.id === actor.id && (target.event.action || {}).type === 'follow_trajectory') {
+        return {
+          code: 'after_own_path_end',
+          short: 'Wirkungslos — steht nach Pfadende',
+          message:
+            'das Fahrzeug bleibt am Ende seiner Trajektorie endgültig stehen ' +
+            '(SimpleVehicleControl), ein danach startendes Event bewegt es nicht mehr',
+        };
+      }
+      return _laneChangeDropsPath(actor, ev, events);
     },
 
     afterEventKey: _afterEventKey,

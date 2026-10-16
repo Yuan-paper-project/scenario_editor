@@ -148,6 +148,10 @@
       ]),
     ],
     oncoming_drift: [
+      choice('style', 'Art', [
+        ['swing', 'Schwenk (Route)'],
+        ['offset', 'Spurversatz'],
+      ]),
       choice(
         'npc_type',
         'Fahrzeug',
@@ -156,6 +160,7 @@
       num('npc_speed', 'Tempo', 'm/s', 8, 14, 0.5),
       num('offset_m', 'Ausschwenken', 'm', 1.2, 2.8, 0.1),
       num('hold_m', 'Bleibt drüben', 'm', 0, 6, 0.5),
+      num('return_ttc_s', 'Lenkt zurück', 's vorher (0 = nie)', 0, 1.2, 0.1),
       num('arrival_offset_s', 'Zeitversatz', 's', -0.4, 0.6, 0.05),
       choice('cause', 'Grund', [
         ['none', 'keiner'],

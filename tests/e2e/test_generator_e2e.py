@@ -61,8 +61,8 @@ OBSTACLE_M = 2.5  # nearest prop to the ego's track
 C = H.Checks()
 
 GEN_AND_MEASURE = (
-    """([t, s]) => {
-  const info = ScenarioGenerator.generate(t, s);
+    """([t, s, pins]) => {
+  const info = ScenarioGenerator.generate(t, s, pins ? { overrides: pins } : {});
   if (!info) return null;
   const run = Simulate.runHeadless({ dt: 0.05, maxTime: 45 });
   const ego = run.tracks[run.egoId];
@@ -149,6 +149,62 @@ STRIP_IDS = """(res) => {
 }"""
 
 
+def check_drift(tag, r):
+    """The two oncoming-drift styles: a fastest/shortest route swing, or a plain route plus lane_offset."""
+    n = next((n for n in r["npcs"] if n["hasEvents"]), None)
+    style = r["info"]["params"].get("style")
+    C(f"{tag}: drift names its style", style in ("swing", "offset"), style)
+    st = n["strategies"] if n else []
+    ev = n["events"] if n else []
+    C(f"{tag}: drift route is routable in the preview", n and n["routeOk"])
+    C(
+        f"{tag}: drift car waits at 0 and is released by a ramp on ego distance",
+        len(ev) >= 2
+        and ev[1]["trigger"]["type"] == "distance_to_ego"
+        and ev[1]["action"]["dynamics"]["dimension"] == "rate",
+        json.dumps(ev)[-300:],
+    )
+    if style == "swing":
+        C(
+            f"{tag}: swing is a route: fastest legs around a run of >= 4 shortest",
+            len(st) >= 7
+            and st[0] == st[1] == st[-1] == "fastest"
+            and st[2:-1].count("shortest") >= 4
+            and "fastest" not in st[2:-1],
+            st,
+        )
+        C(
+            f"{tag}: the swing hands back to 'fastest' on its own lane centre",
+            n and n["handoffs"] and all(d is not None and d < 0.3 for d in n["handoffs"]),
+            n and n["handoffs"],
+        )
+        C(f"{tag}: swing has no lane_offset", len(ev) == 2, len(ev))
+        return
+    C(f"{tag}: offset style drives its own lane on a plain fastest route", st and set(st) == {"fastest"}, st)
+    out = ev[2] if len(ev) > 2 else None
+    C(
+        f"{tag}: steps into the ego's lane with a lane_offset on ego distance, after its release",
+        out
+        and out["action"]["type"] == "lane_offset"
+        and out["action"]["direction"] == "left"
+        and out["action"]["offset"] >= 1.2
+        and out["trigger"]["type"] == "distance_to_ego"
+        and out["trigger"]["value"] < ev[1]["trigger"]["value"],
+        json.dumps(ev[2:])[:300],
+    )
+    back = ev[3] if len(ev) > 3 else None
+    ret = r["info"]["params"].get("return_ttc_s")
+    C(f"{tag}: steers back exactly when return_ttc_s says so", (back is not None) == (ret > 0), (ret, len(ev)))
+    if back:
+        C(
+            f"{tag}: ...with an offset of 0, closer in than the step out",
+            back["action"]["type"] == "lane_offset"
+            and back["action"]["offset"] == 0
+            and back["trigger"]["value"] < out["trigger"]["value"],
+            json.dumps(back)[:200],
+        )
+
+
 def check_scenario(town, t, s, r, page):
     tag = f"{town}/{t}/seed{s}"
     if not C(f"{tag}: generated", r is not None):
@@ -232,30 +288,7 @@ def check_scenario(town, t, s, r, page):
     for n in r["npcs"]:
         C(f"{tag}: {n['type']} route does not end on the ego's route ahead", not n.get("endBlocksEgo"))
     if t == "oncoming_drift":
-        n = next((n for n in r["npcs"] if n["hasEvents"]), None)
-        st = n["strategies"] if n else []
-        C(
-            f"{tag}: drift is a route: fastest legs around a run of >= 4 shortest",
-            len(st) >= 7
-            and st[0] == st[1] == st[-1] == "fastest"
-            and st[2:-1].count("shortest") >= 4
-            and "fastest" not in st[2:-1],
-            st,
-        )
-        C(f"{tag}: drift route is routable in the preview", n and n["routeOk"])
-        C(
-            f"{tag}: the drift hands back to 'fastest' on its own lane centre",
-            n and n["handoffs"] and all(d is not None and d < 0.3 for d in n["handoffs"]),
-            n and n["handoffs"],
-        )
-        ev = n["events"] if n else []
-        C(
-            f"{tag}: drift car waits at 0 and is released by a ramp on ego distance",
-            len(ev) == 2
-            and ev[1]["trigger"]["type"] == "distance_to_ego"
-            and ev[1]["action"]["dynamics"]["dimension"] == "rate",
-            json.dumps(ev)[-300:],
-        )
+        check_drift(tag, r)
 
     if t == "obstacle":
         C(
@@ -580,6 +613,32 @@ def main():
             if r and any(n.get("endBlocksEgo") for n in r["npcs"]):
                 blocked.append(s)
         C("Town03 junction_conflict: no NPC route ends on the ego's route ahead", not blocked, blocked)
+
+        # ── Both drift styles, pinned (pins switch the criticality gate off) ──
+        # A held lane_offset must actually put the car into a non-reacting ego;
+        # one that steers back must still have stepped over first.
+        for town in ("Town03", "Town05"):
+            H.select_map(page, town)
+            page.wait_for_function("AppState.laneGraph !== null", timeout=60000)
+            for pins in (
+                {"style": "swing"},
+                {"style": "offset", "return_ttc_s": 0},
+                {"style": "offset", "return_ttc_s": 1.0},
+            ):
+                for s in (1, 2, 3):
+                    tag = f"{town}/drift {json.dumps(pins)}/seed{s}"
+                    r = page.evaluate(GEN_AND_MEASURE, ["oncoming_drift", s, pins])
+                    if not C(f"{tag}: generated", r is not None):
+                        continue
+                    C(f"{tag}: the pinned style is the one built", r["info"]["params"]["style"] == pins["style"])
+                    check_drift(tag, r)
+                    n = next(n for n in r["npcs"] if n["hasEvents"])
+                    if pins.get("return_ttc_s") == 0:
+                        C(f"{tag}: a held offset hits the non-reacting ego", n["min"] <= 3.0, round(n["min"], 2))
+                    elif pins["style"] == "offset":
+                        C(f"{tag}: steering back still comes close", n["min"] <= n["reach"] + 1.5, round(n["min"], 2))
+                    exp = page.evaluate(EXPORT)
+                    C(f"{tag}: exports", exp["ok"], f"{exp['status']} {exp['text'][:200]}")
 
         C("no JS errors", not [e for e in errors if "404" not in e], errors[:5])
         browser.close()

@@ -183,7 +183,7 @@
     <tr><td>Route zuweisen</td><td>Fährt über Wegpunkte <strong>den Fahrspuren folgend</strong>, wie ein Navi. Startet immer sofort. Nur für Fahrzeuge (nicht Personen/Radfahrer).</td></tr>
     <tr><td>Trajektorie folgen</td><td>Fährt die gezeichnete Linie <strong>wörtlich</strong> ab — auch quer über die Straße. Eine Geschwindigkeit für den ganzen Pfad.</td></tr>
     <tr><td>Geschw. setzen</td><td>Neue Zielgeschwindigkeit, absolut oder relativ zu einem Akteur (Differenz Δ oder Faktor ×). <em>für N s</em>: springt hin und hält N s. <em>Rate N m/s²</em>: rampt hin und ist fertig bei Ankunft. <em>Rückwärts</em> nur für Fahrzeuge.</td></tr>
-    <tr><td>Spurwechsel</td><td>Wechsel auf die linke/rechte Nachbarspur über eine Strecke. Braucht eine Nachbarspur in <strong>gleicher</strong> Fahrtrichtung.</td></tr>
+    <tr><td>Spurwechsel</td><td>Wechsel auf die linke/rechte Nachbarspur über eine Strecke. Braucht eine Nachbarspur in <strong>gleicher</strong> Fahrtrichtung. Hat das Fahrzeug eine Route oder Trajektorie, wird deren Rest in CARLA verworfen (gelber Hinweis am Event) — fürs Ego den Wechsel besser als Routenpunkt auf der Zielspur setzen, dann steht er auch in der Routen-XML.</td></tr>
     <tr><td>Spurversatz</td><td>Fährt seitlich versetzt in der Spur (½ / 1 Spurbreite per Knopf). <em>Dauerhaft</em> bleibt versetzt; <em>Hin &amp; zurück</em> schwenkt aus und wieder zurück.</td></tr>
   </table>
   <p>Pro Akteur gibt es höchstens einen Pfad (Route oder Trajektorie).</p>
@@ -239,6 +239,7 @@
     <li><strong>Mehrere generieren …:</strong> viele Szenarien über Typen, Karten, Wetter und Tageszeiten verteilt, als ZIP mit <em>.xosc</em>, <em>.json</em>, Routen-XML und einer Übersichtstabelle. Das aktuelle Szenario bleibt dabei unverändert.</li>
   </ul>
   <p>Zu leichte (kein echter Konflikt) und unvermeidbare Szenarien werden automatisch verworfen.</p>
+  <p><em>Gegenverkehr driftet</em> gibt es in zwei Arten (Rezept-Feld <em>Art</em>): <strong>Schwenk</strong> fährt einen festen Bogen über die Mittellinie und zurück; <strong>Spurversatz</strong> zieht hinüber, sobald das Ego nahe genug ist, und bleibt meist dort (<em>Lenkt zurück</em> = 0) — der Konflikt kommt also auch dann, wenn das Ego langsamer fährt als geplant. Bremsen allein verhindert ihn dann nicht.</p>
 </section>
 
 <section id="umgebung">
