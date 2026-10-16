@@ -56,6 +56,9 @@
   // state subscriptions clear it too.
   const _sceneCollapsed = { npcs: false, props: false };
   const scene = { locatedId: null };
+  // The scene list's deletes re-render the whole panel, and render() is
+  // defined after it; set below, beside the event panel's refresh handler.
+  const panel = { render: null };
   // Which instance each prop type's stepper is pointing at, keyed by blueprint
   // id. Clamped at render time rather than on delete: props are also added and
   // removed from the map and the toolbar, which never touch this.
@@ -325,7 +328,7 @@
     AppState.removeById(id);
     if (scene.locatedId === id) scene.locatedId = null;
     MapView.renderAllActors();
-    render();
+    panel.render();
     Toast.info(`${label} gelöscht — Strg+Z zum Rückgängigmachen`);
   }
 
@@ -347,7 +350,7 @@
     });
     delete _propCursor[blueprint];
     MapView.renderAllActors();
-    render();
+    panel.render();
     Toast.info(`${items.length} × ${name} gelöscht — Strg+Z macht sie zusammen rückgängig`);
   }
 
@@ -921,6 +924,7 @@
   });
 
   EventPanel.setRefreshHandler(render);
+  panel.render = render;
 
   // ── Listen for state changes ─────────────────────────────────────────────────
 
