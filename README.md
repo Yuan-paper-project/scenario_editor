@@ -27,7 +27,7 @@ scenario_editor/
 ├── frontend/              Vanilla JS + CSS (no build step)
 │   ├── index.html         Single-page application shell
 │   ├── presentation.html  Standalone project presentation (TUM-style slides)
-│   ├── css/style.css      Dark theme UI
+│   ├── css/*.css          Light theme UI, one stylesheet per area (order in index.html)
 │   └── js/
 │       ├── appState.js    Global state store + event bus
 │       ├── dialogs.js     Toast and confirm dialog

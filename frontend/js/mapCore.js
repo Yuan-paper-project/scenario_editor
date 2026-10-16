@@ -98,7 +98,7 @@
   // Sub-metre steps keep the bar bounded at lane zoom (1 m used to be several
   // hundred px there): with a 1-2-5 ladder the pick stays within ~70-170 px,
   // which is what lets the bottom-centre controls reserve a fixed strip for
-  // the ruler (.map-bottom-stack's `left` in style.css).
+  // the ruler (.map-bottom-stack's `left` in map.css).
   const _NICE_DISTS = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000];
   const _TARGET_PX = 120; // target bar width in screen pixels
 

@@ -1,3 +1,5 @@
+/* eventCards.css — the event list and its cards (eventPanelCards.js); loads before eventRows.css. */
+
 /* Event editor */
 .event-section {
   margin-top: 8px;

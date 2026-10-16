@@ -287,7 +287,7 @@
    * casing rather than a single accent colour: the map runs from a `#e8edf2`
    * verge to a near-black carriageway, and only the casing carries both.
    *
-   * The stroke is `non-scaling-stroke` (see `.sel-mark-*` in style.css), so the
+   * The stroke is `non-scaling-stroke` (see `.sel-mark-*` in mapMarkers.css), so the
    * corners follow the box while the line keeps its width on screen. That is
    * what keeps a cone legible — a scaled 2 px line goes sub-pixel long before
    * the object it frames does.
@@ -343,7 +343,7 @@
     ag.setAttribute('class', 'yaw-arrow');
     ag.setAttribute('data-actor-id', actor.id);
 
-    // Shaft — decoration, never a hit target (see .yaw-shaft in style.css)
+    // Shaft — decoration, never a hit target (see .yaw-shaft in mapMarkers.css)
     const line = UIUtils.svgEl('line', {
       x1: bodyRadius,
       y1: 0,

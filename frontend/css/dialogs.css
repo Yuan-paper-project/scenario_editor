@@ -1,3 +1,5 @@
+/* dialogs.css — toasts, the shortcuts overlay, the confirm dialog, the undo banner. */
+
 /* ── Toast notifications ─────────────────────────────────── */
 #toast-container {
   position: fixed;

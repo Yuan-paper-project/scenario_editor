@@ -16,8 +16,8 @@ Line counts are `wc -l`. The sibling repo `../llm-scenario-gen` is out of scope 
 | `frontend/js/mapView.js` | done (`907ffa0` `UIUtils.sharedScope`, `48a30c2` shared `layers`/`view`/`drag`, `02de785` split, docs after) |
 | `frontend/js/simulate.js` | done (`440e1cc` shared `run`/`timeline`, `0940659` split, docs after) |
 | `frontend/js/eventPanel.js` | done (`4814fec` shared `panel`, `6faaf9f` split, docs after) |
-| `frontend/css/style.css` | next |
-| `frontend/js/objects.js`, `properties.js`, `templates.js` | open |
+| `frontend/css/style.css` | done (`4f2bbdd` split, docs after) |
+| `frontend/js/objects.js`, `properties.js`, `templates.js` | next |
 | `backend/map_renderer.py`, `scenario_io.py`, `bg_traffic.py`, `lane_graph_builder.py` | open |
 
 How each split was done, and the checks to repeat: propose → approve → (1) any wiring change needed to make the move possible, alone, inside the old file; (2) the move itself, by script, asserting every original line lands in exactly one new file; (3) docs. After each: `bash tools/lint.sh` (no new findings), `bash tests/run_tests.sh --quick`, and the export/generator fingerprint must be byte-identical; a deliberately wrong load order must fail `test_smoke_e2e.py`. Test against a server without `--reload` (port 9091).
@@ -38,7 +38,7 @@ How each split was done, and the checks to repeat: propose → approve → (1) a
 | `frontend/js/properties.js` | 964 (995) | actor panel · scene list (138–681) · input bindings / type pickers / delete · traffic-signal panel (486–681) |
 | `frontend/js/templates.js` | 916 (1018) | built-in template table (51–275) · user templates (276–583) · road geometry helpers (584–) |
 | `frontend/js/bgTraffic.js` | 492 (561) | keep-out building · fetch/cache · drawing |
-| `frontend/css/style.css` | 1677 (3820) | split per panel/module to match the JS files |
+| ~~`frontend/css/style.css`~~ | 1677 (3820) | **Done** — split into fourteen stylesheets, loaded in the old file's rule order: `base.css` (67), `header.css` (335), `generator.css` (300), `map.css` (410), `toolbar.css` (197), `properties.css` (364), `eventCards.css` (341), `eventRows.css` (197), `environment.css` (166), `mapMarkers.css` (305), `dialogs.css` (210), `overview.css` (356), `preview.css` (391), `help.css` (198). Stragglers appended at the end of the old file went to their area; every flipped rule pair was checked for a shared property on overlapping selectors, and the one real one (`.menu-btn`'s `display`) settled by keeping buttons with the menus. Verified by diffing `getComputedStyle` of every element over 16 editor states: 0 differences, 34 with `eventRows.css` loaded before `eventCards.css`. `map.css` is 410 only by its header line. |
 | `frontend/index.html` | 771 (771) | mostly markup; the inline SVG icons could move out |
 
 ### Backend Python

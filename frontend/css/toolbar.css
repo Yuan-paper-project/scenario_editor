@@ -1,3 +1,5 @@
+/* toolbar.css — the left toolbar: tabs, actor tiles, prop search and sections. */
+
 /* ── Left toolbar ────────────────────────────────────────── */
 #toolbar {
   width: var(--toolbar-w);

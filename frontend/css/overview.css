@@ -1,3 +1,5 @@
+/* overview.css — the Übersicht/Templates panel: scenario summary, scene list, user-template rows. */
+
 /* „Eigene Vorlagen" rows in the Templates tab: name | place | delete. */
 .user-template-row {
   display: grid;

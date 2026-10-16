@@ -1,3 +1,5 @@
+/* preview.css — the preview bar, „Ablauf", and the view-only lock while a preview runs. */
+
 /* ── Simulation controls ─────────────────────────────────── */
 /* Two rows in a FIXED-width card (simTimeline.js): transport, tempo + toggles
    on top, scrub bar + time below. Nothing in it may change width when a

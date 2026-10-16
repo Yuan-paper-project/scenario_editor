@@ -1,3 +1,5 @@
+/* mapMarkers.css — everything drawn on the map SVG: actors, props, selection marks, labels, signals, paths, landmarks, trigger points, yaw handle. */
+
 /* ── SVG actor styles ────────────────────────────────────── */
 /* `move`, not `pointer`: the body IS the drag target. Rotating is the yaw
    handle out at the arrow tip, which says `grab` instead — the two zones are

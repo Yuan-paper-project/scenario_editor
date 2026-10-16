@@ -1,3 +1,5 @@
+/* generator.css — the Generieren menu, the recipe panel and its Serie box, the batch dialog. */
+
 /* ── Generator menu ─────────────────────────────────────────── */
 .gen-menu-types {
   display: flex;

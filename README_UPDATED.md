@@ -34,7 +34,7 @@ scenario_editor/
 ├── frontend/              Vanilla JavaScript + CSS, no build step
 │   ├── index.html         Single-page app shell
 │   ├── presentation.html  Standalone project presentation
-│   ├── css/style.css      Application styling
+│   ├── css/*.css          Application styling, one stylesheet per area
 │   └── js/
 │       ├── appState.js    Global state store and event bus
 │       ├── dialogs.js     Toast notifications and confirm dialog

@@ -1,3 +1,5 @@
+/* header.css — the header bar, its dropdown menus (.menu*, Ebenen), buttons, undo/redo and the range slider. */
+
 /* ── Header ──────────────────────────────────────────────── */
 #app-header {
   display: flex;

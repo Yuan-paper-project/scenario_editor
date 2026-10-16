@@ -1,5 +1,6 @@
 /* ════════════════════════════════════════════════════════
    OpenSCENARIO Editor — Light UI Theme
+   base.css: tokens, reset, utilities. Stylesheet order is index.html's <link> block.
    ════════════════════════════════════════════════════════ */
 
 *,

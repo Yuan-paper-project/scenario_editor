@@ -1,3 +1,5 @@
+/* properties.css — the right properties panel: sections, Spawnpunkt grid, waypoint list. */
+
 /* ── Right properties panel ──────────────────────────────── */
 #properties-panel {
   width: var(--props-w);

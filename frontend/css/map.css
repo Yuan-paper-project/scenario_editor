@@ -1,3 +1,5 @@
+/* map.css — map area: view controls, base-map switch, road furniture, scale ruler, bottom-centre stack, import overlay. */
+
 /* ── Main area ───────────────────────────────────────────── */
 #main-area {
   display: flex;

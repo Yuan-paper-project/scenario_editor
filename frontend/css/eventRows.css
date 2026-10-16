@@ -1,3 +1,5 @@
+/* eventRows.css — the rows inside an event card: _multiRow, toggles, trigger block, summary line. */
+
 /* Several controls behind one label (eventPanel.js _multiRow): a choice and the
    value it governs share a row. Toggles share the width; inputs and units keep
    their own. */

@@ -1,3 +1,5 @@
+/* environment.css — the Umgebung menu (weather, time, Hintergrundverkehr) and the background cars on the map. */
+
 /* ── Umgebung menu (weather + time of day) ───────────────── */
 /* Was a full-width bar under the map; now a header dropdown. weather.js
    still binds the same w-* / wv-* ids. */
