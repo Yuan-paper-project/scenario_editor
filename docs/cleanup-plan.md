@@ -20,7 +20,8 @@ Line counts are `wc -l`. The sibling repo `../llm-scenario-gen` is out of scope 
 | `frontend/js/objects.js` | done (`3368fb8` shared `drag`, `496f2d5` split, `75dc7a5` smoke test stops at a missing global, docs after) |
 | `frontend/js/properties.js` | done (`5ac3c27` shared `scene`, `264d244` `panel.render` hook, `25524a7` split, docs after) |
 | `frontend/js/templates.js` | done (`a112e51` split, docs after) |
-| `backend/map_renderer.py`, `scenario_io.py`, `bg_traffic.py`, `lane_graph_builder.py` | open |
+| `backend/map_renderer.py` | done (`24b0c44` split, docs after) |
+| `backend/scenario_io.py`, `bg_traffic.py`, `lane_graph_builder.py` | open |
 
 How each split was done, and the checks to repeat: propose → approve → (1) any wiring change needed to make the move possible, alone, inside the old file; (2) the move itself, by script, asserting every original line lands in exactly one new file; (3) docs. After each: `bash tools/lint.sh` (no new findings), `bash tests/run_tests.sh --quick`, and the export/generator fingerprint must be byte-identical; a deliberately wrong load order must fail `test_smoke_e2e.py`. Test against a server without `--reload` (port 9091). For a stylesheet, the fingerprint is `tools/css_fingerprint.py` (computed styles, see CLAUDE.md).
 
@@ -47,7 +48,7 @@ How each split was done, and the checks to repeat: propose → approve → (1) a
 
 | File | Lines before (now) | Seams |
 |---|---|---|
-| `backend/map_renderer.py` | 1142 (1183) | OpenDRIVE geometry/lane maths (76–530) · road marks/polylines (531–591) · signals, signs, crosswalks (592–836) · spawn points (837–947) · render-data assembly (948–) |
+| ~~`backend/map_renderer.py`~~ | 1142 (1183) | **Done** — split into `xodr_geometry.py` (263, reference-line maths: offsets, elevation, sampling, lateral points, `_eval_geometry_at_s`), `xodr_lanes.py` (332, lane sections, widths, centres, polygons, road marks), `xodr_features.py` (226, lights, signs, crosswalks), `spawn_points.py` (139, with the `_LLMGEN` lookup only it uses), `map_renderer.py` (291, path scans, colours, `_process_root_to_render_data`, public API). Imports only go downward in that order. No re-exports: `lane_graph_builder.py` imports from `xodr_lanes`. Verified by hashing every town's render JSON and xodr-derived lane graph directly (`build_lane_graph_from_xodr` on all towns, since the API serves probed graphs for most) plus the browser fingerprint. `_process_root_to_render_data` (169 lines) moved whole. |
 | `backend/scenario_io.py` | 1018 (1027) | per-event/per-actor normalisation (34–500) · scenario-wide event-reference rules (502–620) · type/prop/signal validation (621–731) · `validate_scenario_params` + export (732–928) · batch zip (929–) |
 | `backend/bg_traffic.py` | 883 (1045) | SUMO install/net (123–193) · keep-out (194–385) · trip generation and FCD I/O (386–640) · `generate` loop (680–876) |
 | `backend/lane_graph_builder.py` | 634 (701) | XML extraction (93–307) · successor resolution (308–392) · `build_lane_graph_from_xodr` (395–) |
@@ -60,7 +61,7 @@ How each split was done, and the checks to repeat: propose → approve → (1) a
 
 ### Over-long functions (≥ 90 lines)
 
-Python: `scenario_io._normalize_structured_event` (259), `lane_graph_builder.build_lane_graph_from_xodr` (240), `bg_traffic.generate` (195), `map_renderer._process_root_to_render_data` (165), `scenario_io.validate_scenario_params` (124), `scenario_io._normalize_after_event_chains` (117).
+Python: `scenario_io._normalize_structured_event` (259), `lane_graph_builder.build_lane_graph_from_xodr` (240), `bg_traffic.generate` (195), `map_renderer._process_root_to_render_data` (169), `scenario_io.validate_scenario_params` (124), `scenario_io._normalize_after_event_chains` (117).
 
 JS: `propSideShapes.sideShapes` (336, data), `eventPanelTriggers._appendEventTriggerControls` (219), `mapRender.renderMap` (221), `propPlanShapes.planShapes` (166, data), `generatorTypesObstacle._oncomingDrift` (159), `ScenarioRules.eventProblem` (156), `generatorTypesVru._vruCrossingAt` (134), `eventPanelCards._renderEventList` (133), `eventPanelActions._appendSpeedActionControls` (116), `eventPanelPaths._renderPathList` (116), `scenarioIO.buildScenarioParams` (116), `simActions._applyEventAction` (114), `generatorTypesJunction._junctionConflict` (104), `propCatalog.renderPanel` (103), `generatorTypesObstacle._obstacle` (100), `simulate.runHeadless` (97), `eventPanel._renderEventActionGrid` (96), `mapPaths._renderRoute` (95).
 
@@ -77,8 +78,8 @@ Ordered by how safe the merge is. Check each pair's bodies before merging; sever
 | `_el(tag, attrs)` SVG element builder | `aerialMap.js:238`; the prop and map files use `UIUtils.svgEl` | Same behaviour (`for…in` vs `Object.entries` over plain objects). Point `aerialMap.js` at `UIUtils.svgEl`. |
 | Walker type sets | `mapMarkers.js` `WALKER_TYPES`, `scenarioRules.js` `WALKER_ACTION_TYPES`, `properties.js:172` `_isWalker` (includes `cyclist`!), `templates.js:818`, `objects.js:90` `ROAD_FACING_TYPES` (includes `cyclist`, `bicycle`) | Some differences are deliberate (CLAUDE.md, "Actor types"). Within the frontend, the pedestrian/child pair could come from one constant in `ScenarioRules`. The backend/emitter copies are cross-repo; leave them. |
 | Weather presets | `weather.js:19` `PRESETS`, `generatorBatch.js` `WEATHER_PRESETS` | CLAUDE.md says "keep the two in step". Make one the source. |
-| Road `<link>` parsing | `map_renderer._get_road_link` (393), `lane_graph_builder._parse_road_links` (133) | **Not identical**: the builder casts `elementId` to `int` and defaults `contactPoint` to `'start'`. It was copied on purpose to keep the module independent. Could share a parser and keep the differences in the callers. |
-| Road-mark parsing | `map_renderer._get_road_marks` / `_get_center_marks`, `lane_graph_builder._parse_lane_change_marks` / `_parse_mark_records` | Same XML read twice for different fields. Investigate before merging. |
+| Road `<link>` parsing | `xodr_lanes._get_road_link`, `lane_graph_builder._parse_road_links` (133) | **Not identical**: the builder casts `elementId` to `int` and defaults `contactPoint` to `'start'`. It was copied on purpose to keep the module independent. Could share a parser and keep the differences in the callers. |
+| Road-mark parsing | `xodr_lanes._get_road_marks` / `_get_center_marks`, `lane_graph_builder._parse_lane_change_marks` / `_parse_mark_records` | Same XML read twice for different fields. Investigate before merging. |
 | Nearest-point-on-lane | `objects._nearestLaneProjection` (251), `generatorCore._projectOnLane`, `simLanes._nearestPointOnDirLine` | Different inputs and outputs; probably a shared segment-projection kernel underneath. Investigate. |
 | Test boilerplate | 4 e2e suites (`test_props`, `test_prop_yaw`, `test_elevation`, `test_undo`) don't import `_harness` and launch the browser themselves; `seed`/`place`/`load_map`/`speed_event` helpers are redefined in several suites | Move the shared ones into `_harness.py`. |
 

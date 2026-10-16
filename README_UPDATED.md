@@ -30,6 +30,7 @@ scenario_editor/
 ├── backend/               Python FastAPI backend
 │   ├── main.py            REST API, static file server, map upload, export endpoints
 │   ├── map_renderer.py    OpenDRIVE parser to editor map geometry JSON
+│   ├── xodr_*.py, spawn_points.py  its geometry, lane, feature and spawn-point helpers
 │   └── scenario_io.py     Scenario validation/normalization and export bridge
 ├── frontend/              Vanilla JavaScript + CSS, no build step
 │   ├── index.html         Single-page app shell
