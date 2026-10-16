@@ -54,7 +54,7 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true,
+      "preset": "recommended",
       "suspicious": {
         "noRedundantUseStrict": "off",
         // Its fix is unsafe here: forEach/map callbacks deliberately return a value or nothing.
