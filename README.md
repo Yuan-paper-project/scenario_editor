@@ -85,7 +85,8 @@ scenario_editor/
 
 ```bash
 .venv/bin/pip install -r requirements-dev.txt && bash tools/install_biome.sh   # once
-bash tools/lint.sh                  # ruff, pylint (sizes), Biome
+bash tools/lint.sh                  # ruff, pylint (sizes), Biome, shared-scope names
+git config core.hooksPath tools/hooks   # once: run lint.sh before every commit
 bash tests/run_tests.sh --quick     # ~40 s, against a running editor
 bash tests/run_tests.sh             # everything; EDITOR_URL picks the server
 ```

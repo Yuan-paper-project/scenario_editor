@@ -1,0 +1,16 @@
+#!/bin/bash
+# Runs tools/lint.sh before every commit; a finding stops the commit.
+# Enabled per clone with:  git config core.hooksPath tools/hooks
+# Skip once with:          git commit --no-verify
+# It checks the working tree, not just what is staged, so unstaged edits count too.
+cd "$(git rev-parse --show-toplevel)" || exit 1
+if [ ! -x .tools/biome ] || [ ! -x .venv/bin/ruff ]; then
+    echo "pre-commit: lint tools missing — run: .venv/bin/pip install -r requirements-dev.txt && bash tools/install_biome.sh"
+    exit 1
+fi
+if ! out=$(bash tools/lint.sh 2>&1); then
+    echo "$out"
+    echo
+    echo "pre-commit: tools/lint.sh failed; 'bash tools/lint.sh --fix' applies the safe fixes."
+    exit 1
+fi
