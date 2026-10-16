@@ -81,12 +81,6 @@
 
   let _dragCounter = 0;
 
-  function _isXodrDrag(e) {
-    return Array.from(e.dataTransfer.items || []).some(
-      (i) => i.kind === 'file' && (i.type === '' || i.type.includes('xml') || i.type.includes('xodr')),
-    );
-  }
-
   mapContainer.addEventListener('dragenter', (e) => {
     e.preventDefault();
     _dragCounter++;

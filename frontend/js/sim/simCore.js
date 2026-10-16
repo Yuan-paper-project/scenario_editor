@@ -65,11 +65,6 @@
   const ROUTE_HEADING_ACCEPT_LO = 2.0; // accept when |delta| < LO ...
   const ROUTE_HEADING_ACCEPT_HI = 4.3; // ... or > HI; the band between is a reversal
 
-  // Which actor types AssignRouteAction accepts — mirrors _ROUTE_ACTION_TYPES in
-  // ../llm-scenario-gen/generator/event_builders.py. Shared with eventPanel.js
-  // (which greys the action out) and the export gate via scenarioRules.js.
-  const ROUTE_ACTION_TYPES = ScenarioRules.ROUTE_ACTION_TYPES;
-
   // ── Small geometry helpers ───────────────────────────────────────────────────
 
   function _dist3(a, b) {

@@ -264,7 +264,7 @@
     } else if (action.type === 'lane_change') {
       _supersedeLaneOffset(sim, simTime, { reset: true });
       sim.activeLaneChangeEventId = ev.id;
-      _startLaneChange(sim, action, simTime);
+      _startLaneChange(sim, action);
     } else if (action.type === 'lane_offset') {
       _startLaneOffset(sim, ev, action, simTime);
     } else if (action.type === 'set_distance') {
@@ -313,7 +313,7 @@
         : { icon: '⇥', text: 'Zurück zur Spurmitte' };
   }
 
-  function _startLaneChange(sim, action, simTime) {
+  function _startLaneChange(sim, action) {
     const near = _laneAnchor(sim.x, sim.y);
     const direction = action.direction === 'right' ? 'right' : 'left';
     const dirLabel = direction === 'left' ? 'links' : 'rechts';

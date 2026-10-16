@@ -37,7 +37,6 @@
   } = MapCore.shared;
 
   let _overpassGroupsFor = () => null;
-  let _overpassCount = 0;
 
   function renderMap(mapData) {
     // Clear all layers
@@ -92,7 +91,7 @@
     worldGroup.appendChild(layers.actorsTop);
     worldGroup.appendChild(layers.triggerPoints);
 
-    const { bounds, roads, spawnPoints, intersections, trafficLights, crosswalks, grassColor } = mapData;
+    const { bounds, roads, spawnPoints, intersections, trafficLights, crosswalks } = mapData;
     const signs = mapData.signs || [];
     const speedSigns = mapData.speedSigns || [];
     const w = bounds.xMax - bounds.xMin;
@@ -211,7 +210,6 @@
         }
       }
     }
-    _overpassCount = [...levels.values()].filter((v) => v > 0).length;
     _applyLayerToggleExtras();
 
     for (const sign of signs) _renderSign(sign);

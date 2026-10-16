@@ -26,7 +26,6 @@
     const dist = Math.hypot(x2 - x1, y2 - y1);
     const mx = (x1 + x2) / 2,
       my = (y1 + y2) / 2;
-    const angle = (Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI;
     const color = pinned ? '#ffcc00' : '#ffee55';
 
     const g = UIUtils.svgEl('g', { class: 'ruler-measurement' });

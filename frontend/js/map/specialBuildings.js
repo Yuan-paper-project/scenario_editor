@@ -19,11 +19,6 @@
   'use strict';
 
   const SpecialBuildings = {
-    /** The rows for one town, in file order. */
-    forTown(town) {
-      return (AppState.specialBuildings || []).filter((b) => b.town === town);
-    },
-
     /**
      * Fetch the landmarks and publish them. Failure is deliberately quiet: the
      * overlay is decoration and the editor is fully usable without it, so a

@@ -17,7 +17,6 @@
     const action = TrafficSignals.actionById(id);
     const selected = String(AppState.selectedTrafficLightId || '') === id;
     const configured = (action?.events || []).length > 0;
-    const lastEvent = configured ? action.events[action.events.length - 1] : null;
 
     // A compact signal head: dark housing, three lamps. Every lamp is dark until
     // the scenario forces a state on this signal, and then exactly the states

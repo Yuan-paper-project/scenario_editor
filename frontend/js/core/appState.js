@@ -290,21 +290,6 @@
       return Array.isArray(points) ? points : null;
     },
 
-    /** Find nearest spawn point within maxDist metres. Returns null if none. */
-    nearestSpawn(wx, wy, maxDist = 10) {
-      if (!this.mapData) return null;
-      let best = null,
-        bestDist = maxDist;
-      for (const sp of this.mapData.spawnPoints) {
-        const d = Math.hypot(sp.x - wx, sp.y - wy);
-        if (d < bestDist) {
-          bestDist = d;
-          best = sp;
-        }
-      }
-      return best;
-    },
-
     /**
      * Human-readable actor label, indexed per actor type for NPCs.
      *
@@ -399,12 +384,6 @@
     switchGroupFor(type) {
       const group = ACTOR_TYPE_GROUPS.find((g) => g.sections.some((s) => s.types.some((t) => t.type === type)));
       return group ? group.id : null;
-    },
-
-    /** All swappable types for a group id, flattened across its sections. */
-    switchTypesFor(groupId) {
-      const group = ACTOR_TYPE_GROUPS.find((g) => g.id === groupId);
-      return group ? group.sections.flatMap((s) => s.types.map((t) => t.type)) : [];
     },
 
     /** True if a placed actor of type `from` may be swapped to type `to`. */
