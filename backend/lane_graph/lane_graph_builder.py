@@ -49,8 +49,33 @@ SAMPLING_RESOLUTION_M = 2.0
 def build_lane_graph_from_xodr(xodr_path: Path, roads_out: list[dict], town: str) -> dict:
     """Build a lane_graph.json-shaped dict for `town`; geometry from `roads_out`, topology from the .xodr."""
     root = ET.parse(str(xodr_path)).getroot()
+    lane_index, section_count_by_road = _index_lanes(roads_out)
+    _attach_exact_geometry(lane_index, root)
+    successors_by_lane = _successors(lane_index, root, section_count_by_road)
+    left_right = _derive_left_right(lane_index)
+    ids = _NodeIds(lane_index, successors_by_lane)
+    edges, road_id_to_edge, lane_entry_node, lane_path = _lanefollow_edges(lane_index, ids)
+    edges += _lane_change_edges(
+        lane_index, successors_by_lane, left_right, _parse_mark_records(root), lane_entry_node, lane_path, ids
+    )
+    return {
+        'town': town,
+        'carlaMapName': None,
+        'samplingResolution': SAMPLING_RESOLUTION_M,
+        'probeVersion': 'xodr-2',
+        'source': 'xodr',
+        'nodes': ids.nodes,
+        'edges': edges,
+        'roadIdToEdge': road_id_to_edge,
+        'lanes': _lanes_table(lane_index, left_right, _parse_lane_change_marks(root), successors_by_lane),
+    }
 
-    # ── Index every routable lane from roads_out ───────────────────────────
+
+# ── Stages ──────────────────────────────────────────────────────────────────
+
+
+def _index_lanes(roads_out: list[dict]) -> tuple[dict, dict]:
+    """Every routable lane in roads_out by (road, section, lane), and each road's section count."""
     lane_index: dict[tuple[int, int, int], dict] = {}
     junction_roads: set[int] = set()
     section_count_by_road: dict[int, int] = {}
@@ -79,9 +104,14 @@ def build_lane_graph_from_xodr(xodr_path: Path, roads_out: list[dict], town: str
             }
         if max_section >= 0:
             section_count_by_road[road_id] = max_section + 1
+    return lane_index, section_count_by_road
 
-    # Exact geometry per lane (s range, driven direction, centre evaluator): the 1 cm, 4 m
-    # directionLine is too coarse for whole-metre node ids and 2 m sample counts.
+
+def _attach_exact_geometry(lane_index: dict, root) -> None:
+    """Add each lane's s range, driven direction and centre evaluator.
+
+    The 1 cm, 4 m directionLine is too coarse for whole-metre node ids and 2 m sample counts.
+    """
     road_elems = {int(r.get('id')): r for r in root.findall('road')}
     section_s = {rid: [(a, b) for a, b, _ in _get_lane_sections(el)] for rid, el in road_elems.items()}
     for key, entry in lane_index.items():
@@ -94,16 +124,14 @@ def build_lane_graph_from_xodr(xodr_path: Path, roads_out: list[dict], town: str
         entry['s0'], entry['s1'], entry['evaluate'] = s0, s1, evaluate
         entry['ends'] = evaluate([s0, s1])
 
+
+def _successors(lane_index: dict, root, section_count_by_road: dict) -> dict:
+    """Successors per lane, filtered to lanes we actually have geometry for."""
     lane_links = _parse_lane_links(root)
     road_links = _parse_road_links(root)
     junction_conns = _parse_junction_connections(root)
-    lane_change_marks = _parse_lane_change_marks(root)
-    mark_records = _parse_mark_records(root)
-    left_right = _derive_left_right(lane_index)
-
-    # ── Resolve successors per lane, filtered to lanes we actually have geometry for ──
     successors_by_lane: dict[tuple[int, int, int], list[dict]] = {}
-    for key, entry in lane_index.items():
+    for key in lane_index:
         road_id, section_id, lane_id = key
         last_section_id = section_count_by_road.get(road_id, 1) - 1
         candidates = _resolve_lane_successors(
@@ -118,58 +146,69 @@ def build_lane_graph_from_xodr(xodr_path: Path, roads_out: list[dict], town: str
         )
         resolved = [c for c in candidates if (c['roadId'], c['sectionId'], c['laneId']) in lane_index]
         successors_by_lane[key] = resolved
+    return successors_by_lane
 
-    # ── Node identities by union-find: a lane's exit merges with its successors' entries, so
-    # forks and merges fall out of shared ids, one edge per lane as in the probed graphs. ──
-    uf = _UnionFind()
 
-    def entry_raw(key):
-        return f"{key[0]}:{key[1]}:{key[2]}:entry"
+def _entry_raw(key):
+    return f"{key[0]}:{key[1]}:{key[2]}:entry"
 
-    def exit_raw(key):
-        return f"{key[0]}:{key[1]}:{key[2]}:exit"
 
-    for key, succs in successors_by_lane.items():
-        for succ in succs:
-            succ_key = (succ['roadId'], succ['sectionId'], succ['laneId'])
-            uf.union(exit_raw(key), entry_raw(succ_key))
+def _exit_raw(key):
+    return f"{key[0]}:{key[1]}:{key[2]}:exit"
 
-    node_point: dict[str, dict] = {}
-    for key, entry in lane_index.items():
-        first, last = entry['ends']
-        node_point[entry_raw(key)] = {'x': first[0], 'y': first[1], 'z': first[2]}
-        node_point[exit_raw(key)] = {'x': last[0], 'y': last[1], 'z': last[2]}
 
-    canon_id: dict[str, int] = {}
-    nodes: list[dict] = []
+class _NodeIds:
+    """Node identities by union-find.
 
-    # CARLA's node identity is the end point rounded to whole metres (half-to-even), so ends that
-    # merely round alike merge too: a lane under ~1 m becomes a self-loop a route steps over.
-    by_rounded: dict[tuple[float, float, float], str] = {}
-    for raw, pt in node_point.items():
-        rounded = (_carla_round(pt['x']), _carla_round(pt['y']), _carla_round(pt['z']))
-        if rounded in by_rounded:
-            uf.union(raw, by_rounded[rounded])
-        else:
-            by_rounded[rounded] = raw
+    A lane's exit merges with its successors' entries, so forks and merges fall out of shared
+    ids, one edge per lane as in the probed graphs. Ids are handed out on first use.
+    """
 
-    def node_for(raw: str) -> int:
-        root_id = uf.find(raw)
-        if root_id not in canon_id:
-            canon_id[root_id] = len(nodes)
-            pt = node_point.get(raw) or node_point.get(root_id) or {'x': 0.0, 'y': 0.0, 'z': 0.0}
+    def __init__(self, lane_index: dict, successors_by_lane: dict):
+        self._uf = _UnionFind()
+        for key, succs in successors_by_lane.items():
+            for succ in succs:
+                succ_key = (succ['roadId'], succ['sectionId'], succ['laneId'])
+                self._uf.union(_exit_raw(key), _entry_raw(succ_key))
+
+        self.point: dict[str, dict] = {}
+        for key, entry in lane_index.items():
+            first, last = entry['ends']
+            self.point[_entry_raw(key)] = {'x': first[0], 'y': first[1], 'z': first[2]}
+            self.point[_exit_raw(key)] = {'x': last[0], 'y': last[1], 'z': last[2]}
+
+        self._canon_id: dict[str, int] = {}
+        self.nodes: list[dict] = []
+
+        # CARLA's node identity is the end point rounded to whole metres (half-to-even), so ends that
+        # merely round alike merge too: a lane under ~1 m becomes a self-loop a route steps over.
+        by_rounded: dict[tuple[float, float, float], str] = {}
+        for raw, pt in self.point.items():
+            rounded = (_carla_round(pt['x']), _carla_round(pt['y']), _carla_round(pt['z']))
+            if rounded in by_rounded:
+                self._uf.union(raw, by_rounded[rounded])
+            else:
+                by_rounded[rounded] = raw
+
+    def node_for(self, raw: str) -> int:
+        root_id = self._uf.find(raw)
+        if root_id not in self._canon_id:
+            self._canon_id[root_id] = len(self.nodes)
+            pt = self.point.get(raw) or self.point.get(root_id) or {'x': 0.0, 'y': 0.0, 'z': 0.0}
             # Rounded, like CARLA's vertices: they are only the A* heuristic's input.
-            nodes.append(
+            self.nodes.append(
                 {
-                    'id': canon_id[root_id],
+                    'id': self._canon_id[root_id],
                     'x': _carla_round(pt['x']),
                     'y': _carla_round(pt['y']),
                     'z': _carla_round(pt['z']),
                 }
             )
-        return canon_id[root_id]
+        return self._canon_id[root_id]
 
-    # ── LANEFOLLOW edges (one per routable lane) + roadIdToEdge ────────────
+
+def _lanefollow_edges(lane_index: dict, ids: _NodeIds) -> tuple[list, dict, dict, dict]:
+    """One LANEFOLLOW edge per routable lane, plus roadIdToEdge, each lane's entry node and 2 m path."""
     edges: list[dict] = []
     road_id_to_edge: dict[str, dict] = {}
     lane_entry_node: dict[tuple[int, int, int], int] = {}
@@ -178,8 +217,8 @@ def build_lane_graph_from_xodr(xodr_path: Path, roads_out: list[dict], town: str
 
     for key, entry in lane_index.items():
         road_id, section_id, lane_id = key
-        from_node = node_for(entry_raw(key))
-        to_node = node_for(exit_raw(key))
+        from_node = ids.node_for(_entry_raw(key))
+        to_node = ids.node_for(_exit_raw(key))
         lane_entry_node[key] = from_node
 
         first, last = entry['ends']
@@ -216,31 +255,46 @@ def build_lane_graph_from_xodr(xodr_path: Path, roads_out: list[dict], town: str
             from_node,
             to_node,
         ]
+    return edges, road_id_to_edge, lane_entry_node, lane_path
 
-    # ── Lane-change edges, as GlobalRoutePlanner._lane_change_link: none from a junction lane;
-    # else the FIRST right and first left change the marking allows along the lane's samples
-    # (right: its own <roadMark>, left: its inner neighbour's). Each extra edge is a free detour. ─
+
+def _lane_change_samples(key, entry, lane_index, successors_by_lane, lane_path) -> list:
+    """(lane, [x, y, z, s]) per 2 m sample of a lane.
+
+    A lane under one sample long gets next(2)[0], which lies in its successor, whose markings and
+    neighbours CARLA then reads.
+    """
+    samples = [(key, p) for p in lane_path[key]]
+    span = abs(entry['s1'] - entry['s0'])
+    succs = successors_by_lane.get(key) or []
+    if span < SAMPLING_RESOLUTION_M and succs:
+        remaining = SAMPLING_RESOLUTION_M - span
+        succ_key = (succs[0]['roadId'], succs[0]['sectionId'], succs[0]['laneId'])
+        for _ in range(10):
+            succ = lane_index[succ_key]
+            succ_span = abs(succ['s1'] - succ['s0'])
+            onward = successors_by_lane.get(succ_key) or []
+            if remaining <= succ_span or not onward:
+                break
+            remaining -= succ_span
+            succ_key = (onward[0]['roadId'], onward[0]['sectionId'], onward[0]['laneId'])
+        sign = 1.0 if succ['s1'] >= succ['s0'] else -1.0
+        samples = [(succ_key, succ['evaluate']([succ['s0'] + sign * min(remaining, succ_span)])[0])]
+    return samples
+
+
+def _lane_change_edges(lane_index, successors_by_lane, left_right, mark_records, lane_entry_node, lane_path, ids):
+    """Lane-change edges, as GlobalRoutePlanner._lane_change_link.
+
+    None from a junction lane; else the FIRST right and first left change the marking allows along
+    the lane's samples (right: its own <roadMark>, left: its inner neighbour's). Each extra edge is
+    a free detour.
+    """
+    edges: list[dict] = []
     for key, entry in lane_index.items():
         if entry['isJunction']:
             continue
-        # (lane, [x, y, z, s]) per sample. A lane under one sample long gets next(2)[0], which lies
-        # in its successor, whose markings and neighbours CARLA then reads.
-        samples = [(key, p) for p in lane_path[key]]
-        span = abs(entry['s1'] - entry['s0'])
-        succs = successors_by_lane.get(key) or []
-        if span < SAMPLING_RESOLUTION_M and succs:
-            remaining = SAMPLING_RESOLUTION_M - span
-            succ_key = (succs[0]['roadId'], succs[0]['sectionId'], succs[0]['laneId'])
-            for _ in range(10):
-                succ = lane_index[succ_key]
-                succ_span = abs(succ['s1'] - succ['s0'])
-                onward = successors_by_lane.get(succ_key) or []
-                if remaining <= succ_span or not onward:
-                    break
-                remaining -= succ_span
-                succ_key = (onward[0]['roadId'], onward[0]['sectionId'], onward[0]['laneId'])
-            sign = 1.0 if succ['s1'] >= succ['s0'] else -1.0
-            samples = [(succ_key, succ['evaluate']([succ['s0'] + sign * min(remaining, succ_span)])[0])]
+        samples = _lane_change_samples(key, entry, lane_index, successors_by_lane, lane_path)
         found = {'right': False, 'left': False}
         for wkey, sample in samples:
             w_road, w_section, w_lane = wkey
@@ -277,15 +331,18 @@ def build_lane_graph_from_xodr(xodr_path: Path, roads_out: list[dict], town: str
                             'roadId': target_key[0],
                             'sectionId': target_key[1],
                             'laneId': target_key[2],
-                            **node_point[entry_raw(target_key)],
+                            **ids.point[_entry_raw(target_key)],
                         },
                     }
                 )
                 found[direction] = True
             if found['right'] and found['left']:
                 break
+    return edges
 
-    # ── Flat lanes[] table ──────────────────────────────────────────────────
+
+def _lanes_table(lane_index, left_right, lane_change_marks, successors_by_lane) -> list[dict]:
+    """The flat lanes[] table."""
     lanes_out: list[dict] = []
     for key, entry in lane_index.items():
         road_id, section_id, lane_id = key
@@ -303,15 +360,4 @@ def build_lane_graph_from_xodr(xodr_path: Path, roads_out: list[dict], town: str
                 'successors': successors_by_lane.get(key, []),
             }
         )
-
-    return {
-        'town': town,
-        'carlaMapName': None,
-        'samplingResolution': SAMPLING_RESOLUTION_M,
-        'probeVersion': 'xodr-2',
-        'source': 'xodr',
-        'nodes': nodes,
-        'edges': edges,
-        'roadIdToEdge': road_id_to_edge,
-        'lanes': lanes_out,
-    }
+    return lanes_out
