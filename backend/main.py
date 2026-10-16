@@ -25,6 +25,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.background import BackgroundTask
 
 from backend import bg_traffic
+from backend.batch_export import export_batch_zip
 from backend.lane_graph_builder import build_lane_graph_from_xodr
 from backend.map_renderer import (
     THUMBNAIL_PATHS,
@@ -33,7 +34,7 @@ from backend.map_renderer import (
     build_map_render_data_from_path,
     list_available_towns,
 )
-from backend.scenario_io import export_batch_zip, export_route_xml, export_to_xosc
+from backend.scenario_io import export_route_xml, export_to_xosc
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 
