@@ -25,11 +25,8 @@
 
   // ── Controls (created dynamically) ─────────────────────────────────────────
 
-  // Two rows in a fixed-width card: transport, tempo and the two preview
-  // toggles on top (eventTimeline.js appends „Ablauf" to .sim-row-top); the
-  // scrub bar and the time underneath, so the bar gets the whole width.
-  // Play/Pause/Stop are icon-only; their state („Abspielen" / „Fortsetzen" /
-  // „Nochmal") is in the title and in the visually hidden #sim-play-text.
+  // A fixed-width card of two rows (eventTimeline.js appends „Ablauf" to .sim-row-top). Play's
+  // state is in its title and the hidden #sim-play-text, never in visible text.
   const controlsHtml = `
     <div id="sim-controls" class="sim-controls hidden">
       <div class="sim-row sim-row-top">
@@ -50,9 +47,7 @@
       </div>
     </div>`;
 
-  // Float over the map's lower edge rather than sitting in the header: these
-  // are the controls in constant use during a preview, and they belong next to
-  // what they animate. #map-bottom-stack keeps them clear of the draw banner.
+  // Over the map's lower edge, next to what they animate; the stack keeps them clear of the banner.
   const bottomStack = document.getElementById('map-bottom-stack');
   bottomStack.insertAdjacentHTML('beforeend', controlsHtml);
 
@@ -69,15 +64,8 @@
   const progressBar = document.getElementById('sim-progress-bar');
 
   // ── Simulation lifecycle ──────────────────────────────────────────────────────
-  //
-  // The whole run is simulated UP FRONT, at CARLA's own fixed 20 Hz tick, and
-  // Play only replays the recorded frames. That is what makes the timeline
-  // scrubbable: the model is a stateful discrete simulation (fired events,
-  // lane-change plans, one-shot triggers, sticky goal stops), so seeking to an
-  // arbitrary time would otherwise mean replaying everything up to it — doing
-  // that once, at Play, costs tens of milliseconds and buys free seeking.
-  // A fixed step is also closer to CARLA than the old rAF-sized one, whose
-  // step length depended on the frame rate and the playback speed.
+  // The whole run is simulated up front at ScenarioRunner's fixed 20 Hz and Play replays
+  // the frames; that is what makes seeking a frame lookup.
 
   const SIM_DT_S = 0.05; // ScenarioRunner's synchronous 20 Hz tick
   const MAX_SIM_TIME_S = 60.0; // every Act's MaxSimTime StopTrigger
@@ -127,7 +115,6 @@
     _tickCompleted.clear();
     _tickStarted.clear();
     for (const sim of _simActors.values()) {
-      // A magnitude, like CarlaDataProvider.get_velocity — reversing counts positive.
       _tickSpeeds.set(sim.id, Math.abs(sim.speed));
       const p = _pose(sim);
       _tickPoses.set(sim.id, { x: p.x, y: p.y, z: sim.z });
@@ -160,11 +147,9 @@
   }
 
   /**
-   * Steps the prepared _simActors from t = 0 to the end of the run and records
-   * one frame per tick. The run ends where ScenarioRunner's would — the ego has
-   * driven 500 m, or 60 s have passed (every Act's two StopTrigger groups the
-   * preview can model) — or earlier, once nothing has moved and no event has
-   * fired for TAIL_AFTER_ACTIVITY_S and none is left that could still fire.
+   * Step the run to its end, recording a frame per tick. It ends where ScenarioRunner's
+   * would (ego 500 m, or 60 s) or once nothing moved or fired for TAIL_AFTER_ACTIVITY_S
+   * with nothing left that could fire.
    */
   function _simulateTimeline() {
     timeline.frames = [];
@@ -206,9 +191,7 @@
         timeline.endReason = 'teardown';
         break;
       }
-      // An unfired distance_to_ego event still has its 60 s OR-fallback ahead
-      // of it, so "pending" keeps the run going to the end in that case — the
-      // file really does do something at 60 s.
+      // An unfired distance_to_ego keeps the run going: its 60 s fallback still fires.
       if (!pending && run.simTime - lastActivity >= TAIL_AFTER_ACTIVITY_S) {
         timeline.endReason = 'idle';
         break;
@@ -253,7 +236,6 @@
       ..._footprintOf('prop', o.prop),
     }));
     _snapshotSpeeds(); // so an event firing on the very first tick reads real
-    // init speeds rather than an empty map
     _ensureBadgeLayer();
     _simulateTimeline();
     _renderTimelineMarkers();
@@ -298,8 +280,7 @@
     return `${t.toFixed(1)} s`;
   }
 
-  // Listeners on the preview's time (eventTimeline.js's playhead): called with
-  // the view time on every frame shown, and with null when the preview stops.
+  // fn(viewTime) on every shown frame, fn(null) on Stop (eventTimeline.js's playhead).
   const _timeListeners = [];
   function _emitTime(t) {
     for (const fn of _timeListeners) {
@@ -323,8 +304,7 @@
   function _renderTimelineMarkers() {
     progressBar.querySelectorAll('.sim-marker').forEach((n) => n.remove());
     if (!(timeline.end > 0)) return;
-    // Several events often fire on the same tick (a chain's first link, every
-    // route at t = 0) — one tick mark with all their names in the tooltip.
+    // Events firing on the same tick share one mark, all named in its tooltip.
     const byTick = new Map();
     for (const m of timeline.markers) {
       const key = `${m.kind}:${Math.round(m.t / SIM_DT_S)}`;

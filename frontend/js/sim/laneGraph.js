@@ -1,18 +1,8 @@
 /**
- * laneGraph.js — CARLA-verified routing + lane topology, cached per town by
- * tools/probes/probe_carla_lane_graph.py (phase 2 of the "in-editor preview
- * fidelity" plan). Loaded once per map into AppState.laneGraph by
- * toolbar.js/mapImport.js; every lookup here degrades to null when the
- * cache is absent (Town10, any uploaded map), and simulate.js falls back to
- * its phase-1 geometric approximations in that case. This module never
- * guesses — it only serves what the cache actually contains.
- *
- * The routing graph is literally agents.navigation.global_route_planner's
- * internal topology (the SAME class atomic_behaviors.py builds for
- * AssignRouteAction and KeepLongitudinalGap's distance planner), dumped
- * as-is by the probe — so porting only needs A* search and path
- * reconstruction, not topology extraction. See probe_carla_lane_graph.py's
- * docstring for the full mapping.
+ * laneGraph.js — routing and lane topology over AppState.laneGraph: GlobalRoutePlanner's
+ * own graph, probed from CARLA or derived from the .xodr (backend lane_graph/). Only A*
+ * and route reconstruction are ported; every lookup returns null when the graph lacks
+ * the answer, never a guess.
  */
 (() => {
   'use strict';
@@ -36,9 +26,8 @@
       if (!adjacency.has(edge.from)) adjacency.set(edge.from, []);
       const pair = `${edge.from}:${edge.to}`;
       const list = adjacency.get(edge.from);
-      // A networkx DiGraph keeps one edge per pair: a repeat add_edge updates
-      // the attributes in place without moving it in the adjacency order,
-      // which A*'s tie-breaking depends on.
+      // networkx keeps one edge per pair; a repeat updates it in place, keeping its adjacency
+      // position, which A*'s tie-breaking depends on.
       const existing = edgeByPair.has(pair) ? list.findIndex((a) => a.to === edge.to) : -1;
       if (existing >= 0) list[existing] = { to: edge.to, edge };
       else list.push({ to: edge.to, edge });
@@ -59,21 +48,13 @@
 
   // ── Per-lane lookups (lane_change feasibility, path-less fork resolution) ──
 
-  /** The cached per-lane record for (roadId, sectionId, laneId) — or null if
-   * this town has no cache, or the probe's generate_waypoints pass never
-   * sampled this exact lane (e.g. a lane type it happened to skip). */
+  /** The per-lane record for (roadId, sectionId, laneId), or null if the graph lacks it. */
   function laneRecord(graph, roadId, sectionId, laneId) {
     if (!graph) return null;
     return _index(graph).lanesByKey.get(_laneKey(roadId, sectionId, laneId)) || null;
   }
 
-  /**
-   * A record's successors, minus the dead-end self-reference case: the
-   * probe's bounded fork-walk (_walk_to_fork) gives up after max_hops without
-   * the lane identity ever changing when a road simply has no continuation
-   * (a driveway or spur) — that shows up as "successor = itself", which
-   * means the same thing as an empty list: no real progress past this point.
-   */
+  /** A record's successors without a probed graph's self-reference (its dead-end marker). */
   function realSuccessors(record) {
     if (!record) return [];
     return record.successors.filter(
@@ -83,8 +64,7 @@
 
   // ── A* routing (ports agents.navigation.global_route_planner._path_search) ─
 
-  // GlobalRoutePlanner(map, 2.0) — the CarlaDataProvider singleton every
-  // AssignRouteAction goes through (carla_data_provider.py set_world()).
+  // GlobalRoutePlanner(map, 2.0), the CarlaDataProvider singleton AssignRouteAction uses.
   const SAMPLING_RESOLUTION_M = 2.0;
   // trace_route's `closest_index + 5` hop across a lane-change edge.
   const LANE_CHANGE_SKIP_AHEAD = 5;
@@ -93,9 +73,7 @@
     return Math.hypot(a.x - b.x, a.y - b.y, (a.z || 0) - (b.z || 0));
   }
 
-  /** _distance_heuristic: np.linalg.norm(l1 - l2) on the node vertices.
-   * Written as sqrt(dot) rather than Math.hypot so the float comes out
-   * bit-identical — A* ties are decided on exact f values (see _astar). */
+  /** _distance_heuristic, as sqrt(dot) so the float is bit-identical (A* ties hinge on it). */
   function _heuristic(a, b) {
     const dx = a.x - b.x,
       dy = a.y - b.y,
@@ -118,14 +96,9 @@
   }
 
   /**
-   * Literal port of networkx.astar_path (2.8.8, what carla-venv runs), down to
-   * its tie-breaking. That is the part that matters: edge lengths are integer
-   * sample counts and lane changes cost 0, so a route very often has several
-   * equal-cost answers, and networkx picks among them by its heap order —
-   * (f, push counter) — and by the adjacency order of the graph. The earlier
-   * "first minimum of a Set" search returned a different, equally short path
-   * for ~1 in 4 random Town03 routes, often one with lane changes CARLA does
-   * not make. Returns an array of node ids, or null if no path connects them.
+   * Literal port of networkx.astar_path 2.8.8 including its tie-breaking (heap order
+   * (f, counter), then adjacency order): lengths are integer sample counts and lane
+   * changes cost 0, so equal-cost routes are common. Node ids, or null.
    */
   function _astar(idx, startId, goalId) {
     const goalNode = idx.nodeById.get(goalId);
@@ -199,34 +172,12 @@
   }
 
   /**
-   * Faithful port of GlobalRoutePlanner.trace_route (the CARLA build run.sh
-   * uses: yungloon/carla-0.9.15/PythonAPI/carla/agents/navigation/).
-   *
-   * The three things that make this NOT a simple "concatenate every edge's
-   * points" loop, each of which produced a visible backwards excursion when
-   * it was missing:
-   *   1. `current` is carried across ALL edges and every lane-follow edge is
-   *      trimmed to start at the point nearest it — not just the first edge,
-   *      or each later edge restarts at its own beginning, behind the actor.
-   *   2. A lane-change edge emits exactly TWO points — where we are, then a
-   *      bare ~12 m jump `LANE_CHANGE_SKIP_AHEAD` samples into the target
-   *      lane. There is no interpolation; that chord is genuine CARLA output.
-   *   3. The two destination break conditions stop a leg near its goal.
-   *      Without them every leg overshoots to its final edge's exit and the
-   *      next leg then jumps back to the authored waypoint.
-   *
-   * `from` — the LANE-PROJECTED origin {roadId, sectionId, laneId, x, y, z};
-   *   trace_route starts from `self._wmap.get_waypoint(origin)`, not the raw
-   *   location.
-   * `to` — the destination's lane projection in {roadId, sectionId, laneId,
-   *   x, y, z} PLUS the raw authored location in {rawX, rawY, rawZ}. Both are
-   *   needed and they are different points: the distance break measures
-   *   against the raw `destination`, the lane-identity break against the
-   *   projected `destination_waypoint`.
-   *
-   * Returns an array of {x,y,z} in driving order, or null if the graph has
-   * no path — including when it doesn't cover one of the two endpoints at
-   * all (an off-network lane type, or a town with no cache).
+   * Port of GlobalRoutePlanner.trace_route. What matters: `current` is carried across
+   * all edges and each lane-follow edge is trimmed to start nearest it; a lane-change
+   * edge is two points (a bare ~12 m chord); and both destination breaks stop a leg
+   * near its goal. `from` is a lane projection {roadId, sectionId, laneId, x, y, z};
+   * `to` is the same plus the raw point {rawX, rawY, rawZ} (the distance break uses
+   * it). Returns [{x, y, z}] in driving order, or null when there is no path.
    */
   function route(graph, from, to) {
     if (!graph) return null;
@@ -270,10 +221,7 @@
 
       const path = [edge.entry, ...edge.path, edge.exit];
       const closestIndex = _closestIndex(current, path);
-      // Every point of one lane-follow edge belongs to that edge's own lane —
-      // _build_topology walks a single lane from entry to exit — so the entry's
-      // lane ref identifies the whole path. The cache does not stamp a lane ref
-      // on individual path points, which is why this uses the edge's.
+      // A lane-follow edge is one lane, so the entry's lane ref covers all its points.
       const onDestinationLane =
         edge.entry.roadId === to.roadId && edge.entry.sectionId === to.sectionId && edge.entry.laneId === to.laneId;
 
@@ -282,8 +230,7 @@
         trace.push(current);
         if (routeNodes.length - i <= 2 && _dist3(current, destination) < 2 * SAMPLING_RESOLUTION_M) break;
         if (routeNodes.length - i <= 2 && onDestinationLane) {
-          // Compares the loop's START index, not j — faithful to CARLA, which
-          // uses `closest_index` here rather than the running index.
+          // The loop's START index, as CARLA compares (closest_index, not j).
           if (closestIndex > _closestIndex(destinationWaypoint, path)) break;
         }
       }

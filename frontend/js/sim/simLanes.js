@@ -23,8 +23,7 @@
     return ObjectsManager.nearestLaneProjection(x, y, new Set(['driving']), LANE_SEARCH_MAX_DIST_M, z);
   }
 
-  /** Project (x, y) onto `dirLine`, returning the nearest point's distance,
-   * position, segment index (the target for _walkDirLine) and local heading. */
+  /** Project (x, y) onto `dirLine`: distance, point, segment index (for _walkDirLine) and heading. */
   function _nearestPointOnDirLine(dirLine, x, y) {
     let best = null;
     for (let i = 1; i < dirLine.length; i++) {
@@ -44,21 +43,13 @@
   }
 
   /**
-   * A same-direction neighbour lane on the same road, found geometrically
-   * (lateral offset + heading alignment) rather than from OpenDRIVE's `side`/
-   * laneChange fields, which map_renderer does not emit to the frontend.
-   * Mirrors generate_target_waypoint_list_multilane's feasibility gate
-   * (a Driving lane must exist) but not its `check=` legality gate, which the
-   * real atomic also skips (check=False).
-   *
-   * This is the phase-1 fallback, used only when AppState.laneGraph has
-   * nothing to say (no cache for this town, or the ground truth itself
-   * reports no neighbour) — see _laneNeighbor.
+   * Geometric same-direction neighbour lane (offset + heading), the fallback when the
+   * lane graph has no answer. Like the real atomic it checks a Driving lane exists but
+   * not lane-change legality.
    */
   function _findSameDirectionNeighbor(near, direction) {
     const rad = (near.laneYaw * Math.PI) / 180;
-    // Right-hand vector in this map's y-down convention (verified: heading
-    // +x/east with north-up-on-screen, "right" points +y/south).
+    // Right of travel in this y-down frame: heading +x → right is +y.
     const rightX = -Math.sin(rad),
       rightY = Math.cos(rad);
     let best = null;
@@ -80,16 +71,10 @@
     return best;
   }
 
-  // ── Cached CARLA lane graph (phase 2) ────────────────────────────────────────
-  //
-  // Everything below degrades to the phase-1 approximations above whenever
-  // AppState.laneGraph is null (Town10, an uploaded map) or a specific lookup
-  // misses — never a crash, never a guess dressed up as ground truth.
+  // ── Cached lane graph ────────────────────────────────────────────────────────
+  // Everything below falls back to the geometry above when there is no graph or a lookup misses.
 
-  /** The render-JSON {road, lane} pair for a CARLA lane reference
-   * {roadId, sectionId, laneId} — a one-time linear scan, acceptable because
-   * it only runs when a fork or lane change is actually being resolved, not
-   * per frame (same allowance _nearestLaneProjection already relies on). */
+  /** The render-JSON {road, lane} for a {roadId, sectionId, laneId}; a linear scan, run only at forks. */
   function _findLaneByRef(ref) {
     for (const road of AppState.mapData?.roads || []) {
       if (String(road.id) !== String(ref.roadId)) continue;
@@ -101,14 +86,8 @@
   }
 
   /**
-   * The Driving neighbour lane on `direction`'s side of `cursor`'s lane at
-   * point (x, y) — CARLA-verified graph data (get_left_lane()/
-   * get_right_lane() ground truth) preferred over the geometric guess.
-   *
-   * If the graph exists and confidently reports no Driving neighbour on this
-   * side, that verdict is trusted outright rather than falling back to a
-   * geometric guess that might disagree with it.
-   *
+   * The Driving neighbour on `direction`'s side: the graph's get_left/right_lane answer,
+   * trusted even when it says none; the geometric guess only without a graph.
    * Returns {road, lane, dirLine, verified} or null.
    */
   function _laneNeighbor(cursor, x, y, laneYaw, direction) {
@@ -124,23 +103,14 @@
         }
       }
     }
-    // _findSameDirectionNeighbor only ever searches cursor.road.lanes, so a
-    // geometric guess is always on the same road as the current lane.
     const guess = _findSameDirectionNeighbor({ road: cursor.road, lane: cursor.lane, x, y, laneYaw }, direction);
     return guess ? { road: cursor.road, lane: guess.lane, dirLine: guess.dirLine, verified: false } : null;
   }
 
   /**
-   * The one successor to advance onto without an authored route to
-   * disambiguate with — or null when there isn't exactly one usable
-   * candidate. A CARLA-probed graph's successors[0] is next()'s own real
-   * fork choice, so any non-empty list is usable; an xodr-derived graph
-   * (graph.source === 'xodr') makes no such claim about ordering (see
-   * backend/lane_graph/lane_graph_builder.py), so a genuine fork — more than one
-   * candidate — is left unresolved here rather than guessed. Explicit
-   * assign_route waypoints are unaffected by this: LaneGraph.route()'s A*
-   * already considers every candidate as a real edge and finds whichever
-   * branch reaches the target, with no need to guess first.
+   * The one successor to drive onto without a route, or null. A probed graph's
+   * successors[0] is next()'s real choice; an xodr-derived graph has no ranking,
+   * so a genuine fork stays unresolved. Routes are unaffected (A* sees every branch).
    */
   function _preferredSuccessor(graph, record) {
     const succs = LaneGraph.realSuccessors(record);
@@ -149,14 +119,7 @@
     return succs[0];
   }
 
-  /** The next lane cursor after `cursor`'s dirLine runs out, via the cached
-   * graph's real successors — or null when there is no graph, no usable
-   * successor (see _preferredSuccessor), or the successor isn't a lane the
-   * render JSON carries a directionLine for. Shared by lane-following
-   * (_continueLaneFollowAtFork) and the lane-change plan builder
-   * (_walkLaneChained), which hit exactly the same situation: a lane's
-   * polyline ends mid-maneuver and the real controller would simply have
-   * continued via waypoint.next(). */
+  /** The cursor after `cursor`'s dirLine runs out, via the graph's successors; null if none. */
   function _nextLaneCursor(cursor) {
     const graph = AppState.laneGraph;
     const { road, lane } = cursor;
@@ -170,15 +133,8 @@
   }
 
   /**
-   * Advances a lane cursor {road, lane, dirLine, idx} by up to `step` metres
-   * of arc length, chaining onto _nextLaneCursor() whenever the polyline
-   * runs out — the lane-change equivalent of waypoint.next(step) crossing a
-   * lane-section boundary, which _walkDirLine alone cannot do (it only knows
-   * about the one lane it was given).
-   *
-   * Returns {cursor, x, y, z, yaw, ranOut}; ranOut is true only when the
-   * step could not be completed AND there was no successor to continue onto
-   * — a genuine dead end, or no lane graph for this town.
+   * Advance a lane cursor by `step` m, chaining onto successors like waypoint.next().
+   * Returns {cursor, x, y, z, yaw, ranOut}; ranOut only at a real dead end or without a graph.
    */
   function _walkLaneChained(cursor, x, y, z, step) {
     let cur = cursor;
@@ -204,24 +160,11 @@
   }
 
   /**
-   * Ports generate_target_waypoint_list_multilane (scenario_runner's
-   * scenario_helper.py) — the exact plan ChangeActorLateralMotion.initialise
-   * hands to the vehicle controller, rather than a lateral blend approximating
-   * its output. Three legs, step_distance=2 throughout, matching the real
-   * defaults ChangeActorLateralMotion passes (_distance_same_lane=5 hardcoded,
-   * distance_other_lane=10 hardcoded by the parser call):
-   *   - same-lane waypoints every 2 m until 5 m accumulate,
-   *   - ONE waypoint `diagTotal` m ahead, projected onto the neighbour lane —
-   *     the entire lateral move happens on this single hop; CARLA does not
-   *     interpolate a curve here either,
-   *   - target-lane waypoints every 2 m until 10 m accumulate.
-   * `lane_changes` is always 1 — the editor only ever authors a single lane
-   * shift (`RelativeTargetLane/@value` is always ±1 at export).
-   *
-   * Returns {waypoints, endCursor, verified} or null when a next()-equivalent
-   * runs off a genuine dead end (no lane graph for this town, or the
-   * successor chain truly ends, or no Driving neighbour on `direction`'s
-   * side) — mirrors the helper's `return None, None`.
+   * Port of generate_target_waypoint_list_multilane (scenario_helper.py), the plan
+   * ChangeActorLateralMotion hands the controller: same-lane points every 2 m for 5 m,
+   * ONE point `diagTotal` m ahead on the neighbour (the whole lateral move, no curve),
+   * then 2 m steps for 10 m in the target lane. Always one lane. Returns
+   * {waypoints, endCursor, verified}, or null like the helper's (None, None).
    */
   function _buildLaneChangePlan(near, direction, diagTotal) {
     const STEP = 2.0;

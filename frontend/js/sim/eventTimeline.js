@@ -1,20 +1,8 @@
 /**
- * eventTimeline.js — „Ablauf": the scenario's events laid out in time.
- *
- * One row per actor (ego first), one block per event from the tick it fires
- * to the tick it completes, read off a headless preview run
- * (Simulate.runHeadless — the same model as Play, ego not reacting). A
- * chained event (after_event / event_started) gets a connector from the
- * event it waits on. An event that never fires in the run is listed at the
- * end of its row.
- *
- *   click a block   → the preview jumps to when it fires (Simulate.seek), the
- *                     actor is selected and its card highlighted in the panel
- *   playhead        → follows the preview's time; drag it (or press anywhere
- *                     on the axis row) to scrub, like the bar's own timeline
- *
- * The panel sits above the preview bar (#map-bottom-stack), toggled by the
- * bar's „Ablauf" button, and re-runs 400 ms after any edit while open.
+ * eventTimeline.js — „Ablauf": one row per actor, one block per event from firing to
+ * completion, read off Simulate.runHeadless, with connectors for event references.
+ * A block click seeks the preview and marks the event's card; the playhead scrubs.
+ * Re-runs 400 ms after an edit while open.
  *
  * Global: EventTimeline — { refresh(), toggle(open?), get open, get data }.
  */
@@ -122,9 +110,7 @@
   }
 
   /* ── Playhead ──────────────────────────────────────────────────────────
-   * Placed on THIS panel's axis (_data.end), not the preview bar's: the two
-   * runs are the same model but the preview may run with „Ego bremst" on and
-   * end at a different time. A time past the axis end pins to its edge. */
+   * On this panel's axis, not the preview bar's: with „Ego bremst" on the runs end differently. */
   let _lastTime = null;
 
   function _axisTrack() {
@@ -154,8 +140,7 @@
     if (_open) _placePlayhead(t);
   });
 
-  // Scrub: same contract as the preview bar's — pause while dragging, resume
-  // afterwards if it was playing. Starts a paused preview when none runs.
+  // Scrub like the bar: pause while dragging, resume after; starts a paused preview if none runs.
   panel.addEventListener('pointerdown', (e) => {
     if (e.button !== 0 || !_data) return;
     if (!e.target.closest('.sim-lane-playhead, .sim-lane-axis')) return;
@@ -214,8 +199,7 @@
     clearTimeout(_timer);
     _timer = null;
     if (!_open) return;
-    // runHeadless cannot run beside a preview: keep the last result, or say
-    // why there is none yet (opened mid-preview).
+    // runHeadless refuses beside a preview: keep the last result, or say why there is none.
     if (Simulate.running) {
       if (_data) _render();
       else panel.innerHTML = '<div class="sim-lanes-empty">Vorschau läuft — der Ablauf erscheint nach Stopp.</div>';
@@ -242,7 +226,6 @@
     btn.setAttribute('aria-pressed', String(_open));
     btn.classList.toggle('active', _open);
     if (_open) {
-      // Same width as the bar beneath it, so the time axis reads with it.
       panel.style.width = `${controls.getBoundingClientRect().width}px`;
       refresh();
     }
@@ -252,8 +235,7 @@
     const block = e.target.closest('.sim-lane-block');
     if (block) {
       Simulate.seek(Number(block.dataset.t));
-      // Show the event in the panel: select its actor and mark its card.
-      // Highlight first — the select re-renders the panel, which reads it.
+      // Highlight before selecting: the select re-renders the panel, which reads the highlight.
       EventPanel.highlight(block.dataset.actor, block.dataset.event);
       if (AppState.selectedId !== block.dataset.actor) AppState.select(block.dataset.actor);
       else AppState.emit('selectionChanged', AppState.selectedId);

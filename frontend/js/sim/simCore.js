@@ -12,14 +12,13 @@
 
   // ── Run state ────────────────────────────────────────────────────────────────
 
-  // Run state read by every part of the preview — one shared object rather than
-  // reassigned lets, so the stepping, the timeline and playback all see one copy.
+  // One shared object rather than lets, so every preview file sees the same state.
   const run = {
     running: false,
     paused: false,
     simTime: 0, // seconds elapsed in simulation (the stepping clock)
     egoId: null,
-    // „Ego bremst" (see the reacting-ego section)
+    // „Ego bremst"
     reactiveEgo: false,
     staticObstacles: [], // [{x, y, len, wid}] for the run being simulated
   };
@@ -27,21 +26,15 @@
   const _simActors = new Map(); // actorId → sim actor record (see _makeSimActor)
   const _tickSpeeds = new Map(); // actorId → speed, snapshotted once per tick
   const _tickPoses = new Map(); // actorId → {x, y, z}, snapshotted with it
-  // `actorId::eventId` → completedAt, snapshotted once per tick. Same reasoning
-  // as _tickSpeeds: a cross-actor after_event that read another actor's live
-  // fired-map would resolve differently depending on which actor _stepActor
-  // reached first, and CARLA's own blackboard reads are not ordered either.
-  // A SAME-actor reference still reads sim.fired live — that is one behaviour
-  // tree ticking its own events and has no ordering ambiguity to remove.
+  // `actorId::eventId` → completedAt, snapshotted per tick so a cross-actor reference does
+  // not depend on stepping order (a same-actor one reads sim.fired live).
   const _tickCompleted = new Map();
   // `actorId::eventId` → firedAt, the event_started counterpart of the above.
   const _tickStarted = new Map();
 
   // ── Tunables mirroring the real controllers ─────────────────────────────────
-  // simple_vehicle_control.py / pedestrian_control.py / atomic_behaviors.py —
-  // see file header. Kept as named constants rather than inline literals
-  // because each one is a specific, cited real-world value, not a preview
-  // choice.
+  // Each is a value cited from simple_vehicle_control.py / pedestrian_control.py /
+  // atomic_behaviors.py, not a preview choice.
 
   const DISTANCE_TO_EGO_FALLBACK_S = 60.0; // event_builders.py fallback_time
   const ACT_TEARDOWN_DISTANCE_M = 500.0; // every Act's StopTrigger
@@ -55,10 +48,7 @@
   const LANE_NEIGHBOR_DIR_TOLERANCE_DEG = 45; // "same direction of travel" tolerance
   const LANE_SEARCH_MAX_DIST_M = 15; // how far to reach for a lane anchor
 
-  // ChangeActorWaypoints.initialise, as patched in the install run.sh runs
-  // (/home/dellpro2/Antonio/scenario_runner — see CLAUDE.md, Verification;
-  // the yungloon checkout carries the same filter but is run by nothing). These govern which of
-  // the router's points survive into the actor's waypoint list.
+  // ChangeActorWaypoints.initialise's filter, as in the install run.sh runs (CLAUDE.md, Verification).
   const ROUTE_SEED_AHEAD_M = 1.0; // ego_waypoint.next(1)[0]
   const ROUTE_DEDUP_MIN_M = 1.0; // drop a point closer than this to the last kept one
   const ROUTE_SHORT_REF_M = 0.5; // reference vector too short to give a heading
@@ -72,20 +62,9 @@
   }
 
   /**
-   * Where the actor actually IS, as opposed to where its path-following maths
-   * is: `sim.x`/`sim.y` stay on the driven centreline and a lane offset is
-   * added here.
-   *
-   * The split is not tidiness. SimpleVehicleControl offsets the waypoint it
-   * AIMS at (`_offset_waypoint`) and leaves its waypoint list alone, and
-   * `_walkDirLine` walks from the position it is handed toward the next
-   * centreline point — so storing the displaced position back into sim.x/y
-   * would make the actor converge back onto the centreline over the next few
-   * ticks and quietly eat the offset.
-   *
-   * Right of travel is positive, matching `transform.get_right_vector()`: the
-   * editor's frame IS CARLA's (the single Y flip happens in the .xodr parser),
-   * so forward is (cos yaw, sin yaw) and right is (−sin yaw, cos yaw).
+   * Where the actor is: sim.x/y stay on the driven centreline and the lane offset is
+   * added here, as SimpleVehicleControl offsets only its aim point — storing it would
+   * let _walkDirLine walk it back off. Right of travel is positive.
    */
   function _pose(sim) {
     if (!sim || !sim.laneOffset) return sim;
@@ -101,12 +80,7 @@
     return Math.abs(((((a - b + 180) % 360) + 360) % 360) - 180);
   }
 
-  /**
-   * Advance up to `step` metres of arc length along `dirLine`, starting from
-   * point (x, y, z) aiming at dirLine[startIdx]. Mirrors how both real
-   * controllers aim at the next map/route waypoint from wherever the actor
-   * currently is, not from the exact point on the line.
-   */
+  /** Advance up to `step` m along `dirLine` from (x, y, z), aiming at dirLine[startIdx] like the controllers. */
   function _walkDirLine(dirLine, x, y, z, startIdx, step) {
     let idx = startIdx;
     let cx = x,
@@ -143,22 +117,15 @@
     };
   }
 
-  // SimpleVehicleControl's rate limits when the actor states none — the same
-  // defaults the emitter writes (xml_builder._DYNAMICS_DEFAULTS).
+  // Defaults when the actor states none, as the emitter writes them (xml_builder._DYNAMICS_DEFAULTS).
   const DEFAULT_MAX_ACCEL = 3.0;
   const DEFAULT_MAX_DECEL = 10.0;
-  // "If the tmp_speed is < 0.5 the vehicle may not properly accelerate" — the
-  // controller bumps a positive command to at least this.
+  // The controller bumps a positive command to at least this to pull away.
   const SVC_MIN_PULL_AWAY = 0.5;
-  // ChangeActorLaneOffset.OFFSET_THRESHOLD: a non-continuous offset is reached
-  // within this many metres.
+  // ChangeActorLaneOffset.OFFSET_THRESHOLD (m).
   const LANE_OFFSET_THRESHOLD_M = 0.1;
-  // How fast the displaced aim point pulls the actor sideways. Measured in CARLA
-  // (Town04 road 40, 8 m/s, 1.75 m, tests/carla/run_actions_ext_carla.py): the
-  // remaining lateral gap decays exponentially with distance driven — it halves
-  // every ~2 m, out and back alike — because SimpleVehicleControl steers
-  // straight at a waypoint a few metres ahead. So the gap shrinks by
-  // 1 − exp(−d / L) per d metres, with this L.
+  // The lateral gap decays as exp(−d / L) with distance driven (halves every ~2 m), measured
+  // in CARLA (Town04 road 40, tests/carla/run_actions_ext_carla.py).
   const LANE_OFFSET_APPROACH_M = 3.0;
   const r3 = (v) => Math.round(v * 1000) / 1000;
 

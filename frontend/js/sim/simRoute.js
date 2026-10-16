@@ -19,15 +19,9 @@
     _preferredSuccessor,
   } = SimCore.shared;
 
-  /**
-   * The lane-projected form of a raw point, carrying BOTH the projection and
-   * the raw location — LaneGraph.route needs the projected point as its
-   * `current` seed and the raw one for trace_route's distance break, and they
-   * are different points.
-   */
+  /** A point's lane projection plus the raw point: route() seeds from one, breaks on the other. */
   function _resolveLaneRef(x, y, z) {
-    // 3-D, like the map.get_waypoint() every trace_route endpoint goes through:
-    // a waypoint on a bridge deck must not route from the street beneath it.
+    // 3-D like get_waypoint: a point on a bridge deck must not route from the street below.
     const near = _laneAnchor(x, y, z);
     if (!near || !near.road) return null;
     return {
@@ -44,32 +38,16 @@
   }
 
   /**
-   * Ports `ego_waypoint.next(1)[0]` — the seed for leg 0 only
-   * (atomic_behaviors.py ChangeActorWaypoints.initialise).
-   *
-   * `.next(1.0)` means "1 metre further ALONG THE ROAD", which almost always
-   * stays inside the current lane and only crosses into a successor when the
-   * lane actually ends within that metre. Reading the cached `successors`
-   * list from an arbitrary mid-lane position instead — as this used to — jumps
-   * the seed past the whole rest of the current lane, which put leg 0 on the
-   * wrong lane entirely and was the main cause of the ego visibly driving
-   * backwards for the first second or two.
-   *
-   * Returns {ref, headingRad} or null; `headingRad` is the lane tangent at the
-   * seed, which the runtime's heading filter uses as its initial reference.
+   * Port of `ego_waypoint.next(1)[0]`, leg 0's seed: 1 m further along the lane,
+   * crossing into a successor only if the lane ends within that metre.
+   * Returns {ref, headingRad} or null; headingRad seeds the heading filter.
    */
   function _seedAssignRouteStart(sim) {
     const near = _laneAnchor(sim.x, sim.y, sim.z);
     if (!near || !near.road) return null;
 
-    // The seed is a waypoint ON a known lane, so its ref is built from that lane
-    // rather than re-projected: a seed that has crossed into a successor sits
-    // on the shared boundary point, where the nearest-lane projection hands
-    // back the lane it just left. That mattered — standing within 1 m of a lane
-    // end, CARLA's seed is in the successor, waypoint 0 (the actor's own pose)
-    // is then BEHIND it, and the real route drives round the block to come
-    // back to it (Town03 road 5 is a 0.8 m stub: a 194 m loop the preview did
-    // not show).
+    // Built from the lane walked, not re-projected: a boundary point projects back onto
+    // the lane just left. Past a lane end CARLA drives round the block to waypoint 0.
     const refOf = (road, lane, p) => ({
       roadId: Number(road.id),
       sectionId: lane.sectionId,
@@ -93,7 +71,7 @@
       ) || 1);
     let walked = _walkDirLineS(dl0, near.segIndex, segT, ROUTE_SEED_AHEAD_M);
     if (!walked) {
-      // no s on this payload's points — fall back to arc length
+      // Points carry no s: fall back to arc length.
       const w = _walkDirLine(dl0, near.x, near.y, near.z, near.segIndex, ROUTE_SEED_AHEAD_M);
       walked = { ...w, remaining: ROUTE_SEED_AHEAD_M - w.consumed };
     }
@@ -105,18 +83,14 @@
       const record = LaneGraph.laneRecord(graph, Number(road.id), lane.sectionId, lane.laneId);
       let succ = _preferredSuccessor(graph, record);
       if (!succ && graph && graph.source === 'xodr') {
-        // An unranked fork. Path-less driving refuses to guess here, but the
-        // seed cannot: past ANY successor, waypoint 0 (the actor's pose) is
-        // behind the seed and CARLA routes round to it, so keeping the actor's
-        // own point would hide a loop CARLA certainly drives. next()[0] was
-        // the highest-numbered road at 73% of the forks in the 8 probed towns.
+        // An unranked fork: the seed must still move on (staying would hide CARLA's loop);
+        // next()[0] was the highest road id at 73% of probed forks.
         const succs = LaneGraph.realSuccessors(record);
         succ = succs.length ? succs.reduce((a, b) => (b.roadId > a.roadId ? b : a)) : null;
       }
       const found = succ ? _findLaneByRef(succ) : null;
       if (!found || (found.lane.directionLine || []).length < 2) {
-        // No successor -> CARLA's IndexError path: the seed is the actor's
-        // own waypoint.
+        // No successor: the seed is the actor's own waypoint (CARLA's IndexError path).
         return { ref: refOf(near.road, near.lane, near), headingRad: (near.laneYaw * Math.PI) / 180 };
       }
       road = found.road;
@@ -131,13 +105,8 @@
   }
 
   /**
-   * Walk `ds` along a lane in OpenDRIVE s — what Waypoint.next(d) advances —
-   * from `t` of the way along segment `idx` (dirLine[idx-1] -> dirLine[idx]).
-   * Not arc length: on the inside of a curve a lane is shorter than its s
-   * span, so an arc-length metre runs off the end of a lane that next(1)
-   * stays inside (Town04's ramps). Returns {x, y, z, yaw, ranOut, remaining}
-   * with `remaining` the s still to walk past the end, or null when the
-   * points carry no s (an older render payload).
+   * Walk `ds` in OpenDRIVE s (what next() advances, not arc length) from `t` along segment
+   * `idx`. Returns {x, y, z, yaw, ranOut, remaining}, or null when points carry no s.
    */
   function _walkDirLineS(dirLine, idx, t, ds) {
     if (dirLine.length < 2 || dirLine[0].length < 4) return null;
@@ -148,8 +117,7 @@
     for (let i = idx; i < dirLine.length; i++) {
       const a = dirLine[i - 1],
         b = dirLine[i];
-      // The lane's own end is exclusive: next() landing exactly on it already
-      // returns the successor (a generated actor 1 m before a fork does this).
+      // The lane end is exclusive: landing on it is already the successor.
       const last = i === dirLine.length - 1;
       if ((target - b[3]) * sign < (last ? -1e-6 : 1e-9)) {
         const span = b[3] - a[3];
@@ -177,20 +145,10 @@
   }
 
   /**
-   * Faithful port of ChangeActorWaypoints.initialise for a `fastest` route —
-   * the locally patched version in the install run.sh actually executes
-   * (/home/dellpro2/Antonio/scenario_runner). One trace_route per
-   * authored waypoint, then a filter applied to the CONCATENATED result.
-   *
-   * That filter is not cosmetic: the router genuinely emits points that go
-   * backwards (a lane change is a bare ~12 m chord, and a leg can overshoot
-   * its goal), and the runtime drops them. Reproducing the routing without
-   * the filter is what made the preview show a turn-around that CARLA
-   * never performs.
-   *
-   * Returns the waypoint list, or null if the graph is absent or the very
-   * first lane lookup fails — callers then fall back to the raw clicked
-   * polyline, badged as approximate.
+   * Port of ChangeActorWaypoints.initialise (the patched install run.sh runs): one
+   * trace_route per waypoint, then its dedup and heading filter over the concatenation,
+   * which drop the router's backward points. Null without a graph or a first lane;
+   * callers then draw chords.
    */
   function _exactRoute(sim, rawPoints) {
     if (!AppState.laneGraph) return null;
@@ -203,24 +161,15 @@
     for (const wp of rawPoints) {
       const toRef = _resolveLaneRef(wp.x, wp.y, wp.z);
 
-      // A waypoint's strategy governs the leg that ENDS at it. 'shortest' is
-      // appended verbatim — ChangeActorWaypoints does `route.append(element)`
-      // outside the routed branch, so neither the >1 m dedup nor the heading
-      // filter applies to it, and the actor drives the straight line as drawn.
-      //
-      // The next 'fastest' leg still starts HERE: CARLA seeds it from
-      // carla_route_elements[i - 1] whatever that element's own strategy was,
-      // which is exactly what makes an off-lane 'shortest' point before a
-      // 'fastest' one a routing seed rather than a free excursion.
+      // 'shortest' is appended verbatim (no dedup or heading filter). The next 'fastest'
+      // leg still starts from it, which makes an off-lane point a routing seed.
       if (wp.strategy === 'shortest') {
         route.push({ x: wp.x, y: wp.y, z: wp.z !== undefined ? wp.z : 0.2 });
         if (toRef) fromRef = toRef;
         continue;
       }
 
-      // No lane under this waypoint, or no path to it: CARLA's NetworkXNoPath
-      // branch appends the raw authored point and moves on, rather than
-      // abandoning the whole route.
+      // No lane or no path: append the raw point and carry on, like CARLA's NetworkXNoPath branch.
       const trace = toRef ? LaneGraph.route(AppState.laneGraph, fromRef, toRef) : null;
       if (!trace) {
         route.push({ x: wp.x, y: wp.y, z: wp.z !== undefined ? wp.z : 0.2 });
@@ -239,8 +188,7 @@
               ry = last.y - prev.y,
               rz = (last.z || 0) - (prev.z || 0);
             if (Math.hypot(rx, ry, rz) < ROUTE_SHORT_REF_M) {
-              // Too short to yield a meaningful heading; accepting beats
-              // rejecting the rest of an otherwise legitimate route.
+              // Too short for a heading: accept.
               route.push(p);
               continue;
             }
@@ -248,10 +196,7 @@
           } else {
             lastHeading = seed.headingRad; // lane tangent, not a router chord
           }
-          // Deliberately NOT wrapped to [0, pi]: the `> HI` arm is what
-          // catches the wrap-around cases, so the raw difference is what the
-          // band is calibrated against. Rejects only genuine reversals
-          // (~115-246 deg).
+          // Not wrapped to [0, π]: the `> HI` arm catches the wrap-around. Drops ~115–246° reversals.
           const headingDelta = Math.abs(newHeading - lastHeading);
           if (headingDelta < ROUTE_HEADING_ACCEPT_LO || headingDelta > ROUTE_HEADING_ACCEPT_HI) {
             route.push(p);
