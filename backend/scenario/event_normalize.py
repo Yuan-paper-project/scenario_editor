@@ -273,7 +273,7 @@ def _normalize_actor(
         actor["events"] = []
 
     # The Init speed: ScenarioRunner raises on a negative one. Defaults to 0, not the editor's 10,
-    # so payloads that never mention it (LLM, hand-written, carla_cases) stay stationary.
+    # so payloads that never mention it (LLM, hand-written) stay stationary.
     actor.setdefault("initial_speed", 0.0)
     actor["initial_speed"] = max(0.0, min(100.0, float(actor["initial_speed"])))
 

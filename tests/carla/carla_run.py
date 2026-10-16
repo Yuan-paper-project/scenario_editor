@@ -9,14 +9,10 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
-sys.path.insert(0, HERE)
-
-import carla_cases as C  # noqa: E402
 
 RUN_SH = "/home/dellpro2/Antonio/run.sh"
 SR_ROOT = "/home/dellpro2/Antonio/scenario_runner"
@@ -92,17 +88,7 @@ def run_case(case, xosc_text, scenario, keep_video=True, timeout=180):
 
     started = time.time()
     timed_out = False
-    # The ego's destination — ALWAYS set explicitly, never inherited.
-    #
-    # A goal is only meaningful on the town it was read off: set_destination
-    # silently snaps whatever it is given to the nearest waypoint in the loaded
-    # map, so a stale one does not error, it just drives the ego somewhere
-    # nobody chose. run.sh's own default is a moving target (it is outside this
-    # repo and gets retargeted by hand while debugging a scenario), so a case
-    # that omitted "goal" used to inherit whatever that happened to be. Falling
-    # back to C.GOAL — the Town01 pose every Town01 case is built around —
-    # keeps the harness self-contained.
-    run_env = dict(os.environ, SCENARIO_FILE=scenario_rel, SCENARIO_GOAL=case.get("goal") or C.GOAL)
+    run_env = dict(os.environ, SCENARIO_FILE=scenario_rel)
     # start_new_session so the whole run.sh process group can be killed;
     # subprocess timeouts only reach the direct child, and run.sh's children
     # (scenario_runner, automatic_control, CARLA) are the ones that linger.

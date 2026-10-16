@@ -10,8 +10,7 @@ weather preset (klar, bewoelkt, regen, starkregen, nebel, nass) and an
 editor time key (daytime, morning, dusk, nighttime). The scenario is built through the real editor
 (ScenarioGenerator.generate, then the export endpoint), run through
 /home/dellpro2/Antonio/run.sh with the scripted ego, and judged from the OSC log
-and the telemetry CSV — the same two sources run_carla_cases.py uses, through
-its own run_case().
+and the telemetry CSV, through carla_run.run_case().
 
 What a generated scenario has to show here is not a pass/fail expectation but
 an INTERACTION: the NPC's ego-relative trigger fires, and the two actors then
@@ -20,7 +19,7 @@ expected outcome — the ego brakes — so the report gives the closest approach
 and how much the ego slowed, and the preview's own prediction beside it.
 
 Needs CARLA on run.sh's port (2010) and the editor on :9090. Not part of
-run_tests.sh, for the same reasons run_carla_cases.py is not.
+run_tests.sh: it takes over CARLA and runs for minutes.
 """
 
 import argparse

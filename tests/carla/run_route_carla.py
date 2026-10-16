@@ -7,7 +7,7 @@ Each argument is an editor save file (the Speichern/Laden format). It is loaded
 into the editor, every actor with an assign_route event has its drawn route
 (Simulate.routeGeometry) and its preview track (Simulate.runHeadless) recorded,
 the scenario is exported and run through /home/dellpro2/Antonio/run.sh with the
-telemetry sidecar (run_carla_cases.run_case), and the CARLA track is compared:
+telemetry sidecar (carla_run.run_case), and the CARLA track is compared:
 
   off_route p95/max — distance of the CARLA track from the drawn route. Lanes
                       are ~3.5 m apart, so a car in a different lane than the

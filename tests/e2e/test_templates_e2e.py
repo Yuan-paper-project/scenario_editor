@@ -437,8 +437,7 @@ with sync_playwright() as p:
                     str(got["action"].get("dimension")),
                 )
                 # 'step' is what makes a 'time' duration a hold rather than a
-                # ramp; if one of those ever becomes 'linear' the CARLA timing
-                # assertions in carla_cases.py stop being valid. A 'rate' event
+                # ramp, which the template timings are measured against. A 'rate' event
                 # is the ramp, and the backend forces its shape to linear.
                 want_shape = "linear" if dim == "rate" else "step"
                 check(

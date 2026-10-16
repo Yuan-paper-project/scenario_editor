@@ -3,15 +3,13 @@
     .venv/bin/python3 tests/carla/run_template_carla.py                 # every case
     .venv/bin/python3 tests/carla/run_template_carla.py pull-out ped     # names containing these
 
-The tpl-* cases in run_carla_cases.py predate ego authoring: their ego has no
-events and no start speed, so it stands still and every distance_to_ego
-trigger can only fire on its 60 s fallback. Here every case gets an ego that
+Every case gets an ego that
 drives an assign_route past the template actor at a start speed, and the
 template is placed through the real UI (toolbar-less: the Templates tab and a
 map click), so the chain is whatever the template builds at that spot.
 
 Each case is judged from the OSC log and the telemetry CSV through
-run_carla_cases.run_case(), like run_generated_carla.py, and printed beside the
+carla_run.run_case(), like run_generated_carla.py, and printed beside the
 preview's own prediction. Needs CARLA on run.sh's port (2010) and the editor on
 :9090. Not part of run_tests.sh.
 """
@@ -36,8 +34,8 @@ import carla_run as R  # noqa: E402
 T3_EGO_LANE = (191.3, -5.6)
 T3_PARK = (191.38, -9.12)
 T3_KERB = (191.4, -12.6)
-# Town01 road 1: the ego's lane (y ~ -2.0) runs towards -x; SPOT_WALK in
-# carla_cases.py is the open kerb beside it. Crossing cases live here: the
+# Town01 road 1: the ego's lane (y ~ -2.0) runs towards -x, with an open kerb
+# beside it. Crossing cases live here: the
 # Town03 road 6 kerb above has a wall/fence line at y ~ -12..-12.6 under an
 # overhead structure (probed: no walker spawns there at any height), scenery
 # the .xodr does not contain.

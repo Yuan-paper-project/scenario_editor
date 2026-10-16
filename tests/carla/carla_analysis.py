@@ -162,9 +162,7 @@ class Run:
         longer need evidence an external agent took the ego over). Every Act,
         hero's included, now starts on SimulationTime > 0. This still gives a
         usable time origin, but it is no longer the exact instant NPC Acts
-        begin — CLAUDE.md already flags that every expect_* assertion in
-        tests/carla/run_carla_cases.py needs re-baselining post-ego-authoring, and
-        this is part of that same deferred work, not a new gap.
+        begin: they start essentially at scenario start.
         """
         hero = self.tracks.get("hero")
         if hero is None or not hero.t:

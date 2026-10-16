@@ -23,7 +23,7 @@ data — so this CARLA-side filter is the step that makes a batch safe to run
 unattended. Expect ~1% of scenarios, nearly all crossing pedestrians/cyclists.
 
 Runs the editor side with this repo's .venv and the CARLA side in a
-subprocess with carla-venv, the same split run_carla_cases.py uses.
+subprocess with carla-venv, the same split carla_run.py uses.
 """
 
 import argparse

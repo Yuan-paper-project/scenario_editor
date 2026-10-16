@@ -807,7 +807,7 @@ check("npc gets no trigger_distance key", "trigger_distance" not in npc, str(npc
 
 # initial_speed — the Init SpeedAction. The default is 0 and NOT the editor's
 # placement default of 10: this function also normalises hand-written payloads,
-# LLM output and every tests/carla/carla_cases.py case, none of which mention the
+# and LLM output, neither of which mention the
 # field, and defaulting those to 10 would put every previously stationary actor
 # into motion at t=0.
 check("npc defaults initial_speed to 0", npc["initial_speed"] == 0.0, str(npc.get("initial_speed")))

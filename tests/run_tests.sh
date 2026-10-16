@@ -80,8 +80,8 @@ for t in tests/e2e/test_smoke_e2e.py tests/e2e/test_props_e2e.py tests/e2e/test_
     echo
 done
 
-# tests/carla/run_carla_cases.py is deliberately NOT run here: it needs CARLA on
-# port 2010 (run.sh's), takes over the simulator, and takes minutes rather
+# The tests/carla/ runners are deliberately NOT run here: they need CARLA on
+# port 2010 (run.sh's), take over the simulator, and take minutes rather
 # than seconds.
 
 exit "$status"
