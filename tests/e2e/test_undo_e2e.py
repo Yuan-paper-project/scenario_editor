@@ -28,23 +28,16 @@ import sys
 
 from playwright.sync_api import sync_playwright
 
-BASE = os.environ.get("EDITOR_URL", "http://localhost:9090")
+sys.path.insert(0, os.path.dirname(__file__))
+import _harness as H  # noqa: E402
+from _harness import BASE, Checks  # noqa: E402
+
 VIEWPORT = {"width": 1600, "height": 950}
 
 TOWN = "Town03"
 
-fails, checks = [], []
 
-
-def check(name, cond, extra=""):
-    checks.append((name, bool(cond), extra))
-    if not cond:
-        fails.append(f"{name} {extra}")
-
-
-def load_map(page, town):
-    page.select_option("#map-select", town)
-    page.wait_for_function("AppState.mapData !== null", timeout=60000)
+check = Checks()
 
 
 def blur(page):
@@ -96,7 +89,7 @@ with sync_playwright() as p:
 
     page.goto(BASE, wait_until="networkidle")
     page.evaluate("document.getElementById('welcome-overlay')?.classList.add('hidden')")
-    load_map(page, TOWN)
+    H.select_map(page, TOWN)
     check("no JS errors on load", not errors, str(errors[:2]))
 
     # ── Placement: one entry each, undone newest first ───────────────────────
@@ -339,7 +332,4 @@ with sync_playwright() as p:
     check("no unexpected JS errors during the run", not [e for e in errors if "favicon" not in e], str(errors[:3]))
     b.close()
 
-for name, ok, extra in checks:
-    print(f"  {'PASS' if ok else 'FAIL'}    {name}" + (f"   [{extra}]" if not ok else ""))
-print(f"\n{len(checks) - len(fails)}/{len(checks)} passed")
-sys.exit(1 if fails else 0)
+sys.exit(check.report())

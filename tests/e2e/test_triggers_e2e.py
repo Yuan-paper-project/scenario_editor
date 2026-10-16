@@ -20,18 +20,6 @@ check = H.Checks()
 EGO_ID, NPC1, NPC2 = "obj-1", "obj-2", "obj-3"
 
 
-def speed_event(eid, trigger, value=10.0, duration=5.0):
-    return {
-        "id": eid,
-        "trigger": trigger,
-        "action": {
-            "type": "set_speed",
-            "dynamics": {"shape": "step", "dimension": "time", "value": duration},
-            "target": {"mode": "absolute", "value": value},
-        },
-    }
-
-
 def offset_event(eid, trigger):
     return {"id": eid, "trigger": trigger, "action": {"type": "lane_offset", "direction": "left", "offset": 1.0}}
 
@@ -105,7 +93,7 @@ with sync_playwright() as p:
     check("no JS errors on load", not errors, str(errors[:3]))
 
     # ── Trigger dropdown ─────────────────────────────────────────────────────
-    seed(page, [H.MIN_EVENT], [speed_event("e1", {"type": "simulation_time", "value": 1})])
+    seed(page, [H.MIN_EVENT], [H.speed_event("e1", {"type": "simulation_time", "value": 1})])
     page.evaluate(f"AppState.select('{NPC1}')")
     opts = trigger_options(page)
     check(
@@ -135,12 +123,12 @@ with sync_playwright() as p:
     # ── An NPC may not wait on an ego event ──────────────────────────────────
     seed(
         page,
-        [speed_event("ea", {"type": "simulation_time", "value": 1})],
+        [H.speed_event("ea", {"type": "simulation_time", "value": 1})],
         [
-            speed_event("n1", {"type": "simulation_time", "value": 1}),
-            speed_event("n2", {"type": "after_event", "event_id": "n1"}),
+            H.speed_event("n1", {"type": "simulation_time", "value": 1}),
+            H.speed_event("n2", {"type": "after_event", "event_id": "n1"}),
         ],
-        [speed_event("m1", {"type": "simulation_time", "value": 2})],
+        [H.speed_event("m1", {"type": "simulation_time", "value": 2})],
     )
     page.evaluate(f"AppState.select('{NPC1}')")
     groups = ref_select_groups(page, 1)
@@ -191,8 +179,8 @@ with sync_playwright() as p:
     for kind in ("after_event", "event_started"):
         seed(
             page,
-            [speed_event("ea", {"type": "simulation_time", "value": 1})],
-            [speed_event("n1", {"type": kind, "event_id": "ea", "actor_ref": EGO_ID})],
+            [H.speed_event("ea", {"type": "simulation_time", "value": 1})],
+            [H.speed_event("n1", {"type": kind, "event_id": "ea", "actor_ref": EGO_ID})],
         )
         check(
             f"a loaded NPC {kind} naming an ego event is chipped",
@@ -219,7 +207,7 @@ with sync_playwright() as p:
             ],
         },
     }
-    seed(page, [route], [speed_event("n1", {"type": "after_event", "event_id": "r", "actor_ref": EGO_ID})])
+    seed(page, [route], [H.speed_event("n1", {"type": "after_event", "event_id": "r", "actor_ref": EGO_ID})])
     check(
         "an NPC reference to the ego's assign_route is not chipped (it is rewritten)",
         problems(page, NPC1) == [],
@@ -233,7 +221,7 @@ with sync_playwright() as p:
         [H.MIN_EVENT],
         [
             offset_event("o1", {"type": "distance_to_ego", "value": 30}),
-            speed_event("n2", {"type": "simulation_time", "value": 1}),
+            H.speed_event("n2", {"type": "simulation_time", "value": 1}),
         ],
     )
     page.evaluate(f"AppState.select('{NPC1}')")
@@ -257,13 +245,13 @@ with sync_playwright() as p:
 
     seed(
         page,
-        [speed_event("ea", {"type": "event_started", "event_id": "m1", "actor_ref": NPC2})],
+        [H.speed_event("ea", {"type": "event_started", "event_id": "m1", "actor_ref": NPC2})],
         [
-            speed_event("n1", {"type": "distance_to_ego", "value": 40}),
-            speed_event("n2", {"type": "event_started", "event_id": "n1"}),
-            speed_event("n3", {"type": "ego_speed", "rule": "lessThan", "value": 3.5}),
+            H.speed_event("n1", {"type": "distance_to_ego", "value": 40}),
+            H.speed_event("n2", {"type": "event_started", "event_id": "n1"}),
+            H.speed_event("n3", {"type": "ego_speed", "rule": "lessThan", "value": 3.5}),
         ],
-        [speed_event("m1", {"type": "event_started", "event_id": "n1", "actor_ref": NPC1})],
+        [H.speed_event("m1", {"type": "event_started", "event_id": "n1", "actor_ref": NPC1})],
     )
     prm = params(page)
     check(
@@ -316,8 +304,8 @@ with sync_playwright() as p:
     seed(
         page,
         [H.MIN_EVENT],
-        [speed_event("n1", {"type": "event_started", "event_id": "m1", "actor_ref": NPC2})],
-        [speed_event("m1", {"type": "after_event", "event_id": "n1", "actor_ref": NPC1})],
+        [H.speed_event("n1", {"type": "event_started", "event_id": "m1", "actor_ref": NPC2})],
+        [H.speed_event("m1", {"type": "after_event", "event_id": "n1", "actor_ref": NPC1})],
     )
     check(
         "a mixed event_started / after_event loop is chipped as a cycle",
@@ -331,10 +319,10 @@ with sync_playwright() as p:
         page,
         [H.MIN_EVENT],
         [
-            speed_event("n1", {"type": "simulation_time", "value": 1}),
-            speed_event("n2", {"type": "simulation_time", "value": 2}),
+            H.speed_event("n1", {"type": "simulation_time", "value": 1}),
+            H.speed_event("n2", {"type": "simulation_time", "value": 2}),
         ],
-        [speed_event("m1", {"type": "event_started", "event_id": "n2", "actor_ref": NPC1})],
+        [H.speed_event("m1", {"type": "event_started", "event_id": "n2", "actor_ref": NPC1})],
     )
     page.evaluate(f"AppState.select('{NPC1}')")
     page.evaluate("document.querySelectorAll('.event-card .event-delete')[1].click()")
@@ -353,15 +341,15 @@ with sync_playwright() as p:
     # t > 3 s, so ego_speed > 8 fires then.
     seed(
         page,
-        [speed_event("ea", {"type": "simulation_time", "value": 3}, value=12.0, duration=20)],
+        [H.speed_event("ea", {"type": "simulation_time", "value": 3}, value=12.0, duration=20)],
         [
-            speed_event("n1", {"type": "simulation_time", "value": 2}, value=2.0),
+            H.speed_event("n1", {"type": "simulation_time", "value": 2}, value=2.0),
             offset_event("n2", {"type": "event_started", "event_id": "n1"}),
-            speed_event("n3", {"type": "after_event", "event_id": "n1"}, value=4.0),
+            H.speed_event("n3", {"type": "after_event", "event_id": "n1"}, value=4.0),
         ],
         [
-            speed_event("m1", {"type": "event_started", "event_id": "n1", "actor_ref": NPC1}),
-            speed_event("m2", {"type": "ego_speed", "rule": "greaterThan", "value": 8.0}),
+            H.speed_event("m1", {"type": "event_started", "event_id": "n1", "actor_ref": NPC1}),
+            H.speed_event("m2", {"type": "ego_speed", "rule": "greaterThan", "value": 8.0}),
         ],
         ego_speed=4.0,
     )
@@ -392,8 +380,8 @@ with sync_playwright() as p:
 
     seed(
         page,
-        [speed_event("ea", {"type": "simulation_time", "value": 1})],
-        [speed_event("n1", {"type": "after_event", "event_id": "ea", "actor_ref": EGO_ID})],
+        [H.speed_event("ea", {"type": "simulation_time", "value": 1})],
+        [H.speed_event("n1", {"type": "after_event", "event_id": "ea", "actor_ref": EGO_ID})],
     )
     run = headless(page, 8)
     check(
@@ -401,7 +389,7 @@ with sync_playwright() as p:
     )
 
     # ── Obey toggles ─────────────────────────────────────────────────────────
-    seed(page, [H.MIN_EVENT], [speed_event("n1", {"type": "simulation_time", "value": 1})])
+    seed(page, [H.MIN_EVENT], [H.speed_event("n1", {"type": "simulation_time", "value": 1})])
     page.evaluate(f"AppState.select('{NPC1}')")
     visible = page.evaluate("!document.getElementById('obey-row').classList.contains('hidden')")
     checked = page.evaluate(

@@ -15,8 +15,9 @@ import sys
 
 from playwright.sync_api import sync_playwright
 
-BASE = os.environ.get("EDITOR_URL", "http://localhost:9090")
-fails, checks = [], []
+sys.path.insert(0, os.path.dirname(__file__))
+import _harness as H  # noqa: E402
+from _harness import BASE, Checks  # noqa: E402
 
 # Kept in step with SPAWN_CLEARANCE in frontend/js/objects/objectsCore.js.
 VEHICLE_CLEARANCE = 0.5
@@ -28,16 +29,7 @@ T3_HIGH = (159.0, 193.0)  # surface ~2.63 m
 T3_LOW = (25.0, 193.4)  # surface ~0.00 m
 
 
-def check(name, cond, extra=""):
-    checks.append((name, bool(cond), extra))
-    if not cond:
-        fails.append(f"{name} {extra}")
-
-
-def load_map(page, town):
-    page.select_option("#map-select", town)
-    page.wait_for_function("AppState.mapData !== null", timeout=60000)
-    page.wait_for_function(f"AppState.mapData.town === '{town}'", timeout=60000)
+check = Checks()
 
 
 def place(page, tool, x, y):
@@ -65,7 +57,7 @@ with sync_playwright() as p:
     check("no JS errors on load", not errors, str(errors[:3]))
 
     # ── Render payload carries elevation ─────────────────────────────────────
-    load_map(page, "Town03")
+    H.select_map(page, "Town03")
 
     check("map payload reports an elevation range", page.evaluate("!!AppState.mapData.elevation"))
     ev = page.evaluate("AppState.mapData.elevation")
@@ -218,7 +210,7 @@ with sync_playwright() as p:
 
     # ── Flat map: only the clearance shows ───────────────────────────────────
     page.evaluate("AppState.loadJSON({map:'Town01', ego:null, npcs:[], staticObjects:[]})")
-    load_map(page, "Town01")
+    H.select_map(page, "Town01")
     check("Town01 reports as flat", page.evaluate("AppState.mapData.elevation.max") == 0.0)
     check("Town01 spawn points are all at z=0", page.evaluate("AppState.mapData.spawnPoints.every(s => s.z === 0)"))
 
@@ -232,7 +224,7 @@ with sync_playwright() as p:
 
     # ── The derived z survives into the save file ────────────────────────────
     page.evaluate("AppState.loadJSON({map:'Town03', ego:null, npcs:[], staticObjects:[]})")
-    load_map(page, "Town03")
+    H.select_map(page, "Town03")
     place(page, "ego", *T3_HIGH)
     place(page, "car", T3_HIGH[0] - 20, T3_HIGH[1])
     saved = page.evaluate("AppState.toJSON()")
@@ -246,7 +238,4 @@ with sync_playwright() as p:
     check("no unexpected JS errors during the run", not [e for e in errors if "favicon" not in e], str(errors[:3]))
     b.close()
 
-for name, ok, extra in checks:
-    print(f"  {'PASS' if ok else 'FAIL'}    {name}" + (f"   [{extra}]" if not ok else ""))
-print(f"\n{len(checks) - len(fails)}/{len(checks)} passed")
-sys.exit(1 if fails else 0)
+sys.exit(check.report())

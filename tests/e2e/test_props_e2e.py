@@ -6,14 +6,11 @@ import sys
 
 from playwright.sync_api import sync_playwright
 
-BASE = os.environ.get("EDITOR_URL", "http://localhost:9090")
-fails, checks = [], []
+sys.path.insert(0, os.path.dirname(__file__))
+import _harness as H  # noqa: E402
+from _harness import BASE, Checks  # noqa: E402
 
-
-def check(name, cond, extra=""):
-    checks.append((name, bool(cond), extra))
-    if not cond:
-        fails.append(f"{name} {extra}")
+check = Checks()
 
 
 with sync_playwright() as p:
@@ -98,8 +95,7 @@ with sync_playwright() as p:
     check("cleared search restores fold state", not vis("static.prop.container"))
 
     # ── Map ───────────────────────────────────────────────────────────────────
-    page.select_option("#map-select", "Town01")
-    page.wait_for_function("AppState.mapData !== null", timeout=60000)
+    H.select_map(page, "Town01")
     check("map loaded", page.evaluate("!!AppState.mapData"))
     check("layer-props exists", page.evaluate("!!document.getElementById('layer-props')"))
     check("toggle-props checkbox exists", page.evaluate("!!document.getElementById('toggle-props')"))
@@ -307,8 +303,4 @@ with sync_playwright() as p:
     check("no unexpected JS errors during whole run", not unexpected, str(unexpected[:3]))
     b.close()
 
-print()
-for name, ok, extra in checks:
-    print(("  PASS  " if ok else "  FAIL  ") + name + (f"   [{extra}]" if extra and not ok else ""))
-print(f"\n{sum(1 for _, o, _ in checks if o)}/{len(checks)} passed")
-sys.exit(1 if fails else 0)
+sys.exit(check.report())

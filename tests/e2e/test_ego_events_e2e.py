@@ -56,18 +56,6 @@ def seed(page, ego_events, npc_events=None, with_npc=True):
     )
 
 
-def speed_event(eid, trigger, value=10.0, duration=5.0):
-    return {
-        "id": eid,
-        "trigger": trigger,
-        "action": {
-            "type": "set_speed",
-            "dynamics": {"shape": "step", "dimension": "time", "value": duration},
-            "target": {"mode": "absolute", "value": value},
-        },
-    }
-
-
 with sync_playwright() as p:
     browser, page, errors = H.open_editor(p, "Town01")
     check("no JS errors on load", not errors, str(errors[:3]))
@@ -130,7 +118,7 @@ with sync_playwright() as p:
 
     # ── Trigger dropdown omits distance_to_ego for an ego with no NPC ────────
     # („Abstand zu Akteur" needs another actor; with an NPC the ego may name it.)
-    seed(page, [speed_event("e1", {"type": "simulation_time", "value": 0})], with_npc=False)
+    seed(page, [H.speed_event("e1", {"type": "simulation_time", "value": 0})], with_npc=False)
     page.evaluate("AppState.select('obj-1')")
     ego_trigger_opts = page.evaluate("""() => {
         const selects = document.querySelectorAll('#event-list select');
@@ -144,7 +132,7 @@ with sync_playwright() as p:
         str(ego_trigger_opts),
     )
 
-    seed(page, [], npc_events=[speed_event("e1", {"type": "simulation_time", "value": 0})])
+    seed(page, [], npc_events=[H.speed_event("e1", {"type": "simulation_time", "value": 0})])
     page.evaluate("AppState.select('obj-2')")
     npc_trigger_opts = page.evaluate("""() => {
         const selects = document.querySelectorAll('#event-list select');
@@ -230,7 +218,7 @@ with sync_playwright() as p:
     # ── A distance_to_point trigger is never point-less ──────────────────────
     # A null point used to reach the backend and be defaulted to the map origin,
     # where a 3-D DistanceCondition can never become true.
-    seed(page, [speed_event("e1", {"type": "simulation_time", "value": 0})])
+    seed(page, [H.speed_event("e1", {"type": "simulation_time", "value": 0})])
     page.evaluate("AppState.select('obj-1')")
     page.select_option("#event-list select", "distance_to_point")
     point = page.evaluate("AppState.ego.events[0].trigger.point")
@@ -295,7 +283,7 @@ with sync_playwright() as p:
                 "action": {"type": "follow_trajectory", "trajectory": route},
             }
         ],
-        npc_events=[speed_event("e1", {"type": "distance_to_ego", "value": 400.0})],
+        npc_events=[H.speed_event("e1", {"type": "distance_to_ego", "value": 400.0})],
     )
     params = H.export_params(page)
     xml = H.xosc_from_params(page, params)
@@ -387,7 +375,7 @@ with sync_playwright() as p:
     # Act — it spawns, keeps its Init speed, and SimpleVehicleControl drives it
     # down its own lane. It does NOT get a constant_speed fallback chain any
     # more; that concept is gone along with the Verhalten section.
-    seed(page, [], npc_events=[speed_event("n1", {"type": "simulation_time", "value": 0})])
+    seed(page, [], npc_events=[H.speed_event("n1", {"type": "simulation_time", "value": 0})])
     xml = H.export_xosc(page)
     act_names = [a["name"] for a in H.acts(xml)]
     check("an ego with no events gets no Act at all", "heroBehavior" not in act_names, str(act_names))
@@ -416,7 +404,7 @@ with sync_playwright() as p:
     # A distance_to_ego trigger on an ego event is a coercion, not a rejection
     # — same policy as every other trigger typo, just via _normalize_actor's
     # hero-specific rewrite instead of the generic unknown-trigger fallback.
-    seed(page, [speed_event("e1", {"type": "distance_to_ego", "value": 400.0})])
+    seed(page, [H.speed_event("e1", {"type": "distance_to_ego", "value": 400.0})])
     xml = H.export_xosc(page)
     hero_ev = next(e for e in H.parse_events(xml, entity="hero") if e["name"].startswith("hero_Speed"))
     check(

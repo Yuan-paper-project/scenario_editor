@@ -61,18 +61,6 @@ def seed(page, events, npc_type="car", extra_npcs=None):
     )
 
 
-def speed_event(eid, trigger, value=10.0, duration=5.0):
-    return {
-        "id": eid,
-        "trigger": trigger,
-        "action": {
-            "type": "set_speed",
-            "dynamics": {"shape": "step", "dimension": "time", "value": duration},
-            "target": {"mode": "absolute", "value": value},
-        },
-    }
-
-
 def _params(page):
     """The export payload, bypassing the client-side gate.
 
@@ -172,7 +160,7 @@ with sync_playwright() as p:
     )
 
     # ── simulation_time ──────────────────────────────────────────────────────
-    seed(page, [speed_event("e1", {"type": "simulation_time", "value": 10.0})])
+    seed(page, [H.speed_event("e1", {"type": "simulation_time", "value": 10.0})])
     xml = H.export_xosc(page)
     ev = H.parse_events(xml, entity="adversary")[0]
     check(
@@ -551,7 +539,7 @@ with sync_playwright() as p:
                 "trigger": {"type": "simulation_time", "value": 0},
                 "action": {"type": "lane_offset", "direction": "left", "offset": 1.0},
             },
-            speed_event("e2", {"type": "simulation_time", "value": 5}),
+            H.speed_event("e2", {"type": "simulation_time", "value": 5}),
         ],
     )
     page.evaluate("AppState.select('obj-2')")
@@ -605,8 +593,8 @@ with sync_playwright() as p:
                 "trigger": {"type": "simulation_time", "value": 0},
                 "action": {"type": "lane_offset", "direction": "left", "offset": 1.0},
             },
-            speed_event("e2", {"type": "simulation_time", "value": 3}),
-            speed_event("e3", {"type": "after_event", "event_id": "e2"}),
+            H.speed_event("e2", {"type": "simulation_time", "value": 3}),
+            H.speed_event("e3", {"type": "after_event", "event_id": "e2"}),
         ],
     )
     page.evaluate("AppState.select('obj-2')")
@@ -641,7 +629,7 @@ with sync_playwright() as p:
                 "trigger": {"type": "simulation_time", "value": 4},
                 "action": {"type": "lane_offset", "direction": "left", "offset": 0.0},
             },
-            speed_event("e3", {"type": "after_event", "event_id": "e1"}),
+            H.speed_event("e3", {"type": "after_event", "event_id": "e1"}),
         ],
     )
     page.evaluate("AppState.select('obj-2')")
@@ -736,7 +724,7 @@ with sync_playwright() as p:
                 "trigger": {"type": "simulation_time", "value": 30.0},
                 "action": {"type": "assign_route", "route_strategy": "fastest", "waypoints": route},
             },
-            speed_event("s1", {"type": "after_event", "event_id": "r1"}, 12.0, 5.0),
+            H.speed_event("s1", {"type": "after_event", "event_id": "r1"}, 12.0, 5.0),
         ],
     )
     xml = H.export_xosc(page)
@@ -768,7 +756,7 @@ with sync_playwright() as p:
                 "trigger": {"type": "simulation_time", "value": 0},
                 "action": {"type": "follow_trajectory", "trajectory": []},
             },
-            speed_event("e2", {"type": "after_event", "event_id": "e1"}, 9.0, 5.0),
+            H.speed_event("e2", {"type": "after_event", "event_id": "e1"}, 9.0, 5.0),
         ],
     )
     # Both cards are flagged, and that is the point: the chained event is just
@@ -803,7 +791,7 @@ with sync_playwright() as p:
                 "trigger": {"type": "simulation_time", "value": 0},
                 "action": {"type": "assign_route", "route_strategy": "fastest", "waypoints": route},
             },
-            speed_event("s1", {"type": "after_event", "event_id": "r1"}, 2.0, 5.0),
+            H.speed_event("s1", {"type": "after_event", "event_id": "r1"}, 2.0, 5.0),
         ],
         npc_type="pedestrian",
     )
@@ -826,7 +814,7 @@ with sync_playwright() as p:
     # ── Multi-NPC entity refs ────────────────────────────────────────────────
     seed(
         page,
-        [speed_event("e1", {"type": "simulation_time", "value": 0}, 10.0)],
+        [H.speed_event("e1", {"type": "simulation_time", "value": 0}, 10.0)],
         extra_npcs=[
             {
                 "id": "obj-3",
@@ -877,7 +865,7 @@ with sync_playwright() as p:
                 "y": 1.967,
                 "z": 0.2,
                 "yaw": 0,
-                "events": [speed_event("k1", {"type": "simulation_time", "value": 0}, 10.0)],
+                "events": [H.speed_event("k1", {"type": "simulation_time", "value": 0}, 10.0)],
             },
         ],
     )

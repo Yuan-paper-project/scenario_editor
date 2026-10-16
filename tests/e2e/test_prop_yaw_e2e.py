@@ -11,19 +11,16 @@ import sys
 
 from playwright.sync_api import sync_playwright
 
-BASE = os.environ.get("EDITOR_URL", "http://localhost:9090")
+sys.path.insert(0, os.path.dirname(__file__))
+import _harness as H  # noqa: E402
+from _harness import BASE, Checks  # noqa: E402
 
 LANE_R = (396.30, 164.24, -90.0)  # laneId -1
 LANE_L = (392.30, 165.24, +90.0)  # laneId +1
 FAR = (157.0, 262.0)  # 60.7 m from any lane
 
-checks, fails = [], []
 
-
-def check(name, cond, extra=""):
-    checks.append((name, bool(cond), extra))
-    if not cond:
-        fails.append(name)
+check = Checks()
 
 
 def wrap(d):
@@ -41,19 +38,10 @@ with sync_playwright() as p:
 
     page.goto(BASE, wait_until="networkidle")
     page.evaluate("document.getElementById('welcome-overlay')?.classList.add('hidden')")
-    page.select_option("#map-select", "Town01")
-    page.wait_for_function("AppState.mapData !== null", timeout=60000)
-
-    W2S = """([wx,wy])=>{
-        const svg=document.getElementById('map-svg');
-        const g=document.getElementById('world');
-        const pt=svg.createSVGPoint(); pt.x=wx; pt.y=wy;
-        const s=pt.matrixTransform(g.getScreenCTM());
-        return [s.x, s.y];
-    }"""
+    H.select_map(page, "Town01")
 
     # Zoom in on the test road so a 4 m lane separation is many pixels wide.
-    sx, sy = page.evaluate(W2S, [LANE_R[0], LANE_R[1]])
+    sx, sy = H.world_to_screen(page, LANE_R[0], LANE_R[1])
     page.mouse.move(sx, sy)
     for _ in range(16):
         page.mouse.wheel(0, -240)
@@ -67,7 +55,7 @@ with sync_playwright() as p:
         somewhere else entirely and produces a bogus pass/fail.
         """
         page.click(f'.tool-btn[data-prop="{prop_id}"]')
-        s = page.evaluate(W2S, [wx, wy])
+        s = H.world_to_screen(page, wx, wy)
         vw, vh = 1600, 900
         if not (0 <= s[0] <= vw and 0 <= s[1] <= vh):
             raise AssertionError(f"world ({wx},{wy}) maps to off-screen {s}; zoom/pan first")
@@ -183,7 +171,7 @@ with sync_playwright() as p:
     for _ in range(22):
         page.mouse.wheel(0, 240)
     page.wait_for_timeout(400)
-    fs = page.evaluate(W2S, [FAR[0], FAR[1]])
+    fs = H.world_to_screen(page, FAR[0], FAR[1])
     check("far control point is on screen before clicking", 0 <= fs[0] <= 1600 and 0 <= fs[1] <= 900, f"screen {fs}")
     far = place("static.prop.streetbarrier", FAR[0], FAR[1])
     check(
@@ -204,8 +192,4 @@ with sync_playwright() as p:
     check("no JS errors", not errors, str(errors[:2]))
     b.close()
 
-print()
-for name, ok, extra in checks:
-    print(("  PASS  " if ok else "  FAIL  ") + name + (f"   [{extra}]" if extra and not ok else ""))
-print(f"\n{sum(1 for _, o, _ in checks if o)}/{len(checks)} passed")
-sys.exit(1 if fails else 0)
+sys.exit(check.report())

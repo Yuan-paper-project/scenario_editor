@@ -1,13 +1,7 @@
-"""Shared helpers for the event/template suites.
+"""Shared helpers for the Playwright suites.
 
-Deliberately mirrors the style the props suites established (a flat `check()`
-that accumulates, a PASS/FAIL listing, `sys.exit(1 if fails else 0)`) rather
-than pulling in pytest — see tests/README.md.
-
-`test_props_e2e.py` and `test_prop_yaw_e2e.py` predate this module and still
-carry their own copies of `check()` and the world->screen transform. That
-duplication is deliberate for now: they are 77 passing checks and rewriting
-them to import from here would be risk without payoff.
+A flat `Checks` that accumulates, a PASS/FAIL listing and an exit code, rather
+than pytest — see tests/README.md.
 """
 
 import math
@@ -34,6 +28,19 @@ MIN_EVENT = {
         "dynamics": {"shape": "step", "dimension": "time", "value": 5.0},
     },
 }
+
+
+def speed_event(eid, trigger, value=10.0, duration=5.0):
+    """An absolute `set_speed` step held for `duration` s."""
+    return {
+        "id": eid,
+        "trigger": trigger,
+        "action": {
+            "type": "set_speed",
+            "dynamics": {"shape": "step", "dimension": "time", "value": duration},
+            "target": {"mode": "absolute", "value": value},
+        },
+    }
 
 
 # ── Result accumulation ──────────────────────────────────────────────────────
@@ -118,7 +125,8 @@ def select_map(page, town):
     so setting AppState.map alone leaves lane snapping working off the previous
     town's geometry — which places actors in plausible-looking but wrong lanes.
     """
-    if page.evaluate("AppState.map") == town and page.evaluate("!!AppState.mapData"):
+    # Ask the geometry, not AppState.map: loadJSON sets the map name without fetching.
+    if page.evaluate("AppState.mapData?.town") == town:
         return
     page.evaluate("AppState.mapData = null")
     page.select_option("#map-select", town)
