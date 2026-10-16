@@ -1,4 +1,4 @@
-"""User templates suite („Eigene Vorlagen", templates.js).
+"""User templates suite („Eigene Vorlagen", templatesUser.js).
 
 An actor's event chain saved as a template, with positions stored relative to
 the actor (u along its heading, v to its right) and actor references as

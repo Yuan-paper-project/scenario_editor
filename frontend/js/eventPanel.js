@@ -123,7 +123,7 @@
       });
       eventActionGrid.appendChild(select);
     }
-    // The reverse: this actor's chain as a reusable template (templates.js,
+    // The reverse: this actor's chain as a reusable template (templatesUser.js,
     // „Eigene Vorlagen"), positions kept relative to the actor.
     if (window.ScenarioTemplates && actor.type !== 'ego' && actor.type !== 'prop' && (actor.events || []).length) {
       const save = document.createElement('button');

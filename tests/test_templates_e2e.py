@@ -5,7 +5,7 @@ fixtures in scenario_runner's scenario_tester/ carries a template's signature
 chain, so until now they had never been checked beyond the UI.
 
 Two layers here, and they catch different things:
-  1. the event chain the template ATTACHES (templates.js data + objects.js
+  1. the event chain the template ATTACHES (templatesTable.js data + objects.js
      _placeActor wiring). Pure UI, no export.
   2. the event chain that SURVIVES to the .xosc (buildScenarioParams ->
      validate_scenario_params -> event_builders). A template can be perfectly
@@ -102,7 +102,7 @@ EXPECTED = {
             ("after_event", "evt-2", "set_speed", 10.0, 5.0, "time"),
         ],
     ),
-    # Direction is toward the ego, decided at the click (templates.js
+    # Direction is toward the ego, decided at the click (templatesGeometry.js
     # _buildCutIn) — EITHER_SIDE accepts left or right.
     "vehicle-cut-in": (
         "car",

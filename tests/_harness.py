@@ -191,7 +191,7 @@ def place_template(page, template_id, wx, wy, tolerance=14.0):
     reset to overview before each template.
 
     The default tolerance is generous: `vehicle-pull-out` snaps to a lane
-    centre within 12 m (templates.js `placement.maxDistance`), so a strict
+    centre within 12 m (templatesTable.js `placement.maxDistance`), so a strict
     bound would reject a correct placement.
     """
     page.evaluate("AppState.select(null)")
