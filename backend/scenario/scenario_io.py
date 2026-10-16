@@ -102,7 +102,8 @@ def _reject_phantom_signals(params: dict):
             )
 
 
-def validate_scenario_params(params: dict) -> dict:
+# One pass over the payload in the order the checks depend on; splitting it scatters that order.
+def validate_scenario_params(params: dict) -> dict:  # pylint: disable=too-many-branches,too-many-statements
     """Validate the export payload and fill defaults in place; raises ValueError (a 400)."""
     if not isinstance(params, dict):
         raise ValueError("params must be a JSON object")

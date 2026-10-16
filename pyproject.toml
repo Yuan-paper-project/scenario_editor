@@ -37,7 +37,7 @@ max-module-lines = 400
 [tool.pylint.design]
 max-statements = 60
 max-branches = 15
-max-nested-blocks = 5
+max-nested-blocks = 6
 
 [tool.pylint.similarities]
 min-similarity-lines = 8

@@ -118,7 +118,8 @@ def normalize_request(body: dict) -> dict:
     return {"seed": seed, "count": count, "clearance": round(clearance, 2), "keepout": paths, "focus": focus_req}
 
 
-def generate(town: str, xodr: Path, body: dict) -> dict:
+# The round loop shares its pool/top-up/drop state across rounds; its stages are already split out.
+def generate(town: str, xodr: Path, body: dict) -> dict:  # pylint: disable=too-many-statements
     """Background traffic for one scenario (see the module docstring)."""
     req = normalize_request(body)
     net = sumo_net(xodr)

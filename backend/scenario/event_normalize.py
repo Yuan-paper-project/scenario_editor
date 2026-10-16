@@ -38,7 +38,8 @@ def _normalize_waypoints(
     return normalized
 
 
-def _normalize_structured_event(
+# A flat list of per-field clamps and defaults: long, but each line stands alone.
+def _normalize_structured_event(  # pylint: disable=too-many-branches,too-many-statements
     event: dict,
     actor_refs: dict[str, str],
     valid_refs: set[str],

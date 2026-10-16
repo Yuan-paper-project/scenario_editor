@@ -102,7 +102,8 @@ def _after_event_target(trigger: dict, owner_entity: str) -> tuple[str, str]:
     return (str(trigger.get("actor_ref") or owner_entity), str(trigger.get("event_id", "")))
 
 
-def _normalize_after_event_chains(actors: list[tuple[dict, str, str]]) -> None:
+# The rules run in a fixed order (see the docstring); one function keeps it readable.
+def _normalize_after_event_chains(actors: list[tuple[dict, str, str]]) -> None:  # pylint: disable=too-many-branches
     """Scenario-wide rules for event references, which may name another actor's event.
 
     `actors` is [(actor, entity_name, where)] over the ego and every NPC. Order matters: route
