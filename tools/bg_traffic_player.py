@@ -3,46 +3,19 @@
     PYTHONPATH=$CARLA_ROOT/PythonAPI/carla python tools/bg_traffic_player.py \
         scenario.bgtraffic.json [--host 127.0.0.1] [--port 2010]
 
-Runs beside ScenarioRunner (scenario_runner/scripts/run_selfref_video_test.py
-starts it when run.sh finds a `<scenario>.bgtraffic.json` next to the .xosc).
-It never ticks the world — ScenarioRunner owns the clock in synchronous mode,
-the same rule as tests/carla/carla_telemetry.py. On every tick it reads where each
-car actually is and commands the velocity that takes it to where the file has
-it one tick later — a closed loop, so the physics step lands it there: CARLA
-decides nothing about the car's path, and the preview and the run show the
-same traffic (measured: median 1 mm, worst 8 cm while settling after spawn).
+Runs beside ScenarioRunner (started when run.sh finds `<scenario>.bgtraffic.json` next to the
+.xosc) and never ticks the world. Each tick it commands the velocity that takes each car from
+where it is to where the file has it one tick later — a closed loop, so the run shows the
+preview's traffic (median 1 mm).
 
-How the cars are moved is not the obvious choice, and both obvious choices
-crash this CARLA build (0.9.15, fail2drive):
-  * physics off + a transform per tick (what CARLA's own SUMO bridge does):
-    the server segfaults the moment two OTHER vehicles collide — reproduced on
-    Town05 with a single parked physics-off car 100 m from the collision;
-  * physics on + a transform per tick: segfaults a few seconds in whenever
-    the run renders cameras (run.sh's recorder), fine without them.
-Velocity commands only — exactly how ScenarioRunner's own
-SimpleVehicleControl moves vehicles — ran clean in both setups. A side
-effect: every other controller reads each car's real speed, not 0.
+Velocity only: physics off + a transform per tick crashes this CARLA build as soon as two other
+vehicles collide, and physics on + transforms crashes it under run.sh's cameras (CLAUDE.md).
 
-Time zero is the tick on which the hero first exists, which is where the
-scenario starts (actors are spawned on one tick, the storyboard runs from the
-next). Each file entry is spawned on the tick its t0 comes (all at t = 0
-without a focus; with one, where the car drives into the bubble around the
-ego), with role_name "background", and removed after its last frame — or when
-the hero is gone or this process is told to stop. The spawn height comes from
-CARLA's own lane at the car's position, looked up near the height SUMO reports
-so a bridge and the road under it do not mix.
-
-Emergency stop. The backend lets a car cross a scenario actor's path when
-that actor is at least 8 s away from the spot in the preview; CARLA's timing
-can differ (an AV ego certainly will). So each tick every car looks
-HOLD_LOOKAHEAD_S ahead along its own trajectory, and if that brings it closer
-to the ego or an NPC and inside a box around it, it holds still — its own
-clock stops, so it resumes exactly where it was, just later. Holds are
-logged: from then on that car is not where the preview showed it.
-
-The ego's and every NPC's obstacle sensor (`sensor.other.obstacle`,
-only_dynamics=True) sees these cars — measured with
-tools/probes/probe_puppet_obstacle.py.
+t = 0 is the hero's first tick. Each entry is spawned at its t0 (role_name "background", on
+CARLA's lane near SUMO's height) and removed after its last frame. Emergency stop: a car whose
+next HOLD_LOOKAHEAD_S would bring it closer to and into a box around the ego or an NPC holds,
+its clock stopped, and resumes later; holds are logged. Scenario actors' obstacle sensors see
+these cars (tools/probes/probe_puppet_obstacle.py).
 """
 
 import argparse
@@ -81,11 +54,7 @@ def _lerp_frame(frames, t, dt):
 
 
 class Player:
-    """Each file entry {t0, frames} is one car's life in the run: spawned on
-    the tick its t0 is reached, steered by its own time t − t0, removed after
-    its last frame. Without a focus every entry has t0 = 0 and the whole
-    window; with one, entries start and end where a car enters and leaves the
-    bubble around the ego (backend/traffic/bg_traffic.py)."""
+    """The file's entries as cars: each spawned at its t0, steered by t − t0, removed after its last frame."""
 
     def __init__(self, client, data, tick_dt):
         self.client = client
@@ -121,10 +90,7 @@ class Player:
         return carla.Transform(carla.Location(x, y, z + 0.02 + lift), carla.Rotation(pitch=pitch, yaw=yaw))
 
     def _spawn_due(self, t):
-        """Spawn every entry whose t0 has come, at its pose for time t. A spawn
-        fails when the car's box overlaps something there; it is retried on the
-        next ticks, higher (the velocity steering puts it on the road all the
-        same), and given up after SPAWN_RETRIES."""
+        """Spawn every entry whose t0 has come; a blocked spawn is retried higher, up to SPAWN_RETRIES."""
         due = [i for i in self.waiting if self.t0[i] <= t]
         due = [i for i in due if t <= self.t_end[i]]
         gone = [i for i in self.waiting if self.t0[i] <= t and t > self.t_end[i]]
@@ -194,11 +160,8 @@ class Player:
         ]
 
     def _conflict(self, i, local, cur_xy, positions):
-        """The scenario actor this car is about to run into, or None: one of its
-        coming poses lies in a box around the actor (in the car's heading
-        frame there) AND is closer to the actor than the car is now — a car
-        moving away from someone right behind it must not hold, or the two
-        wait for each other forever."""
+        """The scenario actor this car is about to run into, or None: a coming pose inside a box around
+        it AND closer than now (a car moving away from someone behind it must not hold)."""
         v = self.entries[i]
         frames = v["frames"]
         long_m = float(v.get("length", 4.5)) / 2 + HOLD_LONG_M
@@ -217,11 +180,7 @@ class Player:
         return None
 
     def _place(self, t, snap):
-        """Velocity commands: from where each car actually is (this tick's
-        snapshot) to where the file has it at t. The physics step then moves it
-        there. Height and pitch are the physics' own: the car stands on the road
-        on its wheels. Never a teleport after the spawn — see the module
-        docstring for why."""
+        """Velocity commands from each car's actual position to the file's pose at t; z and pitch are physics'."""
         h = self.tick_dt
         cmds = []
         positions = []
@@ -329,8 +288,7 @@ def main():
     signal.signal(signal.SIGINT, _on_signal)
 
     try:
-        # Wait for the scenario: the hero's first tick is t = 0. The world may
-        # be reloaded underneath us while ScenarioRunner switches town.
+        # Wait for the hero (t = 0); the world may be reloaded while ScenarioRunner switches town.
         deadline = time.time() + HERO_WAIT_S
         hero, t0 = None, None
         while hero is None and not stop["flag"] and time.time() < deadline:
@@ -372,8 +330,7 @@ def main():
                     break
                 continue
             misses = 0
-            # The newest tick, not the one waited for: when this loop falls
-            # behind, commands computed for an old tick land a tick late.
+            # The newest tick: when this loop falls behind, older commands would land a tick late.
             try:
                 snap = player.world.get_snapshot()
             except RuntimeError:

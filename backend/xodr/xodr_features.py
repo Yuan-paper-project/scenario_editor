@@ -1,6 +1,4 @@
-"""
-Traffic lights, Stop/Yield and speed signs, and crosswalks read from an OpenDRIVE file.
-"""
+"""Traffic lights, Stop/Yield and speed signs, and crosswalks read from an OpenDRIVE file."""
 
 import json
 import math
@@ -14,15 +12,11 @@ from backend.xodr.xodr_geometry import _eval_elevation, _eval_geometry_at_s, _ge
 
 
 def _extract_traffic_lights(root: ET.Element, xodr_path: Path | None = None) -> list[dict]:
-    """Dynamic signals, i.e. traffic lights, at their pole position.
+    """Traffic lights at their pole position.
 
-    Each carries `signalId` (the .xodr id), `roads` — the junction connector
-    roads whose `<signalReference>` names it, i.e. the lanes it governs (every
-    connector in the bundled towns references at most one light) — and, when
-    `maps/<town>/carla_traffic_lights.json` exists (tools/probes/probe_carla_traffic_lights.py),
-    `inCarla`: whether the CARLA build has an actor within 2 m. A signal event
-    on a light without one makes ScenarioRunner raise "Unknown traffic light"
-    and abort the run (Town10HD's traffic_light_10/11).
+    Each carries `signalId`, `roads` (the connectors whose <signalReference> names it) and, when
+    maps/<town>/carla_traffic_lights.json exists, `inCarla`: whether CARLA has an actor within 2 m
+    (a signal event on one without aborts the run).
     """
     governs: dict[str, list[str]] = {}
     for road in root.findall('road'):
@@ -56,10 +50,7 @@ def _extract_traffic_lights(root: ET.Element, xodr_path: Path | None = None) -> 
                 'name': f"Traffic Light {len(results) + 1}",
                 'x': round(wx, 1),
                 'y': round(-wy, 1),
-                # Road-surface height at the pole. A signal event's trigger is a
-                # 3-D ReachPositionCondition around this point; the emitter used
-                # to write z = 0, so on an elevated junction a short radius
-                # could never be reached.
+                # Road height at the pole: the signal trigger is a 3-D distance from it.
                 'z': round(_eval_elevation(_get_elevations(road), s), 2),
                 'signalId': sig.get('id'),
                 'roads': sorted(set(governs.get(sig.get('id'), [])), key=str),
@@ -71,8 +62,7 @@ def _extract_traffic_lights(root: ET.Element, xodr_path: Path | None = None) -> 
 
 
 def _extract_signs(root: ET.Element) -> list[dict]:
-    """Static Stop (206) and Yield (205) signals — the German StVO codes CARLA
-    exports, matched by name as well since `country` is 'OpenDRIVE'."""
+    """Static Stop (206) and Yield (205) signals, also matched by name (`country` is 'OpenDRIVE')."""
     kinds = {'206': 'stop', '205': 'yield'}
     results = []
     for road in root.findall('road'):
@@ -105,14 +95,8 @@ _SPEED_SIGN_RE = re.compile(r'^speed_(\d+)$', re.IGNORECASE)
 
 
 def _extract_speed_signs(root: ET.Element) -> list[dict]:
-    """Speed-limit SIGNS (`<object|signal name="Speed_90">`, km/h).
-
-    These — not the per-road `<type><speed>` records — are what sets a CARLA
-    vehicle's speed limit: CARLA spawns a SpeedLimit actor per sign, while
-    MapBuilder::CreateRoadSpeed stores the road record's raw number with its
-    unit discarded and uses it only to size Stop/Yield trigger boxes. The
-    road records also say 55 mph on Town03's residential streets. Only
-    Town01–05 carry signs; the other towns get none drawn.
+    """Speed-limit signs (`name="Speed_90"`, km/h). These, not the per-road <speed> records (whose
+    unit CARLA discards), set a CARLA vehicle's limit. Only Town01–05 have them.
     """
     results = []
     for road in root.findall('road'):
@@ -162,9 +146,7 @@ def _extract_crosswalk_objects(root: ET.Element) -> list[dict]:
             wx = px - t * math.sin(ph)
             wy = py + t * math.cos(ph)
 
-            # OpenDRIVE object length is along its local x-axis. For CARLA
-            # crosswalk objects, that x-axis usually spans across the road;
-            # the local y-axis is the stripe's along-road direction.
+            # A crosswalk object's local x spans the road; its local y runs along it.
             road_forward = ph + obj_hdg + math.pi / 2.0
             heading_deg = round(math.degrees(-road_forward) % 360.0, 1)
             results.append(

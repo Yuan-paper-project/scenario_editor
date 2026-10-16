@@ -1,10 +1,6 @@
-"""
-map_renderer.py — Parse a CARLA OpenDRIVE (.xodr) file into road polygon data for SVG rendering.
+"""Parse a CARLA OpenDRIVE (.xodr) file into the editor's render JSON.
 
-Coordinate convention:
-  OpenDRIVE (x, y)  →  CARLA / SVG  (cx = x,  cy = -y)   [Y-axis flip]
-  SVG viewBox is set to CARLA bounds directly — no further transform needed.
-  Z is NOT flipped — OpenDRIVE and CARLA are both Z-up.
+The one Y flip happens here: OpenDRIVE (x, y) → CARLA (x, −y); z is not flipped.
 """
 
 import xml.etree.ElementTree as ET
@@ -74,7 +70,7 @@ def _scan_thumbnail_paths(maps_dir: Path) -> dict[str, Path]:
 XODR_PATHS: dict[str, Path] = _scan_xodr_paths(_MAPS_DIR)
 THUMBNAIL_PATHS: dict[str, Path] = _scan_thumbnail_paths(_MAPS_DIR)
 
-# ── Lane type colours (matched to SafetyPool Studio dark palette) ──────────────
+# ── Lane type colours ──────────────────────────────────────────────────────────
 
 LANE_COLORS: dict[str, str] = {
     "driving": "#3d3d3d",  # dark asphalt
@@ -83,8 +79,7 @@ LANE_COLORS: dict[str, str] = {
     "shoulder": "#555555",
     "parking": "#34486a",  # blue tint, like a painted parking zone
     "biking": "#4a6a4a",
-    # Not drivable: drawn concrete/kerb-toned and hatched by mapRoadDetail.js rather
-    # than in asphalt, or Town03's tunnel median reads as a lane.
+    # Not drivable: concrete-toned and hatched (mapRoadDetail.js), or Town03's tunnel median reads as a lane.
     "median": "#8f8a7e",  # raised concrete separator
     "border": "#6b6862",
     "restricted": "#6b6862",
@@ -93,7 +88,7 @@ LANE_COLORS: dict[str, str] = {
 DEFAULT_LANE_COLOR = "#484848"
 GRASS_COLOR = "#1e4a1e"  # deeper green for contrast
 
-# ── Helper parsing engine (internal implementation sharing) ───────────────────
+# ── Render data from a parsed .xodr ──────────────────────────────────────────
 
 
 def _process_root_to_render_data(root: ET.Element, town_name: str, xodr_path: Path, interval: float) -> dict:
@@ -132,8 +127,7 @@ def _process_root_to_render_data(root: ET.Element, town_name: str, xodr_path: Pa
             if lo[0] > 0.0 and lo[0] not in boundary_s:
                 boundary_s.append(lo[0])
         boundary_s.append(length)
-        # Samples exactly where a painted line changes type, so broken→solid
-        # does not leave a gap the length of a sample interval.
+        # Sample where a painted line changes type, so broken→solid leaves no gap.
         center_marks_by_section = [_get_center_marks(ls) for ls in road.find('lanes').findall('laneSection')]
         for (s_start, _s_end, lane_defs), cmarks in zip(lane_sections, center_marks_by_section):
             for m in cmarks + [m for ld in lane_defs for m in ld['marks']]:
@@ -166,9 +160,7 @@ def _process_root_to_render_data(root: ET.Element, town_name: str, xodr_path: Pa
 
                 poly = _build_lane_polygon_dynamic(sec_samples, ld, lane_defs, s_start, offsets, geom_segs)
                 color = LANE_COLORS.get(ld['type'], DEFAULT_LANE_COLOR)
-                # Junction connectors carry the kerb-side parking lane across
-                # the box (Town03: 25 roads, Town05: 8, Town07: 2). Nobody
-                # parks in a junction, so paint it as carriageway, not blue.
+                # Connectors carry the kerb-side parking lane across junctions: paint it as carriageway.
                 if is_junction and ld['type'] == 'parking':
                     color = LANE_COLORS['driving']
 
@@ -177,11 +169,8 @@ def _process_root_to_render_data(root: ET.Element, town_name: str, xodr_path: Pa
                     'type': ld['type'],
                     'color': color,
                     'polygon': poly,
-                    # Disambiguates a laneId that recurs across lane sections
-                    # of the same road (road.lanes is otherwise flattened with
-                    # no section marker) — assumes CARLA's waypoint.section_id
-                    # numbers sections the same way, 0-based in s-order, which
-                    # tools/probes/probe_carla_lane_graph.py cross-checks.
+                    # Disambiguates a laneId recurring across sections; assumed to match CARLA's
+                    # section_id (0-based in s order, cross-checked by probe_carla_lane_graph.py).
                     'sectionId': section_id,
                     'sStart': round(s_start, 2),
                     'sEnd': round(s_end, 2),
@@ -197,9 +186,7 @@ def _process_root_to_render_data(root: ET.Element, town_name: str, xodr_path: Pa
                         cx, cy, cz, this_w = _lane_centre(
                             sample, s_eval, ld, side_lanes, s_start, offsets, elevations, geom_segs
                         )
-                        # 4th element is s, the same backward-compatible trick
-                        # already used for z — existing 3-element consumers
-                        # destructure positionally and never see it.
+                        # A trailing s: consumers destructure positionally and ignore it.
                         lane_cl.append([round(cx, 2), round(cy, 2), round(cz, 2), round(sample[3], 2)])
                         lane_widths.append(round(this_w, 2))
 
@@ -219,9 +206,7 @@ def _process_root_to_render_data(root: ET.Element, town_name: str, xodr_path: Pa
             cz = _eval_elevation(elevations, s)
             elev_min = cz if elev_min is None else min(elev_min, cz)
             elev_max = cz if elev_max is None else max(elev_max, cz)
-            # At a laneOffset step (see _section_eval_s) emit the left limit as
-            # well, so the marking jogs at the boundary instead of slanting
-            # across the whole preceding sample interval.
+            # At a laneOffset step emit the left limit too, so the marking jogs instead of slanting.
             s_evals = [s]
             if s > 0.0 and abs(_eval_lane_offset(offsets, s - 1e-6) - _eval_lane_offset(offsets, s)) > 1e-3:
                 s_evals = [s - 1e-6, s]
@@ -250,11 +235,8 @@ def _process_root_to_render_data(root: ET.Element, town_name: str, xodr_path: Pa
     return {
         'town': town_name,
         'bounds': bounds,
-        # Reference-line height range, for the startup log and for spotting a map
-        # whose elevations are an absolute geoid datum rather than metres above
-        # ground (maps/Town10 is +50..+103 m). Reported, never subtracted: if
-        # CARLA builds that map's mesh from this same .xodr the road really is up
-        # there, and shifting it would reintroduce the bug this all fixes.
+        # Reference-line height range, for the startup log: a far-off-zero range suggests an
+        # absolute datum (maps/Town10). Reported, never subtracted.
         'elevation': {'min': round(elev_min or 0.0, 2), 'max': round(elev_max or 0.0, 2)},
         'roads': roads_out,
         'spawnPoints': spawn_points,
@@ -280,10 +262,7 @@ def build_map_render_data(town_name: str, interval: float = 4.0) -> dict:
 
 
 def build_map_render_data_from_path(xodr_path: Path, town_name: str, interval: float = 4.0) -> dict:
-    """
-    Same as build_map_render_data but works from an arbitrary .xodr file path
-    instead of the pre-registered XODR_PATHS dict. Used for user-uploaded maps.
-    """
+    """build_map_render_data for an arbitrary .xodr path (uploaded maps)."""
     if not xodr_path.exists():
         raise FileNotFoundError(f"File not found: {xodr_path}")
 

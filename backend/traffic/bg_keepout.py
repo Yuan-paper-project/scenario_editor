@@ -12,22 +12,11 @@ from backend.traffic.bg_sumo import _sumolib_net
 
 
 class _KeepOut:
-    """Segments of a set of paths, each with a half-width, bucketed on a grid
-    for the per-frame test `hits`: is a car of half-width `half_w` at (x, y)
-    within `clearance` of a path's edge — and, for a TIMED path, at a moment
-    within KEEPOUT_TIME_S of when its actor is there? Used for the keep-out
-    (the scripted scenario's paths) and, with half-width 0, for zones.
-
-    A path's points are [x, y] (untimed: occupied for the whole run — props,
-    and the part of a route the preview never reaches) or [x, y, t] (timed:
-    the preview's track; a segment is occupied from its first point's t to its
-    last's, so an actor standing still occupies its spot for as long as it
-    stands). `hits(…, t=None)` ignores time.
-
-    The grid cell is at least the largest distance a hit can be at, so looking
-    in the car's own cell (each segment is filed one cell beyond its box) is
-    enough. A fixed 10 m cell used to miss hits past 10 m — any "Abstand" over
-    ~7 m."""
+    """Path segments with half-widths on a grid, for `hits`: is a car of half-width `half_w` at
+    (x, y) within `clearance` of a path's edge — for a timed path, at a moment within the window
+    of when its actor is there? Points are [x, y] (occupied all run) or [x, y, t]; `t=None`
+    ignores time. The cell is at least the largest hit distance, so the car's own cell suffices.
+    """
 
     def __init__(self, paths: list[dict], clearance: float, window_s: float = 0.0):
         self.clearance = clearance
@@ -55,8 +44,7 @@ class _KeepOut:
                     self.grid.setdefault((gx, gy), []).append(i)
 
     def untimed(self) -> _KeepOut:
-        """The same keep-out without its timed segments (what is in the way
-        for the whole run, whatever the timing)."""
+        """The same keep-out without its timed segments (in the way all run)."""
         k = _KeepOut([], self.clearance, self.window)
         for sg in self.segs:
             if sg[5] is None:
@@ -93,21 +81,14 @@ class _KeepOut:
 def _write_trip_weights(
     net: Path, off, zone: _KeepOut | None, keepout: _KeepOut, prefix: Path
 ) -> tuple[list[str], _Blocked]:
-    """Where trips may start, end and stop, and what routes must not use.
+    """Write randomTrips weight files and the blocked edges and turns.
 
-    * randomTrips weight files (<prefix>.src/.dst/.via.xml): 1 for a drivable
-      edge inside `zone` (any edge without one), nothing (= 0) for the rest.
-      Loaded weights REPLACE randomTrips' own edge filter, so its passenger
-      and via-not-fringe rules are applied here.
-    * Blocked: the edges the scenario's own actors drive on (a lane within the
-      keep-out of a scripted path) and the TURNS whose junction lane crosses
-      one. Blocked edges are never a start, end or stop and cost duarouter
-      1000× their travel time (<prefix>.route.xml); a route that still uses a
-      blocked edge or turn is removed before simulation (_drop_routes_using).
-      Turns are judged one by one — a side street's right turn stays usable
-      when its left turn crosses the ego's path.
-
-    Returns (start/end edges, the blocked edges and turns)."""
+    Weights: 1 for a drivable edge inside `zone`, else none; they REPLACE randomTrips' own edge
+    filter, so its passenger and via-not-fringe rules are applied here. Blocked: edges the
+    scenario's actors drive on and turns whose junction lane crosses one — never a start, end or
+    stop, and 1000× the cost for duarouter. Turns are judged one by one.
+    Returns (start/end edges, blocked edges and turns).
+    """
     snet = _sumolib_net(net)
     to_carla = lambda x, y: (x - off[0], -(y - off[1]))  # noqa: E731
     usable, usable_via, blocked_edges, blocked_turns = [], [], [], set()
@@ -156,10 +137,7 @@ class _Blocked:
 
 
 def _drop_routes_using(routes: Path, blocked: _Blocked) -> int:
-    """Remove every vehicle whose route uses a blocked edge or turn (see
-    _write_trip_weights). Such a car would be dropped for the keep-out after
-    a whole simulation, and its removal would cost another. Returns how many
-    were removed."""
+    """Remove vehicles whose route uses a blocked edge or turn (each would cost a re-simulation); returns how many."""
     tree = ET.parse(routes)
     root = tree.getroot()
     removed = 0

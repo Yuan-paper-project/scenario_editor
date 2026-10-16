@@ -35,9 +35,7 @@ def _track_interpolator(track: list):
 
 
 def _bubble_segments(fr, times, ego_at, enter_r: float, leave_r: float) -> list[tuple[int, int]]:
-    """Index ranges of `fr` during which the car is shown: from the frame it
-    comes within enter_r of the ego to the last frame before it is beyond
-    leave_r (the gap keeps a car on the edge from flickering in and out)."""
+    """Frame ranges in which the car is shown: from within enter_r of the ego until beyond leave_r."""
     segs, start = [], None
     for i, f in enumerate(fr):
         ex, ey = ego_at(times[f[0]])
@@ -66,19 +64,12 @@ def _bubble_trips(
     prefix: str,
     cwd: Path,
 ) -> None:
-    """Trips aimed at the bubble: each starts in a ring outside it around
-    where the ego is about to be, passes an edge inside it, and ends in the
-    ring again — so nearly every car drives through once, close to the ego,
-    instead of randomTrips' cars scattered over town and time. A fifth depart
-    before the window opens, around the ego's start, so t = 0 is not empty.
-    Routed by duarouter with the same weights (the scenario's own lanes
-    avoided)."""
+    """Trips aimed at the bubble: start in a ring ahead of the ego, pass an edge inside, end in the
+    ring; a fifth depart before the window so t = 0 is not empty. Routed with the same weights."""
     snet = _sumolib_net(net)
     rng = random.Random(seed * 104729 + 17)
-    # Per edge: where a car on it starts (its first point), ends (its last)
-    # and passes (every ~5 m). Edge MIDPOINTS used to stand for all three,
-    # and on Town05's long edges no midpoint was near the ego: cyclist_ahead
-    # seed 1 got no trip at all.
+    # Per edge: where a car starts (first point), ends (last) and passes (every ~5 m); by midpoint,
+    # long edges (Town05) got no trip at all.
     to_c = lambda q: (q[0] - off[0], -(q[1] - off[1]))  # noqa: E731
     edges = []
     for eid in usable:
@@ -148,10 +139,7 @@ def _bubble_trips(
 
 
 def _drop_trips_starting_near(routes: Path, net: Path, off, ego_at, clear_r: float) -> None:
-    """Remove the trips SUMO would insert within clear_r of the ego: inside the
-    bubble a car must drive in, not appear. Done on the route file, before any
-    simulation, so it costs no re-simulation (a car still inserted inside — a
-    delayed insertion — is caught as "popin" afterwards)."""
+    """Remove trips SUMO would insert within clear_r of the ego (a car must drive into the bubble)."""
     snet = _sumolib_net(net)
     tree = ET.parse(routes)
     root = tree.getroot()

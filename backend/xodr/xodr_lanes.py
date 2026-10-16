@@ -1,6 +1,4 @@
-"""
-Lane sections, widths and centres of an OpenDRIVE road, and the lane polygons and road-mark lines built from them.
-"""
+"""Lane sections, widths and centres of an OpenDRIVE road, and the lane polygons and road-mark lines built from them."""
 
 import xml.etree.ElementTree as ET
 
@@ -63,18 +61,13 @@ def _get_lane_defs_from_section(ls_elem: ET.Element) -> list[dict]:
     return result
 
 
-# roadMark types drawn as lines; everything else ('none', 'curb', 'grass',
-# 'botts dots', …) is either nothing or already visible as a lane edge.
+# Drawn roadMark types; others are nothing or already visible as a lane edge.
 _DRAWN_MARK_TOKENS = {'solid', 'broken'}
 MARK_DOUBLE_GAP_M = 0.12  # half the spacing between the two lines of a double mark
 
 
 def _get_road_marks(lane_elem: ET.Element) -> list[dict]:
-    """<roadMark> records of one lane, sorted by sOffset (section-relative).
-
-    Per OpenDRIVE a lane's roadMark describes its OUTER border; the centre
-    lane's describes the reference line. A record holds until the next one.
-    """
+    """<roadMark> records of one lane by sOffset; a lane's mark is its OUTER border (the centre lane's the reference line)."""
     marks = []
     for rm in lane_elem.findall('roadMark'):
         color = (rm.get('color') or 'standard').lower()
@@ -96,11 +89,7 @@ def _get_center_marks(ls_elem: ET.Element) -> list[dict]:
 
 
 def _mark_lines(mark_type: str) -> list[tuple[str, float]]:
-    """('solid'|'broken', lateral shift) per drawn line of a roadMark type.
-
-    A double mark's first token is the line on the LEFT (in s direction, i.e.
-    +d), which is how 'broken solid' tells a driver which side may cross.
-    """
+    """('solid'|'broken', lateral shift) per drawn line; a double mark's first token is the LEFT one."""
     tokens = mark_type.split()
     if len(tokens) == 1:
         return [(tokens[0], 0.0)] if tokens[0] in _DRAWN_MARK_TOKENS else []
@@ -128,15 +117,7 @@ def _eval_lane_width(polys: list[dict], sec_s_query: float) -> float:
 
 
 def _get_road_link(road_elem: ET.Element) -> dict:
-    """<road><link><predecessor/successor elementType elementId contactPoint>.
-
-    Road-level connectivity — which road (or junction) this one continues
-    into at s=0 and s=length. Needed by the frontend lane graph (phase 2) to
-    tell a genuine fork from a road that simply continues; map_renderer never
-    read <link> before this (the crosswalk heuristic looks at it and discards
-    it again). contactPoint is absent for a junction link — junctions don't
-    have a notion of start/end, only member roads and lanes do.
-    """
+    """<road><link>: the road or junction this one continues into at each end (no contactPoint for a junction)."""
     link_elem = road_elem.find('link')
     if link_elem is None:
         return {'predecessor': None, 'successor': None}
@@ -182,10 +163,10 @@ def _lane_centre(
     elevations: list[tuple],
     geom_segs: list[tuple],
 ) -> tuple[float, float, float, float]:
-    """Centre of lane `ld` at one reference-line sample (px, py, hdg, s), full
-    precision: (x, y, z, lane width) in CARLA frame. `s_eval` is where laneOffset
-    and widths are read (see _section_eval_s); z and curvature use the sample's
-    own s."""
+    """Centre of lane `ld` at one sample, full precision: (x, y, z, width) in CARLA frame.
+
+    `s_eval` is where laneOffset and widths are read (_section_eval_s); z uses the sample's s.
+    """
     px, py, ph, s = sample
     sec_s = s_eval - s_start
     inner_w = 0.0
@@ -206,15 +187,10 @@ def _lane_centre(
 def lane_centre_points(
     road_elem: ET.Element, section_id: int, lane_id: int, s_values: list[float]
 ) -> list[list[float]]:
-    """[x, y, z, s] of a lane's centre at each of `s_values`, unrounded — the
-    same maths as the directionLine, but at exactly the s asked for. For
-    lane_graph_builder, which has to reproduce GlobalRoutePlanner's 2 m samples
-    and the whole-metre rounding of its node ids; interpolating the 1 cm-rounded
-    directionLine instead put sample-count ties (a last sample 2.0001 m from the
-    exit) on the wrong side often enough to change A*'s routes.
+    """[x, y, z, s] of a lane's centre at exactly each of `s_values`, unrounded.
 
-    An s equal to the section's end reads laneOffset/widths at the left limit,
-    like the directionLine's last point."""
+    For lane_graph_builder, whose 2 m sample counts and metre-rounded node ids need exact s.
+    """
     sections = _get_lane_sections(road_elem)
     s_start, s_end, lane_defs = sections[section_id]
     ld = next(l for l in lane_defs if l['id'] == lane_id)
@@ -242,7 +218,7 @@ def _build_lane_polygon_dynamic(
     offsets: list[tuple],
     geom_segs: list[tuple] | None = None,
 ) -> list[list[float]]:
-    """Build a perfect closed ribbon polygon by tracking cumulative widths dynamically at every s."""
+    """A lane's closed polygon, tracking cumulative widths at every s."""
     sign = +1.0 if target_ld['side'] == 'L' else -1.0
     fwd_inner: list[list[float]] = []
     fwd_outer: list[list[float]] = []
@@ -280,13 +256,7 @@ def _build_mark_polylines(
     offsets: list[tuple],
     geom_segs: list[tuple],
 ) -> list[dict]:
-    """Painted line polylines of one lane section, from its <roadMark>s.
-
-    Each lane's marks sit on its outer border, the centre lane's on the
-    reference line (+ laneOffset). Same lateral maths as the lane polygons —
-    left-limit at the range end (_section_eval_s) and the fold clamp
-    (_lateral_point) — so a line never drifts off the edge it belongs to.
-    """
+    """Painted line polylines of one lane section, with the polygons' lateral maths (left limit, fold clamp)."""
     # (marks, function: (s_eval, widths-by-id) -> signed lateral distance)
     borders = [(center_marks, None)]
     for ld in lane_defs:

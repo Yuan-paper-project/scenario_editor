@@ -17,11 +17,8 @@ STEP_S = 0.1  # SUMO step and FCD period; consumers interpolate
 
 _TYPE_FILE = Path(__file__).parent / "sumo_data" / "opendrive_netconvert.typ.xml"
 
-# CARLA blueprints used for background cars, with their bounding-box extents
-# (half-length, half-width) measured on the fail2drive build run.sh uses
-# (2026-10-13). The half-length is what turns SUMO's front-bumper position into
-# CARLA's centre; every blueprint's box sits on its origin (location.z ≈ extent.z),
-# so a puppet's z is the road surface itself.
+# Background car blueprints with their measured (half-length, half-width): the half-length turns
+# SUMO's front-bumper position into CARLA's centre. Each box sits on its origin, so z is the road.
 BLUEPRINTS = [
     ("vehicle.lincoln.mkz_2017", 2.451, 1.064),
     ("vehicle.audi.a2", 1.853, 0.894),
@@ -53,11 +50,7 @@ class BgTrafficError(RuntimeError):
 
 
 def sumo_home() -> Path:
-    """SUMO_HOME of the `eclipse-sumo` wheel in this venv, or BG_SUMO_HOME.
-
-    The shell's own SUMO_HOME is deliberately not trusted: on this box it
-    points at a directory that does not exist.
-    """
+    """SUMO_HOME of the venv's eclipse-sumo wheel, or BG_SUMO_HOME; never the shell's SUMO_HOME (broken here)."""
     env = os.environ.get("BG_SUMO_HOME")
     if env and Path(env, "bin").is_dir():
         return Path(env)
@@ -205,8 +198,7 @@ def _simulate(net: Path, routes: list[Path], vtypes: Path, seed: int, cwd: Path)
 
 
 def _to_carla(fx, fy, fz, angle, ext_x, off):
-    """CARLA's BridgeHelper.get_carla_transform: front bumper → centre, net
-    offset removed, y flipped, compass angle → CARLA yaw."""
+    """CARLA's BridgeHelper.get_carla_transform: front bumper → centre, offset removed, y flipped, yaw."""
     yaw_s = math.radians(-angle + 90.0)
     sx = fx - math.cos(yaw_s) * ext_x - off[0]
     sy = fy - math.sin(yaw_s) * ext_x - off[1]
@@ -245,10 +237,7 @@ def _vehicle_types(routes: Path) -> dict[str, str]:
 
 
 def _resolve_types(routes: Path, seed: int) -> dict[str, str]:
-    """Pin every vehicle to one concrete blueprint, so the type is known before
-    simulation (duarouter keeps the distribution id `bg`). duarouter also
-    copies the vType definitions into its output; they are removed, because
-    sumo loads them from the additional file and refuses a second definition."""
+    """Pin every vehicle to one blueprint, and strip the vTypes duarouter copies (sumo refuses duplicates)."""
     rng = random.Random(seed * 7919 + 1)
     tree = ET.parse(routes)
     root = tree.getroot()

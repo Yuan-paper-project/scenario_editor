@@ -1,7 +1,4 @@
-"""
-scenario_io.py — Wrapper around llm-scenario-gen's xml_builder to export .xosc files.
-Also validates and normalises incoming scenario JSON from the frontend.
-"""
+"""Validate the editor's export payload and export it as .xosc / route XML through llm-scenario-gen."""
 
 import sys
 import uuid
@@ -22,23 +19,10 @@ def _ensure_llmgen_on_path():
 
 
 def _normalize_actor_types(params: dict):
-    """Reject NPC types the emitter cannot resolve.
+    """Reject NPC types the emitter cannot resolve (400): every lookup would fall back to `car`.
 
-    Same deliberate break from the silent-coercion pattern as
-    _normalize_static_objects, and for the same reason: every lookup in
-    xml_builder falls back to `car`, so a typo'd type exports cleanly and shows
-    up as a Lincoln MKZ in the simulation with nothing pointing at the cause.
-    Actions and triggers keep coercing — those are enumerated in the UI and
-    cannot be mistyped by a user.
-
-    The ego is exempt: the frontend always sends it as 'car'
-    (scenarioIO.js buildScenarioParams), and saved scenarios carry the literal
-    'ego' that _placeActor wrote.
-
-    Puts the sibling repo on the path itself rather than relying on the export
-    entry points having done it, so test_normalization.py can exercise this
-    without a browser or a server. A missing sibling repo still only surfaces
-    when something calls validate_scenario_params, i.e. at export time.
+    The ego is exempt (sent as its vehicle type, or a literal 'ego'). Puts the sibling repo on
+    the path itself, so test_normalization.py can call it directly.
     """
     _ensure_llmgen_on_path()
     from generator.xml_builder import actor_types  # type: ignore
@@ -54,16 +38,9 @@ def _normalize_actor_types(params: dict):
 
 
 def _normalize_static_objects(params: dict):
-    """Validate the placed CARLA static props.
+    """Validate the placed props; an unknown blueprint is a 400, not a missing actor in CARLA later.
 
-    Unlike events, an unknown prop id is a hard error rather than a silent
-    coercion: a typo'd blueprint would otherwise export cleanly and only fail
-    much later, inside CARLA, as a missing actor.
-
-    Requires _ensure_llmgen_on_path() to have run — the prop catalog lives in
-    the sibling repo alongside vehicle_catalog.yaml. Both export entry points
-    call it before this, so the "missing sibling only fails at export time"
-    property is preserved.
+    Needs _ensure_llmgen_on_path() (the prop catalogue is in the sibling repo).
     """
     raw = params.get("staticObjects")
     params["staticObjects"] = []
@@ -93,8 +70,7 @@ _MAPS_DIR = Path(__file__).resolve().parents[2] / "maps"
 
 
 def _carla_light_positions(town: str):
-    """CARLA's traffic-light actor positions for a bundled town, or None when
-    the town was never probed (tools/probes/probe_carla_traffic_lights.py)."""
+    """CARLA's traffic-light positions for a town, or None if never probed."""
     import json
 
     probe = _MAPS_DIR / str(town) / "carla_traffic_lights.json"
@@ -107,13 +83,9 @@ def _carla_light_positions(town: str):
 
 
 def _reject_phantom_signals(params: dict):
-    """A signal event addresses its light as TrafficSignalStateAction
-    name="pos=x,y", which ScenarioRunner resolves to the CARLA actor within 2 m
-    (get_traffic_light_from_osc_name) — and raises "Unknown traffic light",
-    aborting the whole run, when there is none. The .xodr has lights the CARLA
-    build does not (Town10HD's traffic_light_10/11), so this is a 400 rather
-    than a run that dies at load. Skipped for an unprobed town and for a signal
-    that names its actor explicitly (traffic_signal_ref)."""
+    """Reject signal events on a light CARLA lacks (400): ScenarioRunner resolves "pos=x,y" within
+    2 m and aborts the run with "Unknown traffic light" otherwise. Skipped for unprobed towns and
+    for a signal naming its actor (traffic_signal_ref)."""
     import math
 
     carla_lights = _carla_light_positions(params.get("map"))
@@ -131,25 +103,17 @@ def _reject_phantom_signals(params: dict):
 
 
 def validate_scenario_params(params: dict) -> dict:
-    """
-    Validate and fill defaults for the scenario params dict.
-    Raises ValueError on fatal errors.
-    """
+    """Validate the export payload and fill defaults in place; raises ValueError (a 400)."""
     if not isinstance(params, dict):
         raise ValueError("params must be a JSON object")
 
-    # Map
     params.setdefault("map", "Town01")
 
-    # Ego — required
     if "ego" not in params or params["ego"] is None:
         raise ValueError("Scenario must have an ego vehicle")
     ego = params["ego"]
     ego.setdefault("type", "car")
-    # The editor's internal 'ego' type means the default car. Anything else must
-    # be a routable vehicle: the hero is always a <Vehicle> under
-    # simple_vehicle_control, so a walker (or a bike, which the route planner
-    # will not route) would export a clean file that cannot drive its own events.
+    # 'ego' means car; anything else must be routable: the hero is a <Vehicle> that drives its events.
     if ego["type"] in (None, "", "ego"):
         ego["type"] = "car"
     if ego["type"] not in _ROUTE_ACTOR_TYPES:
@@ -182,7 +146,6 @@ def validate_scenario_params(params: dict) -> dict:
             signal["events"].append(event)
     _reject_phantom_signals(params)
 
-    # NPCs
     params.setdefault("npcs", [])
     actor_refs = {}
     if ego.get("id"):
@@ -190,9 +153,7 @@ def validate_scenario_params(params: dict) -> dict:
     for idx, npc in enumerate(params["npcs"]):
         if isinstance(npc, dict) and npc.get("id"):
             actor_refs[str(npc["id"])] = "adversary" if idx == 0 else f"adversary{idx}"
-    # Every entity name _inject_npcs will actually emit, derived from the npc
-    # count rather than from actor_refs — a payload may omit ids and name its
-    # entities directly. Anything outside this set is a dangling reference.
+    # Entity names the emitter will write, from the npc count (a payload may name entities directly).
     valid_refs = {"hero"} | {"adversary" if idx == 0 else f"adversary{idx}" for idx in range(len(params["npcs"]))}
 
     _normalize_actor_types(params)
@@ -206,19 +167,11 @@ def validate_scenario_params(params: dict) -> dict:
         _normalize_actor(npc, npc_name, actor_refs, valid_refs, f"npcs[{npc_idx}]")
         scenario_actors.append((npc, npc_name, f"npcs[{npc_idx}]"))
 
-    # Scenario-wide, so it must come after every actor is normalised: an
-    # after_event trigger may point at another actor's event.
+    # After every actor: a reference may name another actor's event.
     _normalize_after_event_chains(scenario_actors)
 
-    # An actor with no events gets no <Act> at all (xml_builder._build_actor_act),
-    # so a scenario in which nothing has events emits a <Story> with zero Acts:
-    # XSD-invalid, and there would be nothing for ScenarioRunner to run — the
-    # storyboard would complete on the first tick. Rejected rather than coerced,
-    # same policy as an unknown prop id or a dangling entity_ref, because the
-    # alternative is a clean file that silently does nothing. Checked *after*
-    # normalisation so it sees the events that actually survive it, and traffic
-    # signals count: _inject_traffic_signals emits a ScenarioBehavior Act of its
-    # own, which is a real scenario even with every actor inert.
+    # Nothing with events anywhere means a Story with no Acts (XSD-invalid, over at once): 400.
+    # Checked after normalisation; signal events count, they get an Act of their own.
     if not any(actor.get("events") for actor in [ego, *params["npcs"]]) and not any(
         signal["events"] for signal in params["trafficSignals"]
     ):
@@ -226,26 +179,19 @@ def validate_scenario_params(params: dict) -> dict:
             "No actor has any events — the scenario would end immediately. Add at least one event before exporting."
         )
 
-    # Static props
     _normalize_static_objects(params)
 
-    # Weather
     params.setdefault("weather", {})
     weather_keys = ["fog", "rainy", "cloudy", "sunny", "wet_road", "snowy", "dust_storm"]
     for k in weather_keys:
         if k in params["weather"]:
             params["weather"][k] = max(0.0, min(1.0, float(params["weather"][k])))
 
-    # Time
     valid_times = {"daytime", "morning", "noon", "afternoon", "dusk", "nighttime"}
     if params.get("time") not in valid_times:
         params["time"] = "daytime"
 
-    # Route waypoints — normally sent by scenarioIO.js's buildScenarioParams()
-    # (derived client-side from the ego's path event). Derive them here too,
-    # from the now-normalized ego.events, so a hand-written or reloaded
-    # payload posted straight to /api/export-route doesn't silently fall back
-    # to route_builder's single-waypoint spawn fallback.
+    # Route waypoints: derived here too, for a payload posted straight to /api/export-route.
     if not params.get("route_waypoints"):
         params["route_waypoints"] = _ego_route_waypoints(ego)
 
@@ -253,9 +199,7 @@ def validate_scenario_params(params: dict) -> dict:
 
 
 def _ego_route_waypoints(ego: dict) -> list[dict]:
-    """The ego's follow_trajectory/assign_route path event, as route.xml
-    waypoints with per-segment yaw — mirrors scenarioIO.js buildScenarioParams.
-    """
+    """The ego's path event as route.xml waypoints with per-segment yaw (as scenarioIO.js does)."""
     points = []
     for event in ego.get("events") or []:
         if not isinstance(event, dict):
@@ -294,10 +238,7 @@ def _ego_route_waypoints(ego: dict) -> list[dict]:
 
 
 def export_route_xml(params: dict) -> str:
-    """
-    Generate a route XML file from scenario params.
-    Returns the path to the written temp file.
-    """
+    """Write a route XML for the params to a temp file and return its path."""
     _ensure_llmgen_on_path()
     from generator.route_builder import build_route  # type: ignore
 
@@ -311,11 +252,7 @@ def export_route_xml(params: dict) -> str:
 
 
 def export_to_xosc(params: dict) -> str:
-    """
-    Generate a .xosc file from scenario params.
-    Returns the path to the written temp file.
-    The caller is responsible for deleting it after sending.
-    """
+    """Write a .xosc for the params to a temp file and return its path; the caller deletes it."""
     _ensure_llmgen_on_path()
     from generator.xml_builder import build_xosc  # type: ignore
 

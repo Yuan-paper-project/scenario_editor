@@ -1,53 +1,18 @@
-"""
-Background traffic: SUMO-generated trajectories that CARLA replays as "puppets".
+"""Background traffic: SUMO trajectories that the preview and CARLA (tools/bg_traffic_player.py) replay.
 
-The traffic is computed once, here, and is then *played back* — by the editor's
-preview and, unchanged, by tools/bg_traffic_player.py inside a CARLA run, which
-steers every car onto the file's pose on every tick. That is what makes the
-preview exact for the background: neither side decides anything.
-The price is that the cars react to nothing. So every car that would come
-near the scripted scenario is taken out and the rest is simulated again, until
-what is left neither touches the scenario nor was shaped by a car that is no
-longer there. "Near" is in space AND time: the keep-out is the track the
-preview predicts for the ego and each NPC, every point with its time, and a car
-is dropped only if it is within the clearance of a point whose time is within
-KEEPOUT_TIME_S of its own — so traffic may use the ego's own roads ahead of
-and behind it (a purely spatial keep-out left ~2–20 cars near the ego).
-Untimed parts (props) block for the whole run, and also take out, before any
-simulation, every edge and junction turn they touch. In CARLA, the player's
-emergency stop holds a car whose timing has drifted that far after all.
+Both sides replay the same file, so the preview is exact, but the cars react to nothing. So any
+car coming near the scripted scenario — in space AND time: within the clearance of a track point
+whose time is within KEEPOUT_TIME_S of its own — is removed and the rest re-simulated, until
+nothing is dropped. Untimed parts (props) block all run and also prune edges and turns up front.
 
-Two shapes of result:
-  * whole map (no focus): `count` cars, each present for the whole window;
-  * a BUBBLE around the ego (focus radius R, the editor's "Umkreis"): a car
-    is shown only while within R of where the preview has the ego (and until
-    R + BUBBLE_HYSTERESIS_M once shown), one file entry {t0, frames} per such
-    stretch, and `count` is the AVERAGE number shown. Trips are aimed at the
-    bubble (_bubble_trips): they start ahead of where the ego will be, pass
-    near its route and end beyond it.
+Whole map: `count` cars, each present for the whole window. Bubble (focus radius R): a car is in
+the file only while within R of the preview's ego, as {t0, frames} entries, and `count` is the
+average shown; trips are aimed at the bubble (_bubble_trips).
 
-Pipeline, per request:
-  1. `.xodr` → SUMO net with netconvert (cached on disk next to the `.xodr`,
-     in a `sumo/` folder, rebuilt when the `.xodr` or the type file is newer).
-     Options copied from CARLA's own Co-Simulation/Sumo/util/netconvert_carla.py.
-  2. randomTrips.py: a pool of trips departing during the warm-up, so the
-     window starts with traffic already spread out (whole map: POOL_FACTOR ×
-     count; bubble: aimed trips, BUBBLE_POOL_FACTOR × count). A bigger pool
-     jams the small towns (cars never get onto the network), so a run that
-     is short is topped up with fresh trips instead — in the same
-     re-simulation as any removals (step 4), except in the last
-     SETTLE_ROUNDS, which only remove.
-  3. sumo, headless, FCD output for the window only.
-  4. Drop every car that pops in or vanishes where it is shown (whole map: is
-     not there for the whole window), jumps (a teleport), or enters the
-     keep-out; drop random extras down to `count`. If anything was dropped,
-     re-simulate without it (step 3) — at most MAX_ITERATIONS times. Removals
-     cascade: a car whose leader is gone drives faster and may now reach the
-     keep-out inside the window.
-
-Coordinates: FCD gives the FRONT BUMPER and a compass angle in SUMO's frame
-(net offset applied, y up). The conversion to a CARLA centre pose is
-BridgeHelper.get_carla_transform from CARLA's co-simulation, verbatim.
+Per request: .xodr → SUMO net (cached in maps/<Town>/sumo/), a trip pool, sumo with FCD output,
+then drop pop-ins, vanishings, teleports and keep-out hits and re-simulate (topping up when
+short, except in the last SETTLE_ROUNDS) at most MAX_ITERATIONS times. Poses are converted
+with CARLA's BridgeHelper.get_carla_transform.
 """
 
 from __future__ import annotations
@@ -124,13 +89,11 @@ def normalize_request(body: dict) -> dict:
     clearance = max(0.0, min(20.0, clearance))
     paths = []
     for p in body.get("keepout") or []:
-        # [x, y] untimed, [x, y, t] timed (see _KeepOut)
         pts = [[round(float(v), 1) for v in q[:3]] for q in (p.get("pts") or []) if len(q) >= 2]
         if pts:
             paths.append({"w": round(float(p.get("w", 1.0)), 2), "pts": pts})
-    # Focus: {radius, paths: [[[x, y], …], …]} — the ego's route as one or more
-    # polylines (kept apart: joined, the gap between two would become a chord
-    # the zone covers). Radius 0 or no points: the whole map.
+    # Focus: {radius, paths}, the ego's route as separate polylines (joined, a gap becomes a chord).
+    # Radius 0 or no points: the whole map.
     focus = body.get("focus") or {}
     try:
         radius = max(0.0, min(MAX_FOCUS_RADIUS, float(focus.get("radius", 0) or 0)))
@@ -141,7 +104,7 @@ def normalize_request(body: dict) -> dict:
         pts = [[round(float(q[0]), 1), round(float(q[1]), 1)] for q in (line or []) if len(q) >= 2]
         if pts:
             fpaths.append(pts)
-    # track: [[t, x, y], …] — where the ego is when, as the preview predicts it.
+    # track: [[t, x, y], …], the ego as the preview predicts it.
     track = sorted(
         [
             [round(float(q[0]), 2), round(float(q[1]), 1), round(float(q[2]), 1)]
@@ -156,7 +119,7 @@ def normalize_request(body: dict) -> dict:
 
 
 def generate(town: str, xodr: Path, body: dict) -> dict:
-    """Background traffic for one scenario. See the module docstring."""
+    """Background traffic for one scenario (see the module docstring)."""
     req = normalize_request(body)
     net = sumo_net(xodr)
     key = _cache_key(town, net, req)
@@ -198,8 +161,7 @@ def generate(town: str, xodr: Path, body: dict) -> dict:
         min_distance = min(600.0, 0.45 * diag)
         bubble = focus is not None
         if bubble:
-            # Candidate edges for the aimed trips (_bubble_trips): within reach
-            # of the route, not the scenario's own lanes.
+            # Edges for the aimed trips: near the route, not the scenario's own lanes.
             gen_zone = _KeepOut(
                 [{"w": 0.0, "pts": pts} for pts in focus["paths"]], focus["radius"] + BUBBLE_GEN_MARGIN_M
             )
@@ -299,13 +261,10 @@ def generate(town: str, xodr: Path, body: dict) -> dict:
                     continue
                 spans[vid] = segs
             shown = sorted(v for v in spans if v not in drop)
-            # How many are shown: cars (whole map), or cars around the ego on
-            # average over the window (bubble).
+            # How many are shown: cars (whole map), or the average around the ego (bubble).
             size = {v: (sum(b - a + 1 for a, b in spans[v]) / max(1, n_frames) if bubble else 1.0) for v in shown}
             amount = sum(size.values())
-            # Trim to a reserve while cars are still being removed for cause,
-            # and to the requested amount only once a round removed none: every
-            # removal re-simulates, and can cost a car or two more.
+            # Keep a reserve while removals continue (each can cascade); trim exactly once clean.
             target = req["count"] if not drop else req["count"] * 1.25
             if amount > target + (0.5 if bubble else 0):
                 for v in rng.sample(shown, len(shown)):
@@ -316,11 +275,8 @@ def generate(town: str, xodr: Path, body: dict) -> dict:
                     reasons["extra"] += 1
             visible_avg = amount
             rounds.append([round(amount, 1), len(drop), 0])
-            # Short of the request: fresh trips, in the same re-simulation as
-            # any removals. Waiting for a round that drops nothing first left
-            # Town03 at 10–13 of 40 — every removal cascades into a few more,
-            # so such rounds rarely came before MAX_ITERATIONS. The last
-            # SETTLE_ROUNDS only remove, so the result can still settle.
+            # Short: fresh trips in the same re-simulation as the removals (waiting for a clean round
+            # left Town03 at 10–13 of 40); the last SETTLE_ROUNDS only remove.
             short = req["count"] - (amount if not drop else sum(size[v] for v in shown if v not in drop))
             per_car = (amount / len(shown)) if (bubble and shown) else 1.0
             want_more = (
@@ -342,7 +298,7 @@ def generate(town: str, xodr: Path, body: dict) -> dict:
             if want_more:
                 topups += 1
                 before = pool
-                # a quarter over the shortfall when cars are still being removed
+                # a quarter over the shortfall while cars are still being removed
                 need = short + (0.25 * req["count"] if drop else 0)
                 add_trips(
                     topups, min(MAX_TRIPS_PER_ROUND, 4 * req["count"], math.ceil(1.5 * need / max(per_car, 0.05)))
@@ -359,11 +315,8 @@ def generate(town: str, xodr: Path, body: dict) -> dict:
             ex, ey = _BP.get(bp, (2.4, 1.0))
             colour = "{},{},{}".format(*(colours.randrange(30, 230) for _ in range(3)))
             for a, b in spans[vid]:
-                # One entry per stretch the car is shown: it exists from t0 for
-                # len(frames) samples, one [x, y, z, yaw] per dt — the whole
-                # window without a focus; with one, from where it enters the
-                # bubble to where it leaves (a car that comes back is a second
-                # entry, same `car`).
+                # One entry per shown stretch: from t0, one [x, y, z, yaw] per dt (a car that
+                # returns is a second entry with the same `car`).
                 result["vehicles"].append(
                     {
                         "id": f"bg{len(result['vehicles'])}",

@@ -4,7 +4,7 @@ import uuid
 
 from backend.scenario.scenario_io import _ensure_llmgen_on_path, validate_scenario_params
 
-# ── Batch export (scenario generator, phase 2) ────────────────────────────────
+# ── Batch export (scenario generator) ─────────────────────────────────────────
 
 
 def _flatten(prefix: str, value, out: dict) -> None:
@@ -17,20 +17,11 @@ def _flatten(prefix: str, value, out: dict) -> None:
 
 
 def export_batch_zip(entries: list) -> tuple:
-    """
-    Build one zip from many generated scenarios.
+    """Zip many generated scenarios; returns (zip_path, n_ok, n_failed), ValueError if none export.
 
-    Each entry is {"name", "params", "scenario", "meta"}: `params` is the
-    ordinary /api/export payload, `scenario` the editor's own save file
-    (AppState.toJSON — reopens with Laden), `meta` the generator's record
-    (seed, type, criticality, parameters) for the manifest.
-
-    Per scenario the zip holds <name>.xosc, <name>.json and <name>_route.xml
-    (the ego's route as a goal for an AV stack under test). Each is exported
-    independently: one that fails validation is listed in the manifest with its
-    error rather than sinking the batch.
-
-    Returns (zip_path, n_ok, n_failed). Raises ValueError when nothing exported.
+    Each entry is {"name", "params", "scenario", "meta"}: the /api/export payload, the editor's
+    save file and the generator's record. Per scenario: <name>.xosc, <name>.json and
+    <name>_route.xml; a failing one becomes a manifest row with its error.
     """
     import copy
     import csv as _csv

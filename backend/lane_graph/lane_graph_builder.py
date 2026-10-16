@@ -1,48 +1,15 @@
-"""
-lane_graph_builder.py — derive a lane_graph.json-shaped routing graph directly
-from a town's .xodr file, for towns tools/probes/probe_carla_lane_graph.py has never
-run against: every uploaded map, and Town10 (no CARLA counterpart to probe).
+"""Derive a lane_graph.json-shaped routing graph from a town's .xodr, for towns never probed in CARLA.
 
-Produces the exact JSON shape frontend/js/sim/laneGraph.js already consumes (see
-maps/Town01/lane_graph.json for a real probed example, and
-tests/compare_xodr_lane_graph.py, which validates this builder's output
-against all 8 committed probed files). The one deliberate semantic gap from a
-CARLA probe: `source` is "xodr" here (a probed file has no `source` key at
-all, which the frontend treats as "carla"), and a fork's `successors` list
-carries NO preferred order — CARLA's own next() picks one real successor, but
-nothing in a bare .xodr ranks the candidates at a junction with more than one
-<connection> for the same incoming lane, so none is invented here either.
-frontend/js/sim/simulate.js's path-less fork-continuation logic already knows to
-refuse to guess when graph.source === 'xodr' and a lane has more than one
-successor, rather than pick index 0 the way it safely can for real CARLA data.
+Same shape as a probed file (tests/compare_xodr_lane_graph.py checks it), with `source: "xodr"`
+and successors in no preferred order: a bare .xodr ranks no fork, so none is invented. Geometry
+comes from MAP_CACHE's roads (directionLines already in travel direction); this adds topology.
 
-Coordinate/geometry inputs are NOT recomputed here — `roads_out` (i.e.
-MAP_CACHE[town]['roads']) already carries each drivable lane's `directionLine`
-(already oriented in true travel direction — map_renderer.py reverses it for
-left-side/positive-id lanes) and z, so this module only adds topology.
+Forward rule: OpenDRIVE links are keyed by s (predecessor = s 0 end), not by travel direction.
+A negative-id lane drives with s, so its forward neighbour is on the successor side; a positive
+one drives against s, so on the PREDECESSOR side.
 
-── The forward-successor rule (verified against maps/Town01 and Town03 ground
-   truth before writing this) ──
-
-OpenDRIVE's per-lane <link><predecessor/><successor/></link> — and the
-road-level <link> it falls back on at a road boundary — are keyed by
-s-coordinate (predecessor = the s=0 end, successor = the s=length end), NOT by
-which way the lane actually drives. A negative-id lane drives with increasing
-s, so its real forward neighbour is at the s=length end (the XML successor
-side). A positive-id lane drives against s (map_renderer.py reverses its
-directionLine for exactly this reason), so ITS real forward neighbour is at
-the s=0 end — the XML *predecessor* side. Reading the wrong side for a
-positive lane silently produces a fork/dead-end that doesn't exist.
-
-── Left/right neighbour rule (also empirically verified) ──
-
-Within one (roadId, sectionId), "right" is always the same-sign lane one
-|id| further from the centreline; "left" is the same-sign lane one |id|
-closer to the centreline, except at |id| == 1, where "left" crosses the
-centreline to the opposite-sign lane at |id| == 1 (the oncoming lane), if one
-exists. This holds for both signs — it falls out of get_left_lane()/
-get_right_lane() being relative to each lane's own forward-driving direction,
-which is exactly what the sign convention above already encodes.
+Left/right rule: within a section "right" is the same-sign lane one |id| further out, "left" one
+|id| further in, except at |id| 1, where left is the opposite-sign lane 1 (the oncoming lane).
 """
 
 import xml.etree.ElementTree as ET
@@ -68,10 +35,8 @@ from backend.xodr.xodr_links import (
     _parse_road_links,
 )
 
-# 'bidirectional' (a centre turn lane) is deliberately excluded — confirmed
-# against ground truth (maps/Town03/Town03.xodr road 0 lane 1 is
-# bidirectional and never appears in any committed lane_graph.json): CARLA's
-# GlobalRoutePlanner only samples Driving lanes into its routing topology.
+# Only Driving lanes: CARLA's GlobalRoutePlanner samples nothing else (Town03's bidirectional
+# separator never appears in a probed graph).
 _ROUTABLE_TYPES = ('driving',)
 
 # GlobalRoutePlanner(map, 2.0) — the resolution ChangeActorWaypoints builds it with.
@@ -82,14 +47,10 @@ SAMPLING_RESOLUTION_M = 2.0
 
 
 def build_lane_graph_from_xodr(xodr_path: Path, roads_out: list[dict], town: str) -> dict:
-    """Build a lane_graph.json-shaped dict for `town` from its .xodr file,
-    using `roads_out` (MAP_CACHE[town]['roads']) as the geometry source so
-    lane centrelines and z are not recomputed. Re-parses the .xodr itself
-    (cheap, one-time, at startup/upload) rather than threading `root` through
-    map_renderer.py's existing, unrelated return signature."""
+    """Build a lane_graph.json-shaped dict for `town`; geometry from `roads_out`, topology from the .xodr."""
     root = ET.parse(str(xodr_path)).getroot()
 
-    # ── Index every routable (Driving/Bidirectional) lane from roads_out ────
+    # ── Index every routable lane from roads_out ───────────────────────────
     lane_index: dict[tuple[int, int, int], dict] = {}
     junction_roads: set[int] = set()
     section_count_by_road: dict[int, int] = {}
@@ -119,11 +80,8 @@ def build_lane_graph_from_xodr(xodr_path: Path, roads_out: list[dict], town: str
         if max_section >= 0:
             section_count_by_road[road_id] = max_section + 1
 
-    # Exact geometry per lane: its s range straight from the .xodr, driven
-    # direction included (a positive lane drives from s_end to s_start), and
-    # an evaluator for its centre at any s. The directionLine is rounded to
-    # 1 cm and sampled every 4 m — fine for drawing, too coarse for the
-    # whole-metre rounding of node ids and the 2 m sample counts below.
+    # Exact geometry per lane (s range, driven direction, centre evaluator): the 1 cm, 4 m
+    # directionLine is too coarse for whole-metre node ids and 2 m sample counts.
     road_elems = {int(r.get('id')): r for r in root.findall('road')}
     section_s = {rid: [(a, b) for a, b, _ in _get_lane_sections(el)] for rid, el in road_elems.items()}
     for key, entry in lane_index.items():
@@ -161,11 +119,8 @@ def build_lane_graph_from_xodr(xodr_path: Path, roads_out: list[dict], town: str
         resolved = [c for c in candidates if (c['roadId'], c['sectionId'], c['laneId']) in lane_index]
         successors_by_lane[key] = resolved
 
-    # ── Union-find node identities: a lane's exit merges with each resolved
-    # successor's entry, so a fork/merge falls out of shared node ids rather
-    # than needing separate connector edges (matches how the real CARLA-probed
-    # graphs are structured — verified against maps/Town01/lane_graph.json:
-    # edge count equals lane count 1:1 outside of lane-change edges). ────────
+    # ── Node identities by union-find: a lane's exit merges with its successors' entries, so
+    # forks and merges fall out of shared ids, one edge per lane as in the probed graphs. ──
     uf = _UnionFind()
 
     def entry_raw(key):
@@ -188,10 +143,8 @@ def build_lane_graph_from_xodr(xodr_path: Path, roads_out: list[dict], town: str
     canon_id: dict[str, int] = {}
     nodes: list[dict] = []
 
-    # CARLA's node identity is the end point rounded to whole metres
-    # (_build_topology's entryxyz/exitxyz, np.round half-to-even like round()),
-    # so it also merges ends that merely round alike: a lane under ~1 m long
-    # becomes a self-loop, and a route steps straight over it.
+    # CARLA's node identity is the end point rounded to whole metres (half-to-even), so ends that
+    # merely round alike merge too: a lane under ~1 m becomes a self-loop a route steps over.
     by_rounded: dict[tuple[float, float, float], str] = {}
     for raw, pt in node_point.items():
         rounded = (_carla_round(pt['x']), _carla_round(pt['y']), _carla_round(pt['z']))
@@ -205,9 +158,7 @@ def build_lane_graph_from_xodr(xodr_path: Path, roads_out: list[dict], town: str
         if root_id not in canon_id:
             canon_id[root_id] = len(nodes)
             pt = node_point.get(raw) or node_point.get(root_id) or {'x': 0.0, 'y': 0.0, 'z': 0.0}
-            # Rounded to whole metres like _build_topology's entryxyz/exitxyz:
-            # the vertex is only ever the A* heuristic's input, and CARLA's
-            # heuristic runs on the rounded value.
+            # Rounded, like CARLA's vertices: they are only the A* heuristic's input.
             nodes.append(
                 {
                     'id': canon_id[root_id],
@@ -239,9 +190,7 @@ def build_lane_graph_from_xodr(xodr_path: Path, roads_out: list[dict], town: str
                 'from': from_node,
                 'to': to_node,
                 'type': 'LANEFOLLOW',
-                # _build_graph's length is a SAMPLE COUNT, not metres. It matters:
-                # lane-change edges cost 0, so near-equal alternatives through a
-                # neighbour lane are decided by exactly this number.
+                # A SAMPLE COUNT, not metres: lane changes cost 0, so this decides near-equal routes.
                 'length': len(path) + 1,
                 'intersection': entry['isJunction'],
                 'path': _lane_points(path),
@@ -268,28 +217,18 @@ def build_lane_graph_from_xodr(xodr_path: Path, roads_out: list[dict], town: str
             to_node,
         ]
 
-    # ── CHANGELANELEFT/RIGHT edges — GlobalRoutePlanner._lane_change_link,
-    # literally: none from a junction lane; otherwise walk the lane's path
-    # samples and add the FIRST right and the first left change the marking
-    # at that sample allows, to a Driving lane on the same road. The right
-    # marking is the lane's own <roadMark>, the left one its inner
-    # neighbour's (lane 0 for |id| == 1) — Map::GetMarkRecord. Every extra
-    # edge here is a zero-cost detour A* may take: one inside a junction is
-    # what drew "change left, then straight back right" through Town03
-    # junction 730 on a route CARLA drives straight. ──────────────────────
+    # ── Lane-change edges, as GlobalRoutePlanner._lane_change_link: none from a junction lane;
+    # else the FIRST right and first left change the marking allows along the lane's samples
+    # (right: its own <roadMark>, left: its inner neighbour's). Each extra edge is a free detour. ─
     for key, entry in lane_index.items():
         if entry['isJunction']:
             continue
-        # (lane the sample is on, [x, y, z, s]) — normally this lane's own
-        # path. A lane under one sample long gets entry.next(2.0)[0] as its
-        # only sample, which lies in the SUCCESSOR lane; CARLA then reads that
-        # lane's markings and neighbours (Town03's 2 m stubs before a
-        # junction change lanes inside the connector, not on the stub).
+        # (lane, [x, y, z, s]) per sample. A lane under one sample long gets next(2)[0], which lies
+        # in its successor, whose markings and neighbours CARLA then reads.
         samples = [(key, p) for p in lane_path[key]]
         span = abs(entry['s1'] - entry['s0'])
         succs = successors_by_lane.get(key) or []
         if span < SAMPLING_RESOLUTION_M and succs:
-            # next() keeps walking through as many stubs as the 2 m covers.
             remaining = SAMPLING_RESOLUTION_M - span
             succ_key = (succs[0]['roadId'], succs[0]['sectionId'], succs[0]['laneId'])
             for _ in range(10):

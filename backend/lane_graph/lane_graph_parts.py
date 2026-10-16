@@ -6,10 +6,7 @@ from backend.xodr.xodr_links import _forward_side
 
 
 def _carla_round(v: float) -> float:
-    """np.round(v, 0) of a carla.Location coordinate, which is float32: a
-    point at exactly x.5 in the map — Town03 has several at x = -0.5 — comes
-    out of float64 maths a hair either side, and only the float32 cast puts it
-    back on .5, where half-to-even then rounds it the way CARLA does."""
+    """np.round of a float32 carla.Location coordinate (Town03 has ends at exactly x = -0.5)."""
     return float(round(struct.unpack('f', struct.pack('f', v))[0]))
 
 
@@ -36,22 +33,18 @@ class _UnionFind:
 
 
 def _carla_path(evaluate, s0: float, s1: float, step: float) -> list[list[float]]:
-    """The interior `path` GlobalRoutePlanner._build_topology samples for one
-    lane driven from s0 to s1: entry.next(step) repeatedly, kept while the
-    straight-line distance to the exit is still > step; a lane whose ends are
-    within `step` of each other gets exactly one point. next() advances along
-    s, so the samples sit at s0 ± k·step, evaluated exactly (`evaluate`, a
-    list of s -> [x, y, z, s] points): a last sample 2.0001 m from the exit
-    is in, 1.9999 m is out, and that sample count is the edge's A* cost."""
+    """The interior samples GlobalRoutePlanner takes along a lane driven s0 → s1.
+
+    entry.next(step) repeatedly while the chord to the exit is still > step, at exact s; the
+    sample count is the edge's A* cost, so 2.0001 m vs 1.9999 m matters.
+    """
     sign = 1.0 if s1 >= s0 else -1.0
     span = abs(s1 - s0)
     entry_pt, exit_pt = evaluate([s0, s1])
 
     def chord(p: list[float]) -> float:
         d = ((p[0] - exit_pt[0]) ** 2 + (p[1] - exit_pt[1]) ** 2 + (p[2] - exit_pt[2]) ** 2) ** 0.5
-        # On a straight lane whose length is a multiple of `step` the last
-        # sample is exactly `step` from the exit; CARLA's `> step` is then
-        # false (Town02's 18 m lanes), our float64 a hair either side.
+        # A chord within 1 µm of `step` is a tie, which CARLA's `> step` loses (Town02's 18 m lanes).
         return step if abs(d - step) < 1e-6 else d
 
     if chord(entry_pt) <= step:
@@ -79,9 +72,7 @@ def _resolve_lane_successors(
     junction_conns: dict[tuple[int, int], list[dict]],
     section_count_by_road: dict[int, int],
 ) -> list[dict]:
-    """All resolved successor candidates for one lane, per the module
-    docstring's forward-side rule. Unranked — a real fork yields every
-    candidate, in whatever order the XML gives them."""
+    """All successor candidates of one lane (lane_graph_builder's forward rule), unranked."""
     side = _forward_side(lane_id)
     at_road_boundary = (side == 'successor' and section_id == last_section_id) or (
         side == 'predecessor' and section_id == 0
@@ -92,9 +83,7 @@ def _resolve_lane_successors(
         pred_id, succ_id = lane_links.get((road_id, section_id, lane_id), (None, None))
         target_lane_id = succ_id if side == 'successor' else pred_id
         if target_lane_id is None:
-            # No <link> at this internal boundary (rare) — assume the lane
-            # keeps its own id into the next section, same as it visually
-            # does in the render polygon.
+            # No <link> at an internal boundary: assume the lane keeps its id.
             target_lane_id = lane_id
         return [{'roadId': road_id, 'sectionId': target_section, 'laneId': target_lane_id}]
 
@@ -126,8 +115,7 @@ def _resolve_lane_successors(
 
 
 def _derive_left_right(lane_index: dict[tuple[int, int, int], dict]) -> dict[tuple[int, int, int], dict]:
-    """(roadId, sectionId, laneId) -> {'left': ref|None, 'right': ref|None},
-    per the module docstring's left/right rule."""
+    """(roadId, sectionId, laneId) -> {'left', 'right'} per lane_graph_builder's left/right rule."""
     by_road_section: dict[tuple[int, int], list[int]] = {}
     for road_id, section_id, lane_id in lane_index:
         by_road_section.setdefault((road_id, section_id), []).append(lane_id)

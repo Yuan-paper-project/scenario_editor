@@ -1,7 +1,6 @@
-"""
-OpenDRIVE reference-line maths: planView sampling, laneOffset, elevation, lateral offsets.
+"""OpenDRIVE reference-line maths: planView sampling, laneOffset, elevation, lateral offsets.
 
-Points come back in CARLA coordinates (y flipped); see map_renderer.py's module docstring.
+Points come back in CARLA coordinates (y flipped).
 """
 
 import math
@@ -42,16 +41,9 @@ def _eval_lane_offset(offsets: list[tuple], s_query: float) -> float:
 
 
 # ── Elevation Profile Parser ───────────────────────────────────────────────────
-#
-# Road-surface height, the source of every z the editor writes. Same cubic and
-# the same `ds = s - record.s` convention as laneOffset above — deliberately NOT
-# like <width>, whose sOffset is relative to the laneSection start.
-#
-# z depends only on (road, s): across every bundled map there are no <shape>
-# elements and every <superelevation> has a=0 (CARLA's exporter emits the tag but
-# never banks a road), so the surface height at any lateral offset t equals
-# elev(s) at the reference line. If that ever stops holding, this is where the
-# cross-slope term belongs.
+# The source of every z. Same cubic and `ds = s − record.s` as laneOffset — NOT like <width>,
+# whose sOffset is section-relative. z depends only on (road, s): no bundled map has <shape>
+# or a non-zero <superelevation>; a cross-slope term would go here.
 
 
 def _get_elevations(road_elem: ET.Element) -> list[tuple]:
@@ -89,11 +81,7 @@ def _eval_elevation(elevations: list[tuple], s_query: float) -> float:
 
 
 def _parse_geometry_segments(road_elem: ET.Element) -> list[tuple]:
-    """planView <geometry> records as (s0, x0, y0, hdg, length, curvature).
-
-    Only <line> and <arc> are modelled — every bundled town uses nothing else.
-    Anything else is treated as a line, as it always was.
-    """
+    """planView <geometry> as (s0, x0, y0, hdg, length, curvature); only line and arc (all the maps use)."""
     plan_view = road_elem.find('planView')
     if plan_view is None:
         return []
@@ -114,16 +102,14 @@ def _parse_geometry_segments(road_elem: ET.Element) -> list[tuple]:
 
 
 def _curvature_at(geom_segs: list[tuple], s_query: float) -> float:
-    """Reference-line curvature at s (the earlier segment wins at a boundary,
-    matching _sample_geometry's own segment choice)."""
+    """Reference-line curvature at s (the earlier segment wins at a boundary, like _sample_geometry)."""
     for i, (s0, _x, _y, _h, ln, curv) in enumerate(geom_segs):
         if s0 - 1e-5 <= s_query <= s0 + ln + 1e-5 or i == len(geom_segs) - 1:
             return curv
     return 0.0
 
 
-# Angular step for arc sampling (rad). At the old flat 4 m a 6 m-radius bend was
-# two or three visible facets; this keeps every bend ~6° per vertex.
+# Arc sampling step (rad): ~6° per vertex, so tight bends are not faceted.
 ARC_SAMPLE_ANGLE_RAD = 0.1
 ARC_SAMPLE_MIN_M = 0.25
 
@@ -133,11 +119,7 @@ def _sample_geometry(
     interval: float = 4.0,
     extra_s: list[float] | None = None,
 ) -> list[tuple]:
-    """
-    Sample world positions along road planView at `interval` metres (finer on
-    tight arcs — see ARC_SAMPLE_ANGLE_RAD).
-    Returns list of (xodr_x, xodr_y, hdg_rad, s) in OpenDRIVE coordinates.
-    """
+    """Reference-line samples (xodr_x, xodr_y, hdg_rad, s) every `interval` m, finer on tight arcs."""
     geom_segs = _parse_geometry_segments(road_elem)
     if not geom_segs:
         return []
@@ -187,23 +169,12 @@ def _sample_geometry(
 
 
 def _section_eval_s(sec_samples: list[tuple], s_start: float) -> list[float]:
-    """The s at which to evaluate laneOffset and lane widths for each sample of
-    one lane section: its own s, except the section's LAST sample, which takes
-    the left limit (s_end − ε) — and never less than `s_start`.
+    """Per sample of a lane section, the s to read laneOffset and widths at.
 
-    CARLA maps step the laneOffset at a lane-section boundary to make up for a
-    lane that starts or ends there (Town03 road 1566: −6.635 → −0.635 at s=2).
-    _eval_lane_offset(s_end) picks the record that STARTS at s_end, i.e. the
-    next section's, which threw section N's last vertex sideways by up to 6 m —
-    the spikes and long wedges at road joins. The next section's first sample
-    keeps s_start and correctly picks the new record up.
-
-    The floor matters because the section filters take samples within 1e-4 of
-    s_start, and the sampler can emit two there: the regular interval's s = 2.0
-    and the boundary's own 2.000000000000057. Evaluated as-is, the 2.0 one picks
-    the PREVIOUS laneOffset record — Town06 road 1124 steps −14.635 → −0.635 at
-    that s, so its connector lanes ended 14 m to one side and every route
-    through junction 1050 drew (and previewed) a 14 m sideways jump.
+    The last sample uses the left limit (s_end − ε): CARLA steps the laneOffset at a section
+    boundary, and reading at s_end picks the next section's record (vertices thrown up to 6 m).
+    Floored at `s_start`, because the sampler can emit s = 2.0 beside 2.000000000000057 and the
+    first would read the previous record (Town06 road 1124: a 14 m jump).
     """
     out = [max(sp[3], s_start) for sp in sec_samples]
     if len(out) > 1:
@@ -212,14 +183,10 @@ def _section_eval_s(sec_samples: list[tuple], s_start: float) -> list[float]:
 
 
 def _lateral_point(px: float, py: float, ph: float, d: float, curv: float) -> tuple[float, float]:
-    """Point at signed lateral distance d (left of travel positive) from the
-    reference line, returned in CARLA frame (x, −y).
+    """Point at signed lateral distance d (left of travel positive), in CARLA frame.
 
-    On the concave side of an arc a lateral distance beyond the radius crosses
-    the arc centre and the offset curve folds back on itself (Town02 road 2:
-    7.5 m radius, sidewalk outer edge at 8.3 m) — the bow-tie corners at
-    junctions. d is clamped just short of the centre, so a folded edge collapses
-    into a corner point instead.
+    On the concave side d is clamped just short of the arc centre, so the offset curve cannot
+    fold back on itself (Town02's bow-tie sidewalk corners).
     """
     if curv > 0.0:
         d = min(d, 0.999 / curv)

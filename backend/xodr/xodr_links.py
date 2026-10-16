@@ -6,14 +6,12 @@ import xml.etree.ElementTree as ET
 
 
 def _forward_side(lane_id: int) -> str:
-    """Which XML <link> side ('predecessor'/'successor') a lane's own forward
-    driving direction corresponds to — see module docstring."""
+    """The <link> side matching a lane's forward direction (lane_graph_builder's forward rule)."""
     return 'successor' if lane_id < 0 else 'predecessor'
 
 
 def _parse_lane_links(root: ET.Element) -> dict[tuple[int, int, int], tuple[int | None, int | None]]:
-    """(roadId, sectionId, laneId) -> (predecessor_lane_id, successor_lane_id),
-    read straight from each <lane>'s own <link>, or (None, None) if absent."""
+    """(roadId, sectionId, laneId) -> (predecessor, successor) lane ids from each <lane>'s <link>."""
     result: dict[tuple[int, int, int], tuple[int | None, int | None]] = {}
     for road in root.findall('road'):
         road_id = int(road.get('id'))
@@ -44,10 +42,7 @@ def _parse_lane_links(root: ET.Element) -> dict[tuple[int, int, int], tuple[int 
 
 
 def _parse_road_links(root: ET.Element) -> dict[int, dict]:
-    """roadId -> {'predecessor': side|None, 'successor': side|None}, each side
-    {'elementType', 'elementId': int, 'contactPoint'} — same shape as
-    map_renderer._get_road_link, re-derived here to keep this module
-    independent of map_renderer's private helpers."""
+    """roadId -> {'predecessor', 'successor'}, each {'elementType', 'elementId': int, 'contactPoint'} or None."""
     result: dict[int, dict] = {}
     for road in root.findall('road'):
         road_id = int(road.get('id'))
@@ -69,10 +64,7 @@ def _parse_road_links(root: ET.Element) -> dict[int, dict]:
 
 
 def _parse_junction_connections(root: ET.Element) -> dict[tuple[int, int], list[dict]]:
-    """(incomingRoadId, fromLaneId) -> [{'connectingRoadId', 'toLaneId',
-    'contactPoint'}, ...] — a list because a single incoming lane can appear
-    in more than one <connection> at a genuine fork; every candidate is kept,
-    none ranked (see module docstring)."""
+    """(incomingRoadId, fromLaneId) -> every <connection> candidate, unranked (a fork has several)."""
     result: dict[tuple[int, int], list[dict]] = {}
     for junction in root.findall('junction'):
         for conn in junction.findall('connection'):
@@ -100,12 +92,7 @@ def _parse_junction_connections(root: ET.Element) -> dict[tuple[int, int], list[
 
 
 def _parse_lane_change_marks(root: ET.Element) -> dict[tuple[int, int, int], str]:
-    """(roadId, sectionId, laneId) -> best-effort <roadMark laneChange="...">
-    value, title-cased to match the probed schema's enum spelling. NOT used
-    to gate anything — see module docstring's schema note; ScenarioRunner's
-    own ChangeActorLateralMotion doesn't check lane-change legality either
-    (CLAUDE.md / _findSameDirectionNeighbor's docstring: check=False), so
-    this is informational only, kept for schema parity."""
+    """(roadId, sectionId, laneId) -> the <roadMark laneChange> value, title-cased; informational only."""
     result: dict[tuple[int, int, int], str] = {}
     for road in root.findall('road'):
         road_id = int(road.get('id'))
@@ -125,8 +112,7 @@ def _parse_lane_change_marks(root: ET.Element) -> dict[tuple[int, int, int], str
                     value = 'none'
                     for rm in lane.findall('roadMark'):
                         rm_value = (rm.get('laneChange') or 'none').lower()
-                        # most permissive wins if a lane carries more than one
-                        # roadMark record (e.g. different sOffsets)
+                        # the most permissive of several records wins
                         if rm_value == 'both':
                             value = 'both'
                             break
@@ -149,11 +135,10 @@ _LC_BITS = {'increase': _LC_RIGHT, 'decrease': _LC_LEFT, 'none': 0}
 
 
 def _parse_mark_records(root: ET.Element) -> dict[tuple[int, int, int], list[tuple[float, int]]]:
-    """(roadId, sectionId, laneId) -> [(absolute s, lane-change bits), ...] in
-    s order, one per <roadMark>, the centre lane (id 0) included — it is the
-    LEFT marking of both |id| == 1 lanes. This is what CARLA's
-    waypoint.left/right_lane_marking.lane_change reads, and therefore what
-    GlobalRoutePlanner._lane_change_link gates every lane-change edge on."""
+    """(roadId, sectionId, laneId) -> [(absolute s, lane-change bits)] per <roadMark>, centre lane included.
+
+    What GlobalRoutePlanner._lane_change_link gates every lane-change edge on.
+    """
     result: dict[tuple[int, int, int], list[tuple[float, int]]] = {}
     for road in root.findall('road'):
         road_id = int(road.get('id'))
@@ -183,9 +168,7 @@ def _parse_mark_records(root: ET.Element) -> dict[tuple[int, int, int], list[tup
 
 
 def _mark_bits_at(records: list[tuple[float, int]] | None, s: float) -> int:
-    """Lane-change bits of the record in force at `s` (RoadInfo GetInfo(s): the
-    last record starting at or before s). No record means no marking object at
-    all, which _lane_change_link treats as no lane change."""
+    """Lane-change bits of the record in force at `s`; no record means no lane change."""
     bits = 0
     for record_s, record_bits in records or ():
         if record_s > s + 1e-6:

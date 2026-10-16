@@ -57,11 +57,7 @@ def _normalize_structured_event(
     event["trigger"] = {"type": trigger_kind}
     if trigger_kind in _EVENT_REF_TRIGGERS:
         event["trigger"]["event_id"] = str(trigger.get("event_id", ""))
-        # Which actor owns the referenced event. An omitted/blank actor_ref is
-        # the acting entity itself, so every payload written before cross-actor
-        # references existed resolves exactly as it did. Resolved to an entity
-        # name here (obj-N -> hero/adversaryN), like every other entity ref, so
-        # the emitter's name table can be keyed on (entity, event_id).
+        # The referenced event's owner, resolved to an entity name; omitted = the acting entity.
         event["trigger"]["actor_ref"] = _entity_ref(
             trigger.get("actor_ref"),
             actor_refs,
@@ -71,11 +67,7 @@ def _normalize_structured_event(
         )
     elif trigger_kind == "distance_to_point":
         point = trigger.get("point") if isinstance(trigger.get("point"), dict) else None
-        # A missing point used to be defaulted to (0, 0, 0.2) — the map origin.
-        # DistanceCondition is 3-D, so that is a real condition measured against
-        # a corner of the town: it simply never becomes true, and the event looks
-        # like a badly tuned radius rather than an unfinished one. Rejected for
-        # the same reason as a dangling entity_ref.
+        # A missing point is rejected: DistanceCondition is 3-D and a default could never fire.
         if point is None or point.get("x") is None or point.get("y") is None:
             raise ValueError(
                 f"{where}: distance_to_point trigger has no point — set one on the map, or the condition can never fire"
@@ -95,10 +87,7 @@ def _normalize_structured_event(
         event["trigger"]["rule"] = rule if rule in _EGO_SPEED_RULES else "greaterThan"
         event["trigger"]["value"] = max(0.0, min(100.0, float(trigger.get("value", 10.0))))
     elif trigger_kind == "relative_speed":
-        # speed(entity_ref) - speed(acting actor), RelativeSpeedCondition with
-        # the other actor as the triggering entity. A difference to oneself is
-        # always 0 — a condition that is either true on tick 1 or never — so a
-        # self-reference (including an omitted ref on a hero event) is a 400.
+        # speed(entity_ref) − speed(acting actor); a self-reference (also an omitted ref on hero) is a 400.
         rule = trigger.get("rule", "greaterThan")
         event["trigger"]["rule"] = rule if rule in _EGO_SPEED_RULES else "greaterThan"
         event["trigger"]["value"] = max(-100.0, min(100.0, float(trigger.get("value", 0.0))))
@@ -106,11 +95,8 @@ def _normalize_structured_event(
             trigger.get("entity_ref"), actor_refs, valid_refs, where, forbid=self_ref
         )
     elif trigger_kind == "distance_to_ego":
-        # „Abstand zu Akteur": the distance from `entity_ref` (default hero) to
-        # the acting actor. Omitted, it is hero, which is every payload written
-        # before the field existed. A hero event naming hero (or nothing) is
-        # left without a ref for the self-distance coercion in
-        # _normalize_after_event_chains; an NPC naming itself is a 400.
+        # „Abstand zu Akteur" from `entity_ref` (default hero). A hero event naming hero keeps no ref,
+        # for the self-distance coercion later; an NPC naming itself is a 400.
         event["trigger"]["value"] = max(0.0, float(trigger.get("value", 400.0)))
         raw_ref = trigger.get("entity_ref")
         if raw_ref not in (None, ""):
@@ -140,12 +126,7 @@ def _normalize_structured_event(
     }:
         action_kind = "follow_trajectory"
 
-    # A path action the emitter cannot build is not a smaller scenario, it is a
-    # different one: build_custom_event_chain skips the whole event, and any
-    # after_event chained onto it is left pointing at a storyboard element that
-    # is not in the file, so that event never fires either. Rejected rather than
-    # dropped, so the cause is named once instead of surfacing as an actor that
-    # mysteriously does nothing.
+    # A path action the emitter cannot build would drop the event and dangle its dependents: 400.
     if action_kind == "follow_trajectory":
         trajectory = _normalize_waypoints(action.get("trajectory"), include_velocity=True)
         if len(trajectory) < 2:
@@ -171,22 +152,9 @@ def _normalize_structured_event(
                 f"{where}: assign_route needs at least 2 waypoints, got "
                 f"{len(waypoints)} — the event would be dropped from the file"
             )
-        # Waypoint 0 must be "fastest". Its leg runs from the actor's own pose to
-        # itself, so on an editor-built route -- where waypoint 0 IS the actor --
-        # the choice is meaningless and this costs nothing. What it buys is that
-        # ChangeActorWaypoints.initialise binds its `ego_next_wp` seed on the
-        # i == 0 pass; a route whose first waypoint is "shortest" and whose
-        # second is "fastest" reaches the heading filter's fallback with that
-        # variable unbound and dies on an UnboundLocalError, killing the run.
-        # Stock 0.9.15 has the same bug, so honouring this keeps exports running
-        # on an unpatched ScenarioRunner.
-        #
-        # Rejected rather than coerced, the same policy as an unknown prop id or
-        # a dangling entity_ref: a payload the editor did not build (LLM,
-        # hand-written, tests/carla/carla_cases.py) may have no waypoint on the actor
-        # at all, and silently rewriting its first leg from a straight line into
-        # a routed one would hand back a different scenario than the one asked
-        # for.
+        # Waypoint 0 must be "fastest": "shortest" then "fastest" kills unpatched ScenarioRunner
+        # with an UnboundLocalError. A 400, not a coercion: rewriting the first leg of a payload
+        # the editor did not build would change its scenario.
         if waypoints[0]["strategy"] != "fastest":
             raise ValueError(
                 f"{where}: the first assign_route waypoint must use the "
@@ -218,11 +186,7 @@ def _normalize_structured_event(
                 speed_target["delta"] = max(-100.0, min(100.0, float(target.get("delta", 0.0))))
             continuous = target.get("continuous") is True
             speed_target["continuous"] = continuous
-            # ChangeActorTargetSpeed re-applies a relative target every tick.
-            # Against the acting actor itself that compounds (+delta or ×factor
-            # per tick) — unless `rate` is set, whose ramp overwrites the
-            # re-sample with a one-shot target snapshotted at initialise().
-            # `continuous` skips that ramp, so it compounds as well.
+            # A self-relative target compounds every tick unless a non-continuous `rate` ramp snapshots it.
             if speed_target["entity_ref"] == self_ref and (dimension != "rate" or continuous):
                 raise ValueError(
                     f"{where}: a set_speed relative to the acting actor itself "
@@ -232,8 +196,7 @@ def _normalize_structured_event(
         else:
             speed_target["value"] = max(0.0, min(100.0, float(target.get("value", 10.0))))
             if target.get("reverse") is True:
-                # PedestrianControl raises NotImplementedError on a negative
-                # target speed, killing the run.
+                # PedestrianControl raises on a negative target speed.
                 if actor_type in _WALKER_ACTOR_TYPES:
                     raise ValueError(
                         f"{where}: reverse speed is not available for actor type "
@@ -241,14 +204,9 @@ def _normalize_structured_event(
                     )
                 speed_target["reverse"] = True
         if dimension == "rate":
-            # ChangeActorTargetSpeed's rate branch ends the atomic when the
-            # ramped speed *reaches* the target, never on a clock. A rate of 0
-            # therefore never terminates: the storyboard stays RUNNING, run.sh
-            # blocks forever in `wait`, and the orphan keeps ticking CARLA under
-            # the next scenario. The floor is that guard, not tidiness.
+            # A rate ramp ends on reaching the target, so a rate of 0 never ends and hangs run.sh.
             dyn_value = max(0.1, float(dynamics.get("value", 2.5)))
-            # 'step' + 'rate' is self-contradictory. This runtime never reads
-            # dynamicsShape, but the file should still say what it means.
+            # 'step' + 'rate' contradict each other; nothing reads the shape, but say what it means.
             shape = "linear"
         else:
             dyn_value = max(0.0, float(dynamics.get("value", 5.0)))
@@ -271,10 +229,7 @@ def _normalize_structured_event(
             "value": float(action.get("value", 10.0)),
         }
     elif action_kind == "lane_offset":
-        # Rejected rather than dropped, the same policy as assign_route on a
-        # walker: PedestrianControl ignores the controller offset entirely, so
-        # the file would be valid and the actor would simply never move
-        # sideways — indistinguishable from a badly chosen offset.
+        # A walker never reads the offset: a 400 rather than a file that silently does nothing.
         if actor_type in _WALKER_ACTOR_TYPES:
             raise ValueError(
                 f"{where}: lane_offset is not available for actor type "
@@ -284,9 +239,7 @@ def _normalize_structured_event(
             "type": "lane_offset",
             "direction": "right" if action.get("direction") == "right" else "left",
             "offset": max(0.0, min(_MAX_LANE_OFFSET_M, float(action.get("offset", 1.0)))),
-            # False = „bis erreicht, dann zurück": completes on reaching the
-            # offset and resets to 0 (needs the local ScenarioRunner patch, see
-            # _add_lane_offset_action). Absent/True is the held offset.
+            # False = Hin & zurück (completes, then resets; needs the local patch); absent = held.
             "continuous": action.get("continuous") is not False,
         }
     else:
@@ -308,11 +261,9 @@ def _normalize_actor(
     valid_refs: set[str],
     where: str,
 ) -> None:
-    """Defaults + event normalisation for one scenario actor.
+    """Defaults and event normalisation for one scenario actor, ego or NPC.
 
-    Shared by the ego and every NPC — the ego is a scenario actor with the
-    entity name 'hero', not a special case. `entity_name` is the actor's own
-    OpenSCENARIO name, used only to reject/rewrite a self-reference.
+    `entity_name` is its own OpenSCENARIO name, used to reject or rewrite self-references.
     """
     actor.setdefault("z", 0.2)
     actor.setdefault("yaw", 0.0)
@@ -320,29 +271,16 @@ def _normalize_actor(
     if not isinstance(actor["events"], list):
         actor["events"] = []
 
-    # Speed the actor has on the first tick, emitted as a SpeedAction in the
-    # Storyboard Init. The floor at 0 is not cosmetic: ScenarioRunner's
-    # openscenario_configuration._get_actor_speed *raises* on a negative
-    # AbsoluteTargetSpeed in Init, killing the run.
-    #
-    # Defaults to 0, NOT to the editor's placement default of 10. This function
-    # also normalises hand-written and LLM-generated payloads and every
-    # tests/carla/carla_cases.py case, none of which mention the field — defaulting
-    # those to 10 would put every previously stationary actor into motion.
+    # The Init speed: ScenarioRunner raises on a negative one. Defaults to 0, not the editor's 10,
+    # so payloads that never mention it (LLM, hand-written, carla_cases) stay stationary.
     actor.setdefault("initial_speed", 0.0)
     actor["initial_speed"] = max(0.0, min(100.0, float(actor["initial_speed"])))
 
-    # simple_vehicle_control's consider_trafficlights / consider_obstacles.
-    # Default True, which is what every export did before the per-actor
-    # toggles existed — so a payload that never mentions them (LLM, hand-
-    # written, tests/carla/carla_cases.py) is unchanged. Only a literal False turns
-    # one off; a walker's are carried through and ignored by the emitter.
+    # consider_trafficlights / consider_obstacles: default True; only a literal False turns one off.
     for key in ("obey_traffic_lights", "obey_obstacles"):
         actor[key] = actor.get(key) is not False
 
-    # simple_vehicle_control's max_acceleration / max_deceleration (m/s²).
-    # Defaults are what every vehicle was emitted with before the fields
-    # existed. Floored at 0.1: a limit of 0 means the speed can never change.
+    # Rate limits (m/s²); floored at 0.1, since at 0 the speed never changes.
     for key, default in _DYNAMICS_DEFAULTS.items():
         try:
             value = float(actor.get(key, default))

@@ -1,6 +1,4 @@
-"""
-Spawn points along lane centres, and junction centres from llm-scenario-gen's parser.
-"""
+"""Spawn points along lane centres, and junction centres from llm-scenario-gen's parser."""
 
 import math
 import sys
@@ -31,10 +29,7 @@ def _carla_yaw_from_xodr_heading(heading_rad: float, lane_id: int) -> float:
 
 
 def _build_spawn_points_from_render_geometry(root: ET.Element) -> list[dict]:
-    """
-    Generate spawn points from the same lane-center geometry used for SVG rendering.
-    This keeps spawn dots aligned with rendered lane polygons, including laneOffset.
-    """
+    """Spawn points from the same lane-centre geometry as the rendered lanes (laneOffset included)."""
     spawn_points: list[dict] = []
 
     for road in root.findall('road'):
@@ -69,8 +64,7 @@ def _build_spawn_points_from_render_geometry(root: ET.Element) -> list[dict]:
                 continue
 
             for ld in lane_defs:
-                # Driving only: CARLA spawns on Driving lanes, and Town03's
-                # 'bidirectional' lanes are its ring-highway separator wall.
+                # Driving only: CARLA spawns there, and Town03's 'bidirectional' lanes are a wall.
                 if ld['type'] != 'driving':
                     continue
 
