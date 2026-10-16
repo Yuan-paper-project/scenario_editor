@@ -11,7 +11,6 @@
     WAYPOINT_CLEARANCE,
     r1,
     r2,
-    _wrapDeg,
     _bbox,
     _projectOnLane,
     _p,
@@ -77,7 +76,7 @@
             continue;
           const q = _projectOnLane(P, probe.x, probe.y);
           if (!q || q.d > 1.3 || q.s < 4 || q.s > P.length - 4) continue;
-          if (Math.abs(_wrapDeg(q.yaw - pose.yaw)) > 20) continue;
+          if (Math.abs(UIUtils.wrapDeg(q.yaw - pose.yaw)) > 20) continue;
           sites.push({ d, q, side });
         }
       }

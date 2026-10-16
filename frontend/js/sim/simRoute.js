@@ -12,7 +12,6 @@
     ROUTE_SHORT_REF_M,
     ROUTE_HEADING_ACCEPT_LO,
     ROUTE_HEADING_ACCEPT_HI,
-    _dist3,
     _walkDirLine,
     _laneAnchor,
     _findLaneByRef,
@@ -179,7 +178,7 @@
 
       for (const p of trace) {
         const last = route[route.length - 1];
-        if (last && _dist3(p, last) > ROUTE_DEDUP_MIN_M) {
+        if (last && UIUtils.dist3(p, last) > ROUTE_DEDUP_MIN_M) {
           const newHeading = Math.atan2(p.y - last.y, p.x - last.x);
           let lastHeading;
           if (route.length > 1) {

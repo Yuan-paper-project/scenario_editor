@@ -11,7 +11,6 @@
     LEADING_WAYPOINT_DROP_M,
     LANE_CHANGE_SAME_LANE_M,
     LANE_CHANGE_OTHER_LANE_M,
-    _dist3,
     DEFAULT_MAX_ACCEL,
     DEFAULT_MAX_DECEL,
     _actionEmits,
@@ -206,7 +205,7 @@
         if (!sim.goalStopped || sim.isWalker) sim.badge = null;
       }
 
-      while (sim.waypoints.length && _dist3(sim, sim.waypoints[0]) < LEADING_WAYPOINT_DROP_M) {
+      while (sim.waypoints.length && UIUtils.dist3(sim, sim.waypoints[0]) < LEADING_WAYPOINT_DROP_M) {
         sim.waypoints.shift();
       }
     } else if (action.type === 'lane_change') {

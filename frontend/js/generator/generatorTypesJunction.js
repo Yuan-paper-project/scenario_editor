@@ -11,7 +11,6 @@
     POST_JUNCTION_WP_M,
     r1,
     r2,
-    _wrapDeg,
     _laneAt,
     _p,
     _buildCorridor,
@@ -116,7 +115,7 @@
 
   /** Where the NPC comes from, seen by the ego: 'left' | 'right' | 'oncoming' | 'behind' (y-down). */
   function _npcFrom(J, C) {
-    const d = _wrapDeg(_laneAt(C, 0).yaw - _laneAt(J, 0).yaw);
+    const d = UIUtils.wrapDeg(_laneAt(C, 0).yaw - _laneAt(J, 0).yaw);
     if (Math.abs(d) >= 135) return 'oncoming';
     if (Math.abs(d) <= 45) return 'behind';
     return d > 0 ? 'left' : 'right';
@@ -160,7 +159,7 @@
       if (!X || X.sA < 1 || X.sA > J.length - 1 || X.sB < 1 || X.sB > C.length - 1) continue;
       const cStart = _laneAt(C, 0);
       if (Math.hypot(cStart.x - jStart.x, cStart.y - jStart.y) < 3) continue; // same approach
-      const approachDiff = Math.abs(_wrapDeg(cStart.yaw - jStart.yaw));
+      const approachDiff = Math.abs(UIUtils.wrapDeg(cStart.yaw - jStart.yaw));
       if (approachDiff < 30) continue;
       const layout = _junctionLayout(J, C, approachDiff);
       if (wantLayout && layout !== wantLayout) continue;

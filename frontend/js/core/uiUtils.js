@@ -151,6 +151,27 @@
       return e;
     },
 
+    /** Ray-casting test; `poly` is an array of [x, y]. */
+    pointInPoly(x, y, poly) {
+      let inside = false;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const [xi, yi] = poly[i],
+          [xj, yj] = poly[j];
+        if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+      }
+      return inside;
+    },
+
+    /** Degrees normalised into [-180, 180). */
+    wrapDeg(deg) {
+      return ((((deg + 180) % 360) + 360) % 360) - 180;
+    },
+
+    /** 3-D distance between {x, y, z?} points; a missing z counts as 0. */
+    dist3(a, b) {
+      return Math.hypot(a.x - b.x, a.y - b.y, (a.z ?? 0) - (b.z ?? 0));
+    },
+
     /** A split module's internal namespace: `define()` adds names, reading an undefined one from `shared` throws. */
     sharedScope(name) {
       const _shared = {};

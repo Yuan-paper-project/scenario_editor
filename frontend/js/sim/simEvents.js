@@ -6,17 +6,8 @@
 (() => {
   'use strict';
 
-  const {
-    run,
-    _simActors,
-    _tickSpeeds,
-    _tickPoses,
-    _tickCompleted,
-    _tickStarted,
-    DISTANCE_TO_EGO_FALLBACK_S,
-    _dist3,
-    _pose,
-  } = SimCore.shared;
+  const { run, _simActors, _tickSpeeds, _tickPoses, _tickCompleted, _tickStarted, DISTANCE_TO_EGO_FALLBACK_S, _pose } =
+    SimCore.shared;
 
   // ── Event normalisation mirror (backend event_normalize.py / event_rules.py) ─
   // Export rewrites that change which trigger governs an event, in the backend's order:
@@ -119,7 +110,7 @@
         const other =
           trigger.entity_ref && trigger.entity_ref !== run.egoId ? _tickPoses.get(trigger.entity_ref) : egoPrevPos;
         if (!other) return false;
-        return _dist3(_pose(sim), other) < (trigger.value ?? 400);
+        return UIUtils.dist3(_pose(sim), other) < (trigger.value ?? 400);
       }
       case 'relative_speed': {
         // speed(other) − speed(this), both magnitudes, from the snapshot.
@@ -132,7 +123,9 @@
         if (!point) return false;
         // The triggering entity is entity_ref (default hero), not necessarily the owner.
         const triggerActor = _resolveSimRef(trigger.entity_ref) || _simActors.get(run.egoId) || sim;
-        return _dist3(_pose(triggerActor), { x: point.x, y: point.y, z: point.z ?? 0.2 }) < (trigger.value ?? 20);
+        return (
+          UIUtils.dist3(_pose(triggerActor), { x: point.x, y: point.y, z: point.z ?? 0.2 }) < (trigger.value ?? 20)
+        );
       }
       case 'after_event': {
         if (trigger.neverFires) return false;

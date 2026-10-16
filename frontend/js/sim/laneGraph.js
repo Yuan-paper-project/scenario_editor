@@ -69,10 +69,6 @@
   // trace_route's `closest_index + 5` hop across a lane-change edge.
   const LANE_CHANGE_SKIP_AHEAD = 5;
 
-  function _dist3(a, b) {
-    return Math.hypot(a.x - b.x, a.y - b.y, (a.z || 0) - (b.z || 0));
-  }
-
   /** _distance_heuristic, as sqrt(dot) so the float is bit-identical (A* ties hinge on it). */
   function _heuristic(a, b) {
     const dx = a.x - b.x,
@@ -86,7 +82,7 @@
     let bestIdx = -1,
       bestDist = Infinity;
     for (let i = 0; i < list.length; i++) {
-      const d = _dist3(list[i], cur);
+      const d = UIUtils.dist3(list[i], cur);
       if (d < bestDist) {
         bestDist = d;
         bestIdx = i;
@@ -228,7 +224,7 @@
       for (let j = closestIndex; j < path.length; j++) {
         current = path[j];
         trace.push(current);
-        if (routeNodes.length - i <= 2 && _dist3(current, destination) < 2 * SAMPLING_RESOLUTION_M) break;
+        if (routeNodes.length - i <= 2 && UIUtils.dist3(current, destination) < 2 * SAMPLING_RESOLUTION_M) break;
         if (routeNodes.length - i <= 2 && onDestinationLane) {
           // The loop's START index, as CARLA compares (closest_index, not j).
           if (closestIndex > _closestIndex(destinationWaypoint, path)) break;

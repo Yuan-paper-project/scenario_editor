@@ -10,7 +10,6 @@
     VEHICLE_ACCEL,
     r1,
     r2,
-    _wrapDeg,
     _laneAt,
     _projectOnLane,
     _p,
@@ -56,7 +55,7 @@
       x: px,
       y: py,
       z: ObjectsManager.surfaceZFor('prop', px, py, blueprint),
-      yaw: Math.round(_wrapDeg(yaw)),
+      yaw: Math.round(UIUtils.wrapDeg(yaw)),
     };
   }
 
@@ -64,7 +63,7 @@
   function _siteKind(c, d) {
     const a = _corridorAt(c, d - 15),
       b = _corridorAt(c, d + 15);
-    return Math.abs(_wrapDeg(b.yaw - a.yaw)) > 12 ? 'curve' : 'straight';
+    return Math.abs(UIUtils.wrapDeg(b.yaw - a.yaw)) > 12 ? 'curve' : 'straight';
   }
 
   /* Static obstacle in the lane: lost cargo, a work-zone taper, a broken-down vehicle, a standing

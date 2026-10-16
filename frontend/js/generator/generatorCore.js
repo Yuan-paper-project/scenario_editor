@@ -78,10 +78,6 @@
   const r2 = (v) => Math.round(v * 100) / 100;
   const DEG = 180 / Math.PI;
 
-  function _wrapDeg(deg) {
-    return ((((deg + 180) % 360) + 360) % 360) - 180;
-  }
-
   // ── Lane network index ───────────────────────────────────────────────────────
 
   const _netCache = new WeakMap(); // mapData -> {graph, net}
@@ -172,16 +168,6 @@
       if (y > maxY) maxY = y;
     }
     return { minX, minY, maxX, maxY };
-  }
-
-  function _inPoly(poly, x, y) {
-    let inside = false;
-    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-      const [xi, yi] = poly[i],
-        [xj, yj] = poly[j];
-      if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
-    }
-    return inside;
   }
 
   /** Pose at arc length `s` along a lane (clamped to its ends). */
@@ -299,10 +285,8 @@
     r1,
     r2,
     DEG,
-    _wrapDeg,
     _network,
     _bbox,
-    _inPoly,
     _laneAt,
     _projectOnLane,
     _ctx,

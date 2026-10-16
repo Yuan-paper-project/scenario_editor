@@ -14,11 +14,6 @@
 
   const ROAD_FACING_TYPES = new Set(['pedestrian', 'child', 'cyclist', 'bicycle']);
 
-  /** Normalise degrees into [-180, 180). */
-  function _wrapDeg(deg) {
-    return ((((deg + 180) % 360) + 360) % 360) - 180;
-  }
-
   /* A prop's placement yaw from the nearest lane's travel direction (left lanes' directionLines
    * are reversed). wx/wy is the original click, not the snapped point, so the side is known. */
   function _propYawFor(blueprint, wx, wy, near) {
@@ -29,16 +24,16 @@
 
     switch (rule) {
       case 'oncoming':
-        return Math.round(_wrapDeg(near.laneYaw + 180));
+        return Math.round(UIUtils.wrapDeg(near.laneYaw + 180));
       case 'along':
-        return Math.round(_wrapDeg(near.laneYaw));
+        return Math.round(UIUtils.wrapDeg(near.laneYaw));
       case 'toward-road':
-        return Math.round(_wrapDeg(toRoad));
+        return Math.round(UIUtils.wrapDeg(toRoad));
       case 'alongside': {
         // Long axis along the kerb; flip so the open side (local +Y) faces the carriageway.
-        const openAt = _wrapDeg(near.laneYaw + 90);
-        const flip = Math.abs(_wrapDeg(openAt - toRoad)) > 90;
-        return Math.round(_wrapDeg(near.laneYaw + (flip ? 180 : 0)));
+        const openAt = UIUtils.wrapDeg(near.laneYaw + 90);
+        const flip = Math.abs(UIUtils.wrapDeg(openAt - toRoad)) > 90;
+        return Math.round(UIUtils.wrapDeg(near.laneYaw + (flip ? 180 : 0)));
       }
       default:
         return 0;
@@ -147,14 +142,14 @@
     const close = perLane.filter((c) => c.dist <= nearest + VEHICLE_SNAP_TIE_M);
     let pick = close.reduce((a, b) => (a.dist <= b.dist ? a : b));
     if (Number.isFinite(prevYaw) && close.length > 1) {
-      const turn = (c) => Math.abs(_wrapDeg(c.laneYaw - prevYaw));
+      const turn = (c) => Math.abs(UIUtils.wrapDeg(c.laneYaw - prevYaw));
       pick = close.reduce((a, b) => (turn(a) <= turn(b) ? a : b));
     }
     return {
       x: Math.round(pick.x * 10) / 10,
       y: Math.round(pick.y * 10) / 10,
       z: pick.z,
-      yaw: Math.round(_wrapDeg(pick.laneYaw) * 10) / 10,
+      yaw: Math.round(UIUtils.wrapDeg(pick.laneYaw) * 10) / 10,
     };
   }
 

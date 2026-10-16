@@ -6,7 +6,7 @@
 (() => {
   'use strict';
 
-  const { VEHICLE_ACCEL, WAYPOINT_CLEARANCE, POST_JUNCTION_WP_M, r1, r2, DEG, _wrapDeg, _laneAt, _ctx, _focusStart } =
+  const { VEHICLE_ACCEL, WAYPOINT_CLEARANCE, POST_JUNCTION_WP_M, r1, r2, DEG, _laneAt, _ctx, _focusStart } =
     GeneratorCore.shared;
 
   // ── Ego corridor ─────────────────────────────────────────────────────────────
@@ -119,7 +119,7 @@
       x,
       y,
       z: ObjectsManager.surfaceZFor(type, x, y),
-      yaw: Math.round(_wrapDeg(pose.yaw)),
+      yaw: Math.round(UIUtils.wrapDeg(pose.yaw)),
       initial_speed: r1(initialSpeed),
       events,
     };
@@ -252,7 +252,7 @@
 
   /** 'left' | 'right' | 'straight' from the heading change across a connector (left is negative, y-down). */
   function _turnKind(L) {
-    const d = _wrapDeg(_laneAt(L, L.length).yaw - _laneAt(L, 0).yaw);
+    const d = UIUtils.wrapDeg(_laneAt(L, L.length).yaw - _laneAt(L, 0).yaw);
     return d < -45 ? 'left' : d > 45 ? 'right' : 'straight';
   }
 

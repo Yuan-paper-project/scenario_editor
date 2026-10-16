@@ -9,7 +9,6 @@
 (() => {
   'use strict';
 
-  const SVG_NS = 'http://www.w3.org/2000/svg';
   const MODES = ['vector', 'aerial', 'both'];
   const STORAGE_KEY = 'scenarioEditor.baseMap';
   // Backdrop: the finest level of at most this many tiles (~2 px/m on Town06, ~1 MB).
@@ -85,9 +84,9 @@
     _meta = null;
     _detailTiles = new Map();
     if (_layer) _layer.remove();
-    _layer = _el('g', { id: 'layer-aerial' });
-    _backdrop = _el('g', { class: 'aerial-backdrop' });
-    _detail = _el('g', { class: 'aerial-detail' });
+    _layer = UIUtils.svgEl('g', { id: 'layer-aerial' });
+    _backdrop = UIUtils.svgEl('g', { class: 'aerial-backdrop' });
+    _detail = UIUtils.svgEl('g', { class: 'aerial-detail' });
     _layer.append(_backdrop, _detail);
     // Under everything, including the drawn roads.
     worldGroup.insertBefore(_layer, worldGroup.firstChild);
@@ -128,7 +127,7 @@
     const hPx = Math.min(L.ts, L.hPx - r * L.ts);
     // One source pixel of overlap: abutting tiles leave hairlines.
     const over = 1 / L.ppm;
-    const img = _el('image', {
+    const img = UIUtils.svgEl('image', {
       x,
       y,
       width: wPx / L.ppm + (c < L.cols - 1 ? over : 0),
@@ -210,12 +209,6 @@
         _detailTiles.delete(key);
       }
     }
-  }
-
-  function _el(tag, attrs) {
-    const el = document.createElementNS(SVG_NS, tag);
-    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
-    return el;
   }
 
   // ── Wiring ─────────────────────────────────────────────────────────────

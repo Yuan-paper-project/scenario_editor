@@ -21,18 +21,6 @@
   const OVERPASS_GAP_M = 4.0;
   const OVERPASS_SAMPLE_STEP = 2; // test every 2nd centreline point
 
-  function _pointInPoly(x, y, poly) {
-    let inside = false;
-    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-      const xi = poly[i][0],
-        yi = poly[i][1],
-        xj = poly[j][0],
-        yj = poly[j][1];
-      if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
-    }
-    return inside;
-  }
-
   function _bboxOf(points, into = null) {
     const b = into || { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
     for (const p of points) {
@@ -84,7 +72,7 @@
         if (x < a.bbox.x0 || x > a.bbox.x1 || y < a.bbox.y0 || y > a.bbox.y1) continue;
         for (const l of a.lanes) {
           if (x < l.bbox.x0 || x > l.bbox.x1 || y < l.bbox.y0 || y > l.bbox.y1) continue;
-          if (_pointInPoly(x, y, l.poly)) {
+          if (UIUtils.pointInPoly(x, y, l.poly)) {
             const dz = zAt(a, x, y) - z;
             if (Math.abs(dz) > OVERPASS_GAP_M) return dz;
             break;

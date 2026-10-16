@@ -12,8 +12,6 @@
     r1,
     r2,
     DEG,
-    _wrapDeg,
-    _inPoly,
     _p,
     _buildCorridor,
     _corridorAt,
@@ -46,7 +44,7 @@
           q.x <= p.bbox.maxX &&
           q.y >= p.bbox.minY &&
           q.y <= p.bbox.maxY &&
-          _inPoly(p.poly, q.x, q.y),
+          UIUtils.pointInPoly(q.x, q.y, p.poly),
       );
     };
     const edge = (sign) => {
@@ -67,7 +65,7 @@
         q.x <= p.bbox.maxX &&
         q.y >= p.bbox.minY &&
         q.y <= p.bbox.maxY &&
-        _inPoly(p.poly, q.x, q.y),
+        UIUtils.pointInPoly(q.x, q.y, p.poly),
     );
   }
 
@@ -304,21 +302,21 @@
       // Along the crosswalk: of its two axes, the one closer to the exit road's direction.
       const roadYaw = _corridorAt(c, Math.max(d, sg.endD + 3)).yaw;
       const yaw = [cw.heading, cw.heading + 90, cw.heading + 180, cw.heading + 270].reduce((b, y) =>
-        Math.abs(_wrapDeg(y - roadYaw)) < Math.abs(_wrapDeg(b - roadYaw)) ? y : b,
+        Math.abs(UIUtils.wrapDeg(y - roadYaw)) < Math.abs(UIUtils.wrapDeg(b - roadYaw)) ? y : b,
       );
-      if (Math.abs(_wrapDeg(yaw - roadYaw)) > 30) return null;
+      if (Math.abs(UIUtils.wrapDeg(yaw - roadYaw)) > 30) return null;
       const at = _corridorAt(c, d);
       const ux = -Math.sin(yaw / DEG),
         uy = Math.cos(yaw / DEG); // across the road
       const t = (at.x - cw.x) * ux + (at.y - cw.y) * uy;
-      pose = { x: cw.x + t * ux, y: cw.y + t * uy, z: at.z, yaw: _wrapDeg(yaw) };
+      pose = { x: cw.x + t * ux, y: cw.y + t * uy, z: at.z, yaw: UIUtils.wrapDeg(yaw) };
     } else {
       // Without a crosswalk the exit must be clear of the junction and straight.
       dConflict = sg.endD + rng.range(3, 9);
       if (!_junctionFree(c, dConflict - 2, dConflict + 8)) return null;
       const a = _corridorAt(c, dConflict - 2),
         b = _corridorAt(c, dConflict + 6);
-      if (Math.abs(_wrapDeg(b.yaw - a.yaw)) > 15) return null;
+      if (Math.abs(UIUtils.wrapDeg(b.yaw - a.yaw)) > 15) return null;
     }
 
     const res = _vruCrossingAt(rng, net, vEgo, c, dConflict, type, v, { onCrosswalk, occluder: false, pose });

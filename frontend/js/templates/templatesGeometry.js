@@ -56,7 +56,7 @@
       const laneAt = (px, py) => {
         for (const p of polys) {
           if (px < p.x0 || px > p.x1 || py < p.y0 || py > p.y1) continue;
-          if (_pointInPoly(px, py, p.poly)) return p;
+          if (UIUtils.pointInPoly(px, py, p.poly)) return p;
         }
         return null;
       };
@@ -209,18 +209,6 @@
         this._setSpeedEvent('evt-2', { type: 'distance_to_ego', value: 30 }, 10.0, 5.0),
       ];
     }
-  }
-
-  function _pointInPoly(x, y, poly) {
-    let inside = false;
-    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-      const xi = poly[i][0],
-        yi = poly[i][1],
-        xj = poly[j][0],
-        yj = poly[j][1];
-      if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
-    }
-    return inside;
   }
 
   TemplatesCore.define({

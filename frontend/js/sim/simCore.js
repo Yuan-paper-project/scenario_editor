@@ -57,10 +57,6 @@
 
   // ── Small geometry helpers ───────────────────────────────────────────────────
 
-  function _dist3(a, b) {
-    return Math.hypot(a.x - b.x, a.y - b.y, (a.z ?? 0) - (b.z ?? 0));
-  }
-
   /**
    * Where the actor is: sim.x/y stay on the driven centreline and the lane offset is
    * added here, as SimpleVehicleControl offsets only its aim point — storing it would
@@ -154,7 +150,6 @@
     ROUTE_SHORT_REF_M,
     ROUTE_HEADING_ACCEPT_LO,
     ROUTE_HEADING_ACCEPT_HI,
-    _dist3,
     _pose,
     _angleDiffDeg,
     _walkDirLine,
