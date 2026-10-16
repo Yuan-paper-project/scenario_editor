@@ -74,6 +74,7 @@
      font-size beats the presentation attribute every call site sets, and in SVG
      `px` is a user unit, i.e. a world metre here. The casing scales with it. */
   font-size: var(--map-label-size, 3.2px);
+  /* biome-ignore lint/suspicious/noDuplicateProperties: the 0.8 above is the fallback where calc(var()) fails */
   stroke-width: calc(var(--map-label-size, 3.2px) * 0.25);
 }
 #map-svg.map-labels-hidden .map-label {

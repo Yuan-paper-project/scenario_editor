@@ -56,13 +56,19 @@
     "rules": {
       "recommended": true,
       "suspicious": {
-        "noRedundantUseStrict": "off"
+        "noRedundantUseStrict": "off",
+        // Its fix is unsafe here: forEach/map callbacks deliberately return a value or nothing.
+        "useIterableCallbackReturn": "off"
       },
       "style": {
-        "noDescendingSpecificity": "off"
+        "noDescendingSpecificity": "off",
+        // Multi-line HTML is easier to read as joined pieces than as one long template.
+        "useTemplate": "off"
       },
       "complexity": {
-        "noImportantStyles": "off"
+        "noImportantStyles": "off",
+        // An unsafe fix: `a && a.b` and `a?.b` differ when a is falsy but not nullish (0, '').
+        "useOptionalChain": "off"
       }
     }
   }

@@ -46,6 +46,7 @@
       this._s = seed >>> 0 || 1;
     }
     next() {
+      // biome-ignore lint/suspicious/noAssignInExpressions: mulberry32 verbatim; any rewrite risks changing every seed
       let t = (this._s = (this._s + 0x6d2b79f5) >>> 0);
       t = Math.imul(t ^ (t >>> 15), t | 1);
       t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
@@ -68,6 +69,7 @@
       const total = pairs.reduce((s, [, w]) => s + w, 0);
       let r = this.next() * total;
       for (const [v, w] of pairs) {
+        // biome-ignore lint/suspicious/noAssignInExpressions: the weighted draw every seed depends on, kept as written
         if ((r -= w) < 0) return v;
       }
       return pairs[pairs.length - 1][0];
