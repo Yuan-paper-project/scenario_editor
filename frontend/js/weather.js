@@ -1,9 +1,6 @@
 /**
- * weather.js — the header's "Umgebung" menu: time of day, weather presets and
- * the raw sliders. Syncs with AppState.weather and AppState.time.
- *
- * The controls used to be a full-width bar under the map. The ids (w-time,
- * w-<key>, wv-<key>) are unchanged; dropdown.js does the open/close.
+ * weather.js — the Umgebung menu: time of day, weather presets and the sliders, synced with
+ * AppState.weather / AppState.time. dropdown.js opens and closes it.
  */
 (() => {
   'use strict';
@@ -13,9 +10,8 @@
   const presetsBox = document.getElementById('env-presets');
   const WEATHER_KEYS = ['fog', 'rainy', 'cloudy', 'sunny', 'wet_road', 'snowy', 'dust_storm'];
 
-  // The same six the generator's batch varies over (generatorBatch.js
-  // WEATHER_PRESETS) — rain without a wet road is not a condition anyone drives
-  // in. A preset sets ALL keys, the rest to 0, so "matches a preset" is exact.
+  // The generator's batch presets (generatorBatch.js WEATHER_PRESETS). A preset sets every key,
+  // the rest to 0, so matching one is exact.
   const PRESETS = [
     { id: 'klar', label: 'Klar', w: {} },
     { id: 'bewoelkt', label: 'Bewölkt', w: { cloudy: 0.8 } },
@@ -37,7 +33,7 @@
     );
   }
 
-  /** "Regen · Nacht" on the menu button, so the setting is readable shut. */
+  /** „Regen · Nacht" on the menu button, readable while it is shut. */
   function renderSummary() {
     const p = _matchingPreset();
     const wx = p ? p.label : 'Eigenes Wetter';
@@ -104,7 +100,6 @@
   AppState.on('change', (patch) => {
     if ('weather' in patch || 'time' in patch) renderSummary();
   });
-  // Once at load too, so the readouts use the same 2-decimal format before the
-  // first drag as after it (the markup's "0.0" became "0.05" mid-drag).
+  // At load too, so the readouts have their 2-decimal format before the first drag.
   syncFromState();
 })();

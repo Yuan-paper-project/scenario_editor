@@ -1,6 +1,5 @@
 /**
- * welcome.js — Willkommens-Modal und Hilfe-Schaltfläche.
- * Zeigt das Einführungs-Modal beim ersten Laden und auf Anfrage.
+ * welcome.js — the Schnellstart modal (first load and Hilfe → Schnellstart) and Hilfe → Tastenkürzel.
  */
 (() => {
   'use strict';
@@ -25,23 +24,22 @@
 
   closeBtn.addEventListener('click', close);
 
-  // Schließen durch Klick außerhalb der Karte
+  // Close on a click outside the card.
   overlay.addEventListener('click', (e) => {
     if (e.target === overlay) close();
   });
 
-  // Hilfe-Schaltfläche öffnet das Modal erneut
   helpBtn.addEventListener('click', () => {
     dontShow.checked = false;
     open();
   });
 
-  // Hilfe → Tastenkürzel: dieselbe Übersicht wie die Taste „?".
+  // Hilfe → Tastenkürzel: the same overlay as the „?" key.
   document.getElementById('btn-shortcuts')?.addEventListener('click', () => {
     document.getElementById('shortcuts-overlay')?.classList.remove('hidden');
   });
 
-  // Beim Laden prüfen, ob Modal angezeigt werden soll
+  // Shown once per viewer.
   if (!localStorage.getItem(STORAGE_KEY)) {
     open();
   }

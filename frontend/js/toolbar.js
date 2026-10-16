@@ -1,6 +1,5 @@
 /**
- * toolbar.js — Tool palette buttons and map selector.
- * Sets AppState.activeTool when a tool is clicked.
+ * toolbar.js — the tool palette (Akteure | Requisiten) and the map selector.
  */
 (() => {
   'use strict';
@@ -9,19 +8,13 @@
   const mapStatus = document.getElementById('map-status');
   const toolbar = document.getElementById('toolbar');
 
-  // Almost every town has a lane graph now — a probed one, or (Town10, any
-  // uploaded map) one backend/lane_graph/lane_graph_builder.py derives from the .xodr
-  // directly at startup/upload — so this always attempts the fetch rather
-  // than gating on a town list snapshotted once at page load, which would
-  // otherwise go stale the moment a map is uploaded mid-session. A genuine
-  // miss (the builder itself failed for that town) still degrades cleanly:
-  // Api.getLaneGraph resolves a 404 to null rather than throwing.
+  // Always fetched: nearly every town has a graph (probed or xodr-derived, uploads included);
+  // a miss resolves to null.
   async function _fetchLaneGraph(town) {
     return Api.getLaneGraph(town).catch(() => null);
   }
 
   // ── Tabs: Akteure | Requisiten ───────────────────────────────────────────────
-  // Pure UI state, kept module-local like propertiesOverview.js `_overviewPanelTab`.
 
   const propsPanel = toolbar.querySelector('[data-toolbar-panel="props"]');
   if (propsPanel && window.PropCatalog) PropCatalog.renderPanel(propsPanel);
@@ -36,8 +29,7 @@
   }
 
   // ── Tool buttons ─────────────────────────────────────────────────────────────
-  // Delegated: prop tiles are rendered at load by PropCatalog, so a snapshot of
-  // .tool-btn taken here would miss them.
+  // Delegated: the prop tiles are rendered later, so a snapshot of .tool-btn would miss them.
 
   toolbar.addEventListener('click', (e) => {
     const tab = e.target.closest('[data-toolbar-tab]');
@@ -56,7 +48,6 @@
     if (isSame) {
       AppState.set({ activeTool: null, pendingTemplate: null, pendingProp: null });
     } else {
-      // Cancel trajectory mode if starting a new tool
       AppState.set({
         activeTool: tool,
         pendingTemplate: null,
@@ -70,7 +61,6 @@
     }
   });
 
-  // Update button active state when tool changes
   AppState.on('change', (patch) => {
     if (!('activeTool' in patch) && !('pendingProp' in patch) && !('pendingGenerate' in patch)) return;
     toolbar.querySelectorAll('.tool-btn').forEach((btn) => {
@@ -78,7 +68,6 @@
         btn.dataset.tool === AppState.activeTool && (btn.dataset.prop || null) === (AppState.pendingProp || null);
       btn.classList.toggle('active', match);
     });
-    // Update cursor
     const svg = MapView.svg;
     if (AppState.activeTool || AppState.pendingGenerate) {
       svg.classList.add('placing');
@@ -106,8 +95,7 @@
     }
   }
 
-  // One-click town buttons on the empty map — the same path as the dropdown,
-  // which stays the source of truth (it is what a loaded file writes back).
+  // Town buttons on the empty map; they go through the dropdown, the single source of truth.
   function _renderQuickPick(maps) {
     const pick = document.getElementById('map-quick-pick');
     if (!pick) return;
@@ -127,8 +115,7 @@
 
   mapSelect.addEventListener('change', async () => {
     const town = mapSelect.value;
-    // The batch generator swaps maps under a scenario it saved and puts back
-    // itself (generatorBatch.js _loadMap) — that switch must not park it.
+    // The batch generator swaps maps itself and restores its scenario: no parking then.
     const keepScenario = mapSelect.dataset.keepScenario === '1';
     delete mapSelect.dataset.keepScenario;
     if (!town) {
@@ -141,8 +128,6 @@
     try {
       const mapData = await Api.getMapRender(town);
       const laneGraph = await _fetchLaneGraph(town);
-      // Each town keeps its own scenario (UIUtils.leaveMap / enterMap): the
-      // one being left is parked, the one arrived at comes back or is empty.
       if (switching) UIUtils.leaveMap();
       AppState.set({ map: town, mapData, laneGraph });
       const restored = switching && UIUtils.enterMap(town);
@@ -157,7 +142,6 @@
     }
   });
 
-  // Mark the towns that hold a parked scenario in the selector: „Town03 ●".
   const PARKED_MARK = ' ●';
   function _markParkedTowns() {
     const parked = new Set(UIUtils.parkedTowns());
@@ -170,10 +154,7 @@
   }
   AppState.on('mapScenariosChanged', _markParkedTowns);
 
-  // Restore map selector when state is loaded. The geometry is re-fetched when
-  // the file is for another town than the one on screen — it used to be
-  // fetched only when none was loaded, so a Town05 file opened over Town03
-  // drew its actors on Town03's roads.
+  // On load, re-fetch the geometry when the file is for another town than the one shown.
   AppState.on('stateLoaded', async (data) => {
     if (data.map) {
       mapSelect.value = data.map;
@@ -194,7 +175,7 @@
   });
 
   // ── Datei → Neues Szenario ─────────────────────────────────────────────────
-  // Strg/Cmd skips the confirm, as on every other delete in the app. Undoable.
+  // Strg/Cmd skips the confirm. Undoable.
   document.getElementById('btn-new-scenario')?.addEventListener('click', async (e) => {
     if (!AppState.hasScenarioContent) {
       Toast.info('Das Szenario ist bereits leer');
@@ -215,6 +196,5 @@
     Toast.success('Szenario geleert');
   });
 
-  // Initialise map list on page load
   loadMapList();
 })();

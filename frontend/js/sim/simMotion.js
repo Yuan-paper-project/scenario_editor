@@ -185,7 +185,7 @@
       _advanceWaypoints(sim, dt);
       return;
     }
-    if (sim.speed <= 0) return; // stationary — also the honest state for an
+    if (sim.speed <= 0) return; // stationary, e.g. a route with no set_speed yet
     if (sim.isWalker) _advanceStraight(sim, dt);
     else _advanceLaneFollow(sim, dt);
   }
