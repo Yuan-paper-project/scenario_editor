@@ -113,6 +113,8 @@ Event/actor rules mirrored across frontend, backend and emitter (`ScenarioRules`
 
 One commit per kind: F841/B007 (`5f06d6a`; none hid a bug — `_lane_entry`'s `sign` is recomputed in `_lane_centre`), B904 (`4379785`), B008 (`636837f`, FastAPI's `Annotated[UploadFile, File()]`), E402 (`fa36745`, a reasoned `noqa`: the probe needs its `sys.path` line first), Biome `noSparseArray` in `recipeHtml` (`893969a`, with a tooltip check in `test_recipe_e2e.py` that fails without the label lookup), and the config (`a97b018`): `E731`, `UP031`, `useOptionalChain`, `useIterableCallbackReturn`, `useTemplate` disabled with a reason each, `biome.json` → `biome.jsonc` for those comments, and inline ignores on the RNG and the CSS fallback. `biome migrate` replaced the deprecated `recommended` field. `bash tools/lint.sh` now passes with no findings at all. Already gone before this phase: the duplicate `actorColor` key and the four unused JS variables were already gone.
 
+After the review of the whole cleanup (one commit each): `run.sh` installs from `requirements.txt` (`afc4dd2`); `tools/check_shared_scopes.py` in `lint.sh` replaces the per-folder `noUndeclaredVariables` commands above (`edf9e10`); `tests/check_type_tables.py` compares the actor-type tables across both repos (`b2046cc`); `tools/hooks/pre-commit` runs `lint.sh` on every commit (`ab612fa`). Left: the CLAUDE.md trim, then the merge (`--no-ff`: `.git-blame-ignore-revs` names commit hashes a squash would lose).
+
 ## 5. Notes for the later phases
 
 - **Phase 2 is done.** `bash tests/run_tests.sh --quick` (~40 s: normalization, render geometry, `test_smoke_e2e.py`, events, undo) is the check to run after each split. `test_smoke_e2e.py` was shown to fail by name when a script throws at load.
