@@ -49,7 +49,7 @@ import struct
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from backend.map_renderer import _get_lane_sections, lane_centre_points
+from backend.xodr_lanes import _get_lane_sections, lane_centre_points
 
 # 'bidirectional' (a centre turn lane) is deliberately excluded — confirmed
 # against ground truth (maps/Town03/Town03.xodr road 0 lane 1 is
