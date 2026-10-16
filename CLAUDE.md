@@ -2031,6 +2031,10 @@ this and is refused for walkers in three layers (emitter, backend, `ScenarioRule
 
 ## Background traffic („Hintergrundverkehr", `backend/bg_traffic.py`, `frontend/js/bgTraffic.js`)
 
+`bg_traffic.py` holds the tunables and `generate` (the loop below); it imports from `bg_sumo.py` (SUMO
+install, net, run, FCD → CARLA poses, blueprints), `bg_keepout.py` (`_KeepOut`, trip weights, route
+blocking) and `bg_trips.py` (bubble and random trips), in that order.
+
 Random traffic on the rest of the map, **generated once by SUMO and then replayed** — by the preview
 and, from the same file, by `tools/bg_traffic_player.py` inside the CARLA run, which steers every car
 onto the file's pose on every tick ("puppets"). Neither side decides anything, so the
@@ -2049,7 +2053,7 @@ Umgebung menu (AppState.bgTraffic {enabled,count,seed,clearance,radius}) + timed
 ```
 
 - **SUMO is the `eclipse-sumo==1.24.0` wheel in `.venv`** (requirements.txt, `run.sh`'s first-run
-  install). `bg_traffic.sumo_home()` uses the wheel or `BG_SUMO_HOME`, **never the shell's
+  install). `bg_sumo.sumo_home()` uses the wheel or `BG_SUMO_HOME`, **never the shell's
   `SUMO_HOME`**: on this box it points at a directory that does not exist. Nets are built on first
   use into `maps/<Town>/sumo/` (gitignored), rebuilt when the `.xodr` or the type file is newer;
   netconvert's options are CARLA's own (`Co-Simulation/Sumo/util/netconvert_carla.py`), with
