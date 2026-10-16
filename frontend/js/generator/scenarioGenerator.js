@@ -84,8 +84,10 @@
           ? `<button type="button" class="gen-recipe-unpin" data-recipe-unpin="${spec.key}" title="Festgelegten Wert lösen — wieder zufällig aus dem Seed">×</button>`
           : '<span></span>';
         const miss = _recipeMismatch(r, spec);
+        const pin = pins[spec.key];
+        const pinLabel = spec.kind === 'choice' ? (spec.options.find(([k]) => k === pin)?.[1] ?? pin) : pin;
         const missTitle = miss
-          ? ` title="Festgelegt auf ${UIUtils.escapeHtml(spec.kind === 'choice' ? (spec.options.find(([k]) => k === pins[spec.key]) || [, pins[spec.key]])[1] : pins[spec.key])}, an dieser Stelle nicht möglich"`
+          ? ` title="Festgelegt auf ${UIUtils.escapeHtml(pinLabel)}, an dieser Stelle nicht möglich"`
           : '';
         return `<div class="gen-recipe-row${pinned ? ' pinned' : ''}${miss ? ' unmet' : ''}" data-recipe-row="${spec.key}">
         <span class="gen-recipe-label"${missTitle}>${UIUtils.escapeHtml(spec.label)}${miss ? ' ⚠' : ''}</span>

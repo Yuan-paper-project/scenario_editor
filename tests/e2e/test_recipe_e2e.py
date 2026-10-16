@@ -170,6 +170,22 @@ def main():
         }""")
         show_overview(page)
         C("unmet pin: row flagged", page.locator('[data-recipe-row="resumes"].unmet').count() == 1)
+        want = str(not page.evaluate("AppState.generated.params.resumes")).lower()
+        title = page.locator('[data-recipe-row="resumes"] .gen-recipe-label').get_attribute("title") or ""
+        C("unmet pin: tooltip names the pinned value", title.startswith(f"Festgelegt auf {want},"), title)
+        page.keyboard.press("Control+z")
+
+        # A choice pin's tooltip names the option's label, not its key.
+        page.evaluate("""() => {
+          const g = AppState.generated;
+          const other = g.params.lead_type === 'bus' ? 'truck' : 'bus';
+          AppState.set({ generated: { ...g, overrides: { ...g.overrides, lead_type: other },
+                                      params: { ...g.params } } });
+        }""")
+        show_overview(page)
+        want = "Lkw" if page.evaluate("AppState.generated.overrides.lead_type") == "truck" else "Bus"
+        title = page.locator('[data-recipe-row="lead_type"] .gen-recipe-label').get_attribute("title") or ""
+        C("unmet choice pin: tooltip names the option's label", title.startswith(f"Festgelegt auf {want},"), title)
         page.keyboard.press("Control+z")
 
         # ── Hand edit: detected, rebuild asks, cancel keeps it ──────────────
