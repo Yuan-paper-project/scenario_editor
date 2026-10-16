@@ -1,8 +1,5 @@
 /**
- * eventPanel.js — event action/trigger editor for the properties panel.
- * Shared by the ego and every NPC; the ego has no distance_to_ego trigger
- * option (see EVENT_TRIGGERS) since a distance from hero to itself is always
- * 0, but is otherwise editable exactly like an NPC.
+ * eventPanel.js — the event editor in the properties panel, the same for the ego and every NPC.
  */
 (() => {
   'use strict';
@@ -52,23 +49,16 @@
     EVENT_ACTIONS.forEach(([actionType, label]) => {
       if (HIDDEN_ACTIONS.has(actionType)) return;
       const isPathAction = actionType === 'follow_trajectory' || actionType === 'assign_route';
-      // AssignRouteAction is vehicle-only downstream (_ROUTE_ACTION_TYPES in
-      // event_builders.py). Offering it to a Fußgänger produced an event that
-      // was silently dropped at export — along with anything chained onto it.
+      // AssignRouteAction is vehicle-only downstream; the emitter would drop it.
       const routeUnavailable = actionType === 'assign_route' && !ScenarioRules.ROUTE_ACTION_TYPES.has(actor.type);
-      // ChangeActorLaneOffset writes the controller's _offset, which
-      // PedestrianControl stores and never reads — offering it to a Fußgänger
-      // would produce a valid file in which the actor simply never moves
-      // sideways.
+      // PedestrianControl never reads the offset, so a walker would never move sideways.
       const offsetUnavailable = actionType === 'lane_offset' && !ScenarioRules.honoursLaneOffset(actor.type);
 
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'event-action-button';
       btn.textContent = label;
-      // The two path actions used to be *removed* once a path event existed,
-      // reflowing the grid with nothing to explain where they went. Keeping
-      // them disabled states the rule instead of hiding its consequence.
+      // Disabled with a title rather than removed, so the grid does not reflow unexplained.
       if (routeUnavailable || offsetUnavailable || (isPathAction && hasPathEvent)) {
         btn.disabled = true;
         btn.title = routeUnavailable
@@ -88,10 +78,7 @@
         const currentEvents = actor.events || [];
         const newEvent = _defaultEvent(actor, actionType, isPathAction);
         const events = isPathAction ? [newEvent, ...currentEvents] : [...currentEvents, newEvent];
-        // One undo entry for the whole click. A path action also seeds waypoint
-        // 1 with the actor's own pose (startPathMode), which is a second
-        // `{events}` patch — ungrouped, Strg+Z would leave the event in place
-        // with an empty path rather than removing what the click created.
+        // One undo entry: a path action also seeds waypoint 1, a second {events} patch.
         UndoStack.group('Event hinzugefügt', () => {
           AppState.updateById(actor.id, { events });
           if (isPathAction) {
@@ -102,8 +89,7 @@
       eventActionGrid.appendChild(btn);
     });
 
-    // A template's chain onto an actor that is already placed — templates.js
-    // otherwise only fire on a fresh placement click.
+    // Apply a template's chain to an actor that is already placed.
     const options = window.ScenarioTemplates ? ScenarioTemplates.compatibleWith(actor.type) : [];
     if (options.length) {
       const select = document.createElement('select');
@@ -123,8 +109,7 @@
       });
       eventActionGrid.appendChild(select);
     }
-    // The reverse: this actor's chain as a reusable template (templatesUser.js,
-    // „Eigene Vorlagen"), positions kept relative to the actor.
+    // Save this actor's chain as a user template (templatesUser.js), relative to the actor.
     if (window.ScenarioTemplates && actor.type !== 'ego' && actor.type !== 'prop' && (actor.events || []).length) {
       const save = document.createElement('button');
       save.type = 'button';
@@ -143,16 +128,11 @@
   window.EventPanel = {
     render,
     setRefreshHandler,
-    // objectsPaths.js discards a path event left under 2 waypoints and must go
-    // through this: it re-points any after_event chained onto the deleted
-    // event and clears the draw-mode state, which a bare events.filter() would
-    // leave dangling.
+    // Also used by objectsPaths.js, so the re-point sweep and draw-state cleanup apply.
     deleteEvent: _deleteEvent,
-    // The card title ('Geschw. setzen 2'), so simulate.js's timeline markers
-    // name an event the way its card does.
+    // The card title ('Geschw. setzen 2'), for the timeline markers.
     displayName: _eventDisplayName,
-    // Mark an event's card (eventTimeline.js block click) — the panel's next
-    // render shows it expanded and scrolls it into view.
+    // Mark an event's card (Ablauf block click); the next render expands and scrolls to it.
     highlight,
   };
 })();

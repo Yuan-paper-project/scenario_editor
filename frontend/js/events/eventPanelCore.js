@@ -14,39 +14,20 @@
   const eventCount = document.getElementById('event-count');
   const eventWarn = document.getElementById('event-warn');
 
-  // UI-facing strings are German throughout (see CLAUDE.md); the internal
-  // action/trigger keys stay the OpenSCENARIO-side snake_case names and are
-  // what every other layer matches on.
+  // German labels; the keys are the OpenSCENARIO-side names the other layers match on.
   const EVENT_ACTIONS = [
     ['follow_trajectory', 'Trajektorie folgen'],
     ['assign_route', 'Route zuweisen'],
-    // Abbreviated to match the in-card 'Geschw.' field label and to keep the
-    // longest card title ('Geschw. setzen 2') on one header line.
+    // Short, so 'Geschw. setzen 2' fits on the card header.
     ['set_speed', 'Geschw. setzen'],
     ['set_distance', 'Abstand halten'],
     ['lane_change', 'Spurwechsel'],
     ['lane_offset', 'Spurversatz'],
   ];
-  // Kept in EVENT_ACTIONS so a loaded event still gets its label and card, but
-  // not offered in the grid. set_distance is hidden by decision: it emits no
-  // DynamicConstraints, so KeepLongitudinalGap chases at its 100 m/s default
-  // whenever the gap is too large, and the preview does not simulate it.
+  // Still rendered when loaded, never offered: it would chase at 100 m/s (CLAUDE.md, set_distance).
   const HIDDEN_ACTIONS = new Set(['set_distance']);
 
-  // distance_to_ego is omitted for the ego itself — a distance from hero to
-  // hero is always 0, so the condition would fire on tick 1 regardless of
-  // the configured value. See _defaultFirstTrigger.
-  //
-  // after_event fires when the named event COMPLETES, event_started the moment
-  // it STARTS (startTransition) — "when X happens, also do Y". Both are the
-  // same reference machinery (ScenarioRules.isEventRef); see the dropdown
-  // rules in _afterEventGroups. ego_speed reads the ego's own speed, which is
-  // one of the things an NPC may legitimately react to now that it may not
-  // wait on an ego EVENT (ScenarioRules.mayWaitOnActor).
-  //
-  // distance_to_ego is „Abstand zu Akteur": the distance from another actor
-  // (entity_ref; absent = the ego, which every older payload means) to this
-  // one. relative_speed is that actor's speed minus this one's.
+  // distance_to_ego is „Abstand zu Akteur": entity_ref names the other actor, absent = the ego.
   const EVENT_TRIGGERS = [
     ['simulation_time', 'Simulationszeit'],
     ['distance_to_ego', 'Abstand zu Akteur'],
@@ -57,29 +38,24 @@
     ['event_started', 'Mit Start eines Events'],
   ];
 
-  // SpeedCondition's two useful rules. equalTo is left out on purpose: a
-  // measured speed is almost never exactly equal to anything.
+  // equalTo left out: a measured speed is almost never exactly equal to anything.
   const EGO_SPEED_RULES = [
     ['greaterThan', 'schneller als'],
     ['lessThan', 'langsamer als'],
   ];
   const DEFAULT_EGO_SPEED = 10;
 
-  // relative_speed: speed(other actor) − speed(this actor), RelativeSpeedCondition.
+  // speed(other actor) − speed(this actor), as RelativeSpeedCondition computes it.
   const RELATIVE_SPEED_RULES = [
     ['greaterThan', 'größer als'],
     ['lessThan', 'kleiner als'],
   ];
   const DEFAULT_RELATIVE_SPEED = 2;
 
-  // A freshly chosen distance_to_point starts as a small ring around the point
-  // rather than inheriting the outgoing trigger's value, which is a delay in
-  // seconds or a 400 m ego distance and means nothing as a radius.
+  // Not inherited from the outgoing trigger, whose value is seconds or an ego distance.
   const DEFAULT_POINT_RADIUS = 5;
 
-  // set_speed's dynamics value means a different physical quantity per
-  // dimension, so switching re-defaults it — 5 is a nonsense rate and 2.5 a
-  // nonsense duration. 2.5 m/s² is ≈0.25 g, everyday accel/brake.
+  // Each dimension has its own default (switching re-defaults); 2.5 m/s² ≈ 0.25 g.
   const SPEED_DIMENSIONS = [
     ['time', 'für'],
     ['rate', 'Rate'],
@@ -87,8 +63,7 @@
   const DEFAULT_SPEED_TIME = 5.0;
   const DEFAULT_SPEED_RATE = 2.5;
 
-  // Half a lane's width is a drift that reads clearly on the map and in CARLA
-  // without leaving the lane; the backend clamps the magnitude to 10 m.
+  // The backend clamps the magnitude to 10 m.
   const DEFAULT_LANE_OFFSET_M = 1.0;
   const MAX_LANE_OFFSET_M = 10.0;
   // Used for the „½ Spur" / „1 Spur" presets when no lane is found under the actor.
@@ -113,13 +88,8 @@
   const FIXED_ROUTE_START_HINT =
     'Eine Route startet immer sofort (Simulationszeit 0) — der Auslöser ist nicht einstellbar.';
 
-  /* Panel state reassigned at runtime. `refresh` re-renders the properties
-   * panel (properties.js sets it). `highlight` is the card the „Ablauf"
-   * timeline last pointed at ({actorId, eventId, scroll}) — module state
-   * because the panel re-renders on every preview frame: the mark has to be
-   * re-applied by each render, and the scroll done only once. A collapsed card
-   * shows expanded while marked — view only, its stored `collapsed` is
-   * untouched. eventTimeline.js clears it on Stop. */
+  /* `refresh` re-renders the properties panel (set by properties.js). `highlight`
+   * is the card the Ablauf timeline marked, {actorId, eventId, scroll}. */
   const panel = { refresh: () => {}, highlight: null };
 
   // ── Actor References And Toggles ────────────────────────────────────────────
@@ -129,9 +99,7 @@
     return target.mode === 'relative' ? 'relative' : 'absolute';
   }
 
-  /** Only the two dimensions the panel offers. A hand-written or LLM payload
-   * carrying 'distance' renders (and, once edited, saves) as 'time' — the same
-   * coercion the field did unconditionally before the toggle existed. */
+  /** A payload carrying 'distance' renders, and once edited saves, as 'time'. */
   function _speedDimension(ev) {
     const dynamics = _eventAction(ev).dynamics || {};
     return dynamics.dimension === 'rate' ? 'rate' : 'time';

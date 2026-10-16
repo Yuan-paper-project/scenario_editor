@@ -36,12 +36,10 @@
 
   // ── Trigger Controls ────────────────────────────────────────────────────────
 
-  /** Fills the card's `.event-trigger-block` — the WENN half, rendered above
-   *  the action controls (see _renderEventList). */
+  /** Fills the card's `.event-trigger-block`, the WENN half above the action controls. */
   function _appendEventTriggerControls(block, actor, ev, events) {
     const trigger = _eventTrigger(ev);
-    // The two actor-relative triggers need another actor to measure against;
-    // for the ego that means an NPC, for an NPC there is always the ego.
+    // The actor-relative triggers need another actor: for the ego an NPC, for an NPC the ego.
     const others = _relativeActorOptions(actor);
     const triggerOptions = EVENT_TRIGGERS.filter(
       ([value]) =>
@@ -51,8 +49,7 @@
     triggerSelect.addEventListener('change', (e) => {
       const kind = e.target.value;
       if (kind === 'after_event' || kind === 'event_started') {
-        // The first offered option, own actor first — _afterEventGroups has
-        // already dropped the assign_routes and anything that would loop.
+        // _afterEventGroups has already dropped routes and anything that would loop.
         const ref = _firstAfterEventOption(_afterEventGroups(actor, ev, events, kind));
         _updateEvent(actor, ev.id, {
           trigger: ref ? _afterEventTrigger(actor, ref.actorId, ref.eventId, kind) : { type: kind, event_id: '' },
@@ -71,8 +68,7 @@
           },
         });
       } else if (kind === 'distance_to_ego') {
-        // Absent entity_ref = the ego, which is what every older payload means
-        // and what an NPC gets by default; the ego itself has to name an NPC.
+        // Absent entity_ref = the ego; the ego itself has to name an NPC.
         const next = {
           type: 'distance_to_ego',
           value: trigger.type === 'distance_to_ego' ? (trigger.value ?? 400) : 400,
@@ -80,11 +76,7 @@
         if (actor.type === 'ego') next.entity_ref = _defaultRelativeActorId(actor);
         _updateEvent(actor, ev.id, { trigger: next });
       } else if (e.target.value === 'distance_to_point') {
-        // The point is placed on the actor straight away rather than left null:
-        // a null point used to reach the backend and be silently defaulted to
-        // the map origin (0, 0), where the condition can never fire. It is then
-        // moved by dragging its map marker (mapTriggerPoints.js) — there is no picking
-        // mode and no "set the point" button.
+        // Placed on the actor at once (a missing point is a 400); moved by dragging its marker.
         _updateEvent(actor, ev.id, {
           trigger: {
             type: 'distance_to_point',
@@ -109,11 +101,8 @@
       const kind = trigger.type;
       const groups = _afterEventGroups(actor, ev, events, kind);
       const selected = ScenarioRules.afterEventKey(trigger.actor_ref || actor.id, trigger.event_id || '');
-      // A trigger loaded from a save file may name an event this dropdown does
-      // not offer — one that has since been deleted, or (in an LLM payload) one
-      // that closes a loop. Neither is silently repointed: the option is added
-      // so the select shows what the trigger actually says, and the card's
-      // warning chip says why it will not export.
+      // A loaded trigger may name an event the dropdown does not offer (deleted, or a loop):
+      // show it as it is and let the warning chip say why it will not export.
       const known = groups.some((g) => g.options.some(([value]) => value === selected));
       if (!known) {
         const target = ScenarioRules.afterEventTarget(actor, trigger, events);

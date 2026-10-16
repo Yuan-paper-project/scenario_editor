@@ -32,10 +32,7 @@
   }
 
   function _eventTriggerSummary(ev, events, actor) {
-    // An assign_route's own trigger is discarded at export — buildScenarioParams
-    // and the backend both force simulation_time @ 0 — and the card offers no
-    // trigger controls for it either. Advertising whatever a loaded file
-    // happens to carry would be a straight lie about when the route starts.
+    // A route's trigger is discarded at export, so the stored one must not be shown.
     if (_eventAction(ev).type === 'assign_route') return 'startet sofort (fest)';
     const trigger = _eventTrigger(ev);
     if (ScenarioRules.isEventRef(trigger)) {
@@ -43,8 +40,7 @@
       const target = ScenarioRules.afterEventTarget(actor, trigger, events);
       if (!target) return `${prefix} Event`;
       const name = _eventDisplayName(target.event, target.index);
-      // The owning actor is named only when it is not this one — on the common
-      // same-actor chain it would be on every card and say nothing.
+      // Name the owner only when it is another actor.
       return target.actor.id === actor.id
         ? `${prefix} ${name}`
         : `${prefix} ${name} (${AppState.actorLabel(target.actor, { short: true })})`;
@@ -70,9 +66,7 @@
   }
 
   function _eventActorLabel(actorId) {
-    // The short spelling: these sit beside AUTO 1 / FUSSGAENGER 2 in the same
-    // dropdown, so 'EGO' matches their case and width where 'Ego-Fahrzeug'
-    // would not. AppState.actorLabel owns both spellings.
+    // Short spelling ('EGO'), to match AUTO 1 etc. in the same dropdown.
     const actor = AppState.findById(actorId);
     return actor ? AppState.actorLabel(actor, { short: true }) : AppState.actorLabel(AppState.ego, { short: true });
   }
@@ -82,18 +76,14 @@
     const target = action.target || {};
     const dynamics = action.dynamics || {};
     const speedMode = _speedMode(ev);
-    // 'für Ns' is a hold; 'mit N m/s²' is a ramp that ends on arrival, not on a
-    // clock — the wording has to distinguish them or the card lies about when
-    // an after_event chained onto it will fire.
+    // A hold vs a ramp that ends on arrival — it decides when a chained after_event fires.
     const speedDynamicsSummary =
       _speedDimension(ev) === 'rate'
         ? `mit ${UIUtils.fmt(dynamics.value ?? DEFAULT_SPEED_RATE)} m/s²`
         : `für ${UIUtils.fmt(dynamics.value ?? DEFAULT_SPEED_TIME)}s`;
     const relativeSpeedTarget = target.entity_ref || _defaultRelativeActorId(actor);
     const distanceTarget = action.entity_ref || _defaultRelativeActorId(actor);
-    // Counted against the 2 the emitter needs, not against 0: a single waypoint
-    // draws nothing on the map and is dropped at export, so calling it "drawn"
-    // was the card's most convincing lie.
+    // Against the emitter's minimum of 2: one waypoint draws nothing and is dropped at export.
     const trajectoryPoints = (action.trajectory || []).length;
     const routePoints = (action.waypoints || []).length;
     const trajectoryVisible = MapView.isTrajectoryVisible(actor.id, ev.id);
@@ -124,9 +114,7 @@
           : `${UIUtils.fmt(target.value ?? 10)} m/s${target.reverse === true ? ' rückwärts' : ''} ${speedDynamicsSummary}`,
       set_distance: `${action.axis === 'lateral' ? 'Lateral' : 'Longitudinal'} ${UIUtils.fmt(action.value ?? 10)} m relativ zu ${_eventActorLabel(distanceTarget)}`,
       lane_change: `${action.direction === 'right' ? 'Rechts' : 'Links'} innerhalb ${UIUtils.fmt(dynamics.value ?? 12)} m`,
-      // 'dauerhaft' is half the meaning of the action, so it belongs in the one
-      // line a collapsed card gets — an offset of 0 reads 'zurück zur Spurmitte'
-      // because naming a side there would say nothing.
+      // 'dauerhaft' belongs in the collapsed summary; an offset of 0 names no side.
       lane_offset:
         (action.offset ?? DEFAULT_LANE_OFFSET_M) > 0
           ? `${action.direction === 'right' ? 'Rechts' : 'Links'} ${UIUtils.fmt(action.offset ?? DEFAULT_LANE_OFFSET_M)} m, ${
@@ -138,13 +126,8 @@
   }
 
   /**
-   * The speed a trajectory is driven at — what CARLA actually does with it.
-   * The emitter turns per-vertex velocities into relativeTime and
-   * ScenarioRunner collapses those back into ONE speed (length ÷ time), so a
-   * per-vertex field promised something nothing executes. The value is still
-   * stored on every vertex (all equal), which keeps the export payload and the
-   * emitter unchanged; a legacy file with differing values shows the
-   * effective average, the same number Simulate._avgTrajectorySpeed drives.
+   * The one speed CARLA drives a trajectory at (length ÷ time); a legacy file
+   * with differing vertex velocities shows the average, as the preview drives.
    */
   function _trajectorySpeed(points) {
     let dist = 0,

@@ -34,12 +34,7 @@
 
   // ── Action Controls ─────────────────────────────────────────────────────────
 
-  /**
-   * Geschw. setzen, in at most three rows: Modus + its partner (the reference
-   * actor, or Vorwärts/Rückwärts), then Art + Folgen for a relative target, then
-   * the value with its dynamics — „für N s" / „Rate N m/s²" chosen by a small
-   * select inside the row rather than a toggle row of its own.
-   */
+  /** Geschw. setzen: Modus + reference (or Vor/Rück), Art + Folgen when relative, then value + dynamics. */
   function _appendSpeedActionControls(card, actor, ev, action) {
     const speedTarget = action.target || { mode: 'absolute', value: 10.0 };
     const speedDynamics = action.dynamics || { shape: 'step', dimension: 'time', value: 5.0 };
@@ -50,9 +45,7 @@
 
     const modeControls = [_speedModeToggle(actor, ev)];
     if (isRelativeSpeed) {
-      // „Eigene Geschw." is offered last: relative to oneself is only safe with
-      // a `rate` ramp, which snapshots the target once — choosing it switches
-      // the dynamics to Rate and drops any continuous follow.
+      // Relative to oneself is only safe as a one-shot `rate` ramp, so choosing it switches to Rate.
       const targetOptions = [..._relativeActorOptions(actor), [actor.id, 'Eigene Geschw.']];
       const selectedTarget = speedTarget.entity_ref || _defaultRelativeActorId(actor);
       const targetSelect = _select(targetOptions, selectedTarget);
@@ -224,8 +217,7 @@
       const parsed = parseFloat(e.target.value);
       _patchEventAction(actor, ev, { value: Number.isFinite(parsed) ? parsed : 0 });
     });
-    // 'Sollabstand', not 'Distanz': lane_change's dynamics value is a distance
-    // too, and the two meant different things under one label.
+    // Not 'Distanz': lane_change's dynamics value is a distance too, with another meaning.
     card.appendChild(UIUtils.paramRow('Sollabstand', distanceInput, 'm'));
   }
 
@@ -255,9 +247,7 @@
         },
       });
     });
-    // The lateral move happens over this distance — see _buildLaneChangePlan.
-    // Kept short so it fits the shared 70px label column; the title carries
-    // the long form.
+    // The distance the lateral move takes (_buildLaneChangePlan); the long label is in the title.
     durationInput.title = 'Strecke, über die der Spurwechsel ausgeführt wird';
     directionSelect.setAttribute('aria-label', 'Richtung');
     card.appendChild(
@@ -267,14 +257,7 @@
     );
   }
 
-  /**
-   * Spurversatz: which side, how far, and the standing fact that it does not end.
-   *
-   * Shaped like the Spurwechsel card above it — a Richtung row, then one value
-   * row — but Richtung is a segmented toggle rather than a <select>, matching
-   * the Modus/Dynamik/Richtung toggles the rest of the panel uses for a
-   * two-way choice.
-   */
+  /** Spurversatz: side, magnitude and mode (Dauerhaft | Hin & zurück). */
   function _appendLaneOffsetControls(card, actor, ev, action) {
     const offsetInput = document.createElement('input');
     offsetInput.type = 'number';
@@ -291,10 +274,7 @@
     offsetInput.title = 'Versatz — seitlicher Abstand zur Spurmitte; 0 m bedeutet zurück in die Mitte';
     offsetInput.setAttribute('aria-label', 'Versatz');
 
-    // Presets from the width of the lane under the actor, read off the .xodr:
-    // half a lane puts the actor's centre ON the lane line (straddling), a whole
-    // lane puts it in the middle of the next one. A fixed 1.75 m is only half a
-    // lane on a 3.5 m lane — Town01/02 lanes are 4 m.
+    // ½ straddles the lane line, 1 reaches the next lane's centre; lanes are not all 3.5 m (Town01/02: 4 m).
     const width = _laneWidthAt(actor);
     const presets = document.createElement('div');
     presets.className = 'event-toggle event-offset-presets';
@@ -335,8 +315,7 @@
     card.appendChild(_row('Dauer', mode));
   }
 
-  /** Width of the driving lane under the actor, from the render JSON's per-point
-   * `widths`; FALLBACK_LANE_WIDTH_M off the network. */
+  /** Width of the driving lane under the actor (render JSON `widths`), else FALLBACK_LANE_WIDTH_M. */
   function _laneWidthAt(actor) {
     const near = ObjectsManager.nearestLaneProjection(actor.x, actor.y, new Set(['driving']), 10);
     const w = near && near.lane.widths ? near.lane.widths[near.segIndex] : null;

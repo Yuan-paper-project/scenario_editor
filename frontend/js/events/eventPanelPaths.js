@@ -33,16 +33,12 @@
     points.forEach((wp, i) => {
       const item = document.createElement('div');
       item.className = `waypoint-item${isRoute ? ' route-waypoint-item' : ''}`;
-      // The same four attributes the map's waypoint groups carry — they are the
-      // whole contract between the two halves, so a row and a marker can always
-      // be matched up without either side knowing how the other is built.
+      // The same four data attributes as the map's waypoint markers: the row ↔ marker contract.
       item.dataset.actorId = actor.id;
       item.dataset.eventId = eventId;
       item.dataset.pathType = type;
       item.dataset.wpIdx = i;
-      // Focusable so Entf/Backspace reaches mapKeys.js's handler straight after a
-      // click on the row: the guard there is "not inside a field", and a row is
-      // not a field. Enter re-locates, matching the click.
+      // Focusable, so Entf reaches mapKeys.js right after a click; Enter re-locates.
       item.tabIndex = 0;
       item.title =
         i === 0
@@ -51,16 +47,12 @@
 
       const locate = () => {
         const sel = { actorId: actor.id, eventId, pathType: type, index: i };
-        // The seed is shown but not marked. It is not interactive on the map
-        // either, so a mark on it could only have come from here — and Entf
-        // would then refuse to delete it, leaving the key dead on exactly one
-        // row of the list. Flying the map to it still works.
+        // The seed is never marked: Entf could not delete it. Flying to it still works.
         if (i > 0) AppState.selectWaypoint(sel);
         MapView.focusWaypoint(sel);
       };
       item.addEventListener('click', (e) => {
-        // The row's own controls keep their clicks: the delete and strategy
-        // buttons sit inside it.
+        // Clicks on the row's own buttons are theirs.
         if (e.target.closest('button, input')) return;
         locate();
       });
@@ -79,10 +71,7 @@
       coords.className = 'wp-coords';
       coords.textContent = `(${wp.x.toFixed(1)}, ${wp.y.toFixed(1)})`;
 
-      // Waypoint 1 is the vehicle — it is seeded on the actor's pose and
-      // tracks it, so it cannot be removed (ObjectsManager.deletePathPoint
-      // refuses it too). Rendered as a hidden spacer rather than dropped, or
-      // the row would be the only one in the list with a different right edge.
+      // Waypoint 1 is the vehicle and cannot be deleted; a spacer keeps the row edges aligned.
       const delBtn = document.createElement(i === 0 ? 'span' : 'button');
       delBtn.className = i === 0 ? 'wp-delete wp-delete-spacer' : 'wp-delete';
       if (i === 0) delBtn.setAttribute('aria-hidden', 'true');
@@ -93,9 +82,7 @@
       if (i > 0)
         delBtn.addEventListener('click', () => {
           ObjectsManager.deletePathPoint(actor.id, type, i, eventId);
-          // Indices past the deleted one all shift down, so a mark left as it is
-          // would silently start naming the next point along — and Entf would
-          // then delete something the user never marked.
+          // Later indices shift down, so a stale mark would name the next point and Entf delete it.
           const sel = AppState.selectedWaypoint;
           if (sel && sel.actorId === actor.id && sel.eventId === eventId && sel.pathType === type && sel.index >= i) {
             const left = (AppState.waypointPathOf(sel) || []).length;
@@ -105,11 +92,8 @@
 
       item.appendChild(num);
       item.appendChild(coords);
-      // A route waypoint's strategy governs the leg that ENDS at it, so the
-      // toggle belongs to waypoints 2..N. Waypoint 1's leg runs from the
-      // actor's own pose to itself and is empty, so a control there would
-      // claim an effect it does not have — and 'Gerade' on waypoint 1 is the
-      // one arrangement that kills a run on an unpatched ScenarioRunner.
+      // A strategy governs the leg ENDING at its waypoint, so waypoint 1 has none
+      // (and 'Gerade' there kills an unpatched ScenarioRunner).
       if (isRoute && i > 0) {
         const shortest = wp.strategy === 'shortest';
         const stratBtn = document.createElement('button');
@@ -130,14 +114,7 @@
     });
   }
 
-  /**
-   * Put the `.waypoint-selected` class on the row the map's mark names, and
-   * bring it into view — but only when the mark actually MOVED.
-   *
-   * The panel re-renders on every actorUpdated, which during a waypoint drag is
-   * every mousemove; scrolling on each of those would fight the user for the
-   * list's scroll position while they drag.
-   */
+  /** Mark the row the map's mark names; scroll only when the mark moved (re-renders every drag frame). */
   let _lastMarkKey = null;
 
   function syncWaypointSelection() {
@@ -200,8 +177,7 @@
 
     const clearBtn = document.createElement('button');
     clearBtn.type = 'button';
-    // Quiet, not filled red: this used to be the strongest-looking button in
-    // the card, louder than 'Zeichnen', which is the one people actually want.
+    // Quiet: 'Zeichnen' is the button people want, not this one.
     clearBtn.className = 'quiet-danger';
     clearBtn.textContent = 'Löschen';
     clearBtn.addEventListener('click', () => {
@@ -212,9 +188,7 @@
     const toggleBtn = document.createElement('button');
     toggleBtn.type = 'button';
     toggleBtn.textContent = visible ? 'Ausblenden' : 'Anzeigen';
-    // Ausblenden hides the path outright, selected or not. The way back is
-    // either this button or working on the path — drawing it, or clicking one
-    // of its waypoints below, both un-hide it (MapView.showPath).
+    // Hides outright, selected or not; drawing or marking a waypoint un-hides (MapView.showPath).
     toggleBtn.title = visible
       ? 'Pfad auf der Karte ausblenden'
       : 'Pfad wieder einblenden — Zeichnen oder das Anklicken eines ' + 'Wegpunkts blendet ihn ebenfalls wieder ein.';
@@ -232,9 +206,7 @@
     card.appendChild(controls);
   }
 
-  // A mark set on the map has to light up the matching row without rebuilding
-  // the panel: the rebuild would happen anyway on the next actorUpdated, but a
-  // click on a marker is not an edit and must not cost a full re-render.
+  // A map mark lights its row without a re-render: a marker click is not an edit.
   AppState.on('change', (patch) => {
     if ('selectedWaypoint' in patch) syncWaypointSelection();
   });

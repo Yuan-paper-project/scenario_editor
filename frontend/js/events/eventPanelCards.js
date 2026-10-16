@@ -48,8 +48,7 @@
       const ind = header?.querySelector('.collapse-indicator');
       if (ind) ind.textContent = '-';
     }
-    // Not smooth: the panel re-renders every preview frame, and a smooth scroll
-    // would be fighting those rebuilds.
+    // Not smooth: the panel re-renders every preview frame.
     requestAnimationFrame(() => {
       eventList.querySelector('.event-card.timeline-focus')?.scrollIntoView({ block: 'center' });
     });
@@ -61,9 +60,7 @@
     const events = actor.events || [];
     if (eventCount) eventCount.textContent = String(events.length);
 
-    // Events that will not survive the export, keyed by id. The rule lives in
-    // ScenarioRules (scenarioRules.js) so the card, the export gate and the preview can
-    // never disagree about what "incomplete" means.
+    // ScenarioRules decides, so card, export gate and preview agree on what will not export.
     const problems = new Map(ScenarioRules.problemsOf(actor).map((entry) => [entry.ev.id, entry.problem]));
     if (eventWarn) {
       eventWarn.textContent = String(problems.size);
@@ -84,9 +81,7 @@
 
     if (events.length > 1) eventList.appendChild(_bulkCollapseBar(actor, events));
 
-    // Which card the map clicks currently belong to. Event ids are only unique
-    // within an actor (every actor's first event is `evt-1`), so this checks
-    // the owner too.
+    // The card the map clicks belong to; ids are unique per actor only, so the owner is checked too.
     const pathOwnerId = AppState.activeTrajectoryId || AppState.activeRouteId;
     const drawingEventId = pathOwnerId === actor.id ? AppState.activePathEventId : null;
 
@@ -140,9 +135,7 @@
       header.appendChild(deleteBtn);
       card.appendChild(header);
 
-      // The summary is the *collapsed* reading of the card — action and trigger
-      // in one line. An expanded card shows both in editable form directly
-      // below, so repeating them there was two rows of pure duplication.
+      // The one-line summary only on a collapsed card; an expanded one shows both editable below.
       if (isCollapsed) {
         card.appendChild(_summaryLine(ev, actor, actionType, triggerSummary));
         if (problem) card.appendChild(_problemChip(problem));
@@ -151,16 +144,11 @@
         return;
       }
 
-      // Directly under the header, before the trigger: this is the reason the
-      // rest of the card will not happen, so it reads first.
+      // First under the header: it is why the rest of the card will not happen.
       if (problem) card.appendChild(_problemChip(problem));
       else if (warning) card.appendChild(_problemChip(warning, { soft: true }));
 
-      // WENN before DANN: the trigger goes first, the action controls below it.
-      // An assign_route has no trigger *controls* — its start is discarded and
-      // forced to simulation_time 0 at export — but it still gets the block, as
-      // a stated fact. Dropping it entirely would leave the only card in the
-      // panel whose start condition is stated nowhere.
+      // WENN before DANN. A route gets a fixed block stating its start, which the file forces to t = 0.
       card.appendChild(actionType === 'assign_route' ? _fixedTriggerBlock() : _triggerBlock(actor, ev, events));
 
       if (actionType === 'set_speed') {
@@ -187,12 +175,7 @@
     _scrollToHighlight();
   }
 
-  /**
-   * `<action> • <trigger>` — the whole event in one line, for a collapsed card.
-   * The trigger used to sit in the header opposite the title, where it was
-   * capped at 120px and ellipsised while the summary below it had a full line
-   * to itself; the two belong together and read as one sentence.
-   */
+  /** `<action> • <trigger>`: the whole event in one line, for a collapsed card. */
   function _summaryLine(ev, actor, actionType, triggerSummary) {
     const line = document.createElement('div');
     line.className = 'event-summary';

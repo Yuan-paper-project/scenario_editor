@@ -105,9 +105,7 @@
     return wrap;
   }
 
-  /** „für" (a hold, seconds) vs „Rate" (a ramp, m/s²) for the
-   * SpeedActionDynamics value — a small select inside the speed row. The two are
-   * not interchangeable numbers, so a real change re-defaults the value. */
+  /** „für" (hold, s) vs „Rate" (ramp, m/s²); the values are not interchangeable, so a change re-defaults it. */
   function _speedDimensionSelect(actor, ev, { rateOnly = false } = {}) {
     const current = _speedDimension(ev);
     const dynamics = _eventAction(ev).dynamics || {};
@@ -127,8 +125,7 @@
         dynamics: {
           ...dynamics,
           dimension: value,
-          // 'step' + 'rate' is self-contradictory; the backend forces this
-          // too, but keeping state honest keeps the export a no-op change.
+          // 'step' + 'rate' contradict each other; the backend forces this too.
           shape: value === 'rate' ? 'linear' : 'step',
           value: value === 'rate' ? DEFAULT_SPEED_RATE : DEFAULT_SPEED_TIME,
         },
@@ -139,9 +136,7 @@
 
   // ── DOM Helpers ─────────────────────────────────────────────────────────────
 
-  /** A label and several controls side by side — one row per meaning, so a
-   * choice and the value it governs never take two rows. The first control
-   * gets the label's `for`. */
+  /** A label and several controls on one row; the first control gets the label's `for`. */
   function _multiRow(labelText, controls, { className = '' } = {}) {
     const row = document.createElement('div');
     row.className = `event-row event-multi-row ${className}`.trim();
@@ -177,9 +172,7 @@
     return row;
   }
 
-  /** `<value> <unit> <dimension select> <dynamics value> <unit>` — or, for a
-   * continuous follow, the value followed by a fixed „dauerhaft" (`dimControl`
-   * is then that span and `timeInput` null). */
+  /** Speed row; for a continuous follow `dimControl` is the „dauerhaft" span and `timeInput` null. */
   function _speedTimingRow(speedInput, timeInput, dimControl, valueLabel, isFactor) {
     const row = document.createElement('div');
     row.className = 'event-speed-row';
