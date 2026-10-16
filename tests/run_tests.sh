@@ -39,7 +39,7 @@ echo
 status=0
 
 if [ "${1:-}" = "--quick" ]; then
-    for t in tests/test_normalization.py tests/check_render_geometry.py; do
+    for t in tests/test_normalization.py tests/check_type_tables.py tests/check_render_geometry.py; do
         echo "════ $t"; "$PY" "$t" || status=1; echo
     done
     for t in tests/e2e/test_smoke_e2e.py tests/e2e/test_events_e2e.py tests/e2e/test_undo_e2e.py; do
@@ -52,6 +52,10 @@ fi
 # points at the backend rather than at the test setup.
 echo "════ tests/test_normalization.py"
 "$PY" tests/test_normalization.py || status=1
+echo
+
+echo "════ tests/check_type_tables.py"
+"$PY" tests/check_type_tables.py || status=1
 echo
 
 echo "════ tests/compare_xodr_lane_graph.py"

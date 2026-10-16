@@ -21,7 +21,7 @@ one goes red tells you where the problem is:
 
 ## Layout
 
-- `tests/` — the fast checks that need no browser (`test_normalization.py`, `check_render_geometry.py`, `compare_xodr_lane_graph.py`), `run_tests.sh`, `bench/` and `artifacts/` (CARLA run output, gitignored).
+- `tests/` — the fast checks that need no browser (`test_normalization.py`, `check_type_tables.py`, `check_render_geometry.py`, `compare_xodr_lane_graph.py`), `run_tests.sh`, `bench/` and `artifacts/` (CARLA run output, gitignored).
 - `tests/e2e/` — the Playwright suites and `_harness.py`, which they import from their own folder.
 - `tests/carla/` — the CARLA runners and their helpers (`run_*`, `carla_run.py` — the shared `run_case` —, `carla_analysis.py`, `carla_telemetry.py`, `probe_generated_spawns.py`). They put `../e2e` on `sys.path` for `_harness`, and write to `tests/artifacts/`.
 - `tools/probes/` — one-off CARLA measurements (`probe_carla_*`, `probe_puppet_obstacle.py`, `capture_carla_aerial.py`). They assert nothing; their output feeds the catalogue, `maps/` and CLAUDE.md.
