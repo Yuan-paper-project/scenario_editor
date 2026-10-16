@@ -159,17 +159,7 @@ def generate(town: str, xodr: Path, body: dict) -> dict:
         pool = 0
         weights = cwd / "weights"
         min_distance = min(600.0, 0.45 * diag)
-        bubble = focus is not None
-        if bubble:
-            # Edges for the aimed trips: near the route, not the scenario's own lanes.
-            gen_zone = _KeepOut(
-                [{"w": 0.0, "pts": pts} for pts in focus["paths"]], focus["radius"] + BUBBLE_GEN_MARGIN_M
-            )
-            usable, avoided = _write_trip_weights(net, off, gen_zone, keepout.untimed(), weights)
-            if len(usable) < 3:
-                bubble = False
-        if not bubble:
-            usable, avoided = _write_trip_weights(net, off, None, keepout.untimed(), weights)
+        bubble, usable, avoided = _trip_edges(net, off, focus, keepout, weights)
         usable_edges, avoided_edges = len(usable), len(avoided)
         prefiltered = 0
         result["focus_radius"] = focus["radius"] if bubble else 0
@@ -221,45 +211,7 @@ def generate(town: str, xodr: Path, body: dict) -> dict:
             fcd = _simulate(net, route_files, vtypes, req["seed"], cwd)
             times, tracks = _read_fcd(fcd, types, off)
             n_frames = len(times)
-            drop: set[str] = set()
-            spans = {}
-            if not bubble:
-                drop = set(types) - set(tracks)  # gone before the window
-                reasons["absent"] += len(drop)
-            for vid, fr in tracks.items():
-                half_w = _BP.get(types.get(vid), (2.4, 1.0))[1]
-                if bubble:
-                    segs = _bubble_segments(fr, times, ego_at, radius, radius + BUBBLE_HYSTERESIS_M)
-                    if not segs:
-                        continue  # never near the ego: not shown, not checked
-                    if segs[0][0] == 0 and fr[0][0] > 0:  # SUMO inserted it inside the bubble
-                        drop.add(vid)
-                        reasons["popin"] += 1
-                        continue
-                    if segs[-1][1] == len(fr) - 1 and fr[-1][0] < n_frames - 1:  # it arrives inside
-                        drop.add(vid)
-                        reasons["popout"] += 1
-                        continue
-                else:
-                    if len(fr) != n_frames or fr[0][0] != 0:  # pops in or vanishes mid-window
-                        drop.add(vid)
-                        reasons["partial"] += 1
-                        continue
-                    segs = [(0, len(fr) - 1)]
-                shown_frames = [f for a, b in segs for f in fr[a : b + 1]]
-                if any(
-                    math.hypot(q[1] - p[1], q[2] - p[2]) > max(p[5], q[5]) * STEP_S + JUMP_SLACK_M or q[0] != p[0] + 1
-                    for a, b in segs
-                    for p, q in zip(fr[a:b], fr[a + 1 : b + 1])
-                ):
-                    drop.add(vid)
-                    reasons["jump"] += 1  # a teleport
-                    continue
-                if any(keepout.hits(f[1], f[2], half_w, times[f[0]]) for f in shown_frames):
-                    drop.add(vid)
-                    reasons["keepout"] += 1
-                    continue
-                spans[vid] = segs
+            drop, spans = _vet_tracks(tracks, types, times, bubble, ego_at, radius, keepout, reasons)
             shown = sorted(v for v in spans if v not in drop)
             # How many are shown: cars (whole map), or the average around the ego (bubble).
             size = {v: (sum(b - a + 1 for a, b in spans[v]) / max(1, n_frames) if bubble else 1.0) for v in shown}
@@ -305,32 +257,7 @@ def generate(town: str, xodr: Path, body: dict) -> dict:
                 )
                 rounds[-1][2] = pool - before
 
-        final_ids = sorted(v for v in spans if v in types)
-        colours = random.Random(req["seed"] * 31 + 7)
-        for vid in final_ids:
-            fr = tracks.get(vid)
-            if not fr:
-                continue
-            bp = types[vid]
-            ex, ey = _BP.get(bp, (2.4, 1.0))
-            colour = "{},{},{}".format(*(colours.randrange(30, 230) for _ in range(3)))
-            for a, b in spans[vid]:
-                # One entry per shown stretch: from t0, one [x, y, z, yaw] per dt (a car that
-                # returns is a second entry with the same `car`).
-                result["vehicles"].append(
-                    {
-                        "id": f"bg{len(result['vehicles'])}",
-                        "car": vid,
-                        "blueprint": bp,
-                        "length": round(2 * ex, 3),
-                        "width": round(2 * ey, 3),
-                        "color": colour,
-                        "t0": round(times[fr[a][0]], 3),
-                        "frames": [
-                            [round(f[1], 2), round(f[2], 2), round(f[3], 2), round(f[4], 1)] for f in fr[a : b + 1]
-                        ],
-                    }
-                )
+        result["vehicles"] = _vehicle_entries(tracks, spans, types, times, req["seed"])
         result["frames"] = len(times)
         result["stats"] = {
             "pool": pool,
@@ -346,6 +273,102 @@ def generate(town: str, xodr: Path, body: dict) -> dict:
             "seconds": round(time.monotonic() - started, 2),
         }
     return _remember(key, result)
+
+
+def _trip_edges(net: Path, off, focus: dict | None, keepout: _KeepOut, weights: Path) -> tuple[bool, list, list]:
+    """(bubble, usable, avoided): the edges trips may start, end and pass on.
+
+    A bubble aims its trips near the route; with fewer than 3 usable edges there it falls back to
+    the whole map.
+    """
+    bubble = focus is not None
+    if bubble:
+        # Edges for the aimed trips: near the route, not the scenario's own lanes.
+        gen_zone = _KeepOut([{"w": 0.0, "pts": pts} for pts in focus["paths"]], focus["radius"] + BUBBLE_GEN_MARGIN_M)
+        usable, avoided = _write_trip_weights(net, off, gen_zone, keepout.untimed(), weights)
+        if len(usable) < 3:
+            bubble = False
+    if not bubble:
+        usable, avoided = _write_trip_weights(net, off, None, keepout.untimed(), weights)
+    return bubble, usable, avoided
+
+
+def _vet_tracks(tracks, types, times, bubble, ego_at, radius, keepout, reasons) -> tuple[set, dict]:
+    """(drop, spans) for one simulation: the cars to remove, and each kept car's shown stretches.
+
+    Counts every removal in `reasons`.
+    """
+    n_frames = len(times)
+    drop: set[str] = set()
+    spans = {}
+    if not bubble:
+        drop = set(types) - set(tracks)  # gone before the window
+        reasons["absent"] += len(drop)
+    for vid, fr in tracks.items():
+        half_w = _BP.get(types.get(vid), (2.4, 1.0))[1]
+        if bubble:
+            segs = _bubble_segments(fr, times, ego_at, radius, radius + BUBBLE_HYSTERESIS_M)
+            if not segs:
+                continue  # never near the ego: not shown, not checked
+            if segs[0][0] == 0 and fr[0][0] > 0:  # SUMO inserted it inside the bubble
+                drop.add(vid)
+                reasons["popin"] += 1
+                continue
+            if segs[-1][1] == len(fr) - 1 and fr[-1][0] < n_frames - 1:  # it arrives inside
+                drop.add(vid)
+                reasons["popout"] += 1
+                continue
+        else:
+            if len(fr) != n_frames or fr[0][0] != 0:  # pops in or vanishes mid-window
+                drop.add(vid)
+                reasons["partial"] += 1
+                continue
+            segs = [(0, len(fr) - 1)]
+        shown_frames = [f for a, b in segs for f in fr[a : b + 1]]
+        if any(
+            math.hypot(q[1] - p[1], q[2] - p[2]) > max(p[5], q[5]) * STEP_S + JUMP_SLACK_M or q[0] != p[0] + 1
+            for a, b in segs
+            for p, q in zip(fr[a:b], fr[a + 1 : b + 1])
+        ):
+            drop.add(vid)
+            reasons["jump"] += 1  # a teleport
+            continue
+        if any(keepout.hits(f[1], f[2], half_w, times[f[0]]) for f in shown_frames):
+            drop.add(vid)
+            reasons["keepout"] += 1
+            continue
+        spans[vid] = segs
+    return drop, spans
+
+
+def _vehicle_entries(tracks, spans, types, times, seed) -> list[dict]:
+    """The output's `vehicles`: one entry per shown stretch of each kept car."""
+    vehicles: list[dict] = []
+    final_ids = sorted(v for v in spans if v in types)
+    colours = random.Random(seed * 31 + 7)
+    for vid in final_ids:
+        fr = tracks.get(vid)
+        if not fr:
+            continue
+        bp = types[vid]
+        ex, ey = _BP.get(bp, (2.4, 1.0))
+        colour = "{},{},{}".format(*(colours.randrange(30, 230) for _ in range(3)))
+        for a, b in spans[vid]:
+            # One entry per shown stretch: from t0, one [x, y, z, yaw] per dt (a car that
+            # returns is a second entry with the same `car`).
+            vehicles.append(
+                {
+                    "id": f"bg{len(vehicles)}",
+                    "car": vid,
+                    "blueprint": bp,
+                    "length": round(2 * ex, 3),
+                    "width": round(2 * ey, 3),
+                    "color": colour,
+                    "t0": round(times[fr[a][0]], 3),
+                    "frames": [[round(f[1], 2), round(f[2], 2), round(f[3], 2), round(f[4], 1)] for f in fr[a : b + 1]],
+                }
+            )
+    return vehicles
 
 
 def _remember(key: str, result: dict) -> dict:
