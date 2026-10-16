@@ -1,6 +1,6 @@
 """Backend event normalization: the silent coercions, in isolation.
 
-No browser, no simulator, no HTTP — direct calls into backend/scenario_io.py.
+No browser, no simulator, no HTTP — direct calls into backend/scenario/scenario_io.py.
 Runs in milliseconds, so this is the layer to run on every edit.
 
 Why it exists: _normalize_structured_event coerces rather than raises. A typo'd

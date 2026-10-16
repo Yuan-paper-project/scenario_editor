@@ -18,7 +18,7 @@
     _pose,
   } = SimCore.shared;
 
-  // ── Event normalisation mirror (backend/scenario_io.py) ─────────────────────
+  // ── Event normalisation mirror (backend/scenario/scenario_io.py) ─────────────────────
   //
   // The preview reads AppState's raw, unexported events — but three rewrites
   // happen only at export time and change WHICH TRIGGER GOVERNS AN EVENT, so a

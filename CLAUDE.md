@@ -44,6 +44,7 @@ bash run.sh 8080     # custom port
 `run.sh` creates `.venv/` on first run, installs deps, and starts `uvicorn backend.main:app --reload`.
 
 - Always start from the repo root — the app is imported as `backend.main`, so `uvicorn main:app` from inside `backend/` will not work. `run.sh` handles this with `cd "$(dirname "$0")"`.
+- **`backend/` is four packages plus `main.py`**: `xodr/` (`map_renderer` and the `xodr_*` / `spawn_points` modules it imports), `lane_graph/` (`lane_graph_builder`, `lane_graph_parts`), `traffic/` (`bg_traffic`, `bg_sumo`, `bg_keepout`, `bg_trips`, and `sumo_data/`), `scenario/` (`scenario_io`, `event_rules`, `event_normalize`, `batch_export`). Module names stay unique across packages, so a bare `scenario_io.py` here is unambiguous. Imports are absolute (`from backend.xodr.xodr_lanes import …`). **Four module-level paths are relative to `__file__` and must change if a module moves again**: `_MAPS_DIR` in `map_renderer.py` and `scenario_io.py` (`parents[2]`), `_LLMGEN` in `scenario_io.py` and `spawn_points.py` (`parents[3]`). A wrong `_LLMGEN` fails silently — it falls back to the hardcoded `/home/dellpro2/CC/` copy.
 - **`.vscode/launch.json` passes no `--host`/`--port`**, so debugger runs land on uvicorn's default **8000** and bind loopback only, while `run.sh` uses **9090** on `0.0.0.0`. On a remote/SSH box the debugger's server is unreachable without a forwarded port — a hung browser tab usually means this, not a broken app.
 - **No CI.** Linting and formatting run locally through `bash tools/lint.sh` (see Code conventions). Automated coverage is `tests/test_normalization.py` (pure Python) plus twenty-six Playwright end-to-end suites that need a running editor, and `tests/run_carla_cases.py`, which needs a running CARLA (see Verification). `bash tests/run_tests.sh --quick` is the ~40 s subset (normalization, render geometry, `test_smoke_e2e.py`, events, undo) to run after every refactoring step. Everything else is verified manually.
 - All map geometry is parsed once at startup into `MAP_CACHE` (`preload_maps`, `backend/main.py`). Changes to the map parser (`map_renderer.py` and the `xodr_*.py` / `spawn_points.py` modules it imports) only take effect on restart — `--reload` does this automatically on save.
@@ -55,12 +56,12 @@ bash run.sh 8080     # custom port
 
 This repo does **not** stand alone. `.xosc` and route-XML generation are delegated to a sibling repo, `../llm-scenario-gen`, injected into `sys.path` at call time. Nothing in `requirements.txt` hints at this.
 
-- Resolution order (`_LLMGEN`, `backend/scenario_io.py`): `<repo>/../llm-scenario-gen`, else the hardcoded fallback `/home/dellpro2/CC/llm-scenario-gen`.
+- Resolution order (`_LLMGEN`, `backend/scenario/scenario_io.py`): `<repo>/../llm-scenario-gen`, else the hardcoded fallback `/home/dellpro2/CC/llm-scenario-gen`.
 - Imported **lazily**, inside the export functions via `_ensure_llmgen_on_path()` — a missing sibling repo fails only at export time (HTTP 500), never at startup.
 - Entry points consumed:
   - `generator.xml_builder.build_xosc(params, out_path)`
   - `generator.route_builder.build_route(params, out_path)`
-  - `preprocessing.map_parser.parse_xodr(path)` — junction centres, `_load_spawn_points` in `backend/spawn_points.py`
+  - `preprocessing.map_parser.parse_xodr(path)` — junction centres, `_load_spawn_points` in `backend/xodr/spawn_points.py`
 - Consequence: **a new action or trigger type requires a matching change in `llm-scenario-gen`'s `generator/event_builders.py` and `xml_builder.py`.** The editor alone cannot emit it.
 - The hero's controller module (`simple_vehicle_control`) is **template text**, not code — `templates/car.xosc` / `pedestrian.xosc`, not `_inject_ego`. A sibling-repo edit `--reload` will not pick up, same as everything else here.
 
@@ -77,17 +78,17 @@ maps/<Town>/<Town>.xodr
   → POST /api/export → validate_scenario_params() → build_xosc() → .xosc download
 ```
 
-**The Y flip happens exactly once**, in the backend parser (stated in `backend/map_renderer.py`'s module docstring; applied in `_lateral_point` and in the signal, crosswalk and spawn-point extractors). Downstream — render JSON, `AppState`, the exported `.xosc` — everything is CARLA coordinates with Y pointing down. Do not re-flip in the frontend. **Z is never flipped** — OpenDRIVE and CARLA are both Z-up.
+**The Y flip happens exactly once**, in the backend parser (stated in `backend/xodr/map_renderer.py`'s module docstring; applied in `_lateral_point` and in the signal, crosswalk and spawn-point extractors). Downstream — render JSON, `AppState`, the exported `.xosc` — everything is CARLA coordinates with Y pointing down. Do not re-flip in the frontend. **Z is never flipped** — OpenDRIVE and CARLA are both Z-up.
 
 ## Height (z) comes from the OpenDRIVE elevation profile
 
 Every z the editor writes is `elev(s)` at the placement point plus a per-category clearance. It used to be a flat `0.2` for actors and `0.0` for props, which buries an object metres under any road with a gradient.
 
-- `_get_elevations` / `_eval_elevation` (`backend/xodr_geometry.py`) mirror `_get_lane_offsets` / `_eval_lane_offset` — same cubic, same `ds = s − record.s`. Do **not** model a new one on `_eval_lane_width`, whose `sOffset` is relative to the laneSection start instead.
+- `_get_elevations` / `_eval_elevation` (`backend/xodr/xodr_geometry.py`) mirror `_get_lane_offsets` / `_eval_lane_offset` — same cubic, same `ds = s − record.s`. Do **not** model a new one on `_eval_lane_width`, whose `sOffset` is relative to the laneSection start instead.
 - **z depends only on `(road, s)`**, not on lateral position: no bundled map has a `<shape>` element and every `<superelevation>` has `a=0`, so the surface at any lateral offset equals the reference-line height. If that ever stops holding, the cross-slope term belongs in `_eval_elevation`.
 - **Render JSON point shape is `[x, y, z, s]`** for `directionLine` and `centerline` (`s` added for the phase-2 lane graph, same backward-compatible trick as `z` before it), and `spawnPoints` carry a `z`. Every consumer destructures positionally (`const [x0, y0] = …`), so trailing elements are backward-compatible — but a new consumer must not assume length 2 or 3. Costs ~11% payload per element; paid once at startup.
-- **Every `roads[].lanes[]` entry also carries `sectionId`, `sStart`, `sEnd`** (`backend/xodr_lanes.py`, `_get_lane_sections`'s 0-based index in document/`s` order) and, for lane types with a `directionLine`, a parallel `widths` array (one value per point, already-computed lane width, previously derived and discarded). `sectionId` disambiguates a `laneId` that recurs across a multi-section road — `road.lanes` is otherwise flattened with no section marker. This numbering is *assumed* to match CARLA's own `waypoint.section_id`; `tests/probe_carla_lane_graph.py` cross-checked this empirically against live CARLA (Town03 road 1772) before anything was built on it — see "The cached CARLA lane graph" below. Each `roads[]` entry also carries `link: {predecessor, successor}` (`<road><link>`, `{elementType, elementId, contactPoint}` or `null` per side) — unused by rendering itself (only a crosswalk heuristic reads it), but `backend/lane_graph_builder.py` re-derives its own copy (`_parse_road_links`, `backend/xodr_links.py`) to resolve a lane's successor across a road boundary, so it is no longer true that nothing consumes it.
-- **A section's LAST sample evaluates laneOffset and widths at the left limit (`s_end − ε`)** — `_section_eval_s` (`backend/xodr_geometry.py`), used by the polygon builder and the `directionLine` loop. CARLA maps *step* the laneOffset at a lane-section boundary to make up for a lane that starts or ends there (Town03 road 1566: −6.635 → −0.635 at s=2); evaluating at `s_end` picks the record that starts there and throws section N's last vertex up to 6 m sideways. That was every spike and long wedge at a road join (Town03/04/06/10). The road `centerline` emits both limits at such a step so the marking jogs instead of slanting. Spawn points never had the bug — they drop the section-end sample outright.
+- **Every `roads[].lanes[]` entry also carries `sectionId`, `sStart`, `sEnd`** (`backend/xodr/xodr_lanes.py`, `_get_lane_sections`'s 0-based index in document/`s` order) and, for lane types with a `directionLine`, a parallel `widths` array (one value per point, already-computed lane width, previously derived and discarded). `sectionId` disambiguates a `laneId` that recurs across a multi-section road — `road.lanes` is otherwise flattened with no section marker. This numbering is *assumed* to match CARLA's own `waypoint.section_id`; `tests/probe_carla_lane_graph.py` cross-checked this empirically against live CARLA (Town03 road 1772) before anything was built on it — see "The cached CARLA lane graph" below. Each `roads[]` entry also carries `link: {predecessor, successor}` (`<road><link>`, `{elementType, elementId, contactPoint}` or `null` per side) — unused by rendering itself (only a crosswalk heuristic reads it), but `backend/lane_graph/lane_graph_builder.py` re-derives its own copy (`_parse_road_links`, `backend/xodr/xodr_links.py`) to resolve a lane's successor across a road boundary, so it is no longer true that nothing consumes it.
+- **A section's LAST sample evaluates laneOffset and widths at the left limit (`s_end − ε`)** — `_section_eval_s` (`backend/xodr/xodr_geometry.py`), used by the polygon builder and the `directionLine` loop. CARLA maps *step* the laneOffset at a lane-section boundary to make up for a lane that starts or ends there (Town03 road 1566: −6.635 → −0.635 at s=2); evaluating at `s_end` picks the record that starts there and throws section N's last vertex up to 6 m sideways. That was every spike and long wedge at a road join (Town03/04/06/10). The road `centerline` emits both limits at such a step so the marking jogs instead of slanting. Spawn points never had the bug — they drop the section-end sample outright.
 - **Lateral positions go through `_lateral_point`, which clamps the distance to just short of the arc centre on the concave side.** Past the radius an offset curve folds back on itself — the bow-tie sidewalk corners at Town01/02 junctions (Town02 road 2: 7.5 m radius, sidewalk outer edge at 8.3 m). It needs per-sample curvature, which comes from `_curvature_at` rather than a 5th sample element, because `_sample_geometry`'s 4-tuple is unpacked positionally everywhere. **Arcs are sampled at ~6° steps** (`ARC_SAMPLE_ANGLE_RAD`), not the flat 4 m that used to facet tight bends.
 - **A section's evaluation s is floored at its own start** (`_section_eval_s(samples, s_start)`).
   The section filters take samples within 1e-4 of `s_start`, and the sampler can emit both s = 2.0
@@ -122,7 +123,7 @@ actor field is saved to `.json` for free, while `buildScenarioParams`' `dumpActo
 explicit **allow-list**. A field missing from that list is silently dropped at export and
 the `.xosc` comes out clean and wrong.
 
-The id → entity-ref mapping (`ego → hero`, npc index 0 → `adversary`, index N → `adversaryN`, props → `prop0..propN`) is **duplicated** on the backend in `validate_scenario_params` (`backend/scenario_io.py`). The two must stay in agreement. `buildScenarioParams()` additionally derives `route_waypoints` with per-segment yaw for the route XML export — from the ego's own `follow_trajectory`/`assign_route` event (`AppState.pathEventOf`/`pathPointsOf`), **not** from an actor-level field — and serializes `staticObjects` as **ids and pose only** — the backend enriches each with category/mass/bbox from the catalogue, so the client is never the source of truth for what gets emitted.
+The id → entity-ref mapping (`ego → hero`, npc index 0 → `adversary`, index N → `adversaryN`, props → `prop0..propN`) is **duplicated** on the backend in `validate_scenario_params` (`backend/scenario/scenario_io.py`). The two must stay in agreement. `buildScenarioParams()` additionally derives `route_waypoints` with per-segment yaw for the route XML export — from the ego's own `follow_trajectory`/`assign_route` event (`AppState.pathEventOf`/`pathPointsOf`), **not** from an actor-level field — and serializes `staticObjects` as **ids and pose only** — the backend enriches each with category/mass/bbox from the catalogue, so the client is never the source of truth for what gets emitted.
 
 `AppState.ego` has no `trajectory` field any more; a legacy save file that still has one is migrated into a `follow_trajectory` event on load (`AppState._migrateEgoTrajectory`), so it only ever exists transiently, mid-`loadJSON`.
 
@@ -169,18 +170,18 @@ so a missed table exports a clean, wrong file:
 | `../llm-scenario-gen/config/vehicle_catalog.yaml` | archetype → blueprint, **and** the `vehicle_category:` entry | exports as `vehicle.lincoln.mkz_2017` / `vehicleCategory="car"` |
 | `xml_builder.py` `_VEHICLE_PARAMS` or `_PEDESTRIAN_PARAMS` | Performance + BoundingBox + Axles | car physics (69 m/s firetruck) |
 | `xml_builder.py` `_TYPE_ALIASES` **and** the verbatim copy in `event_builders.py` | alias → archetype | the two resolve the type differently |
-| `event_builders.py` `_ROUTE_ACTION_TYPES` — **and its copies** in `backend/event_rules.py` (`_ROUTE_ACTOR_TYPES`) and `frontend/js/core/scenarioRules.js` (`ScenarioRules.ROUTE_ACTION_TYPES`) | may use `assign_route` | the action grid greys the button out and the backend 400s, on a type the emitter would have routed happily |
+| `event_builders.py` `_ROUTE_ACTION_TYPES` — **and its copies** in `backend/scenario/event_rules.py` (`_ROUTE_ACTOR_TYPES`) and `frontend/js/core/scenarioRules.js` (`ScenarioRules.ROUTE_ACTION_TYPES`) | may use `assign_route` | the action grid greys the button out and the backend 400s, on a type the emitter would have routed happily |
 | `xml_builder.py` `_PEDESTRIAN_TYPES` | `<Pedestrian>` vs `<Vehicle>`, controller module, base template | a `<Vehicle>` holding a `walker.*` blueprint |
 | `config/scenario_components.yaml`, `scripts/generate_and_record.py` | LLM vocabulary + recording script's own third blueprint map | LLM/recording paths don't know the type |
 
 Unlike events, an unknown NPC type is a **hard 400**, not a coercion
-(`_normalize_actor_types`, `backend/scenario_io.py`), via `actor_types()` in
+(`_normalize_actor_types`, `backend/scenario/scenario_io.py`), via `actor_types()` in
 `xml_builder`. Same reasoning as props: the string is free-form, and every
 downstream lookup would otherwise turn a typo into a Lincoln MKZ. Laden warns about one the moment the file is loaded (`scenarioIO.js`), since the type picker
 offers no way out of a type that is in no group — the fix is to delete and re-place the actor.
 
 `mapMarkers.js` `WALKER_TYPES`, `xml_builder` `_PEDESTRIAN_TYPES`, `event_builders`
-`_WALKER_ACTION_TYPES` and `backend/event_rules.py` `_WALKER_ACTOR_TYPES` are the
+`_WALKER_ACTION_TYPES` and `backend/scenario/event_rules.py` `_WALKER_ACTOR_TYPES` are the
 same split maintained **four** times — keep them in step. The last two gate
 `lane_offset`, which is available to every `<Vehicle>` and therefore to a
 **wider** set than `assign_route`: a `cyclist` aliases to `bike`, so the route
@@ -234,7 +235,7 @@ encoding.
 
 Every scenario actor — **ego included** — holds `events: [{ id, name, trigger, action }]`.
 The ego is not a special case here: it goes through the same UI (`eventPanel*.js`),
-the same backend normalizer (`_normalize_actor` in `backend/event_normalize.py`),
+the same backend normalizer (`_normalize_actor` in `backend/scenario/event_normalize.py`),
 and the same emitter path (`_build_actor_act` in `xml_builder.py`) as every NPC.
 Its entity name is `hero`; an NPC's is `adversary`/`adversaryN`.
 
@@ -280,7 +281,7 @@ Adding or changing one means editing all three layers:
 | Layer | File | Holds |
 |---|---|---|
 | UI | `frontend/js/events/*.js` | `EVENT_ACTIONS` / `EVENT_TRIGGERS` lists (`eventPanelCore.js`) + per-action and trigger forms (`eventPanelActions.js`, `eventPanelTriggers.js`) |
-| Validation | `backend/event_normalize.py`, `backend/event_rules.py` | `_normalize_structured_event` (per-event) / `_normalize_actor` (per-actor) — clamps, defaults; the whitelists and the scenario-wide reference rules in `event_rules.py` |
+| Validation | `backend/scenario/event_normalize.py`, `backend/scenario/event_rules.py` | `_normalize_structured_event` (per-event) / `_normalize_actor` (per-actor) — clamps, defaults; the whitelists and the scenario-wide reference rules in `event_rules.py` |
 | Emission | `../llm-scenario-gen/generator/event_builders.py` | the actual OpenSCENARIO XML (two-phase across actors — see the cross-actor `after_event` section) |
 
 The `EVENT_ACTIONS` / `EVENT_TRIGGERS` **labels are German while the keys stay the
@@ -316,20 +317,20 @@ re-renders on an `activePathEventId` change to keep it current.
 Silent behaviours worth knowing when debugging "my event did nothing":
 
 - Unknown action/trigger strings are **silently coerced** to `follow_trajectory` / `simulation_time` rather than raising. The coercion is still silent, but its usual consequence no longer is: a typo'd action name coerces to a `follow_trajectory` with no waypoints, which is now a hard 400 (see "An event the emitter would drop" below) instead of an event that vanished.
-- An `assign_route` action forces its own trigger to `simulation_time @ 0` (`backend/event_normalize.py`, mirrored in `frontend/js/scenarioIO.js`).
+- An `assign_route` action forces its own trigger to `simulation_time @ 0` (`backend/scenario/event_normalize.py`, mirrored in `frontend/js/scenarioIO.js`).
 - An `after_event` trigger pointing at an `assign_route` event is rewritten to `distance_to_ego @ 400` — **on whichever actor owns the route**, see the cross-actor section below.
 - A `distance_to_ego` trigger on an **ego-owned** event that names no other actor (or the ego itself) is rewritten to `simulation_time @ 0` — a distance from hero to itself is always 0, so the condition would fire on tick 1 regardless of the configured value. One naming an NPC is kept. This coercion runs in `_normalize_after_event_chains` **after** the `after_event`→`assign_route` rewrite above, so a rewritten trigger on an ego event is caught too. `eventPanelTriggers.js` additionally omits the option from the trigger dropdown when the actor is the ego, and `event_builders.py`'s `build_start_event` / `_add_custom_event_start_trigger` fall back to `simulation_time` for `entity_name == 'hero'` as a third, defensive layer.
 - **An event the emitter would drop is a hard 400, and the editor will not let you build one.** `_add_follow_trajectory_action` / `_add_assign_route_action` return `False` under 2 waypoints (and the latter also for a non-vehicle type), `build_custom_event_chain` then skips the whole event, and anything chained onto it with `after_event` is left pointing at a `storyboardElementRef` that is not in the file. Four layers now close that off, and the frontend three share one predicate — `ScenarioRules` in `frontend/js/core/scenarioRules.js` (`actionEmits` / `eventProblem` / `problemsOf`), which `eventPanelCards.js` (warning chip + the `#event-warn` count), `scenarioIO.js` (`_validateScenario`) and `simEvents.js` all call:
   - a path event is still **seeded with one waypoint on the actor's own pose** (`startPathMode`), so the *first* map click already completes a usable 2-point path — but it now **deletes itself** when draw mode ends still under 2 (`_discardIncompletePath`, `frontend/js/objects/objectsPaths.js`, hung off the `AppState.on('change')` mode transition rather than the *Fertig* button, because Esc clears the flags directly in `mapKeys.js`). The seed alone was the old failure: below the emitter's minimum, invisible on the map (`mapPaths.js` skips a path under 2 points), and reported by the card as „Pfad gezeichnet".
   - **`Route zuweisen` is `disabled` for `pedestrian`/`child`/`cyclist`** — `AssignRouteAction` is vehicle-only (`_ROUTE_ACTION_TYPES`), and the grid used to offer it to everyone.
-  - `validate_scenario_params` raises on both cases. `_ROUTE_ACTOR_TYPES` (`backend/event_rules.py`) is a third copy of that type list and **must include the aliases that resolve to a routable type** (`lorry`, `moped`) — the emitter runs `_TYPE_ALIASES` first, so without them the backend rejects payloads the emitter accepts.
+  - `validate_scenario_params` raises on both cases. `_ROUTE_ACTOR_TYPES` (`backend/scenario/event_rules.py`) is a third copy of that type list and **must include the aliases that resolve to a routable type** (`lorry`, `moped`) — the emitter runs `_TYPE_ALIASES` first, so without them the backend rejects payloads the emitter accepts.
   - `build_custom_event_chain` builds its name table from the events that **actually got appended** (two passes: actions first, then triggers), so a chained `after_event` whose target was skipped now falls back to a plain `simulation_time` start instead of dangling. This was the long-standing `KNOWN` entry in `test_events_e2e.py`.
 - **A `distance_to_point` trigger is never point-less.** Choosing it in the panel places the point on the acting actor immediately (`ObjectsManager.defaultTriggerPoint`) with a **5 m** radius (`DEFAULT_POINT_RADIUS`, `eventPanelCore.js` — a fresh radius rather than the outgoing trigger's value, which is a delay in seconds or a 400 m ego distance and means nothing here). A missing point used to be defaulted to `(0, 0, 0.2)` in `_normalize_structured_event` — the map origin, which a 3-D `DistanceCondition` can never reach — so that is now a 400 too; and in the emitter it fell through to `simulation_time(value)`, reading the radius in metres as a delay in seconds (a 20 m radius became `t > 20 s`). Both fixed. (The `?? 20` fallbacks left in the frontend and `_normalize_structured_event`'s `trigger.get("value", 20.0)` are for a payload carrying no value at all, and still agree with each other — only the *creation* default is 5.)
 - **The point is moved by dragging its map marker; there is no picking mode.** `layer-trigger-points` is appended **after** `layer-actors` (`renderMap`, `mapRender.js`, last of the three top layers — `layer-paths-top` and `layer-actors-top` go before it) rather than under the trajectory layer, because a point seeded on its own actor would otherwise be drawn *and hit-tested* under the vehicle rectangle. The marker carries an invisible 2.2 m hit circle (`.trigger-point-control`) — the drawn one is 0.7 m and sub-pixel at town zoom — and its drag writes x/y per mousemove but re-derives z once, on mouseup, via `ObjectsManager.moveTriggerPoint` (`_nearestLaneProjection` is a full lane scan; same reasoning as an actor's z). The mouseup also **expires** `_suppressNextClick` on a timer: the marker is re-rendered mid-drag, so the element the drag started on is detached by mouseup and the browser may dispatch no click at all — a permanently-set flag then swallows an unrelated map click much later.
 ### Event references (`after_event`, `event_started`) may name another actor's event, and may never form a loop
 
 Everything below applies to both reference kinds — `ScenarioRules.isEventRef`
-(`frontend/js/core/scenarioRules.js`) and `_EVENT_REF_TRIGGERS` (`backend/event_rules.py`) are the
+(`frontend/js/core/scenarioRules.js`) and `_EVENT_REF_TRIGGERS` (`backend/scenario/event_rules.py`) are the
 switch — except the `lane_offset` ban, which is about *completion* and so covers
 `after_event` only: a `lane_offset`'s START is well defined, and `event_started` may
 name one. `_isChainTarget(ev, triggerType)` is the dropdown/default/re-point predicate
@@ -376,7 +377,7 @@ entirely ours.
   guard for exactly this, or deleting this actor's `evt-2` would re-point a
   trigger naming *another* actor's `evt-2`.
 - **The scenario-wide event-reference rules live in one place**,
-  `_normalize_after_event_chains` (`backend/event_rules.py`), called from
+  `_normalize_after_event_chains` (`backend/scenario/event_rules.py`), called from
   `validate_scenario_params` **after** every `_normalize_actor`. The
   assign_route rewrite and the hero self-distance coercion used to be the tail
   of `_normalize_actor`, which was correct only while a reference could not
@@ -455,7 +456,7 @@ entirely ours.
 - `eventPanel.js` permits at most one path-producing event (`follow_trajectory` or `assign_route`) per actor (`frontend/js/events/eventPanel.js`), the ego included — this is also what `route_waypoints` (for route XML export) is derived from now that there is no actor-level `ego.trajectory`. The two path buttons stay in the action grid once one exists and go **`disabled` with a title**, rather than being removed: hiding them reflowed the grid with nothing to explain where they went.
 - An `assign_route` card shows the fixed chip **`startet sofort (fest)`** — in its trigger block when expanded, in the summary line when collapsed — where every other card shows its trigger summary, because a route's trigger is discarded at export (see above) and the card offers no trigger controls for it. Do not "fix" this by printing the stored trigger — it would state a start condition the file does not contain.
 - **An actor with `events: []` gets no `<Act>` at all** — `build_custom_event_chain` returns `False` for an empty list and `_build_actor_act` (`xml_builder.py`) then returns `None` instead of building a fallback chain. The actor still spawns, still gets its `<Private>` teleport, controller and Init `<SpeedAction>`; it simply takes no part in the story, so it holds its `initial_speed` forever (or stands still at 0). This applies to the ego exactly as it does to an NPC — an ego with no events gets no `heroBehavior` Act, and `SimpleVehicleControl` drives it down its own spawn lane at whatever its Init speed was. **This is the opposite of the old behaviour**, where an event-less actor fell back to a `constant_speed` chain and drove off at 10 m/s; a "parked" car in a bench case covered 226 m before that was caught.
-- **A scenario in which *nothing* has events is rejected with a 400** (`validate_scenario_params`, `backend/scenario_io.py`). Every actor would contribute zero Acts, leaving a `<Story>` with no `<Act>` children — XSD-invalid, and the storyboard would complete on the first tick. Traffic-signal events count towards the rule, since `_inject_traffic_signals` builds a `ScenarioBehavior` Act of its own. `build_xosc` carries its own copy of the check (`_require_nonempty_story`) as a `RuntimeError`, for payloads that never went through the backend. Deleting the empty `<Story>` is **not** an alternative fix — `<Storyboard>` requires exactly one, verified against `OpenSCENARIO.xsd`.
+- **A scenario in which *nothing* has events is rejected with a 400** (`validate_scenario_params`, `backend/scenario/scenario_io.py`). Every actor would contribute zero Acts, leaving a `<Story>` with no `<Act>` children — XSD-invalid, and the storyboard would complete on the first tick. Traffic-signal events count towards the rule, since `_inject_traffic_signals` builds a `ScenarioBehavior` Act of its own. `build_xosc` carries its own copy of the check (`_require_nonempty_story`) as a `RuntimeError`, for payloads that never went through the backend. Deleting the empty `<Story>` is **not** an alternative fix — `<Storyboard>` requires exactly one, verified against `OpenSCENARIO.xsd`.
 
 ### Per-waypoint `routeStrategy`: one path action, two kinds of leg
 
@@ -747,7 +748,7 @@ Both the `resolveAction`/`resolveTrigger` pair in `buildScenarioParams`
 `validate_scenario_params` do the remap; the payload carries `ego.id` purely so
 the backend's copy can resolve the ego too. **An `entity_ref` that resolves to
 neither `hero` nor a real `adversaryN` is a hard 400** (`_entity_ref`,
-`backend/event_rules.py`), not a coercion — same policy as an unknown prop id or
+`backend/scenario/event_rules.py`), not a coercion — same policy as an unknown prop id or
 actor type. The alternative was proven bad: an unresolved ref used to pass
 through verbatim, ScenarioRunner matched no actor, left `trigger_actor = None`,
 and the condition simply never fired — indistinguishable from a badly-tuned
@@ -894,7 +895,7 @@ shared column is the blueprint id; a mismatch fails loudly as a 400 at export, n
 | `frontend/js/props/propData.js` (data) + `propSideShapes.js` / `propPlanShapes.js` (glyphs) + `propCatalog.js` (the `PropCatalog` API, palette panel) | label, group, glyph shapes, footprints, `z` lift, `plan.off`, `facing`, `planRotate` | palette + map |
 | `../llm-scenario-gen/config/prop_catalog.yaml` | `category`, `mass`, `bbox`, `yaw_offset` | emitter + backend validator |
 
-`prop_spec()` (`../llm-scenario-gen/generator/xml_builder.py`) is the public accessor; `backend/scenario_io.py`
+`prop_spec()` (`../llm-scenario-gen/generator/xml_builder.py`) is the public accessor; `backend/scenario/scenario_io.py`
 `_normalize_static_objects` imports it to **reject unknown prop ids with a 400**. That is a
 deliberate break from the silent-coercion pattern used for events — a typo'd blueprint would
 otherwise export cleanly and fail much later inside CARLA as a missing actor.
@@ -1244,7 +1245,7 @@ is no import UI: edit the CSV.
 - Columns are `town,building_type,carla_name,x,y,z`. **`x`/`y` are CARLA world
   coordinates** — the same frame the render JSON and every actor pose already
   use — so the frontend plots them verbatim. Do **not** re-flip Y here; the
-  single flip lives in `backend/map_renderer.py`. (Checked against the `.xodr`
+  single flip lives in `backend/xodr/map_renderer.py`. (Checked against the `.xodr`
   bounds when the file was added: Town01's rows span y 2…331 against a CARLA
   y-range of 0…328.6, which only fits the unflipped frame.) `z` is carried but
   unused — the map is 2-D.
@@ -1387,7 +1388,7 @@ which successor `waypoint.next()` returns first when a lane genuinely has more t
 a fixed property of a given map + CARLA build, so for the 8 bundled towns it is probed once
 against live CARLA and cached rather than guessed. Predecessor/successor/left-right topology
 *itself* — everything short of ranking a genuine fork — turns out to be fully derivable from the
-`.xodr`'s own `<link>`/`<junction>` elements without CARLA at all; `backend/lane_graph_builder.py`
+`.xodr`'s own `<link>`/`<junction>` elements without CARLA at all; `backend/lane_graph/lane_graph_builder.py`
 does exactly that for every town that has no CARLA probe (see below), which is most of what makes
 `assign_route`/`lane_change` work at real lane-following fidelity on an uploaded map.
 
@@ -1409,7 +1410,7 @@ does exactly that for every town that has no CARLA probe (see below), which is m
   back. `backend/main.py`'s `LANE_GRAPH_CACHE` is
   populated from one of **two sources per town**, decided once at startup (and once more, per
   town, at upload time): a probed file if one exists on disk, otherwise
-  **`backend/lane_graph_builder.py`'s `build_lane_graph_from_xodr`** (over `xodr_links.py`, the XML
+  **`backend/lane_graph/lane_graph_builder.py`'s `build_lane_graph_from_xodr`** (over `xodr_links.py`, the XML
   reads, and `lane_graph_parts.py`, the CARLA-mirroring pieces), which derives the identical
   JSON shape straight from the `.xodr` — no live CARLA needed. This covers Town10 and every
   uploaded map, which previously had no lane graph at all. Served from
@@ -1942,7 +1943,7 @@ the criticality badge (2026-10-11); retime an event in its card. `tests/test_eve
 `AppState` by plain assignment (not `set()`), so nothing renders or records undo, and the saved
 actors/weather/time/map are put back at the end. It emits `change {}` afterwards, **never
 `stateLoaded`** — `undo.js` clears the undo history on that. `POST /api/export/batch`
-(`export_batch_zip`, `backend/batch_export.py`) zips `<name>.xosc`, `<name>.json` (an editor save
+(`export_batch_zip`, `backend/scenario/batch_export.py`) zips `<name>.xosc`, `<name>.json` (an editor save
 file, reopens with **Laden**) and `<name>_route.xml` (the ego route as a goal for an AV stack) per
 scenario plus `manifest.csv`/`manifest.json` (seed, town, type, weather, time,
 every type parameter). Each scenario is exported independently; a failure is a manifest row with
@@ -2031,7 +2032,7 @@ this and is refused for walkers in three layers (emitter, backend, `ScenarioRule
   `pgrep -af carla-port=2010` after a session. A run whose hero "never spawned" or whose telemetry
   sidecar timed out was a map load, not the scenario — re-run it.
 
-## Background traffic („Hintergrundverkehr", `backend/bg_traffic.py`, `frontend/js/bgTraffic.js`)
+## Background traffic („Hintergrundverkehr", `backend/traffic/bg_traffic.py`, `frontend/js/bgTraffic.js`)
 
 `bg_traffic.py` holds the tunables and `generate` (the loop below); it imports from `bg_sumo.py` (SUMO
 install, net, run, FCD → CARLA poses, blueprints), `bg_keepout.py` (`_KeepOut`, trip weights, route
@@ -2059,7 +2060,7 @@ Umgebung menu (AppState.bgTraffic {enabled,count,seed,clearance,radius}) + timed
   `SUMO_HOME`**: on this box it points at a directory that does not exist. Nets are built on first
   use into `maps/<Town>/sumo/` (gitignored), rebuilt when the `.xodr` or the type file is newer;
   netconvert's options are CARLA's own (`Co-Simulation/Sumo/util/netconvert_carla.py`), with
-  `backend/sumo_data/opendrive_netconvert.typ.xml` copied from CARLA — one change: **parking lanes
+  `backend/traffic/sumo_data/opendrive_netconvert.typ.xml` copied from CARLA — one change: **parking lanes
   allow no vehicles**, or SUMO routes cars through bays at 5 km/h.
 - **The pose conversion is CARLA's `BridgeHelper.get_carla_transform`, verbatim**: FCD gives the
   *front bumper* and a compass angle in SUMO's frame (net offset applied, y up). Hence the per-blueprint
@@ -2277,7 +2278,7 @@ bash run.sh 9090                 # terminal 1
 bash tests/run_tests.sh          # terminal 2 (EDITOR_URL overrides the target)
 ```
 
-That runs `test_normalization.py` (182 checks, no browser or server needed — the last ten build a real `.xosc` through the sibling repo to pin cross-actor event-reference resolution, `startTransition`, the hero `SpeedCondition`, the `consider_*` properties and a signal trigger at the pole's road height), then `compare_xodr_lane_graph.py` (also no browser/server/CARLA — validates `backend/lane_graph_builder.py` against the locally probed graphs (gitignored; towns without one are skipped)), then the twenty-six Playwright suites: smoke (25: every global loads, the example save file through Laden, preview, Export validated against the XSD with a negative control, generator + one-step undo), props (72), prop yaw (23), templates (296), events (82), ego events (75), triggers (47), signal panel (31), actor types (260, grows with the catalogue), elevation (33), route fidelity (13: the original reversal case plus three routes checked against CARLA), undo (44), waypoints (67), generator (~2000: twelve types × three seeds × three towns, plus batch, coverage and dialog checks), preview timeline (36: scrubbing, event ticks, keys, Stop/undo, the overpass layer on Town04/05/01, and the bar at 1024–1600 px), generate here (61), recipe (63), user templates (25), event timeline (17), preview lock (62: trajectory speed, Neues Szenario, per-town scenarios, preview view-only, Laden during a preview, Ablauf playhead and card highlight), actions ext (60: hidden `set_distance`, factor/continuous/self-relative speed, Rückwärts, lane-offset presets and Hin & zurück, Abstand zu Akteur, `relative_speed`, acceleration limits in export and preview, the goal latch), background traffic (34: off by default, the bubble around the ego (average count, radius, entry at its edge), Umkreis 0 = whole map, the timed keep-out, determinism and regeneration, exact drawing, the zip export, save/load), vehicle snap (22: lane-centre placement and drag with lane yaw, Shift = free, one undo step, walkers unsnapped, the junction heading tie-break), ego type (58: the ego's vehicle-type picker through to marker, export payload and hero `<Vehicle>` for all nine types, undo, save/load, backend 400s, and the compact welcome modal), help (40: the Hilfe menu, the Handbuch's chapters and contents, every „?" link resolving to a chapter with a negative control, every UI action/trigger label named in the Handbuch, anchor landing, and that the links leave the preview bar and Events header intact), benchmark (~260: 31 Chat2Scenic/Loop2Scenic descriptions rebuilt with pinned generator types and their geometry measured, the new menu rows, layout/variant/site pins through the recipe panel, a negative control). All but the first two drive a real browser against a real server and a real export. **Restart the editor first if you changed `../llm-scenario-gen`** — otherwise the frontend shows new catalogue data while the backend exports the old, which looks like a test bug and is not one.
+That runs `test_normalization.py` (182 checks, no browser or server needed — the last ten build a real `.xosc` through the sibling repo to pin cross-actor event-reference resolution, `startTransition`, the hero `SpeedCondition`, the `consider_*` properties and a signal trigger at the pole's road height), then `compare_xodr_lane_graph.py` (also no browser/server/CARLA — validates `backend/lane_graph/lane_graph_builder.py` against the locally probed graphs (gitignored; towns without one are skipped)), then the twenty-six Playwright suites: smoke (25: every global loads, the example save file through Laden, preview, Export validated against the XSD with a negative control, generator + one-step undo), props (72), prop yaw (23), templates (296), events (82), ego events (75), triggers (47), signal panel (31), actor types (260, grows with the catalogue), elevation (33), route fidelity (13: the original reversal case plus three routes checked against CARLA), undo (44), waypoints (67), generator (~2000: twelve types × three seeds × three towns, plus batch, coverage and dialog checks), preview timeline (36: scrubbing, event ticks, keys, Stop/undo, the overpass layer on Town04/05/01, and the bar at 1024–1600 px), generate here (61), recipe (63), user templates (25), event timeline (17), preview lock (62: trajectory speed, Neues Szenario, per-town scenarios, preview view-only, Laden during a preview, Ablauf playhead and card highlight), actions ext (60: hidden `set_distance`, factor/continuous/self-relative speed, Rückwärts, lane-offset presets and Hin & zurück, Abstand zu Akteur, `relative_speed`, acceleration limits in export and preview, the goal latch), background traffic (34: off by default, the bubble around the ego (average count, radius, entry at its edge), Umkreis 0 = whole map, the timed keep-out, determinism and regeneration, exact drawing, the zip export, save/load), vehicle snap (22: lane-centre placement and drag with lane yaw, Shift = free, one undo step, walkers unsnapped, the junction heading tie-break), ego type (58: the ego's vehicle-type picker through to marker, export payload and hero `<Vehicle>` for all nine types, undo, save/load, backend 400s, and the compact welcome modal), help (40: the Hilfe menu, the Handbuch's chapters and contents, every „?" link resolving to a chapter with a negative control, every UI action/trigger label named in the Handbuch, anchor landing, and that the links leave the preview bar and Events header intact), benchmark (~260: 31 Chat2Scenic/Loop2Scenic descriptions rebuilt with pinned generator types and their geometry measured, the new menu rows, layout/variant/site pins through the recipe panel, a negative control). All but the first two drive a real browser against a real server and a real export. **Restart the editor first if you changed `../llm-scenario-gen`** — otherwise the frontend shows new catalogue data while the backend exports the old, which looks like a test bug and is not one.
 
 `test_ego_events_e2e.py` is kept separate from `test_events_e2e.py` rather than folded in: the older suite's `EGO` fixture and every one of its assertions assume an inert ego (no events), which was true before the ego became a controllable actor and is the entire premise the new suite tests against.
 

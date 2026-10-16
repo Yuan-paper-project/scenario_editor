@@ -308,7 +308,7 @@ T4_LANE_Y = 37.4  # lane 6's centre through the merge and east
 # so a seeded case has to spell the ids run_carla_cases.py seeds — and those
 # are fixed: the ego is obj-1, npcs[i] is obj-(i+2). An id that resolves to
 # neither hero nor a real adversaryN is a hard 400 from _entity_ref in
-# backend/scenario_io.py, so a wrong one fails at build time, not in CARLA.
+# backend/scenario/scenario_io.py, so a wrong one fails at build time, not in CARLA.
 EGO_REF = "obj-1"
 
 

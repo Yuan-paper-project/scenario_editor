@@ -10,7 +10,7 @@
   const toolbar = document.getElementById('toolbar');
 
   // Almost every town has a lane graph now — a probed one, or (Town10, any
-  // uploaded map) one backend/lane_graph_builder.py derives from the .xodr
+  // uploaded map) one backend/lane_graph/lane_graph_builder.py derives from the .xodr
   // directly at startup/upload — so this always attempts the fetch rather
   // than gating on a town list snapshotted once at page load, which would
   // otherwise go stale the moment a map is uploaded mid-session. A genuine

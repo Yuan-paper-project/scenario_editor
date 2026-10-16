@@ -105,7 +105,7 @@
    * lost its predecessor — see _deleteEvent). distance_to_ego is meaningless
    * for the ego itself (a distance from hero to hero is always 0, so the
    * condition fires on tick 1) — the backend coerces this anyway
-   * (_normalize_actor in backend/scenario_io.py), but defaulting it correctly
+   * (_normalize_actor in backend/scenario/scenario_io.py), but defaulting it correctly
    * here means the UI never shows a trigger it is about to rewrite.
    */
   function _defaultFirstTrigger(actor, previousValue = null) {

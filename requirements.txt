@@ -2,4 +2,4 @@ fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
 pyyaml>=6.0
 python-multipart>=0.0.6
-eclipse-sumo==1.24.0   # background traffic (backend/bg_traffic.py): sumo, netconvert, randomTrips
+eclipse-sumo==1.24.0   # background traffic (backend/traffic/bg_traffic.py): sumo, netconvert, randomTrips

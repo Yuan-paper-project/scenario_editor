@@ -1,4 +1,4 @@
-"""Replay background traffic in CARLA as "puppets" (see backend/bg_traffic.py).
+"""Replay background traffic in CARLA as "puppets" (see backend/traffic/bg_traffic.py).
 
     PYTHONPATH=$CARLA_ROOT/PythonAPI/carla python tools/bg_traffic_player.py \
         scenario.bgtraffic.json [--host 127.0.0.1] [--port 2010]
@@ -85,7 +85,7 @@ class Player:
     the tick its t0 is reached, steered by its own time t − t0, removed after
     its last frame. Without a focus every entry has t0 = 0 and the whole
     window; with one, entries start and end where a car enters and leaves the
-    bubble around the ego (backend/bg_traffic.py)."""
+    bubble around the ego (backend/traffic/bg_traffic.py)."""
 
     def __init__(self, client, data, tick_dt):
         self.client = client

@@ -1,5 +1,5 @@
 """
-compare_xodr_lane_graph.py — validate backend/lane_graph_builder.py (the
+compare_xodr_lane_graph.py — validate backend/lane_graph/lane_graph_builder.py (the
 from-.xodr topology builder) against the CARLA-probed maps/<Town>/lane_graph.json
 files, without needing a live CARLA connection. Those files are gitignored —
 regenerate them with tests/probe_carla_lane_graph.py; a town without one is
@@ -20,7 +20,7 @@ Ground truth for `left`/`right` is compared exactly (both are structural
 adjacency facts, independent of how the graph was produced). `successors` is
 compared as a SET, not in order — the xodr builder makes no attempt to rank a
 genuine fork's candidates the way a live CARLA probe's next() does (see
-backend/lane_graph_builder.py's module docstring), so index-0 equality is not
+backend/lane_graph/lane_graph_builder.py's module docstring), so index-0 equality is not
 a meaningful signal here.
 
 Two things a raw set-equality check would wrongly flag as bugs, confirmed by

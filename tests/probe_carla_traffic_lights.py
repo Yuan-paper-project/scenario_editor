@@ -4,7 +4,7 @@
         tests/probe_carla_traffic_lights.py [--port 2010] [Town01 Town05 ...]
 
 Writes maps/<Town>/carla_traffic_lights.json: [{id, x, y, z}] in the editor's
-frame (CARLA world coordinates, no flip). backend/map_renderer.py reads it to
+frame (CARLA world coordinates, no flip). backend/xodr/map_renderer.py reads it to
 mark each .xodr light `inCarla`.
 
 Why it is needed: a signal event is emitted as TrafficSignalStateAction

@@ -1,4 +1,4 @@
-"""Hintergrundverkehr suite: background traffic (bgTraffic.js, backend/bg_traffic.py).
+"""Hintergrundverkehr suite: background traffic (bgTraffic.js, backend/traffic/bg_traffic.py).
 
 * off by default: the export is the plain .xosc, the map has no cars;
 * switched on in the Umgebung menu (Umkreis 80 m by default), it is a bubble

@@ -63,7 +63,7 @@ class ActorNames:
 
     role_name carries the OpenSCENARIO entity name — 'hero', 'adversary',
     'adversary1', ... — which is what the assertions key on; see
-    backend/scenario_io.py's actor_refs mapping.
+    backend/scenario/scenario_io.py's actor_refs mapping.
     """
 
     def __init__(self, world):

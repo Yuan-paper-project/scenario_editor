@@ -30,7 +30,7 @@
  * thrown away if they disagree.
  *
  * Needs AppState.laneGraph, which every town has (a probed one or the
- * from-.xodr build in backend/lane_graph_builder.py).
+ * from-.xodr build in backend/lane_graph/lane_graph_builder.py).
  */
 (() => {
   'use strict';

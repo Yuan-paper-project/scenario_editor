@@ -132,7 +132,7 @@
      * lane_offset (continuous, the default) and a continuous relative set_speed
      * end only when something supersedes them, so after_event may never name
      * one; event_started may. Mirrored by _never_completes
-     * (backend/scenario_io.py) as a 400.
+     * (backend/scenario/scenario_io.py) as a 400.
      */
     neverCompletes(action) {
       if (!action) return false;
@@ -195,7 +195,7 @@
      * would then simply never move. An NPC reacts to the ego through what the
      * ego DOES instead: distance_to_ego, distance_to_point with the ego as the
      * triggering entity, or ego_speed. The ego may still wait on an NPC event.
-     * Mirrored by _normalize_after_event_chains (backend/scenario_io.py) as a 400.
+     * Mirrored by _normalize_after_event_chains (backend/scenario/scenario_io.py) as a 400.
      */
     mayWaitOnActor(actor, owner) {
       if (!actor || !owner) return false;

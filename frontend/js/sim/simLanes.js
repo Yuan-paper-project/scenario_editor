@@ -136,7 +136,7 @@
    * candidate. A CARLA-probed graph's successors[0] is next()'s own real
    * fork choice, so any non-empty list is usable; an xodr-derived graph
    * (graph.source === 'xodr') makes no such claim about ordering (see
-   * backend/lane_graph_builder.py), so a genuine fork — more than one
+   * backend/lane_graph/lane_graph_builder.py), so a genuine fork — more than one
    * candidate — is left unresolved here rather than guessed. Explicit
    * assign_route waypoints are unaffected by this: LaneGraph.route()'s A*
    * already considers every candidate as a real edge and finds whichever

@@ -54,7 +54,7 @@ MAP_CACHE: dict[str, dict] = {}
 # LANE_GRAPH_CACHE: routing topology per town, from one of two sources —
 # tests/probe_carla_lane_graph.py's live-CARLA output (maps/<Town>/
 # lane_graph.json on disk, source-less in the JSON, treated by the frontend
-# as "carla") when it exists, or backend/lane_graph_builder.py's from-.xodr
+# as "carla") when it exists, or backend/lane_graph/lane_graph_builder.py's from-.xodr
 # derivation (source: "xodr") for every town that has no such file: Town10
 # (no CARLA counterpart to probe) and every uploaded map. A from-.xodr graph
 # makes no attempt to rank a fork the way live CARLA next() does — see
@@ -386,7 +386,7 @@ def _bg_traffic_or_http(town: str, request_body: dict) -> dict:
 @app.post("/api/bg_traffic")
 def generate_bg_traffic(body: dict):
     """Background traffic for the preview: {town, seed, count, clearance,
-    keepout: [{w, pts}]} → trajectories (see backend/bg_traffic.py). A plain
+    keepout: [{w, pts}]} → trajectories (see backend/traffic/bg_traffic.py). A plain
     `def`, so FastAPI runs the SUMO subprocesses in its thread pool."""
     return _bg_traffic_or_http(body.get("town") or "", body)
 

@@ -104,7 +104,7 @@
    *
    * The CSV's x/y are CARLA world coordinates, i.e. exactly the frame the render
    * JSON and every actor pose are already in — the single Y flip happens in
-   * backend/map_renderer.py and nothing downstream repeats it. Plot verbatim.
+   * backend/xodr/map_renderer.py and nothing downstream repeats it. Plot verbatim.
    *
    * Drawn like the trigger point's centre marker (a small dot) but with a white
    * casing under it, because the map runs from a near-white verge to a near-black
