@@ -7,16 +7,9 @@
   // ── Which events actually survive the export ────────────────────────────────
 
   /**
-   * ScenarioRules — the single definition of "will this event reach the .xosc",
-   * shared by eventPanel.js (warning chips), scenarioIO.js (the export gate) and
-   * simulate.js (the preview). It used to live only inside simulate.js, so the
-   * panel could show a card the exporter silently threw away.
-   *
-   * Every rule here mirrors one in ../llm-scenario-gen/generator/event_builders.py
-   * — an action builder that returns False makes build_custom_event_chain skip
-   * the whole event. The consequence is worse than the lost event: anything
-   * chained onto it with after_event is left pointing at a storyboard element
-   * that is not in the file, and can never fire.
+   * The one definition of "will this event reach the .xosc", shared by the event
+   * cards, the export gate and the preview. Each rule mirrors an action builder in
+   * event_builders.py whose False drops the event — and dangles anything chained onto it.
    */
   const ROUTE_ACTION_TYPES = new Set([
     'car',
@@ -31,17 +24,9 @@
     'ego',
   ]);
 
-  /* ChangeActorLaneOffset writes through to the controller's `_offset`, and only
-   * SimpleVehicleControl and NpcVehicleControl ever read it — PedestrianControl
-   * stores it and never looks at it again, so a walker gets a valid file in
-   * which it simply never moves sideways.
-   *
-   * Deliberately NOT ROUTE_ACTION_TYPES, which is narrower: that set is limited
-   * by the route planner and leaves 'cyclist' out, but a cyclist aliases to
-   * 'bike' and is a <Vehicle> on simple_vehicle_control — it honours an offset
-   * perfectly well. The rule is exactly "is this a <Pedestrian>", so it is
-   * stated as the exclusion it is. Same split as mapMarkers.js's WALKER_TYPES and
-   * xml_builder._PEDESTRIAN_TYPES; keep all three in step. */
+  /* Only <Pedestrian>s ignore a lane offset (PedestrianControl never reads it). Wider
+   * than ROUTE_ACTION_TYPES: a cyclist is a <Vehicle> and honours it. Same split as
+   * mapMarkers.js's WALKER_TYPES and xml_builder._PEDESTRIAN_TYPES. */
   const WALKER_ACTION_TYPES = new Set(['pedestrian', 'child']);
 
   /** A trigger point is only usable once it actually carries coordinates. */
@@ -51,22 +36,9 @@
 
   // ── Event references: cross-actor triggers and the cycles they make possible ──
   //
-  // Two triggers name another event: after_event (fires when it COMPLETES,
-  // completeState) and event_started (fires when it STARTS, startTransition).
-  // Both carry `event_id` plus an optional `actor_ref`; an absent actor_ref
-  // means the event's own actor, so every save file, template and payload
-  // written before cross-actor references existed still resolves the same way.
-  // The backend resolves actor_ref to an OSC entity name at export
-  // (scenario_io.py) and the emitter keys its name table on (entity, event_id),
-  // because ScenarioRunner's storyboardElementRef lookup goes through a global
-  // blackboard ('(EVENT)<name>-START' / '-END') and does not care which Act
-  // wrote it.
-  //
-  // Each event has exactly one trigger, so the reference graph is a functional
-  // graph: at most one outgoing edge per node. Walking forward from a node
-  // therefore finds any cycle it is part of without a full SCC pass. Both
-  // trigger kinds are edges of the same graph — a loop of "starts when the
-  // other starts" never fires either.
+  // after_event fires on the named event's completion, event_started on its start.
+  // An absent actor_ref means the event's own actor. One trigger per event makes the
+  // reference graph functional (≤ 1 outgoing edge), so a forward walk finds any cycle.
 
   const EVENT_REF_TRIGGERS = new Set(['after_event', 'event_started']);
   const _isEventRef = (trigger) => !!trigger && EVENT_REF_TRIGGERS.has(trigger.type);
@@ -89,13 +61,7 @@
     return index >= 0 ? { actor: owner, event: list[index], index } : null;
   }
 
-  /**
-   * Every node reachable by following event-reference edges forward from one
-   * event, as a Set of keys. Stops at a missing target, a trigger that names no
-   * event, or a repeat — so it terminates on a cycle instead of spinning.
-   * The start node is included only when the walk comes back to it, which is
-   * exactly the test for "this event is on a cycle".
-   */
+  /** Keys reachable forward from one event; the start is included only if the walk returns to it (a cycle). */
   function _afterEventReach(startActor, startEvent) {
     const seen = new Set();
     let actor = startActor,
@@ -121,19 +87,12 @@
       return !WALKER_ACTION_TYPES.has(actorType);
     },
 
-    /** Can this actor type drive backwards? PedestrianControl raises on a
-     * negative target speed; every <Vehicle> just reverses its velocity. */
+    /** Can this type drive backwards? PedestrianControl raises on a negative target speed. */
     canReverse(actorType) {
       return !WALKER_ACTION_TYPES.has(actorType);
     },
 
-    /**
-     * Does this action's Event never report completeState on its own? A held
-     * lane_offset (continuous, the default) and a continuous relative set_speed
-     * end only when something supersedes them, so after_event may never name
-     * one; event_started may. Mirrored by _never_completes
-     * (backend/scenario/scenario_io.py) as a 400.
-     */
+    /** Does this action never complete on its own (held lane_offset, continuous follow)? Mirrors _never_completes. */
     neverCompletes(action) {
       if (!action) return false;
       if (action.type === 'lane_offset') return action.continuous !== false;
@@ -144,12 +103,7 @@
       return false;
     },
 
-    /**
-     * A relative set_speed naming the acting actor itself compounds every tick
-     * (ChangeActorTargetSpeed re-applies the relative target per tick) unless
-     * the `rate` ramp snapshots it once at initialise. Continuous skips that
-     * ramp, so it compounds too.
-     */
+    /** A self-relative set_speed compounds every tick unless a non-continuous `rate` ramp snapshots it. */
     selfSpeedCompounds(actor, action) {
       if (!actor || !action || action.type !== 'set_speed') return false;
       const target = action.target || {};
@@ -158,13 +112,9 @@
     },
 
     /**
-     * A non-blocking warning for `ev`, or null: the file exports, but the event
-     * cannot do anything in CARLA. SimpleVehicleControl latches `_reached_goal`
-     * at the end of its waypoint list and from then on writes zero velocity
-     * before reading any target — nothing ever clears it. So on a vehicle, an
-     * event that starts when its own trajectory COMPLETES (which is that very
-     * moment) is dead on arrival. Other timings can only be told by running the
-     * preview, which badges an event that fires after the stop.
+     * Non-blocking warning, or null: exports, but does nothing in CARLA. A vehicle
+     * latches `_reached_goal` at its path's end, so an event starting when its own
+     * trajectory completes is dead on arrival.
      */
     eventWarning(actor, ev, events) {
       if (!actor || !ev || WALKER_ACTION_TYPES.has(actor.type)) return null;
@@ -187,16 +137,7 @@
     /** Does this trigger name another event (after_event / event_started)? */
     isEventRef: _isEventRef,
 
-    /**
-     * May an event on `actor` wait on an event owned by `owner` at all?
-     *
-     * An NPC may not wait on an ego event. The ego may be driven by the AV
-     * under test, which carries no storyboard events — an NPC chained onto one
-     * would then simply never move. An NPC reacts to the ego through what the
-     * ego DOES instead: distance_to_ego, distance_to_point with the ego as the
-     * triggering entity, or ego_speed. The ego may still wait on an NPC event.
-     * Mirrored by _normalize_after_event_chains (backend/scenario/scenario_io.py) as a 400.
-     */
+    /** May `actor` wait on an event of `owner`? Never an NPC on the ego, which may be the AV (backend: 400). */
     mayWaitOnActor(actor, owner) {
       if (!actor || !owner) return false;
       return actor.type === 'ego' || owner.type !== 'ego';
@@ -214,14 +155,7 @@
       return _afterEventReach(actor, ev).has(_afterEventKey(actor.id, ev.id));
     },
 
-    /**
-     * May `ev` (on `actor`) wait for `candidate` (on `candidateActor`)?
-     *
-     * False when the candidate already depends on `ev`, directly or through a
-     * chain: pointing at it would close a loop on which no event ever fires.
-     * eventPanelChains.js omits such an option from the dropdown, which is what makes
-     * a cycle unauthorable rather than merely reported.
-     */
+    /** May `ev` wait for `candidate`? False if that would close a loop (the dropdown omits it). */
     canWaitFor(actor, ev, candidateActor, candidate) {
       if (!actor || !ev || !candidateActor || !candidate) return false;
       if (candidateActor.id === actor.id && String(candidate.id) === String(ev.id)) return false;
@@ -239,11 +173,7 @@
       return true; // set_speed / set_distance / lane_change never fail to emit
     },
 
-    /**
-     * The one thing wrong with `ev`, or null. `short` is the card chip, `message`
-     * the full sentence used by the export gate. Reports the event's own action
-     * before its trigger — a dropped action is why the trigger stops mattering.
-     */
+    /** The one thing wrong with `ev`, or null: `short` for the chip, `message` for the export gate. Action before trigger. */
     eventProblem(actor, ev, events) {
       const action = (ev && ev.action) || {};
       const trigger = (ev && ev.trigger) || {};
@@ -271,13 +201,7 @@
             message: 'die Route hat weniger als 2 Wegpunkte',
           };
         }
-        // The first waypoint must route. Its leg runs from the actor's own pose
-        // to itself, so on any path the editor built this is already true (the
-        // seed is placed 'fastest' and cannot be deleted or toggled) — the gate
-        // exists for a path that reached the editor another way: a save file
-        // predating the seed guard, or an LLM payload. The backend raises the
-        // same case as a 400; without this the export would fail with no chip
-        // ever having said which event was at fault.
+        // Waypoint 0 must be 'fastest'; editor-built paths always are, so this catches loaded files.
         if (action.waypoints[0] && action.waypoints[0].strategy === 'shortest') {
           return {
             code: 'route_starts_straight',
@@ -285,8 +209,7 @@
             message: 'der erste Wegpunkt der Route ist auf „Gerade" gesetzt',
           };
         }
-        // An assign_route's own trigger is discarded and forced to
-        // simulation_time 0 at export, so it can never be the problem.
+        // A route's trigger is discarded at export.
         return null;
       }
 
@@ -344,9 +267,7 @@
         };
       }
       if (_isEventRef(trigger)) {
-        // The reference may leave this actor, so the target is resolved through
-        // AppState rather than looked up in `events` — which holds only the
-        // owning actor's own list.
+        // Resolved through AppState: the reference may leave this actor.
         const target = _afterEventTarget(actor, trigger, events);
         if (!target) {
           return {
@@ -355,11 +276,7 @@
             message: 'der Auslöser verweist auf ein Event, das es nicht gibt',
           };
         }
-        // A loop: every event on it waits for one that never completes, so none
-        // of them ever fires. The dropdown cannot build one (canWaitFor), and
-        // the backend rejects it with a 400 — this catches a loaded save file
-        // or an LLM payload, and names the card at fault before the export gate
-        // refuses the whole scenario.
+        // A loop never fires; the dropdown cannot build one, so this catches loaded files.
         if (this.afterEventCycles(actor, ev)) {
           return {
             code: 'cyclic_after_event',
@@ -368,9 +285,7 @@
           };
         }
         const targetAction = target.event.action || {};
-        // Pointing at an assign_route is fine: the backend rewrites that trigger
-        // to distance_to_ego @ 400 rather than leaving it dangling — which is
-        // also why the ego ban below does not apply to it.
+        // The backend rewrites a reference to a route (distance_to_ego @ 400) — so no ego ban either.
         if (targetAction.type === 'assign_route') return null;
         if (!this.mayWaitOnActor(actor, target.actor)) {
           return {
@@ -379,11 +294,7 @@
             message: 'ein NPC wartet auf ein Ego-Event — ein vom AV gefahrenes Ego hat keine Events',
           };
         }
-        // A held lane_offset or a continuous follow (neverCompletes) never
-        // completes on its own — it is never a valid after_event target. Its
-        // START is perfectly well defined, so event_started may name one. The
-        // dropdown never offers the former and the backend rejects it with a
-        // 400; this catches a save file or an LLM payload before the export does.
+        // A never-completing event is no after_event target (its start is fine for event_started).
         if (trigger.type === 'after_event' && this.neverCompletes(targetAction)) {
           return targetAction.type === 'lane_offset'
             ? {

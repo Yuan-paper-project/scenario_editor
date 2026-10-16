@@ -44,9 +44,7 @@
     Toast.info(step.label ? `${verb}: ${step.label}` : verb);
   }
 
-  // UndoStack has no event of its own, but every push happens inside one of
-  // AppState's mutators, which emit — so re-read the depths after any of them,
-  // once per frame however many fire.
+  // UndoStack emits nothing, but every push happens in an AppState mutator: re-read once per frame.
   let _historyRaf = 0;
   function _refreshHistoryButtons() {
     if (_historyRaf) return;
@@ -64,22 +62,19 @@
 
   // ── Mouse interaction ────────────────────────────────────────────────────────
 
-  // Pan with left-drag on the background (not on actors)
+  // Pan with left-drag on the background, not on markers.
   svg.addEventListener(
     'mousedown',
     (e) => {
       if (e.button !== 0) return;
-      // During a preview nothing on the map is draggable (objectsDrag.js stands
-      // down), so a grab on a marker pans like a grab anywhere else.
+      // During a preview nothing is draggable, so a grab on a marker pans too.
       if (
         !window.Simulate?.running &&
         (e.target.closest('.actor-group') ||
           e.target.closest('.yaw-arrow') ||
           e.target.closest('.trigger-radius-control') ||
           e.target.closest('.trigger-point-control') ||
-          // This handler is capture-phase on the same <svg> objectsDrag.js binds on
-          // the bubble phase, so it runs FIRST: without the waypoint here the pan
-          // is already under way by the time the drag handler sees the mousedown.
+          // Capture phase runs before objectsDrag.js's bubble handler, so markers must be excluded here.
           e.target.closest('.path-waypoint'))
       )
         return;
@@ -119,10 +114,8 @@
       drag.triggerPoint = null;
       if (moved) {
         ObjectsManager.moveTriggerPoint(actorId, eventId, moved.x, moved.y);
-        // The marker is re-rendered on every mousemove, so by mouseup the
-        // element the drag started on is detached and the browser may not
-        // dispatch a click at all — the flag has to expire on its own or it
-        // swallows an unrelated map click much later (a placement, a waypoint).
+        // Expires on a timer: the marker is re-rendered mid-drag, so mouseup may dispatch no click
+        // and a permanent flag would swallow an unrelated click later.
         _suppressNextClick = true;
         setTimeout(() => {
           _suppressNextClick = false;
@@ -154,7 +147,6 @@
     true,
   );
 
-  // Zoom with mouse wheel
   svg.addEventListener(
     'wheel',
     (e) => {
@@ -164,10 +156,8 @@
       const cursor = _clientToSvg(e);
       if (!cursor) return;
 
-      // Keep the world point under the cursor fixed while zooming. The pan has to
-      // be derived from the CLAMPED zoom and not the requested one — otherwise
-      // wheeling at either limit stops scaling but keeps translating the map,
-      // which walks it off screen just as effectively as no clamp at all.
+      // Keep the point under the cursor fixed; the pan comes from the CLAMPED zoom, or the map
+      // keeps translating at the limits.
       const world = svgToWorld(e);
       view.zoom = _clampZoom(view.zoom * factor);
       view.pan.x = cursor.x - world.x * view.zoom;

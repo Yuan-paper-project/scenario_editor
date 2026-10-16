@@ -10,8 +10,6 @@
 
   function _renderTriggerPoints() {
     if (!layers.triggerPoints) return;
-    // findById also matches props, but a prop has no .events, so the forEach
-    // below is a no-op for one — no extra guard needed.
     const actor = AppState.findById(AppState.selectedId);
     if (!actor) return;
     (actor.events || []).forEach((ev) => {
@@ -32,8 +30,7 @@
       _attachTriggerRadiusDrag(ring, actor.id, ev.id, point);
       g.appendChild(ring);
       const marker = UIUtils.svgEl('g', { class: 'trigger-point-control' });
-      // Invisible hit target — the drawn marker is 0.7 m across, which is a
-      // sub-pixel click target at whole-town zoom.
+      // Invisible hit target: the 0.7 m marker is sub-pixel at town zoom.
       marker.appendChild(
         UIUtils.svgEl('circle', {
           cx: '0',
@@ -90,12 +87,7 @@
     });
   }
 
-  /**
-   * Live-move the point while the mouse is down. Only x/y are written here —
-   * ObjectsManager.moveTriggerPoint re-derives z on mouseup, matching how an
-   * actor's height is handled (the lookup scans every lane segment, and z is
-   * invisible in a top-down view anyway).
-   */
+  /** Live-move the point (x/y only); moveTriggerPoint re-derives z on mouseup, like an actor drag. */
   function _updateTriggerPointDrag(e) {
     const actor = AppState.findById(drag.triggerPoint.actorId);
     if (!actor) return;

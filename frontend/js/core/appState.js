@@ -8,19 +8,10 @@
   let _nextId = 1;
 
   /**
-   * Actor types that may be swapped for one another on an already-placed actor,
-   * grouped by what a swap is allowed to preserve. Labels mirror the toolbar
-   * buttons in index.html; sections become <optgroup>s in the type picker.
-   *
-   * The split is load-bearing, not cosmetic: every 'vehicle' type is snapped to
-   * a lane centre at placement while every 'vru' type is in ROAD_FACING_TYPES
-   * (objectsCore.js) and placed freely, so a within-group swap can keep the existing
-   * pose untouched. assign_route is likewise vehicle-only downstream
-   * (_ROUTE_ACTION_TYPES in ../llm-scenario-gen/generator/event_builders.py), so
-   * a within-group swap can never orphan a route event. Crossing the boundary
-   * would break both — hence canSwitchType() rather than a UI-only restriction.
-   *
-   * ego and prop appear nowhere here and are therefore never swappable.
+   * Actor types that may be swapped on a placed actor; sections become <optgroup>s.
+   * The groups are load-bearing: vehicles are lane-snapped and routable, VRUs are
+   * placed freely, so only a within-group swap keeps pose and events valid.
+   * ego and prop are in no group.
    */
   const ACTOR_TYPE_GROUPS = [
     {
@@ -62,15 +53,7 @@
     },
   ];
 
-  /**
-   * German names for the weather keys and the time-of-day values.
-   *
-   * These are the same words the weather bar prints, and the bar spells them
-   * out in index.html markup — keep the two in step. Anything that reports
-   * weather back to the user (today the scenario summary) reads them from here
-   * rather than printing the raw key, which is how the summary came to say
-   * 'wet_road' underneath a slider labelled 'Nasse Str.'.
-   */
+  /** German names for weather keys and time values; the Umgebung menu repeats them in index.html. */
   const WEATHER_LABELS = {
     fog: 'Nebel',
     rainy: 'Regen',
@@ -94,11 +77,7 @@
     map: null, // selected town name string
     mapData: null, // road render JSON from /api/maps/{town}/render
     laneGraph: null, // cached CARLA routing graph from /api/maps/{town}/lane_graph, or null if unprobed
-    // Landmark reference points from maps/special_buildings.csv, ALL towns at
-    // once — the map draws only the rows whose `town` matches AppState.map.
-    // Pure map reference data: never part of the scenario, so it is absent from
-    // toJSON()/loadJSON(), from SCENARIO_KEYS (hence records no undo entry) and
-    // from the export payload.
+    // Landmarks for ALL towns (maps/special_buildings.csv); reference data, never scenario state.
     specialBuildings: [],
 
     // ── Scenario ─────────────────────────────────────────────
@@ -118,20 +97,14 @@
       dust_storm: 0,
     },
     time: 'daytime',
-    // Background traffic (bgTraffic.js): SUMO cars CARLA replays as puppets.
-    // A setting like weather/time — saved in toJSON()/loadJSON(), kept out of
-    // undo — and only the settings: the trajectories are regenerated from
-    // them and the scenario's paths, by the backend, deterministically.
+    // Background traffic settings (bgTraffic.js): saved like weather, kept out of undo.
     bgTraffic: { enabled: false, count: 30, seed: 1, clearance: 0.5, radius: 80 },
 
     // ── Editor interaction ─────────────────────────────────────
     selectedId: null, // id of selected actor/object
     selectedTrafficLightId: null, // id of selected map traffic light
-    // The one path waypoint currently under the cursor's attention, shared by
-    // the map (mapPaths.js) and the event card's waypoint list (eventPanelPaths.js)
-    // so the two always agree on which point is which:
-    //   { actorId, eventId, pathType: 'trajectory'|'route', index }
-    // Editor-only state, so it records no undo entry (_isScenarioPatch).
+    // The marked waypoint, shared by the map and the event card:
+    //   { actorId, eventId, pathType: 'trajectory'|'route', index }. Editor-only, no undo.
     selectedWaypoint: null,
     activeTool: null, // selected toolbar tool, or null
     trajectoryMode: false, // true while drawing a path
@@ -141,10 +114,7 @@
     activePathEventId: null, // event id whose action path/route we're drawing
     pendingTemplate: null, // scenario template to apply to the next placed actor
     pendingGenerate: null, // generator type key (or 'any') to build at the next map click
-    // Recipe of the scenario the generator last built ({type, seed, near,
-    // overrides, params, criticality, signature}) or null. Scenario state:
-    // saved, and part of every undo snapshot, so undoing a rebuild restores
-    // the recipe that built what is on screen.
+    // The generator's recipe for what is on screen, or null. Scenario state (saved, in undo).
     generated: null,
     pendingProp: null, // CARLA blueprint id to place while activeTool === 'prop'
 
@@ -162,13 +132,7 @@
       return actor?.type === 'prop';
     },
 
-    /**
-     * The actor's single path-producing event (follow_trajectory or
-     * assign_route with points), or null. eventPanel.js enforces at most one
-     * such event per actor, so "the" path event is unambiguous — this is the
-     * one place ego and NPCs share the same path storage: on the actor's
-     * events, never on the actor itself.
-     */
+    /** The actor's one path event (follow_trajectory or assign_route), or null; at most one per actor. */
     pathEventOf(actor) {
       return (
         (actor?.events || []).find((ev) => {
@@ -208,9 +172,7 @@
       if (scenario) UndoStack._recordSet();
       Object.assign(this, patch);
       this.emit('change', patch);
-      // After the listeners: one of them can mutate further (objectsPaths.js
-      // discards an incomplete path on a mode change), and the baseline has to
-      // end up describing the state the user is actually looking at.
+      // After the listeners, which may mutate further (_discardIncompletePath).
       if (scenario) UndoStack._settle();
     },
 
@@ -257,9 +219,7 @@
 
     /** Select an actor. Pass null to deselect. */
     select(id) {
-      // Waypoints are only clickable while their own actor is selected, so a
-      // selection that moves elsewhere leaves the marked point unreachable —
-      // and Entf would then delete a waypoint of an actor no longer on screen.
+      // A waypoint mark on another actor would be unreachable, and Entf would delete it unseen.
       if (this.selectedWaypoint && this.selectedWaypoint.actorId !== id) {
         this.selectedWaypoint = null;
       }
@@ -268,13 +228,7 @@
       this.emit('selectionChanged', id);
     },
 
-    /**
-     * Mark one path waypoint, or clear the mark with null.
-     *
-     * Goes through set() so both the map and the event card hear about it on
-     * the same 'change'; the key is editor-only, so nothing lands in the undo
-     * history (marking a point is not an edit).
-     */
+    /** Mark one path waypoint (null clears). Editor-only: no undo entry. */
     selectWaypoint(sel) {
       this.set({ selectedWaypoint: sel || null });
     },
@@ -291,22 +245,15 @@
     },
 
     /**
-     * Human-readable actor label, indexed per actor type for NPCs.
-     *
-     * The ego has exactly two spellings and this is where both live: prose
-     * ('Ego-Fahrzeug' — panel titles, toasts, validation messages) and `short`
-     * ('EGO' — the map marker, the draw banner and the event dropdowns, where
-     * it sits beside AUTO 1 / FUSSGAENGER 2 and has to match their case and
-     * width). Callers used to pass the spelling in, which is how one vehicle
-     * ended up called Ego-Fahrzeug, EGO, Ego Vehicle and Ego in four places.
+     * Actor label, numbered per type for NPCs. Owns both spellings of the ego:
+     * 'Ego-Fahrzeug' in prose, 'EGO' with `short` (beside CAR 1 etc.).
      */
     actorLabel(actorOrId, options = {}) {
       const actor = typeof actorOrId === 'string' ? this.findById(actorOrId) : actorOrId;
       if (!actor) return options.fallback || 'Akteur';
       if (actor.type === 'ego') return options.ego || (options.short ? 'EGO' : 'Ego-Fahrzeug');
 
-      // Props are numbered within staticObjects and labelled by prop, not type
-      // (every prop has type === 'prop', so the type would carry no meaning).
+      // Props are numbered within staticObjects and named by prop.
       if (actor.type === 'prop') {
         const name = (window.PropCatalog?.label(actor.prop) || 'Requisite').toUpperCase();
         const idx = this.staticObjects.filter((o) => o.prop === actor.prop).findIndex((o) => o.id === actor.id);
@@ -318,15 +265,6 @@
       return index >= 0 ? `${type} ${index + 1}` : type;
     },
 
-    /**
-     * German label for a bare actor type string ('car' -> 'Auto').
-     *
-     * Derived from ACTOR_TYPE_GROUPS rather than a second table, so a type
-     * added to the picker is named correctly everywhere for free. Falls back
-     * to the raw key, which is what the scenario summary used to print for
-     * every type ('car', 'pedestrian') next to a toolbar saying Auto and
-     * Fussgaenger.
-     */
     WEATHER_LABELS,
     TIME_LABELS,
 
@@ -340,6 +278,7 @@
       return TIME_LABELS[value] || String(value || '');
     },
 
+    /** German label for an actor type ('car' -> 'Auto'), derived from ACTOR_TYPE_GROUPS. */
     typeLabel(type) {
       if (type === 'ego') return 'Ego-Fahrzeug';
       if (type === 'prop') return 'Requisite';
@@ -356,23 +295,13 @@
 
     ACTOR_TYPE_GROUPS,
 
-    /**
-     * The vehicle archetype an actor is drawn, simulated and exported as. The
-     * ego keeps `type: 'ego'` as its identity (dozens of checks key on it) and
-     * carries its body in `vehicleType`, absent meaning 'car' — so every save
-     * file from before the field existed loads as the car it always was.
-     */
+    /** The vehicle archetype an actor is drawn and exported as: the ego's `vehicleType` (absent = car). */
     bodyType(actor) {
       if (!actor) return 'car';
       return actor.type === 'ego' ? actor.vehicleType || 'car' : actor.type;
     },
 
-    /**
-     * Change the ego's vehicle type. Any type in the 'vehicle' group: the ego is
-     * always a <Vehicle> under simple_vehicle_control, and every one of those
-     * types is lane-snapped and routable, so the pose and every event stay
-     * valid. One updateById, so it is one undo step.
-     */
+    /** Change the ego's vehicle type (any 'vehicle' type); one undo step. */
     setEgoVehicleType(nextType) {
       if (!this.ego || this.switchGroupFor(nextType) !== 'vehicle') return false;
       if (this.bodyType(this.ego) === nextType) return false;
@@ -394,14 +323,8 @@
     },
 
     /**
-     * Swap a placed NPC's type in place. Only `type` changes — id, pose, events
-     * and start speed are left untouched.
-     *
-     * The actor is moved to the end of `npcs` so it takes the next number in its
-     * new type group, exactly as a freshly placed actor does; the type it left
-     * closes its gap for free, because actorLabel() derives the number from
-     * array position rather than storing it. Returns false if the swap is not
-     * allowed (ego, prop, unknown or cross-group type).
+     * Swap a placed NPC's type, keeping id, pose and events. The actor moves to the
+     * end of `npcs` so it takes the next number in its new type. False if not allowed.
      */
     switchActorType(id, nextType) {
       const actor = this.npcs.find((n) => n.id === id);
@@ -441,28 +364,17 @@
 
     /** Fill an actor's shared defaults on load (ego and NPCs alike). */
     _hydrateActor(a) {
-      // behaviors/trigger_distance are dropped rather than spread through: a
-      // save file predating their removal would otherwise carry them straight
-      // back out through toJSON()'s `...a`, as fields nothing reads any more.
+      // Fields of old save files that nothing reads; dropped so toJSON's spread does not keep them.
       const { behaviors, trigger_distance, ...rest } = a;
       return {
         ...rest,
         events: a.events || [],
-        // 0, not ObjectsManager's placement default of 10: this runs on
-        // loadJSON, and a save file predating the field must keep its actors
-        // exactly as stationary as they were when it was written.
+        // 0, not the placement default of 10: an old file's actors must stay as still as they were.
         initial_speed: a.initial_speed ?? 0,
       };
     },
 
-    /**
-     * Legacy saves put the ego's path on the actor itself as `trajectory`
-     * (from before the ego had events at all). Convert it into a
-     * follow_trajectory event, exactly like an NPC's path, so old files —
-     * example/Town01_scenario2.json, every tests/artifacts case's scenario.json
-     * — still open. Idempotent: a no-op once migrated. Nothing downstream
-     * reads ego.trajectory any more.
-     */
+    /** Convert a legacy `ego.trajectory` into a follow_trajectory event. Idempotent. */
     _migrateEgoTrajectory(ego) {
       const legacy = ego.trajectory || [];
       delete ego.trajectory;
@@ -482,17 +394,9 @@
     },
 
     /**
-     * Disarm every in-progress placement / draw mode.
-     *
-     * Three callers need exactly this set cleared — Esc, the ruler toggle (which
-     * passes its own `activeTool`) and pressing Play — and it was two verbatim
-     * copies of an eight-key literal before the third arrived (nine keys now,
-     * with `pendingGenerate`). Clearing the draw
-     * flags is also what discards a path that never reached two waypoints
-     * (objectsPaths.js `_discardIncompletePath` hangs off this change), so callers
-     * that go on to read the actors must call this first.
-     *
-     * Records no undo entry: `_isScenarioPatch` does not count editor-only keys.
+     * Disarm every placement and draw mode (Esc, the ruler, Play). Clearing the draw
+     * flags discards a path under two waypoints, so call this before reading actors.
+     * Records no undo entry.
      */
     cancelPlacement(extra = {}) {
       this.set({
@@ -533,11 +437,8 @@
     },
 
     /**
-     * Back to an empty scenario on the current map — what a fresh map load
-     * looks like: no ego, NPCs, props, signal Schaltungen or generator recipe.
-     * Weather and time are a setting, not scenario content, and stay. One
-     * undo step; the map-change path clears the history afterwards instead,
-     * since undoing there would restore actors at the old town's coordinates.
+     * Empty the scenario on the current map; weather and time stay. One undo step
+     * (a map change clears the history instead).
      */
     clearScenario() {
       this.cancelPlacement();
@@ -552,8 +453,7 @@
           selectedTrafficLightId: null,
           selectedWaypoint: null,
         });
-        // Empty patch: the overview's "arrays changed" signal (properties.js).
-        // selectionChanged redraws the actors and the signal heads on the map.
+        // Empty patch: the "arrays changed" signal.
         this.set({});
         this.emit('selectionChanged', null);
       });
@@ -564,8 +464,7 @@
       this.map = data.map || null;
       this.weather = data.weather ? { ...data.weather } : { ...this.weather };
       this.time = data.time || 'daytime';
-      // A file from before the feature has no traffic: off, not "keep whatever
-      // the editor had", or loading an old scenario would quietly add cars.
+      // A file without the setting loads with traffic off, never the editor's current one.
       this.bgTraffic = { enabled: false, count: 30, seed: 1, clearance: 0.5, radius: 80, ...(data.bgTraffic || {}) };
       this.ego = data.ego ? this._migrateEgoTrajectory(this._hydrateActor(data.ego)) : null;
       this.npcs = (data.npcs || []).map((n) => this._hydrateActor(n));
@@ -573,8 +472,7 @@
       this.trafficSignals = (data.trafficSignals || []).map((sig) => ({ ...sig, events: sig.events || [] }));
       this.generated = data.generated || null;
 
-      // Advance the id counter past everything just loaded, otherwise the next
-      // placed object reuses an id that already exists in the file.
+      // Advance the id counter past everything loaded, or the next object reuses an id.
       const loadedIds = [this.ego, ...this.npcs, ...this.staticObjects, ...this.trafficSignals]
         .filter(Boolean)
         .map((o) => o.id);

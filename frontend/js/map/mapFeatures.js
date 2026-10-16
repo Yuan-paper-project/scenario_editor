@@ -18,17 +18,11 @@
     const selected = String(AppState.selectedTrafficLightId || '') === id;
     const configured = (action?.events || []).length > 0;
 
-    // A compact signal head: dark housing, three lamps. Every lamp is dark until
-    // the scenario forces a state on this signal, and then exactly the states
-    // its events set are lit — the old marker was an 8 m red disc with a glow,
-    // red whether or not anything was configured, and at lane zoom it was the
-    // loudest thing on the map and sat over the crosswalk it belongs to.
+    // A signal head: every lamp dark until the scenario forces a state, then exactly those lit.
     const lit = new Set((action?.events || []).map((ev) => ev.state || 'red'));
     const g = UIUtils.svgEl('g', {
       transform: `translate(${x},${y})`,
-      // A light the .xodr has but CARLA does not (tl.inCarla === false, from
-      // maps/<town>/carla_traffic_lights.json): still selectable, so the panel
-      // can say why it cannot be switched, but drawn as a ghost.
+      // A light CARLA does not have (inCarla false): selectable, so the panel can say why, but ghosted.
       class:
         `traffic-light${selected ? ' selected' : ''}${configured ? ' configured' : ''}` +
         `${tl.inCarla === false ? ' not-in-carla' : ''}`,
@@ -41,8 +35,7 @@
       TrafficSignals.select(id);
     });
 
-    // Invisible hit target, larger than the housing so it stays clickable at
-    // town zoom — the same trick props and trigger points use.
+    // Invisible hit target, larger than the housing.
     g.appendChild(UIUtils.svgEl('circle', { cx: '0', cy: '0', r: '2.4', fill: 'transparent' }));
 
     const W = 1.5,
@@ -72,8 +65,6 @@
       );
     });
 
-    // Selection marks around the housing. Same helper as actors and props: one
-    // selection language for everything on the map.
     g.appendChild(_buildSelectionMarks(W + 0.6, H + 0.6));
 
     const title = UIUtils.svgEl('title', {});
@@ -97,19 +88,8 @@
   }
 
   /**
-   * Landmark dots for the current town (maps/special_buildings.csv, fetched by
-   * specialBuildings.js into AppState.specialBuildings — every town's rows at
-   * once, so this filters).
-   *
-   * The CSV's x/y are CARLA world coordinates, i.e. exactly the frame the render
-   * JSON and every actor pose are already in — the single Y flip happens in
-   * backend/xodr/map_renderer.py and nothing downstream repeats it. Plot verbatim.
-   *
-   * Drawn like the trigger point's centre marker (a small dot) but with a white
-   * casing under it, because the map runs from a near-white verge to a near-black
-   * carriageway and no single colour survives both. Nothing here is hit-testable:
-   * a landmark is reference decoration, and a hit target here would swallow
-   * clicks aimed at the road under it.
+   * Landmark dots for the current town. The CSV's x/y are CARLA coordinates, plotted
+   * verbatim (no second Y flip). Cased for verge and asphalt alike; never hit-tested.
    */
   function _renderSpecialBuildings() {
     if (!layers.buildings) return;
@@ -133,8 +113,7 @@
       });
       label.textContent = _landmarkLabel(b.type);
       g.appendChild(label);
-      // Not a tooltip the user can hover for (the group is pointer-events:none)
-      // — it is there for anyone reading the DOM, and costs nothing.
+      // For DOM readers; the group is pointer-events:none, so it never shows as a tooltip.
       const title = UIUtils.svgEl('title', {});
       title.textContent = b.name ? `${_landmarkLabel(b.type)} — ${b.name}` : _landmarkLabel(b.type);
       g.appendChild(title);
@@ -142,8 +121,7 @@
     }
   }
 
-  // German names for maps/special_buildings.csv's building_type. Anything not
-  // listed falls back to the raw key with underscores as spaces.
+  // German names for building_type; unlisted keys fall back to the key with spaces.
   const LANDMARK_LABELS = {
     bus_stop: 'Haltestelle',
     store: 'Geschäft',

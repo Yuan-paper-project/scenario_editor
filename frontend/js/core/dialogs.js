@@ -56,8 +56,7 @@
       _confirmOk.textContent = okLabel;
       _confirmOverlay.classList.remove('hidden');
       _confirmResolve = resolve;
-      // Focus the confirming button, so Enter lands on it and the dialog opens
-      // with the keyboard already on the action it is asking about.
+      // So Enter lands on the confirming button.
       _confirmOk.focus();
     });
   }
@@ -73,10 +72,8 @@
   _confirmCancel.addEventListener('click', () => _closeConfirm(false));
   _confirmOk.addEventListener('click', () => _closeConfirm(true));
 
-  // Enter confirms, Escape cancels — from anywhere, not only the focused
-  // button. CAPTURE phase and stopPropagation: mapKeys.js's own Escape handler
-  // would otherwise also cancel the tool or the path being drawn *behind* the
-  // dialog, and Enter would reach the finish-path shortcut.
+  // Enter confirms, Escape cancels, from anywhere. Capture + stopPropagation, so neither
+  // reaches the tool or path behind the dialog.
   window.addEventListener(
     'keydown',
     (e) => {

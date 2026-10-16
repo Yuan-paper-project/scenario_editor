@@ -39,12 +39,10 @@
   let _overpassGroupsFor = () => null;
 
   function renderMap(mapData) {
-    // Clear all layers
     [layerRoads, layerMarkings, layerSpawns, layerJunctions].forEach((g) => {
       while (g.firstChild) g.removeChild(g.firstChild);
     });
 
-    // Create/reset dynamic detail layers (inserted before trajectories)
     if (layers.crosswalks) layers.crosswalks.remove();
     if (layers.trafficLights) layers.trafficLights.remove();
     if (layers.roadDir) layers.roadDir.remove();
@@ -55,9 +53,7 @@
     if (layers.speeds) layers.speeds.remove();
     if (layers.pathsTop) layers.pathsTop.remove();
     if (layers.actorsTop) layers.actorsTop.remove();
-    // Cached route geometry is lane geometry, i.e. specific to the town that
-    // is being replaced. Ids restart at obj-1/evt-1 in every save file, so a
-    // stale entry is a real collision rather than a theoretical one.
+    // Route geometry belongs to the old town, and ids restart at obj-1/evt-1, so entries would collide.
     _routeGeomCache.clear();
     layers.crosswalks = UIUtils.svgEl('g', { id: 'layer-crosswalks' });
     layers.trafficLights = UIUtils.svgEl('g', { id: 'layer-trafficlights' });
@@ -72,21 +68,16 @@
     const layerTrajEl = document.getElementById('layer-trajectories');
     worldGroup.insertBefore(layers.roadDir, layerTrajEl);
     worldGroup.insertBefore(layers.crosswalks, layerTrajEl);
-    // Above the ground-level markings, arrows and crosswalks, so a bridge
-    // hides what it passes over; below lights, signs and everything editable.
+    // Above markings, arrows and crosswalks (a bridge hides what it passes over); below anything editable.
     worldGroup.insertBefore(layers.overpass, layerTrajEl);
-    // Spawn dots go back above the bridges: an elevated road's spawn points
-    // would otherwise be painted over by its own deck.
+    // Spawn dots back above the bridges, or a deck paints over its own spawn points.
     worldGroup.insertBefore(layerSpawns, layerTrajEl);
     worldGroup.insertBefore(layers.trafficLights, layerTrajEl);
     worldGroup.insertBefore(layers.buildings, layerTrajEl);
     worldGroup.insertBefore(layers.speeds, layerTrajEl);
     worldGroup.insertBefore(layers.signs, layerTrajEl);
-    // These three go last, i.e. above layer-actors, and in this order: the
-    // selected actor's path sits over the other vehicles, the actor itself sits
-    // over its own path, and its trigger points sit over everything. Paint
-    // order here is DOM order of the layers, not the order renderAllActors
-    // happens to fill them in.
+    // Last, in this order: the selected actor's paths over other vehicles, the actor over its
+    // paths, its trigger points over everything. Paint order is the layers' DOM order.
     worldGroup.appendChild(layers.pathsTop);
     worldGroup.appendChild(layers.actorsTop);
     worldGroup.appendChild(layers.triggerPoints);
@@ -98,25 +89,20 @@
     const h = bounds.yMax - bounds.yMin;
     const pad = Math.max(w, h) * 0.03;
 
-    // Set SVG viewBox to CARLA bounds
     const vb = `${bounds.xMin - pad} ${bounds.yMin - pad} ${w + pad * 2} ${h + pad * 2}`;
     svg.setAttribute('viewBox', vb);
 
-    // Background
     bgRect.setAttribute('x', bounds.xMin - pad);
     bgRect.setAttribute('y', bounds.yMin - pad);
     bgRect.setAttribute('width', w + pad * 2);
     bgRect.setAttribute('height', h + pad * 2);
     bgRect.setAttribute('fill', 'transparent');
 
-    // Reset pan/zoom so new map fills the view
     view.pan = { x: 0, y: 0 };
     view.zoom = 1.0;
     _applyTransform();
 
-    // Sort roads: junctions on top. A road that passes OVER another one
-    // (bridge, flyover, ramp) is drawn later still, in #layer-overpass, with
-    // its own markings and arrows — see _roadOverpassLevels.
+    // Junction roads on top; roads passing over others go in #layer-overpass (_roadOverpassLevels).
     const normal = roads.filter((r) => r.junction === '-1');
     const junctions = roads.filter((r) => r.junction !== '-1');
     const levels = _roadOverpassLevels(roads);
@@ -145,11 +131,9 @@
       const markTarget = grp ? grp.marks : layerMarkings;
       const dirTarget = grp ? grp.dir : layers.roadDir;
       for (const lane of road.lanes) {
-        // Lane polygon with thin edge outline for visual definition
         const points = _polyToPoints(lane.polygon);
         if (grp) {
-          // The bridge's drop shadow / parapet: a wide dark casing under the
-          // deck, so it reads as passing OVER the road beneath, not crossing it.
+          // Dark casing under the deck, so it reads as passing over the road beneath.
           grp.shadow.appendChild(UIUtils.svgEl('polygon', { points, class: 'ovp-casing' }));
         }
         const poly = UIUtils.svgEl('polygon', {
@@ -161,8 +145,7 @@
           class: `lane lane-${lane.type}`,
         });
         roadTarget.appendChild(poly);
-        // A median/border is a separator, not a lane: hatch it so it reads as
-        // blocked in Vektor, and (CSS) instead of a white lane outline in Beides.
+        // Separators are hatched in Vektor and lose the white lane outline in Beides (CSS).
         if (BLOCKED_LANE_TYPES.has(lane.type)) {
           roadTarget.appendChild(
             UIUtils.svgEl('polygon', {
@@ -174,16 +157,13 @@
         }
       }
 
-      // Road markings + direction arrows (non-junction roads only — CARLA
-      // paints next to nothing inside a junction, and connector edges drawn
-      // there criss-cross the whole box)
+      // Markings and arrows on non-junction roads only: connector edges criss-cross the box.
       if (road.junction === '-1' && road.centerline.length > 1) {
         const hasDriving = road.lanes.some((l) => l.type === 'driving');
         if (road.marks && road.marks.length) {
           _renderRoadMarks(road.marks, markTarget);
         } else if (hasDriving) {
-          // No <roadMark> data (render JSON from an older backend, or a map
-          // that states none): the old guessed yellow dashed centreline.
+          // No <roadMark> data: fall back to a guessed yellow dashed centreline.
           const cl = UIUtils.svgEl('polyline', {
             points: road.centerline.map((p) => `${p[0]},${p[1]}`).join(' '),
             fill: 'none',
@@ -200,8 +180,7 @@
           }
         }
         if (hasDriving) {
-          // Per-lane direction arrows (each lane has its own directionLine
-          // with correct travel direction — left lanes are reversed)
+          // Per-lane arrows; left lanes' directionLines are already reversed to travel direction.
           for (const lane of road.lanes) {
             if (lane.type === 'driving' && lane.directionLine && lane.directionLine.length > 1) {
               _renderRoadDirArrows(lane.directionLine, dirTarget);
@@ -215,13 +194,11 @@
     for (const sign of signs) _renderSign(sign);
     for (const sp of speedSigns) _renderSpeedSign(sp);
 
-    // Spawn point dots
     for (const sp of spawnPoints) {
       const c = UIUtils.svgEl('circle', { cx: sp.x, cy: sp.y, r: '1.5', class: 'spawn-dot' });
       layerSpawns.appendChild(c);
     }
 
-    // Junction zone circles (subtle highlight)
     for (const junc of intersections || []) {
       const c = UIUtils.svgEl('circle', { cx: junc.cx, cy: junc.cy, r: '14', class: 'junction-zone' });
       layerJunctions.appendChild(c);
@@ -241,23 +218,19 @@
     }
     console.log(`[MapView] layer-trafficlights children: ${layers.trafficLights.children.length}`);
 
-    // Landmarks for whichever town this is. renderMap replaces the layer
-    // wholesale, so this has to run here as well as on the fetch completing.
+    // Here as well as on fetch: renderMap replaces the layer wholesale.
     _renderSpecialBuildings();
 
-    // Aerial image under everything (aerialMap.js); fetched async, a town
-    // without a capture simply stays on the vector map.
+    // A town without an aerial capture stays on the vector map.
     AerialMap.load(AppState.map);
 
-    // Fit the map to screen
     _fitToView(bounds, pad);
 
-    // Wire up layer visibility toggles
     _setupLayerToggles();
 
     overlayMsg.style.display = 'none';
 
-    // Initial scale ruler update (defer to let layout settle)
+    // Deferred so the layout settles first.
     requestAnimationFrame(() => _updateScaleRuler());
   }
 
@@ -279,9 +252,7 @@
   const layerTogglesEl = document.getElementById('layer-toggles');
 
   function _setupLayerToggles() {
-    // Show toggle bar once a map is loaded
     layerTogglesEl.classList.remove('hidden');
-    // Same gate for the zoom cluster: neither means anything without a map.
     document.getElementById('map-view-controls')?.classList.remove('hidden');
     document.getElementById('scale-ruler')?.classList.remove('hidden');
 
@@ -330,10 +301,9 @@
     for (const p of pairs) {
       const cb = document.getElementById(p.id);
       if (!cb) continue;
-      // Apply current checkbox state
       const target = p.layer;
       if (target) target.style.display = cb.checked ? '' : 'none';
-      // Avoid duplicate listeners by replacing element (simple approach)
+      // onchange, not addEventListener: renderMap runs again on every town.
       cb.onchange = () => {
         const t = p.layer;
         if (t) t.style.display = cb.checked ? '' : 'none';

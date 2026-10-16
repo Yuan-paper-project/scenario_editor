@@ -15,19 +15,9 @@
 
   // ── Overlapping roads at different heights ─────────────────────────────────
 
-  /* The map is a 2-D plan, so a flyover and the road under it occupy the same
-   * pixels. Painting them in document order put whichever came later on top —
-   * often the road UNDERNEATH, markings and all, cutting the bridge in two.
-   *
-   * Each pair of roads whose footprints overlap is compared at the overlap
-   * itself (not by road-average z: a ramp is low at one end and high at the
-   * other): a sample of one road's centreline that falls inside the other's
-   * lane polygons is compared with the other road's centreline height there.
-   * More than OVERPASS_GAP_M apart is a real crossing over/under; less is a
-   * junction or a join at grade and is left alone. The result is a level per
-   * road — 0 for anything with nothing beneath it, else 1 + the highest level
-   * it passes over — and renderMap draws levels ≥ 1 in #layer-overpass, one
-   * group per level, each with its own casing, markings and arrows. */
+  /* A flyover and the road under it share pixels, so roads that pass over others are
+   * drawn in #layer-overpass by level. Heights are compared at the overlap itself (a ramp
+   * varies); more than OVERPASS_GAP_M apart is an over/under, less a junction at grade. */
   const OVERPASS_GAP_M = 4.0;
   const OVERPASS_SAMPLE_STEP = 2; // test every 2nd centreline point
 
@@ -88,7 +78,6 @@
       }
       return z;
     };
-    // Does any sampled point of `b` lie on `a`, and how much higher is `a` there?
     const heightOver = (a, b) => {
       for (let k = 0; k < b.cl.length; k += OVERPASS_SAMPLE_STEP) {
         const [x, y, z] = b.cl[k];
@@ -110,8 +99,7 @@
       for (let j = i + 1; j < info.length; j++) {
         const b = info[j];
         if (!_bboxHit(a.bbox, b.bbox)) continue;
-        // Two roads whose whole height ranges are within the gap cannot pass
-        // over each other anywhere — the cheap test that skips nearly all pairs.
+        // Height ranges within the gap cannot pass over each other: skips nearly every pair.
         if (Math.max(a.zMax - b.zMin, b.zMax - a.zMin) <= OVERPASS_GAP_M) continue;
         const dz = heightOver(a, b) || -heightOver(b, a);
         if (dz > 0) below.get(a.id).add(b.id);
@@ -180,8 +168,7 @@
     }
   }
 
-  /** Stop = red octagon, Yield = inverted white/red triangle. ~1.6 m across:
-   *  true-ish size like every other marker, so it is found by zooming in. */
+  /** Stop = red octagon, Yield = inverted triangle; ~1.6 m, true-ish size like every marker. */
   function _renderSign(sign) {
     const g = UIUtils.svgEl('g', {
       class: `map-sign map-sign-${sign.type}`,
@@ -209,9 +196,7 @@
     layers.signs.appendChild(g);
   }
 
-  /** A speed-limit sign (backend _extract_speed_signs) as a km/h roundel at
-   *  the sign's own position — the signs, not the .xodr's per-road speed
-   *  records, are what sets a CARLA vehicle's limit. */
+  /** A speed-limit roundel at the sign; the sign actors, not the per-road speed records, set CARLA's limit. */
   function _renderSpeedSign(sp) {
     const g = UIUtils.svgEl('g', { class: 'speed-limit', transform: `translate(${sp.x},${sp.y})` });
     g.appendChild(UIUtils.svgEl('circle', { r: '1.6', class: 'speed-limit-ring' }));
@@ -228,7 +213,6 @@
 
   /** Render small direction-arrow chevrons along a road centerline. */
   function _renderRoadDirArrows(centerline, target = layers.roadDir) {
-    // Place a small arrow every ~30m along the road
     const INTERVAL = 30;
     let accum = 0;
     for (let i = 1; i < centerline.length; i++) {
@@ -240,11 +224,9 @@
       accum += segLen;
       if (accum >= INTERVAL) {
         accum -= INTERVAL;
-        // Place arrow at midpoint of this segment
         const mx = (x0 + x1) / 2,
           my = (y0 + y1) / 2;
         const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
-        // Small chevron triangle
         const arrow = UIUtils.svgEl('polygon', {
           points: '2,0 -2,-1.2 -2,1.2',
           fill: 'rgba(255,255,255,0.30)',
@@ -255,11 +237,8 @@
     }
   }
 
-  /** Lane types that are part of the road surface but not drivable.
-   *  'bidirectional' is here on purpose: its only occurrence in the bundled
-   *  maps is Town03's ring-highway separator (lane 1 of roads 0-4, 28, 29,
-   *  65-69), a concrete wall in CARLA, and CARLA's route planner never uses it
-   *  (lane_graph_builder.py _ROUTABLE_TYPES). */
+  /** On the road surface but not drivable. 'bidirectional' is Town03's ring-highway wall,
+   *  which CARLA never routes. */
   const BLOCKED_LANE_TYPES = new Set(['median', 'border', 'restricted', 'bidirectional']);
 
   /** Return a subtle edge stroke colour for a given lane type. */
@@ -285,9 +264,7 @@
   // ── Crosswalk rendering ────────────────────────────────────────────────────
 
   function _renderCrosswalk(cw) {
-    // Zebra stripes across the road (perpendicular to heading).
-    // Stripes are spaced along the perpendicular axis and each stripe
-    // is a thin rectangle whose long side runs parallel to the road.
+    // Zebra stripes: spaced across the road, each a thin rectangle along it.
     const rad = (cw.heading * Math.PI) / 180;
     const fx = Math.cos(rad),
       fy = Math.sin(rad); // road-forward unit vector
@@ -306,13 +283,11 @@
     const g = UIUtils.svgEl('g', { class: 'crosswalk-group' });
 
     for (let i = 0; i < NUM_STRIPES; i++) {
-      // Space stripes along the perpendicular (across-road) axis
       const offset = startOff + i * totalStep + STRIPE_W / 2;
       const cx = cw.x + px * offset;
       const cy = cw.y + py * offset;
       const hw = STRIPE_W / 2; // half-width in perpendicular direction
       const hl = crosswalkWidth / 2; // half-length in road-forward direction
-      // Rectangle: long side along road (fx), short side across road (px)
       const pts = [
         [cx + fx * hl + px * hw, cy + fy * hl + py * hw],
         [cx + fx * hl - px * hw, cy + fy * hl - py * hw],

@@ -1,6 +1,5 @@
 /**
- * mapImport.js — CARLA .xodr Karten-Import.
- * Unterstützt: Datei-Button in der Kopfleiste und Drag-and-drop auf die Karte.
+ * mapImport.js — importing a .xodr map, from the header button or by drag-and-drop.
  */
 (() => {
   'use strict';
@@ -34,7 +33,6 @@
     const { town, roads } = result;
     Toast.success(`„${town}" importiert — ${roads} Straßen`);
 
-    // Add to dropdown if not already present
     if (!mapSelect.querySelector(`option[value="${CSS.escape(town)}"]`)) {
       const opt = document.createElement('option');
       opt.value = town;
@@ -42,17 +40,12 @@
       mapSelect.appendChild(opt);
     }
 
-    // Auto-select and render the newly imported map. The scenario on the
-    // current town is parked, as on any map switch (UIUtils.leaveMap).
+    // The current town's scenario is parked, as on any map switch.
     mapSelect.value = town;
     mapStatus.textContent = `Lade ${town} …`;
     try {
       const mapData = await Api.getMapRender(town);
-      // An uploaded map is never probed against CARLA (tools/probes/probe_carla_lane_graph.py
-      // only covers bundled towns), but the upload endpoint derives a lane
-      // graph straight from the .xodr (backend/lane_graph/lane_graph_builder.py) — same
-      // fetch toolbar.js uses for the normal map-select path. A build
-      // failure server-side degrades to null here, same as any other miss.
+      // An uploaded map gets a lane graph derived from its .xodr; a failure degrades to null.
       const laneGraph = await Api.getLaneGraph(town).catch(() => null);
       const switching = town !== AppState.map;
       if (switching) UIUtils.leaveMap();

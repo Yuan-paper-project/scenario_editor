@@ -9,6 +9,7 @@
   const { svg, layerTraj, layers, ZOOM_TO_SPAN, view, _centreOn, GLOW_MS, ACTOR_COLORS, _buildSelectionMarks } =
     MapCore.shared;
 
+  /** Frame one waypoint and mark it (the event card's locate click); unlike focusActor it marks. */
   function focusWaypoint(sel) {
     const path = AppState.waypointPathOf(sel);
     const wp = path && path[sel.index];
@@ -21,8 +22,7 @@
 
   let _wpGlowTimer = null;
 
-  /** Brief pulse on one waypoint marker. Same 900 ms budget as glowActor, and
-   *  the same rule: the class must not outlive its keyframes. */
+  /** Brief pulse on one waypoint marker; GLOW_MS, like glowActor. */
   function glowWaypoint(sel) {
     clearTimeout(_wpGlowTimer);
     svg.querySelectorAll('.wp-locating').forEach((el) => el.classList.remove('wp-locating'));
@@ -58,83 +58,44 @@
     });
   }
 
-  /**
-   * Ausblenden means hidden, full stop — whether or not its actor is selected.
-   *
-   * Selection governs only how a *shown* path looks: full opacity and the top
-   * layer when selected, dimmed and underneath when not. Letting selection
-   * override the toggle was tried and is worse: a path deliberately hidden to
-   * clear the map came back the moment you clicked its vehicle, which is
-   * exactly when you are most likely to be clicking around it.
-   *
-   * What keeps that from stranding anyone is `showPath` — drawing a path, or
-   * marking one of its waypoints, un-hides it for good (see the callers).
-   */
+  /** Ausblenden hides a path whether or not its actor is selected; selection only styles shown ones. */
   function _shouldRenderPath(item) {
     const hidden = item.pathType === 'route' ? _hiddenRoutes : _hiddenTrajectories;
     return !hidden.has(_pathKey(item.actor.id, item.eventId, item.pathType));
   }
 
-  /**
-   * Force one path visible, flipping the stored toggle rather than overriding
-   * it temporarily: the button then reads `Ausblenden` and states the truth.
-   * A temporary override would leave the card saying `Anzeigen` beside a path
-   * plainly on screen, and the path would vanish again on deselect.
-   *
-   * Returns true if it actually changed something, so a caller can avoid a
-   * redundant re-render.
-   */
+  /** Un-hide a path by flipping the stored toggle (so its button tells the truth); true if it changed. */
   function showPath(actorId, eventId, pathType) {
     const hidden = pathType === 'route' ? _hiddenRoutes : _hiddenTrajectories;
     return hidden.delete(_pathKey(actorId, eventId, pathType));
   }
 
-  /** The layer a path belongs in: over the vehicles when it is the selected
-   *  actor's, under them otherwise. */
+  /** Over the vehicles for the selected actor's path, under them otherwise. */
   function _pathLayerFor(actor) {
     return actor.id === AppState.selectedId && layers.pathsTop ? layers.pathsTop : layerTraj;
   }
 
   // ── Trajectory rendering ─────────────────────────────────────────────────────
 
-  /* Path line widths, in world metres. Deliberately well under a lane's
-   * ~3.5 m: several actors' paths over a town view is a lot of ink, and the
-   * line only has to be followable, not emphatic. */
+  /* World metres, well under a lane's width: several paths over a town view is a lot of ink. */
   const PATH_WIDTH = 0.35; // an unselected actor's path
   const PATH_WIDTH_SEL = 0.6; // the selected actor's
 
-  // Track which actors have their trajectory hidden (toggled off by user)
   const _hiddenTrajectories = new Set();
   const _hiddenRoutes = new Set();
 
-  /* Lane-following route geometry, memoised ──────────────────────────────────
-   *
-   * Simulate.routeGeometry walks every lane segment on the map once per
-   * authored waypoint and runs an A* per leg on top. renderAllActors runs on
-   * every mousemove of a drag, so the result is cached against everything it
-   * depends on: the authored points, and the actor's own pose — leg 0 is
-   * seeded from `map.get_waypoint(actor_location).next(1)[0]`, so moving the
-   * vehicle really does change the route without any waypoint moving.
-   */
+  /* Memoised lane-following route geometry: the computation scans every lane segment and
+   * renders run every drag frame. Keyed on the points and the actor's pose (leg 0 seeds from it). */
   const _routeGeomCache = new Map(); // pathKey -> {sig, points}
 
-  /* The AUTHORED pose, not the live one: a running preview rewrites actor.x/y
-   * every tick, which invalidated this signature on every frame and made the
-   * drawn route crawl along under the moving vehicle. A follow_trajectory line
-   * is the authored vertices and never moved; a route has no business moving
-   * either. Simulate.authoredPose returns null when nothing is running, when
-   * the actor's own pose already IS the authored one. */
+  /* Uses the authored pose, which a running preview does not move, so the route stays put. */
   function _routeSignature(actor, points) {
     const pose = (window.Simulate && Simulate.authoredPose && Simulate.authoredPose(actor.id)) || actor;
-    // The strategy is part of the signature, not decoration: it decides whether
-    // a leg is routed or drawn as a chord, and toggling a waypoint to 'Gerade'
-    // leaves its coordinates untouched — so keying on position alone left the
-    // drawn route showing the lane-following line it no longer is.
+    // The strategy is part of the key: 'Gerade' changes the line, not the coordinates.
     return `${pose.x},${pose.y}|` + points.map((p) => `${p.x},${p.y},${p.strategy || 'fastest'}`).join(';');
   }
 
-  /** The route as CARLA will drive it, or null to fall back to straight chords
-   *  (no lane graph for this town, or no lane under one of the waypoints). */
+  /** The route as CARLA drives it, or null for straight chords (no lane graph, or off the network). */
   function _laneFollowingRoute(item) {
     if (!window.Simulate || !Simulate.routeGeometry) return null;
     const key = _pathKey(item.actor.id, item.eventId, 'route');
@@ -148,8 +109,7 @@
       try {
         points = Simulate.routeGeometry(item.actor, ev, item.points);
       } catch (err) {
-        // A broken graph must not take the whole map render down with it — the
-        // straight-chord fallback is always a usable drawing.
+        // A broken graph must not take the map render down; chords are always drawable.
         console.warn('[MapView] lane-following route failed', err);
         points = null;
       }
@@ -159,39 +119,13 @@
     return points;
   }
 
-  /* Paths carry NO direction arrows, and the per-path <marker> that drew them
-   * is gone with them.
-   *
-   * They used to come from `marker-mid`, a triangle at every interior vertex.
-   * That was tolerable while a route line WAS its handful of authored
-   * waypoints, but the lane-following line is sampled at CARLA's own 2 m
-   * resolution, so the same attribute drew a dozen overlapping triangles per
-   * 25 m and the route read as a sawtooth band. Sampling a sparse guide fixed
-   * the band and still left the map crowded — several paths plus their arrows
-   * over a town view is more ink than the roads underneath. Direction is
-   * carried by the numbered waypoints instead, which is where anyone reading
-   * the order looks anyway.
-   */
-
   /* ── Waypoint markers ───────────────────────────────────────────────────────
-   *
-   * One group shape for both path kinds, so objectsDrag.js's drag matches a single
-   * class (`.path-waypoint`) and the four data attributes below are the whole
-   * contract between the map and the event card's waypoint list.
-   *
-   * Interactivity is scoped to the SELECTED actor: CSS turns pointer-events off
-   * for everyone else's waypoints, so one actor's path drawn across another's
-   * cannot swallow a mousedown aimed at the path being edited.
-   */
+   * One group shape for both kinds; `.path-waypoint` plus four data attributes are the
+   * contract with objectsDrag.js and the event card. Only the selected actor's are interactive. */
   function _waypointGroup(item, i, isSel) {
     const wg = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     const marked = isSel && _isMarkedWaypoint(item, i);
-    // Waypoint 1 is never interactive, selected actor or not: it is the
-    // vehicle's own position and tracks it (AppState.updateById), so it is the
-    // vehicle you drag, and the vehicle you delete. Leaving it grabbable would
-    // offer a drag that the next actor move silently undoes, and a mark that
-    // Entf then refuses to act on. Its own marker sits squarely on the actor,
-    // so dropping pointer-events also hands those clicks back to the car.
+    // Waypoint 1 is the vehicle itself, never interactive, so clicks on it reach the car.
     const interactive = isSel && i > 0;
     wg.setAttribute(
       'class',
@@ -202,8 +136,7 @@
     wg.setAttribute('data-event-id', item.eventId);
     wg.setAttribute('data-path-type', item.pathType);
     wg.setAttribute('data-wp-idx', i);
-    // Legacy attribute the old renderers wrote; kept so nothing that queried
-    // by it silently stops matching.
+    // Kept for anything still querying by the older attribute.
     wg.setAttribute(item.pathType === 'route' ? 'data-route-id' : 'data-traj-id', item.actor.id);
     return wg;
   }
@@ -219,8 +152,7 @@
     );
   }
 
-  /** Invisible grab target — the drawn dot is ~1 m across and sub-pixel at town
-   *  zoom, the same problem the trigger-point marker has. */
+  /** Invisible grab radius: the drawn dot is sub-pixel at town zoom. */
   const WAYPOINT_HIT_R = 2.2;
 
   function _appendWaypointHit(wg, wp) {
@@ -235,16 +167,7 @@
     );
   }
 
-  /**
-   * "This is the waypoint the panel row is talking about" — the same four
-   * corner crop marks every other selectable object on the map wears.
-   *
-   * _buildSelectionMarks draws around the origin, because its usual callers
-   * (_renderActor, _renderProp, _renderTrafficLight) sit inside a translated,
-   * rotated group. A waypoint group is not translated — its shapes carry
-   * absolute coordinates — so the marks are wrapped in a translate of their
-   * own. `size` is the waypoint's DRAWN extent, which is what the marks frame.
-   */
+  /** The selection corner marks on a waypoint; wrapped in a translate, since waypoint shapes are absolute. */
   function _appendWaypointMark(wg, wp, size) {
     const holder = UIUtils.svgEl('g', { transform: `translate(${wp.x},${wp.y})` });
     holder.appendChild(_buildSelectionMarks(size, size));
@@ -263,11 +186,9 @@
     g.setAttribute('data-traj-id', actor.id);
     g.setAttribute('class', `traj-group${isSel ? ' traj-selected' : ''}`);
 
-    // Non-selected trajectories render dimmed; selected at full opacity
     const groupOpacity = isSel ? '1.0' : '0.3';
     g.setAttribute('opacity', groupOpacity);
 
-    // Dashed path line
     const pts = traj.map((wp) => `${wp.x},${wp.y}`).join(' ');
     const line = UIUtils.svgEl('polyline', {
       points: pts,
@@ -277,7 +198,6 @@
     });
     g.appendChild(line);
 
-    // Waypoint circles + velocity labels
     traj.forEach((wp, i) => {
       const wg = _waypointGroup(item, i, isSel);
       if (isSel) _appendWaypointHit(wg, wp);
@@ -296,7 +216,7 @@
       wg.appendChild(c);
       if (isSel && _isMarkedWaypoint(item, i)) _appendWaypointMark(wg, wp, dotR * 2);
 
-      // Velocity label — only for selected actor, every 3rd wp or first/last
+      // Velocity label: selected actor only, first/last and every 3rd.
       if (isSel && (i === 0 || i === traj.length - 1 || i % 3 === 0)) {
         const vel = UIUtils.svgEl('text', {
           x: wp.x + 1.8,
@@ -309,7 +229,6 @@
         wg.appendChild(vel);
       }
 
-      // Number label inside circle — only for selected actor
       if (isSel) {
         const num = UIUtils.svgEl('text', {
           x: wp.x,
@@ -327,7 +246,6 @@
       g.appendChild(wg);
     });
 
-    // The selected actor's path goes over the vehicles, everyone else's under.
     _pathLayerFor(actor).appendChild(g);
   }
 
@@ -345,14 +263,8 @@
 
     g.setAttribute('opacity', isSel ? '1.0' : '0.35');
 
-    /* The drawn line is the LANE-FOLLOWING route, not the chords between the
-     * clicks. An authored waypoint says where the route must pass, never what
-     * shape it takes to get there — GlobalRoutePlanner routes lane by lane, so
-     * a straight chord between two clicks crosses buildings, junctions and
-     * oncoming carriageways the vehicle never touches, and reads as a plan it
-     * is about to violate. Falls back to the chords when the town has no lane
-     * graph or a waypoint sits off the network.
-     */
+    /* The lane-following route as CARLA drives it, not the chords between the clicks;
+     * chords only as the fallback. */
     const driven = _laneFollowingRoute(item);
     const linePoints = driven || route;
     const line = UIUtils.svgEl('polyline', {
@@ -370,12 +282,7 @@
       const wg = _waypointGroup(item, i, isSel);
       if (isSel) _appendWaypointHit(wg, wp);
 
-      // A 'shortest' waypoint is turned 45 degrees and outlined in the same
-      // orange the event card's toggle uses. Two cues rather than one: at town
-      // zoom the marker is a couple of pixels across, where a stroke colour
-      // alone is invisible and the silhouette still reads. The FILL stays the
-      // actor's own colour either way — that is what says whose path this is,
-      // and the strategy must not cost that.
+      // 'shortest': turned 45° and outlined orange (shape reads at town zoom); the fill stays the actor's.
       const shortest = wp.strategy === 'shortest';
       const half = isSel ? 1.1 : 0.75;
       const dot = UIUtils.svgEl('rect', {

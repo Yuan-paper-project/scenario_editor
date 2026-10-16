@@ -1,22 +1,10 @@
-/* ══════════════════════════════════════════════════════════════════
-   dropdown.js — the header's popup-menu mechanics, shared
-
-   One behaviour, used by every header dropdown: toggle on the button,
-   close on outside click, close on Esc. Owning it here keeps the menus
-   from drifting apart and means a new one is three lines.
-   ══════════════════════════════════════════════════════════════════ */
+/**
+ * dropdown.js — the header dropdowns' shared mechanics: toggle, outside click, Esc.
+ */
 (() => {
   'use strict';
 
-  /**
-   * Wire a button to its panel.
-   * @param {Object} o
-   * @param {HTMLElement} o.button   the trigger; gets .open + aria-expanded
-   * @param {HTMLElement} o.panel    the popup; toggled via the .hidden class
-   * @param {HTMLElement} [o.wrap]   outside-click boundary (default: panel.parentElement)
-   * @param {Function}   [o.onOpen]  called with true/false on every state change
-   * @returns {{open:Function, close:Function, isOpen:Function}}
-   */
+  /** Wire `o.button` to `o.panel` (toggled via .hidden); `o.wrap` bounds outside clicks, `o.onOpen(bool)` hears changes. */
   function bind(o) {
     const { button, panel, onOpen } = o;
     const wrap = o.wrap || panel.parentElement;
@@ -39,8 +27,7 @@
       if (isOpen() && !wrap.contains(e.target)) set(false);
     });
 
-    // Capture phase + stopPropagation: Esc closes the topmost thing, so it must
-    // not also cancel a path being drawn (mapKeys.js's own keydown).
+    // Capture + stopPropagation: closing a menu must not also cancel a path being drawn.
     document.addEventListener(
       'keydown',
       (e) => {
@@ -52,8 +39,7 @@
       true,
     );
 
-    // A menu row runs its own action and then closes; a control row (a
-    // checkbox in the layer menu) is marked with neither and leaves it open.
+    // A [data-menu-item] row closes the menu after its action; other rows leave it open.
     panel.addEventListener('click', (e) => {
       if (e.target.closest('[data-menu-item]')) set(false);
     });
@@ -61,8 +47,7 @@
     return { open: () => set(true), close: () => set(false), isOpen };
   }
 
-  // Declarative menus: markup-only, no module of their own. A menu that needs
-  // extra behaviour (the layer count pill) calls bind() itself instead.
+  // Markup-only menus; one with extra behaviour calls bind() itself instead.
   for (const wrap of document.querySelectorAll('[data-dropdown]')) {
     const button = wrap.querySelector('[data-dropdown-button]');
     const panel = wrap.querySelector('[data-dropdown-panel]');

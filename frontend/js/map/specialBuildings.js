@@ -1,29 +1,13 @@
-/* ══════════════════════════════════════════════════════════════════
-   specialBuildings.js — landmark reference points on the map
-
-   maps/special_buildings.csv (bus stops, parks, shops, …) is bundled with
-   the repo and served as JSON by GET /api/special_buildings. This module
-   does nothing but fetch it once at page load and hand it to AppState;
-   mapFeatures.js owns the drawing (layer-buildings) and the "Sonderorte"
-   checkbox in the Ebenen menu.
-
-   The file holds every town's rows at once and is small (~130), so it is
-   fetched once and filtered per town at render time — switching maps costs
-   no request. It is reference data, not scenario data: it never reaches
-   toJSON(), the export payload or the undo stack.
-
-   To change what is shown, edit the CSV — the backend reads it per request,
-   so a browser reload is enough; no server restart.
-   ══════════════════════════════════════════════════════════════════ */
+/**
+ * specialBuildings.js — fetches maps/special_buildings.csv (all towns) once into
+ * AppState; mapFeatures.js draws it. Reference data, not scenario state. Edit the
+ * CSV and reload the tab: the backend reads it per request.
+ */
 (() => {
   'use strict';
 
   const SpecialBuildings = {
-    /**
-     * Fetch the landmarks and publish them. Failure is deliberately quiet: the
-     * overlay is decoration and the editor is fully usable without it, so a
-     * missing CSV or a 500 must not put an error toast in front of the user.
-     */
+    /** Fetch and publish the landmarks; a failure stays quiet (decoration only). */
     async load() {
       let buildings;
       try {
@@ -33,7 +17,6 @@
         return;
       }
       if (!buildings.length) return;
-      // Not a scenario key, so this records no undo entry (_isScenarioPatch).
       AppState.set({ specialBuildings: buildings });
     },
   };

@@ -1,39 +1,18 @@
-/* ══════════════════════════════════════════════════════════════════
-   aerialMap.js — CARLA aerial image under the map, and the base-map switch
-
-   The image is a JPEG tile pyramid rendered by tools/probes/capture_carla_aerial.py
-   (maps/<Town>/aerial/), already in CARLA world coordinates: level-0 pixel
-   (0,0) sits at world (meta.x0, meta.y0) and there are meta.ppm pixels per
-   metre, y pointing down — the editor's own frame, so tiles are placed with
-   plain x/y/width/height inside #world and need no transform of their own.
-
-   Two tile sets are on screen at once: the coarsest level that still fills a
-   couple of hundred pixels per tile, always fully loaded, and the level that
-   matches the current zoom, only for tiles in view. The coarse one is what
-   shows while the fine ones load, so panning never flashes the grey verge.
-
-   The switch (#map-base-toggle) has three modes, applied as one class on
-   #map-svg so they never fight the Ebenen checkboxes (which write
-   style.display on the same layers):
-     vector — the drawn OpenDRIVE map, no image (the only mode for a town
-              without a capture: Town10 and every uploaded map)
-     aerial — image only; lane polygons, markings, crosswalks and junction
-              circles are hidden, everything scenario-related stays
-     both   — image with the lane outlines drawn over it, see-through
-
-   The map files load after this one and call AerialMap.load(town) from
-   renderMap (mapRender.js) and AerialMap.update() from _applyTransform
-   (mapCore.js).
-   ══════════════════════════════════════════════════════════════════ */
+/**
+ * aerialMap.js — the CARLA aerial image under the map, and the base-map switch.
+ *
+ * Tiles (tools/probes/capture_carla_aerial.py) are already in CARLA coordinates, so
+ * they go into #world untransformed. A coarse backdrop is always loaded, plus the
+ * zoom-matched level for tiles in view. The modes are a class on #map-svg, never
+ * style.display, which the Ebenen checkboxes own.
+ */
 (() => {
   'use strict';
 
   const SVG_NS = 'http://www.w3.org/2000/svg';
   const MODES = ['vector', 'aerial', 'both'];
   const STORAGE_KEY = 'scenarioEditor.baseMap';
-  // The always-loaded backdrop: the finest level whose whole image is at most
-  // this many tiles. 16 tiles of 512 px is ~2 px/m on Town06, plenty for a
-  // backdrop and a ~1 MB download.
+  // Backdrop: the finest level of at most this many tiles (~2 px/m on Town06, ~1 MB).
   const BACKDROP_MAX_TILES = 16;
 
   const svg = document.getElementById('map-svg');
@@ -87,8 +66,7 @@
         const on = bm === m;
         btn.classList.toggle('active', on);
         btn.setAttribute('aria-pressed', String(on));
-        // Keep the button reachable but say why it does nothing, rather than
-        // hiding it — the switch would otherwise change shape between towns.
+        // Disabled with a reason rather than hidden, so the switch keeps its shape.
         btn.disabled = bm !== 'vector' && !_meta;
         btn.title = btn.disabled
           ? 'Für diese Karte gibt es kein Luftbild (nur CARLA-Städte, nicht Town10 oder importierte Karten)'
@@ -100,7 +78,7 @@
 
   // ── Loading ────────────────────────────────────────────────────────────
 
-  /** Called by MapView.renderMap. Resolves once meta is known (or absent). */
+  /** Called by renderMap; resolves once meta is known or absent. */
   async function load(town) {
     const seq = ++_loadSeq;
     _town = town || null;
@@ -129,7 +107,7 @@
   }
 
   function _tileUrl(level, c, r) {
-    // ?v= busts the tiles' 1 h browser cache after a re-capture (see the backend).
+    // ?v= busts the 1 h browser cache after a re-capture.
     return `/api/maps/${encodeURIComponent(_town)}/aerial/${level}/${c}_${r}.jpg?v=${_meta.version || 0}`;
   }
 
@@ -148,8 +126,7 @@
     const y = _meta.y0 + (r * L.ts) / L.ppm;
     const wPx = Math.min(L.ts, L.wPx - c * L.ts);
     const hPx = Math.min(L.ts, L.hPx - r * L.ts);
-    // One source pixel of overlap into the neighbour: tiles that abut
-    // exactly leave an anti-aliased hairline at fractional screen positions.
+    // One source pixel of overlap: abutting tiles leave hairlines.
     const over = 1 / L.ppm;
     const img = _el('image', {
       x,
@@ -199,7 +176,6 @@
     const wanted = new Set();
     if (lvl < backdropLvl) {
       const L = _level(lvl);
-      // Visible world rectangle, from the map container's screen box.
       const box = svg.getBoundingClientRect();
       const inv = ctm.inverse();
       const pt = svg.createSVGPoint();

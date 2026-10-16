@@ -17,9 +17,7 @@
       return res.json();
     },
 
-    // A 404 here is a normal, common outcome (no CARLA counterpart to probe,
-    // or an uploaded map) — not an error, so it resolves to null rather than
-    // throwing. Callers should treat null exactly like "no cache available".
+    // A 404 is normal (no graph) and resolves to null.
     async getLaneGraph(town) {
       const res = await fetch(`/api/maps/${encodeURIComponent(town)}/lane_graph`);
       if (res.status === 404) return null;
@@ -27,8 +25,7 @@
       return res.json();
     },
 
-    // Aerial image pyramid meta (tools/probes/capture_carla_aerial.py). 404 is the
-    // normal answer for Town10 and uploaded maps, so it resolves to null.
+    // 404 is normal for Town10 and uploaded maps; resolves to null.
     async getAerialMeta(town) {
       const res = await fetch(`/api/maps/${encodeURIComponent(town)}/aerial`);
       if (res.status === 404) return null;
@@ -36,10 +33,7 @@
       return res.json();
     },
 
-    // Landmark reference points for every town at once (maps/special_buildings.csv
-    // via the backend). Small enough to fetch once at page load and filter
-    // client-side by town, so switching maps costs no request. Any failure
-    // resolves to an empty list — the overlay is decoration, never a blocker.
+    // All towns at once; any failure resolves to an empty list (decoration only).
     async getSpecialBuildings() {
       const res = await fetch('/api/special_buildings');
       if (!res.ok) throw new Error(`getSpecialBuildings failed: ${res.status}`);

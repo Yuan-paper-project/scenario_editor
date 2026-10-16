@@ -1,12 +1,7 @@
-/* ══════════════════════════════════════════════════════════════════
-   layerMenu.js — the header's "Ebenen" dropdown
-
-   Owns nothing but the popup: open/close, the visible-count pill and the
-   Alle/Keine shortcuts. The six checkboxes inside it are still wired by
-   mapRender.js's _setupLayerToggles() via their ids, so this file never
-   touches an SVG layer — it only makes sure a programmatic tick fires the
-   'change' event that wiring listens for.
-   ══════════════════════════════════════════════════════════════════ */
+/**
+ * layerMenu.js — the Ebenen dropdown: the count pill and Alle/Keine. The checkboxes
+ * are wired to their layers by mapRender.js's _setupLayerToggles, by id.
+ */
 (() => {
   'use strict';
 
@@ -25,8 +20,7 @@
 
   Dropdown.bind({ button: btn, panel, wrap });
 
-  // A row click toggles its layer and leaves the panel open — the <label>
-  // does the ticking, so mapRender.js's onchange runs for free.
+  // The <label> ticks the box, so mapRender.js's onchange runs for free.
   panel.addEventListener('change', _updateCount);
 
   panel.addEventListener('click', (e) => {

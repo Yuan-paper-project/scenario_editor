@@ -30,7 +30,6 @@
 
     const g = UIUtils.svgEl('g', { class: 'ruler-measurement' });
 
-    // Main line
     g.appendChild(
       UIUtils.svgEl('line', {
         x1,
@@ -44,7 +43,6 @@
       }),
     );
 
-    // End markers (small crosshairs)
     for (const [px, py] of [
       [x1, y1],
       [x2, y2],
@@ -69,7 +67,6 @@
       );
     }
 
-    // Distance label background
     const labelFontSize = 2.5;
     const textLen = dist.toFixed(1).length + 2; // "+ m"
     const bgW = textLen * labelFontSize * 0.65;
@@ -87,7 +84,6 @@
       }),
     );
 
-    // Distance label text
     const label = UIUtils.svgEl('text', {
       x: mx,
       y: my + labelFontSize * 0.3,
@@ -100,7 +96,6 @@
     label.textContent = `${dist.toFixed(1)} m`;
     g.appendChild(label);
 
-    // Remove button for pinned rulers
     if (pinned) {
       const delBtn = UIUtils.svgEl('circle', {
         cx: x2,
@@ -133,11 +128,9 @@
     _ensureRulerLayer();
     while (_rulerGroup.firstChild) _rulerGroup.removeChild(_rulerGroup.firstChild);
 
-    // Pinned measurements
     _rulerPinned.forEach((r, idx) => {
       const g = _renderRulerLine(r.x1, r.y1, r.x2, r.y2, true);
       g.dataset.rulerIdx = idx;
-      // Click handler on delete button
       g.querySelector('.ruler-delete')?.addEventListener('click', (e) => {
         e.stopPropagation();
         e.preventDefault();
@@ -147,7 +140,6 @@
       _rulerGroup.appendChild(g);
     });
 
-    // Active measurement (being drawn)
     if (_rulerStart && _rulerEnd) {
       _rulerGroup.appendChild(_renderRulerLine(_rulerStart.x, _rulerStart.y, _rulerEnd.x, _rulerEnd.y, false));
     }
@@ -160,12 +152,7 @@
     _redrawRuler();
   }
 
-  // Ruler interactions — handled via the tool system
-  // When ruler tool is active:
-  //   - First click: set start point
-  //   - Mouse move: preview line with live distance
-  //   - Second click: pin the measurement and start a new one
-  //   - Escape / tool change: cancel current measurement
+  // Ruler tool: first click sets the start, the second pins the measurement and starts anew.
 
   svg.addEventListener(
     'click',
@@ -178,11 +165,9 @@
       e.stopPropagation();
 
       if (!_rulerStart) {
-        // First click — set start
         _rulerStart = { x: world.x, y: world.y };
         _rulerEnd = null;
       } else {
-        // Second click — pin the measurement
         _rulerPinned.push({
           x1: _rulerStart.x,
           y1: _rulerStart.y,
@@ -205,7 +190,6 @@
     _redrawRuler();
   });
 
-  // Cancel ruler on tool change
   AppState.on('change', (patch) => {
     if ('activeTool' in patch) {
       if (AppState.activeTool !== 'ruler') {

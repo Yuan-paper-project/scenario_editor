@@ -7,30 +7,13 @@
   // ── Undo / redo history ──────────────────────────────────────────────────────
 
   /**
-   * Snapshot-based undo, captured automatically at AppState's three mutators.
-   *
-   * Every scenario edit in the app goes through set() / updateById() /
-   * removeById() — placement, the body and yaw drags, the Spawnpunkt fields,
-   * type swaps, event add/edit/delete, waypoints, trigger points, templates —
-   * so nothing has to be instrumented at the call site and an edit added later
-   * is covered for free. The exception is TrafficSignals.update(), which
-   * rewrites AppState.trafficSignals directly and calls record() itself.
-   *
-   * This replaces a stack that held one deleted actor per entry. Its failure
-   * mode was worse than a missing feature: Strg+Z after a misplaced drag popped
-   * an unrelated *delete* from earlier in the session and resurrected that
-   * actor, while the drag stood.
-   *
-   * Scope is the scenario objects only. `map`/`mapData` stay out because
-   * undoing a town switch would need an async re-fetch, and weather/time stay
-   * out because they are a global setting rather than an edit (their sliders
-   * are also the only controls in the app that fire on `input` rather than
-   * `change`, so they would need coalescing of their own).
+   * Snapshot undo, captured automatically in AppState.set / updateById / removeById,
+   * so every edit is covered without instrumenting call sites. TrafficSignals.update()
+   * bypasses them and calls record() itself. Scope: scenario objects only — not
+   * map/mapData (would need an async re-fetch) and not weather/time (a setting).
    */
 
-  // Raised from 50 once event edits and waypoints started recording: drawing a
-  // long path is one entry per waypoint, and a short stack would let a single
-  // path evict every placement behind it.
+  // A long path is one entry per waypoint; a short stack would evict every placement behind it.
   const MAX_HISTORY = 100;
 
   const _undo = []; // states BEFORE each edit, oldest first
@@ -44,14 +27,7 @@
 
   const SCENARIO_KEYS = ['ego', 'npcs', 'staticObjects', 'trafficSignals', 'generated'];
 
-  /**
-   * Deep copy of the scenario half of AppState.
-   *
-   * A JSON round-trip and not AppState.toJSON(): _dumpActor() spreads each
-   * event, so an action's `trajectory`/`waypoints` array stays shared with the
-   * live state — a snapshot taken that way would be rewritten in place by the
-   * very edit it is supposed to be the "before" of.
-   */
+  /** Deep copy of the scenario state. Not AppState.toJSON(), which shares path arrays with live state. */
   function _snapshot(label) {
     const copy = JSON.parse(
       JSON.stringify({
@@ -69,20 +45,10 @@
   }
 
   /**
-   * Push the "before" of an edit about to happen.
-   *
-   * What gets pushed is `_baseline` — the state as of the last settled edit —
-   * and NOT a snapshot taken here. The two are not the same, because the
-   * placement paths mutate the array first and only then announce it
-   * (`AppState.npcs = [...]; AppState.set({})`), so by the time set() runs, the
-   * "before" state is already gone. _settle() refreshes the baseline after each
-   * mutation instead, which is the one point where the state is known-good.
-   *
-   * `kind` is the coalescing key: consecutive edits sharing one collapse into a
-   * single entry, which is what makes a drag — dozens of updateById calls with
-   * the same id and the same patch keys — one Strg+Z. Pass null for an edit
-   * that must always start its own entry. seal() ends the current run, so two
-   * deliberate edits that happen to produce the same key stay separate.
+   * Push the "before" of an edit about to happen. It is `_baseline`, not a fresh
+   * snapshot: placements mutate the array before announcing it, so at set() time
+   * the "before" is gone. `kind` coalesces consecutive edits (a drag is one entry);
+   * null always starts a new one.
    */
   function _record(kind, label) {
     if (_suspend > 0) return;
@@ -111,15 +77,12 @@
   /** True for a patch that touches the scenario rather than editor-only state. */
   function _isScenarioPatch(patch) {
     const keys = Object.keys(patch);
-    // An empty patch is this codebase's signal that one of the state arrays was
-    // mutated in place (`AppState.npcs = [...]; AppState.set({})`), which is how
-    // every placement and the bulk prop delete announce themselves.
+    // An empty patch announces an array mutated in place (placements, bulk deletes).
     if (keys.length === 0) return true;
     return keys.some((k) => SCENARIO_KEYS.includes(k));
   }
 
-  // Patch shapes worth naming in the toast. Everything else undoes as a plain
-  // "Rückgängig" rather than guessing a name for it.
+  // Patch shapes named in the toast; anything else undoes as plain "Rückgängig".
   const PATCH_LABELS = [
     [['x', 'y', 'z'], 'Verschieben'],
     [['yaw'], 'Drehen'],
@@ -128,9 +91,7 @@
     [['initial_speed'], 'Startgeschwindigkeit'],
     [['max_acceleration'], 'Max. Beschleunigung'],
     [['max_deceleration'], 'Max. Verzögerung'],
-    // Last, so a bare {yaw} still reads 'Drehen': the Spawnpunkt fields commit
-    // all four together (_onPosChange), and naming the panel section is more
-    // use than picking one of the four to name.
+    // Last, so a bare {yaw} reads 'Drehen'; the Spawnpunkt fields commit all four keys.
     [['x', 'y', 'z', 'yaw'], 'Spawnpunkt'],
   ];
 
@@ -142,33 +103,15 @@
   }
 
   function _recordSet() {
-    // null kind: every scenario set() is a discrete act (a placement, a bulk
-    // delete) and must never fold into the one before it.
+    // null kind: a placement or bulk delete never folds into the previous entry.
     _record(null, '');
   }
 
-  /** True when every field in the patch already holds that value. */
   /**
-   * Waypoint 1 of every path event is the actor's own pose, so an actor that
-   * moves takes it with it. Without this the seed stays where the path was
-   * drawn and the actor routes back to a point it has since left — visible as a
-   * route that starts by driving backwards.
-   *
-   * Folded into the caller's patch rather than issued as a second updateById:
-   * `events` then rides along in the SAME patch as x/y, so the move and the
-   * seed are one undo entry instead of two that can be separated.
-   *
-   * `events` is attached whenever the actor has a path at all, even on the
-   * frames where the snap leaves the seed exactly where it was. The undo key is
-   * `id + sorted patch keys`, so a key that alternated between {x,y} and
-   * {x,y,events} mid-drag would break a single drag into several entries.
-   * A patch that genuinely changes nothing is still dropped by _isNoOpPatch,
-   * which deep-compares.
-   *
-   * Skipped outright while the preview is driving this actor: it rewrites
-   * actor.x/y every tick, and following that would rewrite the authored path
-   * under the running preview — the same reason routeGeometry reads the
-   * authored pose rather than the live one.
+   * Fold waypoint 1 (the seed, on the actor's pose) into the move's own patch, so
+   * move and seed are one undo entry. `events` rides along whenever the actor has a
+   * path, even unchanged, so the coalescing key stays stable through a drag. Off
+   * while the preview drives the actor.
    */
   function _seedFollowPatch(id, patch) {
     if (!('x' in patch) && !('y' in patch)) return patch;
@@ -191,8 +134,7 @@
 
       let seed;
       if (isRoute && window.ObjectsManager) {
-        // Snapped like any other 'fastest' waypoint — the actor's own pose need
-        // not be on a lane (hand-typed, or dragged onto the verge).
+        // Snapped like any 'fastest' waypoint: the actor's pose need not be on a lane.
         const snap = ObjectsManager.routeWaypointAt(x, y);
         seed = { ...path[0], x: snap.x, y: snap.y, z: snap.snapped ? snap.z : (z ?? path[0].z), strategy: 'fastest' };
       } else {
@@ -205,6 +147,7 @@
     return hasPath ? { ...patch, events } : patch;
   }
 
+  /** True when every field in the patch already holds that value. */
   function _isNoOpPatch(id, patch) {
     const actor = AppState.findById(id);
     if (!actor) return false;
@@ -220,28 +163,10 @@
   }
 
   /**
-   * Which event an `{events}` patch touches, and what to call the edit.
-   *
-   * **Everything in a snapshot must be recorded.** An edit that is skipped is
-   * not merely un-undoable: it is *destroyed* by the next undo, because the
-   * entry pushed after it describes a world where it never happened. Skipping
-   * event tweaks meant "add event A, retune event B, Strg+Z" silently threw
-   * away the retune. The way to keep something out of undo is to keep it out of
-   * the snapshot — which is what `weather`/`time` do — not to stop recording it.
-   *
-   * Noise is handled by coalescing instead: the key is the id of the ONE event
-   * the patch changed, so every control in a single card folds into one undo
-   * step, and touching a different card starts a new one. The label is part of
-   * the key so that adding, editing and deleting the same event stay distinct
-   * steps rather than folding into each other.
-   *
-   * The changed event is found by reference identity, not by comparing
-   * contents: every mutation site rebuilds the array with `.map()`, so the
-   * untouched events are the very same objects. That keeps this free even on
-   * the trigger-point drag, which patches once per mousemove against an actor
-   * whose trajectory can hold hundreds of points. A future site that rebuilds
-   * every event would fall back to the first one, which coalesces more coarsely
-   * — never wrongly.
+   * Which event an `{events}` patch touches (by reference identity — sites rebuild
+   * with .map()), and the label. Keying on that event coalesces one card's edits
+   * into one step. Everything in a snapshot must be recorded: a skipped edit is
+   * destroyed by the next undo.
    */
   function _eventsPatchInfo(id, patch) {
     const actor = AppState.findById(id);
@@ -261,10 +186,7 @@
   }
 
   function _recordUpdate(id, patch) {
-    // A patch that changes nothing gets no entry. Blurring a Spawnpunkt field
-    // re-fires `change` with the value already in it, and _onPosChange always
-    // sends all four of x/y/z/yaw — so without this, tabbing through the panel
-    // fills the history with steps that undo to exactly where they started.
+    // A no-op patch (e.g. blurring a Spawnpunkt field) records nothing.
     if (_isNoOpPatch(id, patch)) return;
 
     const keys = Object.keys(patch);
@@ -284,9 +206,7 @@
   function _apply(snap) {
     _suspend++;
     try {
-      // Copy out of the snapshot: updateById mutates an actor in place with
-      // Object.assign, so handing the stored object straight to AppState would
-      // let the next edit rewrite an entry still sitting in the history.
+      // Copy: updateById mutates actors in place and would rewrite the stored entry.
       const restored = JSON.parse(
         JSON.stringify({
           ego: snap.ego,
@@ -303,15 +223,10 @@
       AppState.generated = restored.generated;
       AppState.selectedId = snap.selectedId && AppState.findById(snap.selectedId) ? snap.selectedId : null;
       AppState.selectedTrafficLightId = snap.selectedTrafficLightId;
-      // Waypoint indices are positions in an array the snapshot has just
-      // replaced, so a mark taken before the undo can now name a different
-      // point — or none at all.
+      // Indices may name a different point after the restore.
       AppState.selectedWaypoint = null;
 
-      // The empty patch redraws the scene list and the overview; the
-      // selectionChanged emit is what re-renders the map and the properties
-      // panel. Emitted rather than routed through select(), which would clear
-      // selectedTrafficLightId and drop a signal edit out of view as it is undone.
+      // Emitted rather than via select(), which would clear selectedTrafficLightId.
       AppState.set({});
       AppState.emit('selectionChanged', AppState.selectedId);
     } finally {
@@ -330,25 +245,12 @@
     _recordUpdate,
     _recordRemove,
 
-    /**
-     * End the current coalescing run, so the next edit starts a fresh entry.
-     * Bound below to `mousedown` and `change`, which between them precede every
-     * committed edit in the app — without it two consecutive Spawnpunkt edits
-     * fold into one, since _onPosChange sends the same four keys every time.
-     */
+    /** End the coalescing run; bound to mousedown and change, which precede every committed edit. */
     seal() {
       _openKind = null;
     },
 
-    /**
-     * Stop recording. Balanced with resume(); nests.
-     *
-     * Coming back out, the baseline is re-read: whatever ran under the
-     * suspension changed the state without recording it, and the next edit's
-     * "before" has to be where things actually stand. That is what makes the
-     * drag's mouseup z-fixup (objectsDrag.js) invisible to the history rather than
-     * merely unrecorded.
-     */
+    /** Stop recording (nests, balanced with resume()); resume re-reads the baseline, hiding what ran under it. */
     suspend() {
       _suspend++;
     },
@@ -414,8 +316,7 @@
       _baseline = null;
     },
 
-    /** Take the live scenario and its whole history out (a map switch, see
-     * UIUtils.leaveMap). The live state is left as it is; the caller replaces it. */
+    /** Take the live scenario and its history out (a map switch); the caller replaces the live state. */
     park() {
       const entry = { snap: _snapshot(''), undo: _undo.splice(0), redo: _redo.splice(0) };
       _openKind = null;
@@ -440,17 +341,8 @@
     },
   };
 
-  // Seal on the two events that precede a committed edit. Every editable field
-  // in the app commits on `change` (only the map drag and the weather sliders
-  // are continuous), and every click- or drag-driven edit opens with a
-  // `mousedown`. Capture phase, so the seal lands before the handler that
-  // performs the edit.
-  //
-  // Inside an event card the seal is skipped: an event card is a dozen small
-  // controls describing one thing, and sealing between them would make tuning a
-  // single card a dozen undo steps. The coalescing key already keys on the
-  // event's own id and on what kind of change it is, so a different card — or
-  // deleting the one being edited — still starts its own step.
+  // Seal on mousedown and change (capture, before the editing handler) — except inside an
+  // event card, whose controls coalesce into one step per event.
   function _sealUnlessInEventCard(e) {
     const t = e.target;
     if (t && typeof t.closest === 'function' && t.closest('.event-card')) return;
@@ -459,9 +351,6 @@
   document.addEventListener('change', _sealUnlessInEventCard, true);
   document.addEventListener('mousedown', _sealUnlessInEventCard, true);
 
-  // Opening a file replaces the scenario the history describes. Restoring a
-  // pre-load state would leave the scenario objects from before the load beside
-  // the map, weather and time from the file — a half-state neither the user nor
-  // the export would recognise.
+  // A loaded file replaces the scenario the history describes.
   AppState.on('stateLoaded', () => UndoStack.clear());
 })();
