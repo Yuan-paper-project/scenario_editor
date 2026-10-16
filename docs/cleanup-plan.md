@@ -20,7 +20,7 @@ Line counts are `wc -l`. The sibling repo `../llm-scenario-gen` is out of scope 
 | `frontend/js/objects.js`, `properties.js`, `templates.js` | next |
 | `backend/map_renderer.py`, `scenario_io.py`, `bg_traffic.py`, `lane_graph_builder.py` | open |
 
-How each split was done, and the checks to repeat: propose → approve → (1) any wiring change needed to make the move possible, alone, inside the old file; (2) the move itself, by script, asserting every original line lands in exactly one new file; (3) docs. After each: `bash tools/lint.sh` (no new findings), `bash tests/run_tests.sh --quick`, and the export/generator fingerprint must be byte-identical; a deliberately wrong load order must fail `test_smoke_e2e.py`. Test against a server without `--reload` (port 9091).
+How each split was done, and the checks to repeat: propose → approve → (1) any wiring change needed to make the move possible, alone, inside the old file; (2) the move itself, by script, asserting every original line lands in exactly one new file; (3) docs. After each: `bash tools/lint.sh` (no new findings), `bash tests/run_tests.sh --quick`, and the export/generator fingerprint must be byte-identical; a deliberately wrong load order must fail `test_smoke_e2e.py`. Test against a server without `--reload` (port 9091). For a stylesheet, the fingerprint is `tools/css_fingerprint.py` (computed styles, see CLAUDE.md).
 
 ## 1. Files over 400 lines
 
