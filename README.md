@@ -78,7 +78,7 @@ scenario_editor/
 ├── maps/<Town>/           bundled .xodr and aerial tiles (lane graphs, SUMO nets generated)
 ├── tests/                 fast checks, Playwright (e2e/), CARLA runners (carla/)
 ├── tools/                 lint, traffic player, CARLA probes
-└── docs/                  working notes
+└── docs/                  working notes, the project slide deck
 ```
 
 ## Development

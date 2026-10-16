@@ -13,7 +13,6 @@ one goes red tells you where the problem is:
 |---|---|---|---|
 | `test_normalization.py` | nothing | backend coercions, clamps, entity-ref mapping | anything about the UI or the emitted XML |
 | `e2e/test_*_e2e.py` | editor on :9090 | UI wiring, the payload the frontend sends, the `.xosc` structure | whether CARLA honours the file |
-| `carla/run_carla_cases.py` | CARLA on :2010 (run.sh's) | whether triggers fire and actors actually move | anything it has no assertion for |
 | `../tools/probes/probe_*.py` | CARLA on :3000 | measurements, not assertions | — |
 | `carla/run_generated_carla.py` | CARLA on :2010 (run.sh's) + editor | whether a generated scenario's triggers fire and the actors meet in CARLA | nothing is asserted; it reports |
 | `carla/run_template_carla.py` | CARLA on :2010 (run.sh's) + editor | the templates with a DRIVING ego (route + start speed): triggers fire, the actor does what the template says, the ego reacts; printed beside the preview's prediction | nothing is asserted; it reports |
@@ -24,7 +23,7 @@ one goes red tells you where the problem is:
 
 - `tests/` — the fast checks that need no browser (`test_normalization.py`, `check_render_geometry.py`, `compare_xodr_lane_graph.py`), `run_tests.sh`, `bench/` and `artifacts/` (CARLA run output, gitignored).
 - `tests/e2e/` — the Playwright suites and `_harness.py`, which they import from their own folder.
-- `tests/carla/` — the CARLA runners and their helpers (`run_*`, `carla_cases.py`, `carla_analysis.py`, `carla_telemetry.py`, `probe_generated_spawns.py`). They put `../e2e` on `sys.path` for `_harness`, and write to `tests/artifacts/`.
+- `tests/carla/` — the CARLA runners and their helpers (`run_*`, `carla_run.py` — the shared `run_case` —, `carla_analysis.py`, `carla_telemetry.py`, `probe_generated_spawns.py`). They put `../e2e` on `sys.path` for `_harness`, and write to `tests/artifacts/`.
 - `tools/probes/` — one-off CARLA measurements (`probe_carla_*`, `probe_puppet_obstacle.py`, `capture_carla_aerial.py`). They assert nothing; their output feeds the catalogue, `maps/` and CLAUDE.md.
 
 ## Running
@@ -165,79 +164,17 @@ both of which reject an event that cannot be built.
   so `locator.bounding_box()` centres land above the prop in empty space. Target
   the prop's *origin* via `getScreenCTM()` instead.
 
-## CARLA behavioural cases
+## Running scenarios in CARLA
 
-**Stale — deliberately deferred, not yet re-baselined.** Everything below
-describes `run_carla_cases.py`/`carla_cases.py` as they exist today, unchanged
-by the ego-controller work: the hero's `.xosc` controller went from
-`external_control` to `simple_vehicle_control`, and the ego now takes the same
-authored events an NPC does. Every case's ego is `events: []` today (never a
-literal here — it is what `AppState` defaults to), and `events: []` now means
-the ego gets no Act at all, so **every case's ego sits still regardless of
-`SCENARIO_GOAL`** — which, separately, is
-already dead against the current `run.sh` (it runs `run_selfref_video_test.py`,
-which takes no `--goal` and launches no external agent). All 28 cases need
-re-running and their assertions re-checked before any claim below about ego
-motion, timing, or turning can be trusted again.
+The `carla/run_*_carla.py` runners (generated scenarios, templates, routes, the
+extended actions, background traffic) all go through `carla_run.run_case`: it
+writes the `.xosc` into ScenarioRunner's tree, starts the telemetry sidecar, runs
+`/home/dellpro2/Antonio/run.sh`, and returns the log and CSV for the runner to
+read. They report rather than assert. Each needs CARLA on port 2010 — run.sh's,
+which starts one if none is up — takes the simulator over and runs strictly
+sequentially, so none of them is part of `run_tests.sh`.
 
-```bash
-bash run.sh 9090                                    # terminal 1: the editor
-.venv/bin/python3 tests/carla/run_carla_cases.py          # all 28 cases, ~12 min
-.venv/bin/python3 tests/carla/run_carla_cases.py tpl-stopping evt-assign-route
-```
-
-Four families, by prefix:
-
-| prefix | n | what it is for |
-|---|---:|---|
-| `tpl-*` | 6 | the scenario templates, which have no other CARLA coverage |
-| `evt-*` | 4 | event mechanics — trigger semantics and chain timing, with exact numbers |
-| `act-*` | 2 | the newer actor types: does CARLA accept the blueprint and drive it |
-| `bench-*` | 16 | Loop2Scenic benchmark scenarios — see `tests/bench/COVERAGE.md` |
-
-The two `act-*` cases cover the actor catalogue where the `.xosc` cannot: that
-CARLA accepts the blueprint id and that the controller ScenarioRunner picked
-actually drives the thing. They assert `type_id` explicitly, because a missing
-catalogue entry silently emits a Lincoln MKZ that behaves identically to a
-correct one. One vehicle and one walker — the largest new vehicle and the
-smallest new walker.
-
-Needs CARLA on port 2010 — run.sh's, which starts one if none is up. It takes the simulator over
-for the duration and runs strictly sequentially, so it is deliberately **not**
-part of `run_tests.sh`.
-
-### The three `kind`s a case can be
-
-- **`template`** — placed through the real template button and a real map click,
-  so the template mechanism itself is under test.
-- **`events`** — one NPC with its events seeded directly into `AppState`. The
-  event editor is covered by `test_events_e2e.py`; here we want exact numbers.
-- **`scene`** — several NPCs and/or props. NPCs are seeded for the `events`
-  reason plus one more: at whole-town zoom a Playwright click is quantised to
-  ~0.4 m and a lane is 3.5 m wide, so a click cannot reliably hit a named lane.
-  Props are **not** seeded — they go through `H.place_prop`, because
-  `_propYawFor`'s per-lane facing rule and `surfaceZFor`'s elevation lookup only
-  run on the placement path, and those are exactly what a prop case is testing.
-  `H.zoom_at` wheels in over the target and back out again afterwards, so one
-  placement does not move the next one's screen coordinates.
-
-A `scene` case's `npcs` array order is load-bearing: `buildScenarioParams` names
-them `adversary`, `adversary1`, … by index, and that is the entity ref the
-expectations read back.
-
-**Any actor with `events: []` gets no Act, the ego included** —
-`build_custom_event_chain()` returns False for an empty list and
-`_build_actor_act()` then returns None, so the actor holds its `initial_speed`
-(0 when omitted, as it is in every case here) for the whole run. This reverses
-the older behaviour, where the same actor drove off on a `constant_speed`
-fallback: a "parked" car covered 226 m before that was caught. An actor that
-*has* events but must stay put still needs `_parked()` (an explicit
-`set_speed 0`). A scenario in which *nothing* has events is rejected at export
-with a 400.
-
-Each case builds its scenario through the real editor, runs it through
-`/home/dellpro2/Antonio/run.sh`, and judges the result against two independent
-sources:
+A run is read from two independent sources:
 
 - **ScenarioRunner's OSC log.** It prints `[OSC][<t>s][EVENT][<name>] RUNNING|END`
   for every storyboard element. That is exact trigger-firing and completion
@@ -246,22 +183,16 @@ sources:
 - **`carla_telemetry.py`'s CSV.** One row per actor per tick, so you can ask
   whether the actor actually did what the event commanded.
 
-Both are required. An event can go `RUNNING` while the vehicle ignores it
+Both are needed. An event can go `RUNNING` while the vehicle ignores it
 entirely (wrong entity ref, unreachable lane, controller never applied it), and
 telemetry alone cannot separate a mistimed trigger from a sluggish controller.
 
-Artifacts land in `tests/artifacts/<case>/` (gitignored): `scenario.json`,
-`telemetry.csv`, `telemetry.log`, `run.log`, and the exact `.xosc`. Videos are
-moved to `recordings/gui_test_<case>/`, matching the existing `assign_route/`,
-`pedestrian/` naming.
+Artifacts land in `tests/artifacts/<name>/` (gitignored): `scenario.json` (the
+editor's own save format — drop it on **Laden** to reopen the run exactly as
+built), `telemetry.csv`, `telemetry.log`, `run.log`, and the exact `.xosc`.
+Videos are moved to `recordings/gui_test_<name>/`.
 
-`scenario.json` is `AppState.toJSON()` captured in the browser at the moment the
-case was built — the editor's own save format, not a test-only dump. Drop it on
-the editor's **Laden** button to reopen the failing case complete with map, ego,
-NPC and its full event chain, and carry on editing from there. It is captured
-before the export, so it is exactly the state the `.xosc` beside it came from.
-
-### Traps this runner is built around
+### Traps the runners are built around
 
 - **The sidecar must never call `world.tick()`.** ScenarioRunner owns the clock
   in synchronous mode; a second ticking client advances the world underneath it
@@ -271,107 +202,64 @@ before the export, so it is exactly the state the `.xosc` beside it came from.
   `role_name` when the CSV is written returns blanks for everything, because
   teardown has already destroyed the actors — which silently produces an empty
   file. A background poller keeps the map fresh during the run.
-- **A hung scenario contaminates the next case.** A storyboard that never
+- **A hung scenario contaminates the next run.** A storyboard that never
   completes leaves `scenario_runner` alive even after it prints
   `No more scenarios .... Exiting`, and `run.sh` blocks forever in `wait`. The
-  orphan then keeps ticking CARLA under the following case, whose distance
+  orphan then keeps ticking CARLA under the following run, whose distance
   triggers start firing off the 60 s `TimeFallback` instead of their real
   condition — indistinguishable from a trigger bug unless you know to look.
-  Hence the per-case timeout, `start_new_session` + `killpg`, and the `pkill`
+  Hence `run_case`'s timeout, `start_new_session` + `killpg`, and the `pkill`
   sweep on both sides of every run.
 - **Two clocks.** Telemetry carries CARLA's `elapsed_seconds`, a world clock
   that keeps counting across runs and starts in the hundreds. The OSC log counts
-  from scenario start. They are reconciled through the ego's first motion, since
-  every **NPC** Act starts on `hero traveled 0.1 m` — the hero's own Act
-  (`heroBehavior`) does not carry that gate, since the ego cannot wait for
-  itself to move before it is allowed to.
-- **The ego pose is not free, and the goal is never inherited.** `run_case`
-  always exports `SCENARIO_GOAL`, falling back to `C.GOAL` (`92,23,0,270`)
-  rather than letting run.sh's own default through — that default lives outside
-  this repo and gets retargeted by hand while debugging. `set_destination`
-  projects whatever it is given to the nearest waypoint, so a wrong goal never
-  errors, it just drives the ego somewhere nobody chose. The Town01 cases also
-  depend on the ego starting at `300.631,-2.025` heading west; move it and every
-  distance trigger fires at a different time.
+  from scenario start. `carla_analysis.act_start` reconciles them through the
+  ego's first 0.1 m of motion; every Act starts on `SimulationTime > 0`, so
+  that is close to, not exactly, the instant the Acts begin.
 - **A `distance_to_point` radius is a 3-D radius.** ScenarioRunner evaluates
   `DistanceCondition` through `location.distance(other)`, so the point's `z`
   counts against it. On Town04's ramp, where the deck is 7.7–9.8 m up, a point
-  left at the `0.2` default puts the entire 5.5 m radius below the road and the
+  left at the `0.2` default puts the entire radius below the road and the
   condition can never become true — which looks exactly like an `entity_ref`
-  that failed to resolve. `SEED_EVENTS_JS` in `run_carla_cases.py` derives the z
-  of every trigger point, route waypoint and trajectory vertex from
-  `ObjectsManager.surfaceZFor`, the same call the editor's own click makes. **A
-  case never writes a literal z.**
+  that failed to resolve. A scenario built outside the click path must take
+  every z from `ObjectsManager.surfaceZFor`, as the editor does.
 - **A route on its own does not move an actor.** `AssignRouteAction` becomes
   `ChangeActorWaypoints`, which sets waypoints and nothing else, leaving
-  `BasicControl._target_speed` at 0 until a speed action lands. Useful rather
-  than merely surprising: it is how `bench-highway-cut-in` parks a car on the
-  on-ramp with its route already assigned and releases it on the ego's approach.
+  `BasicControl._target_speed` at 0 until a speed action lands. That is also a
+  way to park a car with its route assigned and release it later.
 - **A lane change needs a same-direction neighbour lane, and Town01 has none.**
   `ChangeActorLateralMotion` only reports success once the actor has driven
   `distance_other_lane` (hardcoded to 10 in `openscenario_parser.py`) *in the
   target lane*. It never reports failure except for an empty plan, so an
-  unreachable target lane hangs the run forever instead of failing it. The
-  lane-change cases therefore run on **Town03 road 67 lane -2** — a 144 m
-  straight from `(159.2,193.0)` to `(17.7,193.5)` with `lane_change=Left` and
-  lane -1 as a same-direction neighbour. Verified with CARLA's waypoint API
-  before use; see the comment block in `carla_cases.py`.
-- **Town03's parking lanes cannot host a pull-out.** All 75 of them sit beside
-  a *single* driving lane (`lane_change=NONE`, no same-direction neighbour), so
-  a lane change out of a parking spot dead-ends exactly like Town01. Both
-  lane-change cases share road 67 instead.
-- **A merge does not have to be a lane change.** `bench-highway-cut-in` uses
-  Town04's real loop on-ramp — road 44 → connector 1194 → road 39 lane 6, which
-  feeds the ego's own lane at x ≈ -68 — and gets the merge from an
-  `assign_route` down the ramp. No `lane_change`, no same-direction-neighbour
-  requirement, and the on-ramp in the description is geometry rather than a
-  stand-in.
+  unreachable target lane hangs the run instead of failing it. Usable stretches:
+  **Town03 road 67 lane -2** (144 m straight, `lane_change=Left`, lane -1
+  alongside) and **Town05 roads 36→37** (three lanes one way, `Both` on the
+  middle one). Town03's 75 parking lanes all sit beside a *single* driving lane,
+  so a lane change out of one dead-ends the same way; a pull-out is a route.
 - **Measure lateral displacement against a straight-line heading.** Mid-turn the
   actor is yawed 45-125 deg off the road; projecting displacement onto that
   frame turned a real 3.5 m lane change into a reported 44 m of "lateral"
-  travel. `lateral_offset()` takes its reference heading at `ref_t` (act start
-  by default), never at the start of the measurement window.
-- **`|lateral| ~ 3.5 m` is equally true of a lane change that went the wrong
-  way**, and on a three-lane carriageway that puts the actor somewhere the
-  scenario never meant. Pair it with an absolute check on the actor's final `y`
-  against the lane it was supposed to reach — `_merged_into()` in
-  `carla_cases.py`.
+  travel. `lateral_offset()` takes its reference heading at `ref_t`, never at
+  the start of the measurement window. And `|lateral| ~ 3.5 m` is equally true
+  of a lane change that went the wrong way — check the final position too.
 - **A cross-street actor launched at act start clears the junction before the
   ego gets there.** Measured on Town05 junction 1863: crossing car in at
-  t=1.0 s, ego at t=5.9 s — the paths intersect in space and never in time, and
-  every speed and geometry check still passes. Launch on `distance_to_ego` and
-  assert `closest_approach`.
+  t=1.0 s, ego at t=5.9 s — the paths intersect in space and never in time.
+  Launch on `distance_to_ego` and look at the closest approach.
 - **Distance radii need margin for the corner a turning ego cuts.** A
   `distance_to_ego@35` on the cross street missed by 0.6 m, because a
-  left-turning ego starts its swing before the junction centre. The condition
-  never fired, the actor waited out the 60 s `TimeFallback` that every
-  `distance_to_ego` trigger carries, and the run limped to 77 s looking like a
-  hang.
+  left-turning ego starts its swing before the junction centre; the actor
+  waited out the 60 s `TimeFallback` and the run looked like a hang.
 - **Town01's sidewalk is not spawnable.** A vehicle at y=-7 aborts the whole
   scenario with `Not all actors were spawned / Error: Unable to add actors`
   before a single tick.
 
-## The benchmark cases
+## The benchmark index
 
-`bench-*` reproduces sixteen scenarios from the Loop2Scenic benchmark. The index
-(all 250 entries), the extractor, the two conflicting tag censuses and the
-coverage report live in [`tests/bench/`](bench/COVERAGE.md).
-
-They are ordinary CARLA cases and are run the same way; what is different is
-that each one carries the benchmark description it reproduces **verbatim** plus
-its named fidelity delta, and that six of its checks are marked
-`EXPECTED TO FAIL` on purpose:
-
-- `bench-lane-blocked-construction` (3) — the props reach CARLA correctly and
-  BehaviorAgent drives straight through them, shoving the barrier 69 m. There is
-  no way to author an ego avoidance.
-- `bench-pedestrian-crossing` (2) — a defect in the shipped
-  `pedestrian-crossing` template: `distance_to_ego@50` at 2 m/s puts the walker
-  off the far kerb ~3.5 s before the ego arrives, on every run.
-- `bench-reversing-vehicle` (1) — there is no reverse action, so the actor
-  turns round and drives forward instead.
-
-Regenerating the index needs nothing but curl:
+The Loop2Scenic index (all 250 entries), the extractor, the two conflicting tag
+censuses and the coverage report live in [`tests/bench/`](bench/COVERAGE.md).
+The sixteen `bench-*` CARLA cases that `COVERAGE.md` refers to were deleted with
+the other stale cases; `e2e/test_benchmark_e2e.py` rebuilds 31 Chat2Scenic and
+Loop2Scenic descriptions in the editor and measures their geometry instead. Regenerating the index needs nothing but curl:
 
 ```bash
 curl -sL -o bench.html https://yuangao-tum.github.io/loop2scenic-bench/

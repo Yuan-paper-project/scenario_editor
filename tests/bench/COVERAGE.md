@@ -7,10 +7,13 @@ spawn pose only"*, cited below as the reason 36 taxonomy-tag assignments
 holds. The ego now takes `follow_trajectory`/`assign_route`/`set_speed`/
 `lane_change` events exactly like an NPC, and gets its own `heroBehavior` Act in
 the export. Every row below tagged with that capability, the §4 rollup
-percentages, and the `bench-*` CARLA cases themselves (deliberately deferred,
-separate work) need re-checking against what can actually be authored now
-before this file's conclusions can be trusted. `LaneOffsetAction` (the other
-named gap) is unaffected and remains genuinely missing.
+percentages need re-checking against what can actually be authored now
+before this file's conclusions can be trusted. `LaneOffsetAction`, the other
+named gap, has landed too (`lane_offset`).
+
+**2026-10-16:** the sixteen `bench-*` CARLA cases (`tests/carla/carla_cases.py`) and their
+runner were deleted as stale — every case's ego stood still once the ego became authorable.
+The CARLA results below are a record from before that and can no longer be re-run.
 
 **2026-10-14:** the generator gained types and pins aimed at benchmark cases (junction layouts,
 `turn_vru`, `slow_lead`, `pull_out`, `rear_approach`, standing/queued/curve obstacles, drift around a
@@ -24,15 +27,10 @@ What this editor can and cannot build, measured against the
 scenario descriptions across five query modalities, tagged with a 50-type
 Bench2Drive-derived taxonomy.
 
-Sixteen benchmark entries were selected, rebuilt as runnable CARLA cases in
-`tests/carla/carla_cases.py`, and judged against ScenarioRunner's OSC log **and** the
+Sixteen benchmark entries were selected, rebuilt as runnable CARLA cases (since
+deleted, see above), and judged against ScenarioRunner's OSC log **and** the
 telemetry CSV. **168 of 174 checks passed; the six failures are all marked
 EXPECTED TO FAIL** and are the point of the exercise.
-
-```bash
-bash run.sh 9090                                              # terminal 1
-.venv/bin/python3 tests/carla/run_carla_cases.py bench-hard-brake-lead
-```
 
 ## 1. Provenance
 
@@ -123,7 +121,7 @@ express; and deliberately include cases the editor **cannot** fully express.
 
 ## 3. Per-case results
 
-From `tests/carla/run_carla_cases.py <all sixteen>`. Artifacts (reloadable
+From the since-deleted `tests/carla/run_carla_cases.py <all sixteen>`. Artifacts (reloadable
 `scenario.json`, `telemetry.csv`, `run.log`, the exact `.xosc`) are in
 `tests/artifacts/bench-*/`.
 
@@ -264,7 +262,7 @@ the benchmark from "not expressible" into reach.
   `initial_speed` (0 when omitted) for the whole run. This reverses the older
   behaviour, where `xml_builder` fell back to a `constant_speed` chain and a
   "parked" car covered 226 m. Every stationary actor here still uses an explicit
-  `set_speed 0` (`_parked()` in `carla_cases.py`), which also states the intent.
+  `set_speed 0` (`_parked()` in the since-deleted `carla_cases.py`), which also states the intent.
 - **Distance radii need margin for the corner a turning ego cuts.** A
   `distance_to_ego@35` trigger on the cross street missed by 0.6 m — the ego
   begins its left swing at (−134, 89) rather than running to the junction
