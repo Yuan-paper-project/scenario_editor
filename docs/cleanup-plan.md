@@ -97,8 +97,8 @@ Event/actor rules mirrored across frontend, backend and emitter (`ScenarioRules`
 
 ## 4. Messy areas
 
-- **Comments.** About 25–30% of lines in the big JS files are comments (`scenarioGenerator.js` 708 of 3286, `simulate.js` 684 of 2217, `mapView.js` 584 of 2406). Many are good *why* comments. A grep for change-log wording (`used to`, `previously`, `no longer`, dates) finds ~50 lines across 14 files, led by `mapView.js` (9), `objects.js` (8), `simulate.js` (5). Phase 5 material.
-- **"phase 1/2/3" in code and headers** (`// ── Batch generation (phase 2) and coverage sampling (phase 3)`, `Cached CARLA lane graph (phase 2)`). These refer to past project plans and mean nothing to a reader now.
+- ~~**Comments.**~~ **Done** (phase 5, step 2, seven commits listed in `.git-blame-ignore-revs`): every comment and docstring in `frontend/js`, `backend` and `tools/*.py` cut to its reason, restatements and change-log wording removed, and the stale ones corrected (lane_offset modes, continuous follow, the fixed storyboardElementRef defect, physics-off puppets, the lane graph's two sources). Frontend JS went from 4,359 comment lines to roughly 1,700. Checked by stripping comments (and Python docstrings) from old and new and requiring the code to be identical, plus a scan for trailing comments cut mid-sentence. Tests, CSS and `tools/probes/` were left out.
+- ~~**"phase 1/2/3" in code and headers.**~~ Done with the comments.
 - **Two READMEs.** `README.md` and `README_UPDATED.md` overlap. Merge them into one.
 - **Presentation material in the app repo.** `generate_pptx.py` (680 lines), `frontend/presentation.html` (758), the committed `OpenSCENARIO_Editor_Praesentation.pptx`, and the `/api/presentation.pptx` route in `main.py`. Unrelated to the editor. Candidate to move to `docs/` or a separate repo (your decision).
 - ~~**`tests/` mixes four kinds of thing.**~~ Done: `tests/e2e/`, `tests/carla/`, `tools/probes/`.
